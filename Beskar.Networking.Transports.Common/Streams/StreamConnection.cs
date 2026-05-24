@@ -1,0 +1,256 @@
+using System.Buffers;
+using System.IO.Pipelines;
+using Beskar.Networking.Abstractions.Interfaces.Pools;
+using Me.Memory.Pools;
+
+namespace Beskar.Networking.Transports.Common.Streams;
+
+public sealed class StreamConnection(
+   PipeOptions readOptions,
+   PipeOptions writeOptions)
+   : IDuplexPipe, IAsyncDisposable, IPooledObject
+{
+   private static readonly int MinAllocBufferSize = PinnedBlockMemoryPool.BlockSize / 2;
+
+   private readonly Pipe _readPipe = new(readOptions);
+   private readonly Pipe _writePipe = new(writeOptions);
+
+   private Stream? _stream;
+
+   private Task? _readTask;
+   private Task? _writeTask;
+
+   private CancellationTokenSource _cts = new();
+
+   private bool _stopped;
+   private readonly Lock _lock = new();
+
+   public PipeReader Input => _readPipe.Reader;
+   public PipeWriter Output => _writePipe.Writer;
+
+   public void Initialize(Stream stream)
+   {
+      ArgumentNullException.ThrowIfNull(stream);
+      ArgumentOutOfRangeException.ThrowIfEqual(stream.CanWrite, false);
+      ArgumentOutOfRangeException.ThrowIfEqual(stream.CanRead, false);
+
+      _stream = stream;
+   }
+
+   public void Start()
+   {
+      if (_stream == null)
+      {
+         throw new InvalidOperationException("StreamConnection must be initialized with a Stream before starting.");
+      }
+
+      lock (_lock)
+      {
+         if (_stopped)
+         {
+            throw new InvalidOperationException("Cannot start a stopped StreamConnection.");
+         }
+
+         _writeTask = Task.Run(CopyWritePipeToStream);
+         _readTask = Task.Run(CopyStreamToReadPipe);
+      }
+   }
+
+   public void Stop()
+   {
+      lock (_lock)
+      {
+         if (_stopped) return;
+         _stopped = true;
+         _cts.Cancel();
+      }
+
+      _readPipe.Reader.Complete();
+      _readPipe.Writer.Complete();
+
+      _writePipe.Reader.Complete();
+      _writePipe.Writer.Complete();
+   }
+
+   public async ValueTask StopAsync()
+   {
+      Stop();
+
+      var readTask = _readTask;
+      var writeTask = _writeTask;
+
+      if (readTask is not null)
+      {
+         try
+         {
+            await readTask;
+         }
+         catch
+         {
+            // Expected
+         }
+      }
+
+      if (writeTask is not null)
+      {
+         try
+         {
+            await writeTask;
+         }
+         catch
+         {
+            // Expected
+         }
+      }
+
+      var stream = _stream;
+      if (stream is not null)
+      {
+         try
+         {
+            await stream.FlushAsync();
+         }
+         catch
+         {
+            // Expected
+         }
+         finally
+         {
+            await stream.DisposeAsync();
+         }
+      }
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      await StopAsync();
+      _cts.Dispose();
+   }
+
+   public bool TryResetState()
+   {
+      if ((_readTask is { IsCompleted: false })
+          || (_writeTask is { IsCompleted: false }))
+      {
+         return false;
+      }
+
+      _readPipe.Reset();
+      _writePipe.Reset();
+
+      _stream = null;
+      _stopped = false;
+
+      _cts.Dispose();
+      _cts = new CancellationTokenSource();
+
+      return true;
+   }
+
+   private async Task CopyWritePipeToStream()
+   {
+      var stream = _stream;
+      if (stream == null) return;
+
+      var reader = _writePipe.Reader;
+
+      try
+      {
+         while (true)
+         {
+            var pending = reader.ReadAsync(_cts.Token);
+
+            if (!pending.IsCompleted)
+            {
+               await stream.FlushAsync(_cts.Token);
+            }
+
+            var result = await pending;
+            ReadOnlySequence<byte> buffer;
+
+            do
+            {
+               buffer = result.Buffer;
+
+               if (!buffer.IsEmpty)
+                  await SetBuffer(stream, buffer);
+
+               reader.AdvanceTo(buffer.End);
+
+            } while (!(buffer.IsEmpty && result.IsCompleted)
+                        && reader.TryRead(out result));
+
+            if (buffer.IsEmpty && result.IsCompleted)
+               break;
+
+            if (result.IsCanceled)
+               break;
+         }
+
+         await reader.CompleteAsync();
+      }
+      catch (Exception er)
+      {
+         try
+         {
+            await reader.CompleteAsync(er);
+         }
+         catch
+         {
+            // Expected
+         }
+      }
+   }
+
+   private async Task CopyStreamToReadPipe()
+   {
+      var stream = _stream;
+      if (stream == null) return;
+
+      Exception? error = null;
+      var writer = _readPipe.Writer;
+
+      try
+      {
+         while (true)
+         {
+            var memory = writer.GetMemory(MinAllocBufferSize);
+            var read = await stream.ReadAsync(memory, _cts.Token);
+
+            if (read <= 0)
+               break;
+
+            writer.Advance(read);
+
+            var fres = await writer.FlushAsync(_cts.Token);
+            if (fres.IsCanceled || fres.IsCompleted)
+               break;
+         }
+      }
+      catch (Exception er)
+      {
+         error = er;
+      }
+
+      await writer.CompleteAsync(error);
+   }
+
+   private Task SetBuffer(Stream stream, in ReadOnlySequence<byte> data)
+   {
+      if (data.IsSingleSegment)
+      {
+         var vtask = stream.WriteAsync(data.First, _cts.Token);
+         return vtask.IsCompletedSuccessfully ? Task.CompletedTask : vtask.AsTask();
+      }
+
+      return SetBufferSegments(stream, data);
+   }
+
+   private async Task SetBufferSegments(Stream stream, ReadOnlySequence<byte> data)
+   {
+      foreach (var segment in data)
+      {
+         await stream.WriteAsync(segment, _cts.Token);
+      }
+   }
+}
