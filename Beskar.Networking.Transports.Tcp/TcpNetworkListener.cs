@@ -125,6 +125,15 @@ public sealed class TcpNetworkListener(
          {
             break;
          }
+         catch (SocketException ex)
+         {
+            if (token.IsCancellationRequested || _listenerSocket is null)
+            {
+               break;
+            }
+
+            WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, $"Listener acceptance error: {ex.Message}"));
+         }
          catch (Exception ex)
          {
             if (token.IsCancellationRequested || _listenerSocket is null)
@@ -132,7 +141,7 @@ public sealed class TcpNetworkListener(
                break;
             }
 
-            _sessionChannel.Writer.TryWrite(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
+            WriteToSessionChannel(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
          }
       }
    }

@@ -16,7 +16,6 @@ public sealed class TcpNetworkSession(
    IDuplexPipe connection)
    : INetworkSession
 {
-
    public Guid Id { get; } = Guid.CreateVersion7();
 
    public EndPoint RemoteAddress { get; } = remoteAddress;
