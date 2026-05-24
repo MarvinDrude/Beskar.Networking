@@ -40,11 +40,9 @@ public sealed class TcpNetworkSession(
       if (_stream is null)
       {
          _stream = new TcpNetworkStream(this, _connection);
-         return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
       }
 
-      return new ValueTask<Result<INetworkStream, NetworkCodeError>>(
-         new NetworkCodeError(-1, "TCP session only supports a single stream, which has already been accepted."));
+      return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
    }
 
    public ValueTask<Result<INetworkStream, NetworkCodeError>> OpenStreamAsync(
@@ -54,11 +52,9 @@ public sealed class TcpNetworkSession(
       if (_stream is null)
       {
          _stream = new TcpNetworkStream(this, _connection);
-         return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
       }
 
-      return new ValueTask<Result<INetworkStream, NetworkCodeError>>(
-         new NetworkCodeError(-1, "TCP session only supports a single stream, which has already been opened."));
+      return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
    }
 
    public async ValueTask DisposeAsync()

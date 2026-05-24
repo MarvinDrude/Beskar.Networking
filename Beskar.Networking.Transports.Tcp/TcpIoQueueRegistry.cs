@@ -32,7 +32,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
          {
             FactoryFunc = static () => throw new InvalidOperationException(),
             ReturnFunc = static connection => connection.TryResetState(),
-            InitialSize = options.StreamOptions.InitialConnectionPoolSize,
+            InitialSize = 0,
             MaxSize = options.StreamOptions.MaxConnectionPoolSize,
          });
       }
@@ -42,7 +42,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
          {
             FactoryFunc = static () => throw new InvalidOperationException(),
             ReturnFunc = static connection => connection.TryResetState(),
-            InitialSize = options.SocketOptions.InitialConnectionPoolSize,
+            InitialSize = 0,
             MaxSize = options.SocketOptions.MaxConnectionPoolSize,
          });
       }
