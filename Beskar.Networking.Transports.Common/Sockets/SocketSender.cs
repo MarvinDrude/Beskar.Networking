@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipelines;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
@@ -8,26 +9,51 @@ namespace Beskar.Networking.Transports.Common.Sockets;
 /// <summary>
 /// Represents a sender for a socket.
 /// </summary>
-public sealed class SocketSender(
-   SocketConnection connection,
-   Socket socket,
-   PipeOptions pipeOptions)
-   : IPooledObject, IAsyncDisposable
+public sealed class SocketSender : IPooledObject
 {
    /// <summary>
    /// The pipe used to send data.
    /// </summary>
-   public Pipe Pipe { get; } = new(pipeOptions);
-
-   private readonly SocketConnection _connection = connection;
-   private readonly Socket _socket = socket;
+   public Pipe Pipe { get; }
    
+   private SocketConnection? _connection;
+   private Socket? _socket;
+
    private Task? _sendTask;
    private CancellationTokenSource _cts = new();
    private bool _stopped;
 
+   /// <summary>
+   /// Initializes a new instance of the <see cref="SocketSender"/> class with pool-level invariants.
+   /// </summary>
+   public SocketSender(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
+   {
+      var options = new PipeOptions(
+         pool: bufferPool,
+         readerScheduler: scheduler,
+         writerScheduler: scheduler,
+         useSynchronizationContext: false);
+      
+      Pipe = new Pipe(options);
+   }
+
+   /// <summary>
+   /// Initializes the sender for a rented session.
+   /// </summary>
+   [MemberNotNull(nameof(_connection), nameof(_socket))]
+   public void Initialize(SocketConnection connection, Socket socket)
+   {
+      _connection = connection;
+      _socket = socket;
+   }
+
    public void Start()
    {
+      if (_socket == null || _connection == null)
+      {
+         throw new InvalidOperationException("SocketSender must be initialized with a Socket and SocketConnection before starting.");
+      }
+
       lock (_cts)
       {
          if (_stopped)
@@ -55,6 +81,9 @@ public sealed class SocketSender(
 
    private async Task ProcessSendAsync()
    {
+      var socket = _socket;
+      if (socket is null) return;
+
       try
       {
          while (true)
@@ -69,7 +98,7 @@ public sealed class SocketSender(
 
             if (!buffer.IsEmpty)
             {
-               await SendBufferAsync(buffer, _cts.Token);
+               await SendBufferAsync(socket, buffer, _cts.Token);
             }
 
             Pipe.Reader.AdvanceTo(buffer.End);
@@ -82,39 +111,40 @@ public sealed class SocketSender(
       }
       catch (OperationCanceledException)
       {
-         // Expected when the connection is closed.
+         // Expected to happen
       }
       catch (Exception ex)
       {
-         // Todo: notify connection of error
+         // notify
       }
       finally
       {
          await Pipe.Reader.CompleteAsync();
-         await Pipe.Writer.CompleteAsync();
       }
    }
 
-   private async ValueTask SendBufferAsync(ReadOnlySequence<byte> buffer, CancellationToken cancellationToken)
+   private async ValueTask SendBufferAsync(Socket socket, ReadOnlySequence<byte> buffer, 
+      CancellationToken cancellationToken)
    {
       if (buffer.IsSingleSegment)
       {
-         await SendMemoryAsync(buffer.First, cancellationToken);
+         await SendMemoryAsync(socket, buffer.First, cancellationToken);
       }
       else
       {
          foreach (var memory in buffer)
          {
-            await SendMemoryAsync(memory, cancellationToken);
+            await SendMemoryAsync(socket, memory, cancellationToken);
          }
       }
    }
 
-   private async ValueTask SendMemoryAsync(ReadOnlyMemory<byte> memory, CancellationToken cancellationToken)
+   private async ValueTask SendMemoryAsync(Socket socket, ReadOnlyMemory<byte> memory, 
+      CancellationToken cancellationToken)
    {
       while (!memory.IsEmpty)
       {
-         var bytesSent = await _socket.SendAsync(memory, SocketFlags.None, cancellationToken);
+         var bytesSent = await socket.SendAsync(memory, SocketFlags.None, cancellationToken);
          
          if (bytesSent == 0)
          {
@@ -134,36 +164,13 @@ public sealed class SocketSender(
 
       Pipe.Reset();
 
+      _connection = null;
+      _socket = null;
       _stopped = false;
       
       _cts.Dispose();
       _cts = new CancellationTokenSource();
       
       return true;
-   }
-
-   public async ValueTask DisposeAsync()
-   {
-      try
-      {
-         await Pipe.Writer.CompleteAsync();
-         await Pipe.Reader.CompleteAsync();
-      }
-      catch (Exception)
-      {
-         // ignored
-      }
-
-      try
-      {
-         if (_sendTask is not null)
-         {
-            await _sendTask;
-         }
-      }
-      catch (Exception)
-      {
-         // ignored
-      }
    }
 }
