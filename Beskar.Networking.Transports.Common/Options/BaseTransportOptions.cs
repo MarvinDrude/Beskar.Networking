@@ -31,5 +31,15 @@ public abstract class BaseTransportOptions<TQueueSelf>
    /// </summary>
    public long? MaxWriteBufferSize { get; set; } = 64 * 1024;
 
+   /// <summary>
+   /// The maximum number of connections in the connection pool.
+   /// </summary>
+   public int MaxConnectionPoolSize { get; set; } = 2048;
+
+   /// <summary>
+   /// The initial number of connections in the connection pool.
+   /// </summary>
+   public int InitialConnectionPoolSize { get; set; } = 16;
+
    public abstract TQueueSelf CreateQueueSettings();
 }

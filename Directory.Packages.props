@@ -4,7 +4,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Me.Memory" Version="1.4.4" />
+    <PackageVersion Include="Me.Memory" Version="1.4.5" />
     <PackageVersion Include="TUnit" Version="1.43.11" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="CommonMark.NET" Version="0.15.1" />
