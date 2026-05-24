@@ -1,4 +1,4 @@
-﻿using System.Net.Security;
+using System.Net.Security;
 using Beskar.Networking.Transports.Common.Options;
 
 namespace Beskar.Networking.Transports.Tcp;
@@ -49,4 +49,19 @@ public class TcpTransportOptions
    public int IoQueueCount => IsStreamBased
       ? StreamOptions.IoQueueCount
       : SocketOptions.IoQueueCount;
+
+   /// <summary>
+   /// Whether to disable Nagle's algorithm (set NoDelay to true). Defaults to true for performance.
+   /// </summary>
+   public bool NoDelay { get; set; } = true;
+
+   /// <summary>
+   /// The socket send buffer size in bytes. Set null to use OS default. Defaults to 512 KB.
+   /// </summary>
+   public int? SendBufferSize { get; set; } = 512 * 1024;
+
+   /// <summary>
+   /// The socket receive buffer size in bytes. Set null to use OS default. Defaults to 512 KB.
+   /// </summary>
+   public int? ReceiveBufferSize { get; set; } = 512 * 1024;
 }

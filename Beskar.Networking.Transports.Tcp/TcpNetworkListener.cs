@@ -114,6 +114,19 @@ public sealed class TcpNetworkListener(
          {
             var clientSocket = await listenerSocket.AcceptAsync(token);
 
+            if (_options.NoDelay)
+            {
+               clientSocket.NoDelay = true;
+            }
+            if (_options.SendBufferSize.HasValue)
+            {
+               clientSocket.SendBufferSize = _options.SendBufferSize.Value;
+            }
+            if (_options.ReceiveBufferSize.HasValue)
+            {
+               clientSocket.ReceiveBufferSize = _options.ReceiveBufferSize.Value;
+            }
+
             var localEndPoint = clientSocket.LocalEndPoint;
             if (localEndPoint is null)
             {

@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.IO.Pipelines;
+using System.Numerics;
 using System.Security.Cryptography;
 using Beskar.Networking.Transports.Ws.Enums;
 
@@ -212,23 +213,59 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       return true;
    }
 
-   private static void UnmaskAndWrite(PipeWriter writer, ReadOnlySequence<byte> payload, byte[] maskKey)
-   {
-      var payloadIndex = 0;
+    private static void MaskOrUnmask(Span<byte> target, ReadOnlySpan<byte> source, ReadOnlySpan<byte> maskKey, ref int payloadIndex)
+    {
+       var len = source.Length;
 
-      foreach (var segment in payload)
-      {
-         var span = segment.Span;
-         var target = writer.GetSpan(span.Length);
+       if (Vector.IsHardwareAccelerated && len >= Vector<byte>.Count)
+       {
+          var vectorSize = Vector<byte>.Count;
+          var vectorMaskBytes = new byte[vectorSize];
+          for (var i = 0; i < vectorSize; i++)
+          {
+             vectorMaskBytes[i] = maskKey[(payloadIndex + i) % 4];
+          }
 
-         for (var i = 0; i < span.Length; i++)
-         {
-            target[i] = (byte)(span[i] ^ maskKey[payloadIndex++ % 4]);
-         }
+          var maskVector = new Vector<byte>(vectorMaskBytes);
+          var simdLength = len - (len % vectorSize);
 
-         writer.Advance(span.Length);
-      }
-   }
+          for (var i = 0; i < simdLength; i += vectorSize)
+          {
+             var sourceVec = new Vector<byte>(source.Slice(i, vectorSize));
+             var xorVec = sourceVec ^ maskVector;
+             xorVec.CopyTo(target.Slice(i, vectorSize));
+          }
+
+          payloadIndex += simdLength;
+
+          for (var i = simdLength; i < len; i++)
+          {
+             target[i] = (byte)(source[i] ^ maskKey[payloadIndex++ % 4]);
+          }
+       }
+       else
+       {
+          for (var i = 0; i < len; i++)
+          {
+             target[i] = (byte)(source[i] ^ maskKey[payloadIndex++ % 4]);
+          }
+       }
+    }
+
+    private static void UnmaskAndWrite(PipeWriter writer, ReadOnlySequence<byte> payload, byte[] maskKey)
+    {
+       var payloadIndex = 0;
+
+       foreach (var segment in payload)
+       {
+          var span = segment.Span;
+          var target = writer.GetSpan(span.Length);
+
+          MaskOrUnmask(target[..span.Length], span, maskKey, ref payloadIndex);
+
+          writer.Advance(span.Length);
+       }
+    }
 
    private static async Task WriteFrameAsync(
       PipeWriter tcpWriter,
@@ -296,10 +333,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             var rented = ArrayPool<byte>.Shared.Rent(span.Length);
             try
             {
-               for (var i = 0; i < span.Length; i++)
-               {
-                  rented[i] = (byte)(span[i] ^ maskKey[payloadIndex++ % 4]);
-               }
+               MaskOrUnmask(rented.AsSpan(0, span.Length), span, maskKey, ref payloadIndex);
 
                tcpWriter.Write(rented.AsSpan(0, span.Length));
             }

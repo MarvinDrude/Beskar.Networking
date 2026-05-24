@@ -20,6 +20,20 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
       try
       {
          socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
+         if (_options.NoDelay)
+         {
+            socket.NoDelay = true;
+         }
+         if (_options.SendBufferSize.HasValue)
+         {
+            socket.SendBufferSize = _options.SendBufferSize.Value;
+         }
+         if (_options.ReceiveBufferSize.HasValue)
+         {
+            socket.ReceiveBufferSize = _options.ReceiveBufferSize.Value;
+         }
+
          await socket.ConnectAsync(endPoint, ct);
 
          Stream? stream = null;

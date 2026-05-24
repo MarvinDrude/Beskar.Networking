@@ -102,34 +102,37 @@ public static class Program
             .AddColumn("Transferred (GB)", Alignment.Right, ConsoleColor.Green)
             .AddColumn("Duration (s)", Alignment.Right, ConsoleColor.White)
             .AddColumn("Speed (MB/s)", Alignment.Right, ConsoleColor.Magenta)
-            .AddColumn("Speed (Gbps)", Alignment.Right, ConsoleColor.Cyan);
+            .AddColumn("Speed (Gbps)", Alignment.Right, ConsoleColor.Cyan)
+            .AddColumn("Msg/s", Alignment.Right, ConsoleColor.Green);
 
-        AddResultRow(table, "TCP", tcpResult);
-        AddResultRow(table, "WebSocket", wsResult);
-        AddResultRow(table, "QUIC", quicResult);
+        AddResultRow(table, "TCP", tcpResult, payloadSize);
+        AddResultRow(table, "WebSocket", wsResult, payloadSize);
+        AddResultRow(table, "QUIC", quicResult, payloadSize);
 
         table.Render();
         ConsoleRender.WriteMarkupLine("\n[green]Shootout successfully completed![/]");
     }
 
-    private static void AddResultRow(ConsoleTable table, string transportName, BenchmarkResult? result)
+    private static void AddResultRow(ConsoleTable table, string transportName, BenchmarkResult? result, int payloadSize)
     {
         if (result is null)
         {
-            table.AddRow(transportName, "[red]N/A[/]", "[red]N/A[/]", "[red]N/A[/]", "[red]N/A[/]");
+            table.AddRow(transportName, "[red]N/A[/]", "[red]N/A[/]", "[red]N/A[/]", "[red]N/A[/]", "[red]N/A[/]");
             return;
         }
 
         var totalGb = result.TotalBytesTransferred / (1000.0 * 1000.0 * 1000.0);
         var mbPerSec = result.TotalBytesTransferred / (1024.0 * 1024.0 * result.DurationSeconds);
         var gbps = (result.TotalBytesTransferred * 8.0) / (1000.0 * 1000.0 * 1000.0 * result.DurationSeconds);
+        var msgsPerSec = (result.TotalBytesTransferred / (double)payloadSize) / result.DurationSeconds;
 
         table.AddRow(
             transportName,
             totalGb.ToString("N3"),
             result.DurationSeconds.ToString("N2"),
             mbPerSec.ToString("N2"),
-            gbps.ToString("N2")
+            gbps.ToString("N2"),
+            msgsPerSec.ToString("N0")
         );
     }
 
