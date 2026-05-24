@@ -144,17 +144,17 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
                   await _sessionChannel.Writer.WriteAsync(wsSession, token);
                }
-               catch
-               {
-                  if (wsSession != null)
-                  {
-                     await wsSession.DisposeAsync();
-                  }
-                  else
-                  {
-                     await ((IAsyncDisposable)tcpSession).DisposeAsync();
-                  }
-               }
+                catch (Exception)
+                {
+                   if (wsSession != null)
+                   {
+                      await wsSession.DisposeAsync();
+                   }
+                   else
+                   {
+                      await ((IAsyncDisposable)tcpSession).DisposeAsync();
+                   }
+                }
             }, token);
          }
          catch (OperationCanceledException)

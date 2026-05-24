@@ -257,51 +257,34 @@ public static class WsHandshake
       }
    }
 
-   private static SequencePosition? FindSequence(ReadOnlySequence<byte> buffer, byte[] sequence)
-   {
-      if (buffer.Length < sequence.Length) return null;
+    private static SequencePosition? FindSequence(ReadOnlySequence<byte> buffer, byte[] sequence)
+    {
+       if (buffer.Length < sequence.Length) return null;
 
-      var position = buffer.Start;
-      while (buffer.TryGet(ref position, out var memory))
-      {
-         var index = memory.Span.IndexOf(sequence[0]);
-
-         if (index != -1)
-         {
-            var candidate = buffer.GetPosition(index, position);
-            if (Matches(buffer.Slice(candidate), sequence))
-            {
-               return candidate;
-            }
-         }
-
-         if (position.GetObject() == null) break;
-      }
-
-      return null;
-   }
-
-   private static bool Matches(ReadOnlySequence<byte> slice, byte[] sequence)
-   {
-      if (slice.Length < sequence.Length) return false;
-
-      var index = 0;
-      var position = slice.Start;
-
-      while (slice.TryGet(ref position, out var memory) && index < sequence.Length)
-      {
-         var span = memory.Span;
-         for (var i = 0; i < span.Length && index < sequence.Length; i++)
-         {
-            if (span[i] != sequence[index++])
-            {
-               return false;
-            }
-         }
-      }
-
-      return true;
-   }
+       var reader = new SequenceReader<byte>(buffer);
+       while (reader.TryAdvanceTo(sequence[0], advancePastDelimiter: false))
+       {
+          var startPosition = reader.Position;
+          if (reader.Remaining >= sequence.Length)
+          {
+             var match = true;
+             for (var i = 0; i < sequence.Length; i++)
+             {
+                if (!reader.TryPeek(i, out var b) || b != sequence[i])
+                {
+                   match = false;
+                   break;
+                }
+             }
+             if (match)
+             {
+                return startPosition;
+             }
+          }
+          reader.Advance(1);
+       }
+       return null;
+    }
 
    private static async Task SendErrorResponseAsync(PipeWriter writer, string status, string message)
    {

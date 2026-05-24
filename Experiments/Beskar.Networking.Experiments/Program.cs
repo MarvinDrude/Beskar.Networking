@@ -12,7 +12,6 @@ using Beskar.Networking.Transports.Ws.Extensions;
 using Beskar.Utilities.Console.Rendering;
 
 Console.Clear();
-
 ConsoleRender.DrawHeader(
     "BESKAR NETWORKING EXPERIMENTS",
     "Sleek TCP/QUIC Client/Server Connection Playground",
