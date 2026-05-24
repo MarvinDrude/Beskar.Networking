@@ -1,4 +1,15 @@
 <Solution>
+  <Folder Name="/Additional Files/">
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="CONTRIBUTING.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="LICENSE.md" />
+    <File Path="NuGet.Config" />
+    <File Path="README.md" />
+    <File Path="SECURITY.md" />
+  </Folder>
   <Project Path="Beskar.Networking.Abstractions/Beskar.Networking.Abstractions.csproj" />
   <Project Path="Beskar.Networking.Transports.Common/Beskar.Networking.Transports.Common.csproj" />
   <Project Path="Beskar.Networking.Transports.Tcp/Beskar.Networking.Transports.Tcp.csproj" />
