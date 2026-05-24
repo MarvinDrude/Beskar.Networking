@@ -1,0 +1,17 @@
+﻿using System.Net;
+using Beskar.Networking.Abstractions.Errors;
+using Me.Memory.Results;
+
+namespace Beskar.Networking.Abstractions.Interfaces;
+
+/// <summary>
+/// Represents a network client.
+/// </summary>
+public interface INetworkClient
+{
+   /// <summary>
+   /// Tries to connect to a remote endpoint.
+   /// </summary>
+   public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(
+      EndPoint endPoint, CancellationToken ct = default);
+}
