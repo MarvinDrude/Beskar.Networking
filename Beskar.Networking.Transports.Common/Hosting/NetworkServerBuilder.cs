@@ -13,7 +13,7 @@ public sealed class NetworkServerBuilder
       return new NetworkServerBuilder();
    }
 
-   public NetworkServerBuilder ConfigureEndpoints(Action<EndpointCollection> configure)
+   public NetworkServerBuilder ConfigureServers(Action<EndpointCollection> configure)
    {
       var collection = new EndpointCollection(_endpoints);
       configure(collection);

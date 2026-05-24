@@ -4,4 +4,9 @@
       <OutputType>Exe</OutputType>
    </PropertyGroup>
 
+   <ItemGroup>
+     <ProjectReference Include="..\..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj" />
+     <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj" />
+   </ItemGroup>
+
 </Project>
