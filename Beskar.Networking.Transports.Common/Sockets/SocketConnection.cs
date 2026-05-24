@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO.Pipelines;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
@@ -10,34 +11,45 @@ namespace Beskar.Networking.Transports.Common.Sockets;
 public sealed class SocketConnection 
    : IDuplexPipe, IAsyncDisposable, IPooledObject
 {
-   private SocketSender? _sender;
-   private SocketReceiver? _receiver;
+   private readonly SocketSender _sender;
+   private readonly SocketReceiver _receiver;
    private Socket? _socket;
    
-   private readonly object _shutdownLock = new();
+   private readonly Lock _shutdownLock = new();
    private bool _isDisposed;
    private bool _isAborted;
 
    /// <summary>
    /// Gets the reader that reads incoming data from the socket.
    /// </summary>
-   public PipeReader Input => _receiver?.Pipe.Reader 
-      ?? throw new InvalidOperationException("Connection not initialized.");
+   public PipeReader Input => _receiver.Pipe.Reader;
 
    /// <summary>
    /// Gets the writer that writes outgoing data to the socket.
    /// </summary>
-   public PipeWriter Output => _sender?.Pipe.Writer 
-      ?? throw new InvalidOperationException("Connection not initialized.");
+   public PipeWriter Output => _sender.Pipe.Writer;
 
    /// <summary>
-   /// Initializes the connection with the active socket, sender, and receiver.
+   /// Initializes a new instance of the <see cref="SocketConnection"/> class with pool invariants.
    /// </summary>
-   public void Initialize(Socket socket, SocketSender sender, SocketReceiver receiver)
+   public SocketConnection(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
+   {
+      _sender = new SocketSender(scheduler, bufferPool);
+
+      var receiverOptions = new PipeOptions(
+         pool: bufferPool,
+         readerScheduler: scheduler,
+         writerScheduler: scheduler,
+         useSynchronizationContext: false);
+      _receiver = new SocketReceiver(receiverOptions);
+   }
+
+   /// <summary>
+   /// Initializes the connection with the active socket for a rented session.
+   /// </summary>
+   public void Initialize(Socket socket)
    {
       _socket = socket;
-      _sender = sender;
-      _receiver = receiver;
 
       _sender.Initialize(this, socket);
       _receiver.Initialize(this, socket);
@@ -48,11 +60,6 @@ public sealed class SocketConnection
    /// </summary>
    public void Start()
    {
-      if (_sender == null || _receiver == null)
-      {
-         throw new InvalidOperationException("SocketConnection must be initialized before starting.");
-      }
-
       _sender.Start();
       _receiver.Start();
    }
@@ -67,9 +74,9 @@ public sealed class SocketConnection
          if (_isAborted || _isDisposed) return;
          _isAborted = true;
       }
- 
-      _sender?.Stop();
-      _receiver?.Stop();
+
+      _sender.Stop();
+      _receiver.Stop();
 
       if (_socket != null)
       {
@@ -84,11 +91,9 @@ public sealed class SocketConnection
       }
    }
 
-   public bool TryResetState()
-   {
-      throw new NotImplementedException();
-   }
-
+   /// <summary>
+   /// Disposes the connection and closes the socket gracefully.
+   /// </summary>
    public async ValueTask DisposeAsync()
    {
       lock (_shutdownLock)
@@ -96,14 +101,11 @@ public sealed class SocketConnection
          if (_isDisposed) return;
          _isDisposed = true;
       }
+      
+      _sender.Stop();
+      _receiver.Stop();
 
-      _sender?.Stop();
-      _receiver?.Stop();
-
-      if (_receiver != null)
-      {
-         await _receiver.DisposeAsync();
-      }
+      await _receiver.DisposeAsync();
 
       if (!_isAborted && _socket != null)
       {
@@ -120,5 +122,24 @@ public sealed class SocketConnection
             _socket.Dispose();
          }
       }
+   }
+
+   /// <summary>
+   /// Resets the connection and its sub-components back to their clean initial state for reuse in the pool.
+   /// </summary>
+   public bool TryResetState()
+   {
+      if (!_sender.TryResetState() 
+          || !_receiver.TryResetState())
+      {
+         return false;
+      }
+
+      _socket = null;
+      
+      _isDisposed = false;
+      _isAborted = false;
+
+      return true;
    }
 }
