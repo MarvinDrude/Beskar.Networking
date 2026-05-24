@@ -3,6 +3,8 @@ using System.IO.Pipelines;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using Me.Memory.Buffers;
+using Me.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Ws;
 
@@ -18,9 +20,16 @@ public static class WsHandshake
    /// </summary>
    public static string ComputeAcceptKey(string secWebSocketKey)
    {
-      var combined = secWebSocketKey + MagicGuid;
-      var bytes = Encoding.ASCII.GetBytes(combined);
-      var hash = SHA1.HashData(bytes);
+      Span<char> combined = stackalloc char[secWebSocketKey.Length + 36];
+      secWebSocketKey.AsSpan().CopyTo(combined);
+      MagicGuid.AsSpan().CopyTo(combined[secWebSocketKey.Length..]);
+
+      Span<byte> bytes = stackalloc byte[combined.Length];
+      Encoding.ASCII.GetBytes(combined, bytes);
+
+      Span<byte> hash = stackalloc byte[20];
+      SHA1.HashData(bytes, hash);
+
       return Convert.ToBase64String(hash);
    }
 
@@ -90,21 +99,39 @@ public static class WsHandshake
 
       // Complete handshake
       var acceptKey = ComputeAcceptKey(clientKey);
-      var response = new StringBuilder();
-      response.Append("HTTP/1.1 101 Switching Protocols\r\n");
-      response.Append("Upgrade: websocket\r\n");
-      response.Append("Connection: Upgrade\r\n");
-      response.Append($"Sec-WebSocket-Accept: {acceptKey}\r\n");
-
-      if (!string.IsNullOrEmpty(options.Subprotocol))
       {
-         response.Append($"Sec-WebSocket-Protocol: {options.Subprotocol}\r\n");
+         var response = new TextWriterIndentSlim(stackalloc char[256], stackalloc char[1]);
+         try
+         {
+            response.Write("HTTP/1.1 101 Switching Protocols\r\n");
+            response.Write("Upgrade: websocket\r\n");
+            response.Write("Connection: Upgrade\r\n");
+            response.Write("Sec-WebSocket-Accept: ");
+            response.Write(acceptKey);
+            response.Write("\r\n");
+
+            if (!string.IsNullOrEmpty(options.Subprotocol))
+            {
+               response.Write("Sec-WebSocket-Protocol: ");
+               response.Write(options.Subprotocol);
+               response.Write("\r\n");
+            }
+
+            response.Write("\r\n");
+
+            var writtenSpan = response.WrittenSpan;
+            var maxByteCount = Encoding.ASCII.GetByteCount(writtenSpan);
+
+            var byteSpan = writer.GetSpan(maxByteCount);
+            var bytesWritten = Encoding.ASCII.GetBytes(writtenSpan, byteSpan);
+
+            writer.Advance(bytesWritten);
+         }
+         finally
+         {
+            response.Dispose();
+         }
       }
-
-      response.Append("\r\n");
-
-      var responseBytes = Encoding.ASCII.GetBytes(response.ToString());
-      writer.Write(responseBytes);
 
       await writer.FlushAsync(ct);
 
@@ -123,30 +150,52 @@ public static class WsHandshake
       var reader = tcpPipe.Input;
       var writer = tcpPipe.Output;
 
-      // Generate WebSocket Key
       var randomBytes = new byte[16];
       RandomNumberGenerator.Fill(randomBytes);
+
       var secWebSocketKey = Convert.ToBase64String(randomBytes);
       var expectedAcceptKey = ComputeAcceptKey(secWebSocketKey);
 
       var host = endPoint.ToString() ?? "localhost";
 
-      var request = new StringBuilder();
-      request.Append($"GET {options.Path} HTTP/1.1\r\n");
-      request.Append($"Host: {host}\r\n");
-      request.Append("Upgrade: websocket\r\n");
-      request.Append("Connection: Upgrade\r\n");
-      request.Append($"Sec-WebSocket-Key: {secWebSocketKey}\r\n");
-      request.Append("Sec-WebSocket-Version: 13\r\n");
-
-      if (!string.IsNullOrEmpty(options.Subprotocol))
       {
-         request.Append($"Sec-WebSocket-Protocol: {options.Subprotocol}\r\n");
-      }
-      request.Append("\r\n");
+         var request = new TextWriterIndentSlim(stackalloc char[512], stackalloc char[1]);
+         try
+         {
+            request.Write("GET ");
+            request.Write(options.Path);
+            request.Write(" HTTP/1.1\r\n");
+            request.Write("Host: ");
+            request.Write(host);
+            request.Write("\r\n");
+            request.Write("Upgrade: websocket\r\n");
+            request.Write("Connection: Upgrade\r\n");
+            request.Write("Sec-WebSocket-Key: ");
+            request.Write(secWebSocketKey);
+            request.Write("\r\n");
+            request.Write("Sec-WebSocket-Version: 13\r\n");
 
-      var requestBytes = Encoding.ASCII.GetBytes(request.ToString());
-      writer.Write(requestBytes);
+            if (!string.IsNullOrEmpty(options.Subprotocol))
+            {
+               request.Write("Sec-WebSocket-Protocol: ");
+               request.Write(options.Subprotocol);
+               request.Write("\r\n");
+            }
+            request.Write("\r\n");
+
+            var writtenSpan = request.WrittenSpan;
+            var maxByteCount = Encoding.ASCII.GetByteCount(writtenSpan);
+
+            var byteSpan = writer.GetSpan(maxByteCount);
+            var bytesWritten = Encoding.ASCII.GetBytes(writtenSpan, byteSpan);
+
+            writer.Advance(bytesWritten);
+         }
+         finally
+         {
+            request.Dispose();
+         }
+      }
 
       await writer.FlushAsync(ct);
 
@@ -189,14 +238,12 @@ public static class WsHandshake
          var result = await reader.ReadAsync(ct);
          var buffer = result.Buffer;
 
-         // Check for \r\n\r\n delimiter marking end of headers
          var position = FindSequence(buffer, "\r\n\r\n"u8.ToArray());
          if (position.HasValue)
          {
             var headerSequence = buffer.Slice(0, position.Value);
             var headerText = Encoding.ASCII.GetString(headerSequence.ToArray());
 
-            // Advance reader past the \r\n\r\n
             reader.AdvanceTo(buffer.GetPosition(4, position.Value));
             return headerText;
          }
@@ -258,8 +305,34 @@ public static class WsHandshake
 
    private static async Task SendErrorResponseAsync(PipeWriter writer, string status, string message)
    {
-      var response = $"HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{message}";
-      writer.Write(Encoding.ASCII.GetBytes(response));
+      var totalCharsLength = 56 + status.Length + message.Length;
+
+      {
+         using var charOwner = totalCharsLength < 256
+            ? new SpanOwner<char>(stackalloc char[totalCharsLength])
+            : new SpanOwner<char>(totalCharsLength);
+
+         var charSpan = charOwner.Span;
+         "HTTP/1.1 ".AsSpan().CopyTo(charSpan);
+         var written = 9;
+
+         status.AsSpan().CopyTo(charSpan[written..]);
+         written += status.Length;
+
+         "\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n".AsSpan().CopyTo(charSpan[written..]);
+         written += 47;
+
+         message.AsSpan().CopyTo(charSpan[written..]);
+
+         var maxByteCount = Encoding.UTF8.GetByteCount(charSpan);
+
+         using var byteOwner = maxByteCount < 512
+            ? new SpanOwner<byte>(stackalloc byte[maxByteCount])
+            : new SpanOwner<byte>(maxByteCount);
+
+         var bytesWritten = Encoding.UTF8.GetBytes(charSpan, byteOwner.Span);
+         writer.Write(byteOwner.Span[..bytesWritten]);
+      }
 
       await writer.FlushAsync();
    }

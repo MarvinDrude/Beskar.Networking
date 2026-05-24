@@ -31,6 +31,7 @@ public sealed class WsNetworkClient : INetworkClient, IDisposable
       }
 
       var tcpSession = connectResult.Success;
+      WsDuplexPipe? wsPipe = null;
       try
       {
          var tcpStreamResult = await tcpSession.AcceptStreamAsync(ct);
@@ -42,20 +43,24 @@ public sealed class WsNetworkClient : INetworkClient, IDisposable
 
          var tcpPipe = tcpStreamResult.Success.Transport;
          var handshakeSuccess = await WsHandshake.ClientHandshakeAsync(tcpPipe, endPoint, _options, ct);
+
          if (!handshakeSuccess)
          {
             await ((IAsyncDisposable)tcpSession).DisposeAsync();
             return new NetworkCodeError(-1, "WebSocket handshake verification failed.");
          }
 
-         // Clients must mask outgoing frames according to RFC 6455
-         var wsPipe = new WsDuplexPipe(tcpPipe, maskOutgoing: true);
+         wsPipe = new WsDuplexPipe(tcpPipe, maskOutgoing: true);
          var wsSession = new WsNetworkSession(tcpSession, wsPipe);
 
          return wsSession;
       }
       catch (Exception ex)
       {
+         if (wsPipe is not null)
+         {
+            await wsPipe.DisposeAsync();
+         }
          await ((IAsyncDisposable)tcpSession).DisposeAsync();
          return new NetworkCodeError(-1, $"Handshake failed: {ex.Message}");
       }

@@ -69,13 +69,14 @@ public sealed class WsNetworkSession : INetworkSession, IAsyncDisposable
 
       await _stream.DisposeAsync();
 
+      if (_wsPipe is IAsyncDisposable wsAsyncDisposable)
+      {
+         await wsAsyncDisposable.DisposeAsync();
+      }
+
       if (_tcpSession is IAsyncDisposable asyncDisposable)
       {
          await asyncDisposable.DisposeAsync();
-      }
-      else if (_tcpSession is IDisposable disposable)
-      {
-         disposable.Dispose();
       }
    }
 }

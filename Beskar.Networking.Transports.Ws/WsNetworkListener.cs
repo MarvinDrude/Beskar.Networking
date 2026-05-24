@@ -117,6 +117,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
             _ = Task.Run(async () =>
             {
+               WsNetworkSession? wsSession = null;
                try
                {
                   using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -139,13 +140,20 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   }
 
                   var wsPipe = new WsDuplexPipe(tcpPipe, maskOutgoing: false);
-                  var wsSession = new WsNetworkSession(tcpSession, wsPipe);
+                  wsSession = new WsNetworkSession(tcpSession, wsPipe);
 
                   await _sessionChannel.Writer.WriteAsync(wsSession, token);
                }
                catch
                {
-                  await ((IAsyncDisposable)tcpSession).DisposeAsync();
+                  if (wsSession != null)
+                  {
+                     await wsSession.DisposeAsync();
+                  }
+                  else
+                  {
+                     await ((IAsyncDisposable)tcpSession).DisposeAsync();
+                  }
                }
             }, token);
          }
