@@ -106,7 +106,7 @@ public sealed class SocketReceiver
       }
       catch (Exception ex)
       {
-         // notify
+         _connection?.Abort(ex);
       }
       finally
       {

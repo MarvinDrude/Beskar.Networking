@@ -115,7 +115,7 @@ public sealed class SocketSender : IPooledObject
       }
       catch (Exception ex)
       {
-         // notify
+         _connection?.Abort(ex);
       }
       finally
       {
