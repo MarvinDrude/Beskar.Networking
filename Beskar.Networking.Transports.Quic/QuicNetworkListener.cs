@@ -41,7 +41,8 @@ public sealed class QuicNetworkListener(
 
       try
       {
-         var ipEndPoint = LocalAddress as IPEndPoint ?? throw new ArgumentException("IPEndPoint is required for QUIC listener.", nameof(LocalAddress));
+         var ipEndPoint = LocalAddress as IPEndPoint
+            ?? throw new ArgumentException("IPEndPoint is required for QUIC listener.", nameof(LocalAddress));
          var alpn = new SslApplicationProtocol(_options.AlpnProtocol);
 
          var serverAuthOptions = _options.SslServerOptions ?? new SslServerAuthenticationOptions();
@@ -93,12 +94,14 @@ public sealed class QuicNetworkListener(
       }
    }
 
-   /// <inheritdoc />
    public async ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default)
    {
       try
       {
-         _acceptCts?.Cancel();
+         if (_acceptCts is not null)
+         {
+            await _acceptCts.CancelAsync();
+         }
          _acceptCts?.Dispose();
          _acceptCts = null;
 
@@ -118,7 +121,6 @@ public sealed class QuicNetworkListener(
       }
    }
 
-   /// <inheritdoc />
    public ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
    {
       if (_listener is null)

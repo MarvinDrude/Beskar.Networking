@@ -7,6 +7,8 @@ using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Tcp.Extensions;
 using Beskar.Networking.Transports.Quic;
 using Beskar.Networking.Transports.Quic.Extensions;
+using Beskar.Networking.Transports.Ws;
+using Beskar.Networking.Transports.Ws.Extensions;
 using Beskar.Utilities.Console.Rendering;
 
 Console.Clear();
@@ -18,9 +20,10 @@ ConsoleRender.DrawHeader(
     ConsoleColor.Yellow
 );
 
-var protocolKey = ConsoleRender.AskChoice("Select Transport Protocol", new[] { "TCP", "QUIC" }, defaultChoice: "t");
+var protocolKey = ConsoleRender.AskChoice("Select Transport Protocol", new[] { "TCP", "QUIC", "WebSocket" }, defaultChoice: "t");
 var isQuic = protocolKey == "q";
-var protocolName = isQuic ? "QUIC" : "TCP";
+var isWebSocket = protocolKey == "w";
+var protocolName = isWebSocket ? "WebSocket" : (isQuic ? "QUIC" : "TCP");
 
 var portStr = ConsoleRender.AskString("Enter server port number", defaultValue: "1337");
 if (!int.TryParse(portStr, out var port))
@@ -33,7 +36,11 @@ var server = NetworkServerBuilder.Create()
    {
       register.ListenLocalhost(port, options =>
       {
-         if (isQuic)
+         if (isWebSocket)
+         {
+            options.UseWebSocket();
+         }
+         else if (isQuic)
          {
             options.UseQuic();
          }
@@ -84,7 +91,11 @@ var server = NetworkServerBuilder.Create()
    .Build();
 
 var clientBuilder = NetworkClientBuilder.Create();
-if (isQuic)
+if (isWebSocket)
+{
+   clientBuilder.UseWebSocket();
+}
+else if (isQuic)
 {
    clientBuilder.UseQuic();
 }

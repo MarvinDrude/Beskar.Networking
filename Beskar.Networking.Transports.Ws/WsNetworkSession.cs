@@ -1,0 +1,81 @@
+using System.Net;
+using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Errors;
+using Beskar.Networking.Abstractions.Interfaces;
+using System.IO.Pipelines;
+using Me.Memory.Results;
+
+namespace Beskar.Networking.Transports.Ws;
+
+/// <summary>
+/// Represents an active WebSocket network session.
+/// </summary>
+public sealed class WsNetworkSession : INetworkSession, IAsyncDisposable
+{
+   public Guid Id { get; } = Guid.CreateVersion7();
+
+   public EndPoint RemoteAddress => _tcpSession.RemoteAddress;
+   public EndPoint LocalAddress => _tcpSession.LocalAddress;
+
+   public bool IsSupportingMultiplexing => false;
+   public bool IsSupportingUnidirectional => false;
+
+   public CancellationToken SessionClosedToken => _cts.Token;
+
+   private readonly INetworkSession _tcpSession;
+   private readonly IDuplexPipe _wsPipe;
+
+   private readonly WsNetworkStream _stream;
+   private readonly CancellationTokenSource _cts = new();
+
+   private int _disposed;
+
+   public WsNetworkSession(INetworkSession tcpSession, IDuplexPipe wsPipe)
+   {
+      _tcpSession = tcpSession;
+      _wsPipe = wsPipe;
+
+      _stream = new WsNetworkStream(this, wsPipe);
+   }
+
+   public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
+   {
+      return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
+   }
+
+   public ValueTask<Result<INetworkStream, NetworkCodeError>> OpenStreamAsync(
+      NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
+      CancellationToken ct = default)
+   {
+      return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      if (Interlocked.Exchange(ref _disposed, 1) == 1)
+      {
+         return;
+      }
+
+      try
+      {
+         await _cts.CancelAsync();
+      }
+      catch
+      {
+         // Ignored
+      }
+      _cts.Dispose();
+
+      await _stream.DisposeAsync();
+
+      if (_tcpSession is IAsyncDisposable asyncDisposable)
+      {
+         await asyncDisposable.DisposeAsync();
+      }
+      else if (_tcpSession is IDisposable disposable)
+      {
+         disposable.Dispose();
+      }
+   }
+}
