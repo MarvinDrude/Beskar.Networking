@@ -1,6 +1,6 @@
 using Beskar.Networking.Transports.Common.Hosting;
 
-namespace Beskar.Networking.Transports.Tcp;
+namespace Beskar.Networking.Transports.Tcp.Extensions;
 
 public static class TcpEndpointExtensions
 {

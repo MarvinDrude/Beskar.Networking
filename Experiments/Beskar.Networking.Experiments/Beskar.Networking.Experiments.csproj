@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
       <OutputType>Exe</OutputType>
@@ -7,6 +7,7 @@
    <ItemGroup>
      <ProjectReference Include="..\..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj" />
      <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj" />
+     <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj" />
    </ItemGroup>
 
 </Project>
