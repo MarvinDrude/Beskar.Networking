@@ -17,4 +17,5 @@
   <Project Path="Beskar.Networking.Abstractions/Beskar.Networking.Abstractions.csproj" />
   <Project Path="Beskar.Networking.Transports.Common/Beskar.Networking.Transports.Common.csproj" />
   <Project Path="Beskar.Networking.Transports.Tcp/Beskar.Networking.Transports.Tcp.csproj" />
+  <Project Path="Beskar.Networking.Transports.Ws/Beskar.Networking.Transports.Ws.csproj" />
 </Solution>

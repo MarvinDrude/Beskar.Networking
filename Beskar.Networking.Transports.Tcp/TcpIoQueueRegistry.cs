@@ -8,7 +8,6 @@ namespace Beskar.Networking.Transports.Tcp;
 
 public sealed class TcpIoQueueRegistry : IDisposable
 {
-   private readonly int _ioQueueCount;
    private readonly ulong _ioQueueCountLong;
 
    private readonly TcpIoQueue[] _ioQueues;
@@ -21,10 +20,8 @@ public sealed class TcpIoQueueRegistry : IDisposable
 
    public TcpIoQueueRegistry(TcpTransportOptions options)
    {
-      _ioQueueCount = options.IoQueueCount;
-      _ioQueueCountLong = (ulong)_ioQueueCount;
-
-      _ioQueues = new TcpIoQueue[_ioQueueCount];
+      _ioQueueCountLong = (ulong)options.IoQueueCount;
+      _ioQueues = new TcpIoQueue[options.IoQueueCount];
 
       if (options.IsStreamBased)
       {
@@ -47,7 +44,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
          });
       }
 
-      for (var e = 0; e < _ioQueueCount; e++)
+      for (var e = 0; e < options.IoQueueCount; e++)
       {
          _ioQueues[e] = new TcpIoQueue(options)
          {
