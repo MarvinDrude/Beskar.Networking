@@ -51,11 +51,10 @@ public sealed class SocketConnection
    {
       _socket = socket;
 
+      // Cross-link the connection to its pre-allocated sender and receiver
       _sender.Initialize(this, socket);
       _receiver.Initialize(this, socket);
    }
-   
-   
 
    /// <summary>
    /// Starts the transmission loops for both the sender and receiver.
@@ -107,6 +106,7 @@ public sealed class SocketConnection
       _sender.Stop();
       _receiver.Stop();
 
+      await _sender.DisposeAsync();
       await _receiver.DisposeAsync();
 
       if (!_isAborted && _socket != null)
@@ -131,7 +131,8 @@ public sealed class SocketConnection
    /// </summary>
    public bool TryResetState()
    {
-      if (!_sender.TryResetState() || !_receiver.TryResetState())
+      if (!_sender.TryResetState() 
+          || !_receiver.TryResetState())
       {
          return false;
       }

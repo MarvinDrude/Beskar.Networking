@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipelines;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
@@ -9,7 +8,7 @@ namespace Beskar.Networking.Transports.Common.Sockets;
 /// <summary>
 /// Represents a sender for a socket.
 /// </summary>
-public sealed class SocketSender : IPooledObject
+public sealed class SocketSender : IPooledObject, IAsyncDisposable
 {
    /// <summary>
    /// The pipe used to send data.
@@ -18,7 +17,7 @@ public sealed class SocketSender : IPooledObject
    
    private SocketConnection? _connection;
    private Socket? _socket;
-
+   
    private Task? _sendTask;
    private CancellationTokenSource _cts = new();
    private bool _stopped;
@@ -26,15 +25,14 @@ public sealed class SocketSender : IPooledObject
    /// <summary>
    /// Initializes a new instance of the <see cref="SocketSender"/> class with pool-level invariants.
    /// </summary>
-   public SocketSender(PipeOptions senderOptions)
+   public SocketSender(PipeOptions pipeOptions)
    {
-      Pipe = new Pipe(senderOptions);
+      Pipe = new Pipe(pipeOptions);
    }
 
    /// <summary>
    /// Initializes the sender for a rented session.
    /// </summary>
-   [MemberNotNull(nameof(_connection), nameof(_socket))]
    public void Initialize(SocketConnection connection, Socket socket)
    {
       _connection = connection;
@@ -69,6 +67,7 @@ public sealed class SocketSender : IPooledObject
          _cts.Cancel();
       }
 
+      // Complete the reader and writer to unblock any pending I/O operations.
       Pipe.Reader.Complete();
       Pipe.Writer.Complete();
    }
@@ -76,7 +75,7 @@ public sealed class SocketSender : IPooledObject
    private async Task ProcessSendAsync()
    {
       var socket = _socket;
-      if (socket is null) return;
+      if (socket == null) return;
 
       try
       {
@@ -105,7 +104,7 @@ public sealed class SocketSender : IPooledObject
       }
       catch (OperationCanceledException)
       {
-         // Expected to happen
+         // Suppress cancellation exceptions when stopping.
       }
       catch (Exception ex)
       {
@@ -117,8 +116,7 @@ public sealed class SocketSender : IPooledObject
       }
    }
 
-   private async ValueTask SendBufferAsync(Socket socket, ReadOnlySequence<byte> buffer, 
-      CancellationToken cancellationToken)
+   private async ValueTask SendBufferAsync(Socket socket, ReadOnlySequence<byte> buffer, CancellationToken cancellationToken)
    {
       if (buffer.IsSingleSegment)
       {
@@ -133,8 +131,7 @@ public sealed class SocketSender : IPooledObject
       }
    }
 
-   private async ValueTask SendMemoryAsync(Socket socket, ReadOnlyMemory<byte> memory, 
-      CancellationToken cancellationToken)
+   private async ValueTask SendMemoryAsync(Socket socket, ReadOnlyMemory<byte> memory, CancellationToken cancellationToken)
    {
       while (!memory.IsEmpty)
       {
@@ -166,5 +163,24 @@ public sealed class SocketSender : IPooledObject
       _cts = new CancellationTokenSource();
       
       return true;
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      Stop();
+
+      if (_sendTask is not null)
+      {
+         try
+         {
+            await _sendTask;
+         }
+         catch
+         {
+            // Suppress exception during disposal.
+         }
+      }
+
+      _cts.Dispose();
    }
 }
