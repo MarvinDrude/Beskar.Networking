@@ -14,8 +14,12 @@
     <Project Path="Experiments/Beskar.Networking.Benchmarks/Beskar.Networking.Benchmarks.csproj" />
     <Project Path="Experiments/Beskar.Networking.Experiments/Beskar.Networking.Experiments.csproj" />
   </Folder>
+  <Folder Name="/Utilities/">
+    <Project Path="Utilities/Beskar.Utilities.Console/Beskar.Utilities.Console.csproj" />
+  </Folder>
   <Project Path="Beskar.Networking.Abstractions/Beskar.Networking.Abstractions.csproj" />
   <Project Path="Beskar.Networking.Transports.Common/Beskar.Networking.Transports.Common.csproj" />
+  <Project Path="Beskar.Networking.Transports.Quic/Beskar.Networking.Transports.Quic.csproj" />
   <Project Path="Beskar.Networking.Transports.Tcp/Beskar.Networking.Transports.Tcp.csproj" />
   <Project Path="Beskar.Networking.Transports.Ws/Beskar.Networking.Transports.Ws.csproj" />
 </Solution>
