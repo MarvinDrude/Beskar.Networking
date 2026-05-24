@@ -34,14 +34,14 @@ public sealed class SocketConnection
    /// </summary>
    public SocketConnection(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
    {
-      _sender = new SocketSender(scheduler, bufferPool);
-
-      var receiverOptions = new PipeOptions(
+      var pipeOptions = new PipeOptions(
          pool: bufferPool,
          readerScheduler: scheduler,
          writerScheduler: scheduler,
          useSynchronizationContext: false);
-      _receiver = new SocketReceiver(receiverOptions);
+
+      _sender = new SocketSender(pipeOptions);
+      _receiver = new SocketReceiver(pipeOptions);
    }
 
    /// <summary>
@@ -54,6 +54,8 @@ public sealed class SocketConnection
       _sender.Initialize(this, socket);
       _receiver.Initialize(this, socket);
    }
+   
+   
 
    /// <summary>
    /// Starts the transmission loops for both the sender and receiver.
@@ -101,7 +103,7 @@ public sealed class SocketConnection
          if (_isDisposed) return;
          _isDisposed = true;
       }
-      
+
       _sender.Stop();
       _receiver.Stop();
 
@@ -129,14 +131,12 @@ public sealed class SocketConnection
    /// </summary>
    public bool TryResetState()
    {
-      if (!_sender.TryResetState() 
-          || !_receiver.TryResetState())
+      if (!_sender.TryResetState() || !_receiver.TryResetState())
       {
          return false;
       }
 
       _socket = null;
-      
       _isDisposed = false;
       _isAborted = false;
 

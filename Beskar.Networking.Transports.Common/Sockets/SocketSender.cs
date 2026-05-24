@@ -26,15 +26,9 @@ public sealed class SocketSender : IPooledObject
    /// <summary>
    /// Initializes a new instance of the <see cref="SocketSender"/> class with pool-level invariants.
    /// </summary>
-   public SocketSender(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
+   public SocketSender(PipeOptions senderOptions)
    {
-      var options = new PipeOptions(
-         pool: bufferPool,
-         readerScheduler: scheduler,
-         writerScheduler: scheduler,
-         useSynchronizationContext: false);
-      
-      Pipe = new Pipe(options);
+      Pipe = new Pipe(senderOptions);
    }
 
    /// <summary>
