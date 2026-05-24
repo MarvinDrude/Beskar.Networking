@@ -4,6 +4,7 @@ using System.Text;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Common.Hosting;
 using Beskar.Networking.Transports.Tcp;
+using Beskar.Networking.Transports.Tcp.Extensions;
 
 Console.Clear();
 Console.ForegroundColor = ConsoleColor.DarkYellow;
