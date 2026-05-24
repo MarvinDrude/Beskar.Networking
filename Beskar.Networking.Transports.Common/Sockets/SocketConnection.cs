@@ -5,19 +5,18 @@ using Beskar.Networking.Abstractions.Interfaces.Pools;
 
 namespace Beskar.Networking.Transports.Common.Sockets;
 
-public sealed class SocketConnection 
+public sealed class SocketConnection
    : IDuplexPipe, IAsyncDisposable, IPooledObject
 {
    private readonly SocketSender _sender;
    private readonly SocketReceiver _receiver;
    private Socket? _socket;
-   
+
    private readonly Lock _shutdownLock = new();
    private bool _isDisposed;
    private bool _isAborted;
 
    public PipeReader Input => _receiver.Pipe.Reader;
-
    public PipeWriter Output => _sender.Pipe.Writer;
 
    public SocketConnection(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
