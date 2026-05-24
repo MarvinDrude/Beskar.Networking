@@ -80,20 +80,29 @@ public sealed class TcpNetworkListener(
       }
    }
 
-   public async ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
+   public ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
    {
       if (_listenerSocket is null)
       {
-         return new NetworkCodeError(-1, "Listener is not bound. Call BindAsync first.");
+         return ValueTask.FromResult<Result<INetworkSession, NetworkCodeError>>(
+            new NetworkCodeError(-1, "Listener is not bound. Call BindAsync first."));
       }
 
       try
       {
-         return await _sessionChannel.Reader.ReadAsync(ct);
+         return _sessionChannel.Reader.TryRead(out var result)
+            ? ValueTask.FromResult(result)
+            : Awaited();
       }
       catch (ChannelClosedException)
       {
-         return new NetworkCodeError(-1, "Listener has been unbound and session channel is closed.");
+         return ValueTask.FromResult<Result<INetworkSession, NetworkCodeError>>(
+            new NetworkCodeError(-1, "Listener has been unbound and session channel is closed."));
+      }
+
+      async ValueTask<Result<INetworkSession, NetworkCodeError>> Awaited()
+      {
+         return await _sessionChannel.Reader.ReadAsync(ct);
       }
    }
 
@@ -158,7 +167,7 @@ public sealed class TcpNetworkListener(
          if (_options.UseSsl)
          {
             using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            handshakeTimeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+            handshakeTimeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
 
             var networkStream = new NetworkStream(socket, ownsSocket: true);
             var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);

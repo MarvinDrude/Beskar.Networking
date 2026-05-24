@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipelines;
 using System.Net.Sockets;
 using Beskar.Networking.Transports.Common.Settings;
@@ -42,6 +42,8 @@ public sealed class TcpIoQueue : IDisposable
             StreamSettings.ReceiveOptions, StreamSettings.SendOptions));
 
          connection.Initialize(stream);
+         connection.Start();
+
          return connection;
       }
       else
@@ -50,6 +52,8 @@ public sealed class TcpIoQueue : IDisposable
             SocketSettings.PipeScheduler, SocketSettings.MemoryPool));
 
          connection.Initialize(socket);
+         connection.Start();
+
          return connection;
       }
    }

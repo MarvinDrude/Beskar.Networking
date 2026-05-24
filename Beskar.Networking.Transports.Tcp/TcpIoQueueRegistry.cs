@@ -1,4 +1,4 @@
-﻿using System.IO.Pipelines;
+using System.IO.Pipelines;
 using System.Net.Sockets;
 using Beskar.Networking.Transports.Common.Sockets;
 using Beskar.Networking.Transports.Common.Streams;
@@ -28,7 +28,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
 
       if (options.IsStreamBased)
       {
-         _socketConnectionPool = new AsyncDisposableObjectPool<SocketConnection>(new ObjectPoolOptions<SocketConnection>()
+         _streamConnectionPool = new AsyncDisposableObjectPool<StreamConnection>(new ObjectPoolOptions<StreamConnection>()
          {
             FactoryFunc = static () => throw new InvalidOperationException(),
             InitialSize = options.StreamOptions.InitialConnectionPoolSize,
@@ -37,7 +37,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
       }
       else
       {
-         _streamConnectionPool = new AsyncDisposableObjectPool<StreamConnection>(new ObjectPoolOptions<StreamConnection>()
+         _socketConnectionPool = new AsyncDisposableObjectPool<SocketConnection>(new ObjectPoolOptions<SocketConnection>()
          {
             FactoryFunc = static () => throw new InvalidOperationException(),
             InitialSize = options.SocketOptions.InitialConnectionPoolSize,
