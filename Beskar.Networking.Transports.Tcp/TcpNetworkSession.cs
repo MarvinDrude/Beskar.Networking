@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.IO.Pipelines;
+using System.Net;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -11,11 +12,13 @@ public sealed class TcpNetworkSession
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 
-   public EndPoint RemoteAddress { get; }
-   public EndPoint LocalAddress { get; }
+   public required EndPoint RemoteAddress { get; init; }
+   public required EndPoint LocalAddress { get; init; }
 
    public bool IsSupportingMultiplexing => false;
    public bool IsSupportingUnidirectional => false;
+
+   public required IDuplexPipe DuplexPipe { get; init; }
 
    public CancellationToken SessionClosedToken { get; }
 
