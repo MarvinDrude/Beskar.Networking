@@ -265,9 +265,9 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       {
          headerSpan[1] = (byte)((mask ? 0x80 : 0x00) | 127);
 
-         for (var i = 7; i >= 0; i--)
+         for (var i = 0; i < 8; i++)
          {
-            headerSpan[2 + i] = (byte)(len >> (i * 8));
+            headerSpan[2 + i] = (byte)(len >> ((7 - i) * 8));
          }
 
          index = 10;
@@ -293,14 +293,20 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          foreach (var segment in payload)
          {
             var span = segment.Span;
-            var target = tcpWriter.GetSpan(span.Length);
-
-            for (var i = 0; i < span.Length; i++)
+            var rented = ArrayPool<byte>.Shared.Rent(span.Length);
+            try
             {
-               target[i] = (byte)(span[i] ^ maskKey[payloadIndex++ % 4]);
-            }
+               for (var i = 0; i < span.Length; i++)
+               {
+                  rented[i] = (byte)(span[i] ^ maskKey[payloadIndex++ % 4]);
+               }
 
-            tcpWriter.Advance(span.Length);
+               tcpWriter.Write(rented.AsSpan(0, span.Length));
+            }
+            finally
+            {
+               ArrayPool<byte>.Shared.Return(rented);
+            }
          }
       }
       else

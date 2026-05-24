@@ -13,6 +13,7 @@
   <Folder Name="/Experiments/">
     <Project Path="Experiments/Beskar.Networking.Benchmarks/Beskar.Networking.Benchmarks.csproj" />
     <Project Path="Experiments/Beskar.Networking.Experiments/Beskar.Networking.Experiments.csproj" />
+    <Project Path="Experiments/Beskar.Networking.Performance/Beskar.Networking.Performance.csproj" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/Beskar.Networking.Transports.Common.Tests/Beskar.Networking.Transports.Common.Tests.csproj" />
