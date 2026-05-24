@@ -1,4 +1,4 @@
-﻿using System.IO.Pipelines;
+using System.IO.Pipelines;
 using System.Net;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
@@ -7,31 +7,56 @@ using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Tcp;
 
-public sealed class TcpNetworkSession
+/// <summary>
+/// Represents a TCP network session wrapping a single transport connection.
+/// </summary>
+public sealed class TcpNetworkSession(
+   EndPoint localAddress,
+   EndPoint remoteAddress,
+   IDuplexPipe connection)
    : INetworkSession
 {
+
    public Guid Id { get; } = Guid.CreateVersion7();
 
-   public required EndPoint RemoteAddress { get; init; }
-   public required EndPoint LocalAddress { get; init; }
+   public EndPoint RemoteAddress { get; } = remoteAddress;
+   public EndPoint LocalAddress { get; } = localAddress;
 
    public bool IsSupportingMultiplexing => false;
    public bool IsSupportingUnidirectional => false;
 
-   public required IDuplexPipe DuplexPipe { get; init; }
+   public CancellationToken SessionClosedToken => _cts.Token;
 
-   public CancellationToken SessionClosedToken { get; }
+   private readonly IDuplexPipe _connection = connection;
+   private readonly CancellationTokenSource _cts = new();
 
+   private TcpNetworkStream? _stream;
+
+   /// <inheritdoc />
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(
       CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      if (_stream is null)
+      {
+         _stream = new TcpNetworkStream(this, _connection);
+         return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
+      }
+
+      return new ValueTask<Result<INetworkStream, NetworkCodeError>>(
+         new NetworkCodeError(-1, "TCP session only supports a single stream, which has already been accepted."));
    }
 
    public ValueTask<Result<INetworkStream, NetworkCodeError>> OpenStreamAsync(
       NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
       CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      if (_stream is null)
+      {
+         _stream = new TcpNetworkStream(this, _connection);
+         return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
+      }
+
+      return new ValueTask<Result<INetworkStream, NetworkCodeError>>(
+         new NetworkCodeError(-1, "TCP session only supports a single stream, which has already been opened."));
    }
 }

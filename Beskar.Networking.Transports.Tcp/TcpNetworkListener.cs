@@ -1,12 +1,18 @@
-﻿using System.Net;
+using System.IO.Pipelines;
+using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Threading.Channels;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Tcp;
 
+/// <summary>
+/// A high-performance TCP transport listener that decouples accepted connections
+/// from SSL/TLS handshakes using a non-blocking background queue.
+/// </summary>
 public sealed class TcpNetworkListener(
    EndPoint localAddress,
    TcpTransportOptions options)
@@ -18,28 +24,37 @@ public sealed class TcpNetworkListener(
    private readonly TcpIoQueueRegistry _ioQueueRegistry = new(options);
 
    private Socket? _listenerSocket;
+   private CancellationTokenSource? _acceptCts;
+
+   private readonly Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
+      Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(new UnboundedChannelOptions
+      {
+         SingleWriter = false,
+         SingleReader = true
+      });
 
    public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
    {
       try
       {
          var socket = new Socket(LocalAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-
+         socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
          socket.Bind(LocalAddress);
-         socket.Listen(backlog: 512);
+         socket.Listen(512);
 
          _listenerSocket = socket;
-         return ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
+         _acceptCts = new CancellationTokenSource();
+
+         _ = AcceptLoopAsync(socket, _acceptCts.Token);
+         return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
       catch (SocketException ex)
       {
-         return new ValueTask<VoidResult<NetworkCodeError>>(
-            new NetworkCodeError(ex.ErrorCode, ex.Message));
+         return new ValueTask<VoidResult<NetworkCodeError>>(new NetworkCodeError(ex.ErrorCode, ex.Message));
       }
       catch (Exception ex)
       {
-         return new ValueTask<VoidResult<NetworkCodeError>>(
-            new NetworkCodeError(-1, ex.Message));
+         return new ValueTask<VoidResult<NetworkCodeError>>(new NetworkCodeError(-1, ex.Message));
       }
    }
 
@@ -47,85 +62,136 @@ public sealed class TcpNetworkListener(
    {
       try
       {
+         _acceptCts?.Cancel();
+         _acceptCts?.Dispose();
+
+         _acceptCts = null;
+
          var socket = Interlocked.Exchange(ref _listenerSocket, null);
          socket?.Close();
 
-         return ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
+         _sessionChannel.Writer.TryComplete();
+
+         return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
       catch (Exception ex)
       {
-         return new ValueTask<VoidResult<NetworkCodeError>>(
-            new NetworkCodeError(-1, ex.Message));
+         return new ValueTask<VoidResult<NetworkCodeError>>(new NetworkCodeError(-1, ex.Message));
       }
    }
 
    public async ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
    {
-      var socket = _listenerSocket;
-      if (socket is null)
+      if (_listenerSocket is null)
       {
          return new NetworkCodeError(-1, "Listener is not bound. Call BindAsync first.");
       }
 
       try
       {
-         var clientSocket = await socket.AcceptAsync(ct);
-         Stream? stream = null;
-
-         if (_options.IsStreamBased)
-         {
-            var streamResult = await CreateSessionStream(clientSocket, ct);
-            if (streamResult.Failed) return streamResult.Error;
-
-            stream = streamResult.Success;
-         }
-
-         var duplex = _ioQueueRegistry.Create(clientSocket, stream);
-         var session = new TcpNetworkSession()
-         {
-            DuplexPipe = duplex,
-            LocalAddress = clientSocket.LocalEndPoint
-               ?? throw new InvalidOperationException("Local endpoint cannot be null after accept"),
-            RemoteAddress = clientSocket.RemoteEndPoint
-               ?? throw new InvalidOperationException("Remote endpoint cannot be null after accept"),
-         };
-
-         return session;
+         return await _sessionChannel.Reader.ReadAsync(ct);
       }
-      catch (SocketException ex)
+      catch (ChannelClosedException)
       {
-         return new NetworkCodeError(ex.ErrorCode, ex.Message);
-      }
-      catch (Exception ex)
-      {
-         return new NetworkCodeError(-1, ex.Message);
+         return new NetworkCodeError(-1, "Listener has been unbound and session channel is closed.");
       }
    }
 
-   private async ValueTask<Result<Stream, NetworkCodeError>> CreateSessionStream(Socket socket,
-      CancellationToken ct = default)
+   private async Task AcceptLoopAsync(Socket listenerSocket, CancellationToken token)
    {
-      Stream stream;
-      var networkStream = new NetworkStream(socket, ownsSocket: true);
-
-      if (_options.UseSsl)
+      while (!token.IsCancellationRequested)
       {
-         var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
-
-         var options = _options.SslServerOptions ?? _options.StreamOptions.SslServerOptions;
-         if (options is null)
+         try
          {
-            return new NetworkCodeError(-1, "SSL options are not set. Either use TcpTransportOptions.SslServerOptions or TcpTransportOptions.StreamOptions.SslServerOptions.");
+            var clientSocket = await listenerSocket.AcceptAsync(token);
+
+            var localEndPoint = clientSocket.LocalEndPoint;
+            if (localEndPoint is null)
+            {
+               WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get local endpoint."));
+               return;
+            }
+
+            var remoteEndPoint = clientSocket.RemoteEndPoint;
+            if (remoteEndPoint is null)
+            {
+               WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get remote endpoint."));
+               return;
+            }
+
+            _ = Task.Run(() => HandshakeAndEnqueueAsync(clientSocket, localEndPoint, remoteEndPoint, token), token);
+         }
+         catch (OperationCanceledException)
+         {
+            break;
+         }
+         catch (Exception ex)
+         {
+            if (token.IsCancellationRequested || _listenerSocket is null)
+            {
+               break;
+            }
+
+            _sessionChannel.Writer.TryWrite(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
+         }
+      }
+   }
+
+   private async Task HandshakeAndEnqueueAsync(
+      Socket socket,
+      EndPoint localEndPoint,
+      EndPoint remoteEndPoint,
+      CancellationToken token)
+   {
+      try
+      {
+         Stream? stream = null;
+         if (_options.UseSsl)
+         {
+            using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            handshakeTimeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+
+            var networkStream = new NetworkStream(socket, ownsSocket: true);
+            var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
+
+            var sslOptions = _options.SslServerOptions ?? _options.StreamOptions.SslServerOptions;
+            if (sslOptions is null)
+            {
+               WriteToSessionChannel(new NetworkCodeError(-1, "SSL server authentication options are missing."));
+               return;
+            }
+
+            await sslStream.AuthenticateAsServerAsync(sslOptions, handshakeTimeoutCts.Token);
+            stream = sslStream;
+         }
+         else if (_options.ForceStreamBased)
+         {
+            stream = new NetworkStream(socket, ownsSocket: true);
          }
 
-         await sslStream.AuthenticateAsServerAsync(options, ct);
-         stream = sslStream;
-      }
-      else
-      {
-         stream = networkStream;
-      }
+         var connection = _ioQueueRegistry.Create(socket, stream);
+         var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection);
 
-      return stream;
+         await _sessionChannel.Writer.WriteAsync(session, token);
+      }
+      catch (OperationCanceledException)
+      {
+         // ignored
+      }
+      catch (SocketException ex)
+      {
+         WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, ex.Message));
+         socket.Dispose();
+      }
+      catch (Exception ex)
+      {
+         WriteToSessionChannel(new NetworkCodeError(-1, ex.Message));
+         socket.Dispose();
+      }
+   }
+
+   private void WriteToSessionChannel(Result<INetworkSession, NetworkCodeError> result)
+   {
+      _sessionChannel.Writer.TryWrite(result);
    }
 }
