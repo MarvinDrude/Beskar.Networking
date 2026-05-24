@@ -3,4 +3,8 @@
    <PropertyGroup>
    </PropertyGroup>
 
+   <ItemGroup>
+     <ProjectReference Include="..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+   </ItemGroup>
+
 </Project>

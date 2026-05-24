@@ -31,8 +31,10 @@ public sealed class StreamConnection(
    public void Initialize(Stream stream)
    {
       ArgumentNullException.ThrowIfNull(stream);
-      ArgumentOutOfRangeException.ThrowIfEqual(stream.CanWrite, false);
-      ArgumentOutOfRangeException.ThrowIfEqual(stream.CanRead, false);
+      if (stream is { CanRead: false, CanWrite: false })
+      {
+         throw new ArgumentException("Stream must be readable or writable.", nameof(stream));
+      }
 
       _stream = stream;
    }
@@ -51,8 +53,23 @@ public sealed class StreamConnection(
             throw new InvalidOperationException("Cannot start a stopped StreamConnection.");
          }
 
-         _writeTask = Task.Run(CopyWritePipeToStream);
-         _readTask = Task.Run(CopyStreamToReadPipe);
+         if (_stream.CanWrite)
+         {
+            _writeTask = Task.Run(CopyWritePipeToStream);
+         }
+         else
+         {
+            _writePipe.Reader.Complete();
+         }
+
+         if (_stream.CanRead)
+         {
+            _readTask = Task.Run(CopyStreamToReadPipe);
+         }
+         else
+         {
+            _readPipe.Writer.Complete();
+         }
       }
    }
 
@@ -108,7 +125,10 @@ public sealed class StreamConnection(
       {
          try
          {
-            await stream.FlushAsync();
+            if (stream.CanWrite)
+            {
+               await stream.FlushAsync();
+            }
          }
          catch
          {
@@ -143,6 +163,9 @@ public sealed class StreamConnection(
 
       _cts.Dispose();
       _cts = new CancellationTokenSource();
+
+      _readTask = null;
+      _writeTask = null;
 
       return true;
    }
