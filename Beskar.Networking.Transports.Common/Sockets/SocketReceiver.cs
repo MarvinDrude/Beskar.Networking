@@ -5,19 +5,13 @@ using Me.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Common.Sockets;
 
-/// <summary>
-/// Represents a receiver for a socket.
-/// </summary>
-public sealed class SocketReceiver 
+public sealed class SocketReceiver(PipeOptions pipeOptions) 
    : IPooledObject, IAsyncDisposable
 {
    private static readonly int MinAllocBufferSize = PinnedBlockMemoryPool.BlockSize / 2;
    
-   /// <summary>
-   /// The pipe used to receive data.
-   /// </summary>
-   public Pipe Pipe { get; }
-   
+   public Pipe Pipe { get; } = new(pipeOptions);
+
    private SocketConnection? _connection;
    private Socket? _socket;
    
@@ -25,17 +19,6 @@ public sealed class SocketReceiver
    private CancellationTokenSource _cts = new();
    private bool _stopped;
 
-   /// <summary>
-   /// Initializes a new instance of the <see cref="SocketReceiver"/> class with pool-level invariants.
-   /// </summary>
-   public SocketReceiver(PipeOptions pipeOptions)
-   {
-      Pipe = new Pipe(pipeOptions);
-   }
-
-   /// <summary>
-   /// Initializes the receiver for a rented session.
-   /// </summary>
    public void Initialize(SocketConnection connection, Socket socket)
    {
       _connection = connection;
@@ -74,6 +57,23 @@ public sealed class SocketReceiver
       Pipe.Reader.Complete();
    }
 
+   public async ValueTask StopAsync()
+   {
+      Stop();
+
+      if (_receiveTask is not null)
+      {
+         try
+         {
+            await _receiveTask;
+         }
+         catch
+         {
+            // Expected
+         }
+      }
+   }
+
    private async Task ProcessReceiveAsync()
    {
       var socket = _socket;
@@ -84,7 +84,7 @@ public sealed class SocketReceiver
          while (true)
          {
             var memory = Pipe.Writer.GetMemory(MinAllocBufferSize);
-            
+
             var bytesRead = await socket.ReceiveAsync(memory, SocketFlags.None, _cts.Token);
             if (bytesRead == 0)
             {
@@ -92,7 +92,7 @@ public sealed class SocketReceiver
             }
 
             Pipe.Writer.Advance(bytesRead);
-            
+
             var result = await Pipe.Writer.FlushAsync(_cts.Token);
             if (result.IsCompleted || result.IsCanceled)
             {
@@ -102,7 +102,7 @@ public sealed class SocketReceiver
       }
       catch (OperationCanceledException)
       {
-         // Expected to happen
+         // Expected
       }
       catch (Exception ex)
       {
@@ -125,6 +125,7 @@ public sealed class SocketReceiver
 
       _connection = null;
       _socket = null;
+      
       _stopped = false;
       
       _cts.Dispose();
@@ -135,20 +136,7 @@ public sealed class SocketReceiver
 
    public async ValueTask DisposeAsync()
    {
-      Stop();
-
-      if (_receiveTask is not null)
-      {
-         try
-         {
-            await _receiveTask;
-         }
-         catch
-         {
-            // Suppress exception during disposal.
-         }
-      }
-
+      await StopAsync();
       _cts.Dispose();
    }
 }

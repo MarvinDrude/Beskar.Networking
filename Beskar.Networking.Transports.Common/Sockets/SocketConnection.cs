@@ -5,9 +5,6 @@ using Beskar.Networking.Abstractions.Interfaces.Pools;
 
 namespace Beskar.Networking.Transports.Common.Sockets;
 
-/// <summary>
-/// Represents a duplex pipe connection over a socket.
-/// </summary>
 public sealed class SocketConnection 
    : IDuplexPipe, IAsyncDisposable, IPooledObject
 {
@@ -19,19 +16,10 @@ public sealed class SocketConnection
    private bool _isDisposed;
    private bool _isAborted;
 
-   /// <summary>
-   /// Gets the reader that reads incoming data from the socket.
-   /// </summary>
    public PipeReader Input => _receiver.Pipe.Reader;
 
-   /// <summary>
-   /// Gets the writer that writes outgoing data to the socket.
-   /// </summary>
    public PipeWriter Output => _sender.Pipe.Writer;
 
-   /// <summary>
-   /// Initializes a new instance of the <see cref="SocketConnection"/> class with pool invariants.
-   /// </summary>
    public SocketConnection(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
    {
       var pipeOptions = new PipeOptions(
@@ -44,30 +32,20 @@ public sealed class SocketConnection
       _receiver = new SocketReceiver(pipeOptions);
    }
 
-   /// <summary>
-   /// Initializes the connection with the active socket for a rented session.
-   /// </summary>
    public void Initialize(Socket socket)
    {
       _socket = socket;
 
-      // Cross-link the connection to its pre-allocated sender and receiver
       _sender.Initialize(this, socket);
       _receiver.Initialize(this, socket);
    }
 
-   /// <summary>
-   /// Starts the transmission loops for both the sender and receiver.
-   /// </summary>
    public void Start()
    {
       _sender.Start();
       _receiver.Start();
    }
 
-   /// <summary>
-   /// Aborts the connection immediately due to an error or an intentional connection reset.
-   /// </summary>
    public void Abort(Exception? exception = null)
    {
       lock (_shutdownLock)
@@ -87,27 +65,15 @@ public sealed class SocketConnection
          }
          catch
          {
-            // Suppress
+            // Expected
          }
       }
    }
 
-   /// <summary>
-   /// Disposes the connection and closes the socket gracefully.
-   /// </summary>
-   public async ValueTask DisposeAsync()
+   public async ValueTask StopAsync()
    {
-      lock (_shutdownLock)
-      {
-         if (_isDisposed) return;
-         _isDisposed = true;
-      }
-
-      _sender.Stop();
-      _receiver.Stop();
-
-      await _sender.DisposeAsync();
-      await _receiver.DisposeAsync();
+      await _sender.StopAsync();
+      await _receiver.StopAsync();
 
       if (!_isAborted && _socket != null)
       {
@@ -117,7 +83,7 @@ public sealed class SocketConnection
          }
          catch
          {
-            // Suppress if socket is already closed
+            // Expected
          }
          finally
          {
@@ -126,13 +92,20 @@ public sealed class SocketConnection
       }
    }
 
-   /// <summary>
-   /// Resets the connection and its sub-components back to their clean initial state for reuse in the pool.
-   /// </summary>
+   public async ValueTask DisposeAsync()
+   {
+      lock (_shutdownLock)
+      {
+         if (_isDisposed) return;
+         _isDisposed = true;
+      }
+
+      await StopAsync();
+   }
+
    public bool TryResetState()
    {
-      if (!_sender.TryResetState() 
-          || !_receiver.TryResetState())
+      if (!_sender.TryResetState() || !_receiver.TryResetState())
       {
          return false;
       }

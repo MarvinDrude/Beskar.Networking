@@ -5,16 +5,11 @@ using Beskar.Networking.Abstractions.Interfaces.Pools;
 
 namespace Beskar.Networking.Transports.Common.Sockets;
 
-/// <summary>
-/// Represents a sender for a socket.
-/// </summary>
-public sealed class SocketSender : IPooledObject, IAsyncDisposable
+public sealed class SocketSender(PipeOptions pipeOptions) 
+   : IPooledObject, IAsyncDisposable
 {
-   /// <summary>
-   /// The pipe used to send data.
-   /// </summary>
-   public Pipe Pipe { get; }
-   
+   public Pipe Pipe { get; } = new(pipeOptions);
+
    private SocketConnection? _connection;
    private Socket? _socket;
    
@@ -22,17 +17,6 @@ public sealed class SocketSender : IPooledObject, IAsyncDisposable
    private CancellationTokenSource _cts = new();
    private bool _stopped;
 
-   /// <summary>
-   /// Initializes a new instance of the <see cref="SocketSender"/> class with pool-level invariants.
-   /// </summary>
-   public SocketSender(PipeOptions pipeOptions)
-   {
-      Pipe = new Pipe(pipeOptions);
-   }
-
-   /// <summary>
-   /// Initializes the sender for a rented session.
-   /// </summary>
    public void Initialize(SocketConnection connection, Socket socket)
    {
       _connection = connection;
@@ -67,9 +51,25 @@ public sealed class SocketSender : IPooledObject, IAsyncDisposable
          _cts.Cancel();
       }
 
-      // Complete the reader and writer to unblock any pending I/O operations.
       Pipe.Reader.Complete();
       Pipe.Writer.Complete();
+   }
+
+   public async ValueTask StopAsync()
+   {
+      Stop();
+
+      if (_sendTask is not null)
+      {
+         try
+         {
+            await _sendTask;
+         }
+         catch
+         {
+            // expected
+         }
+      }
    }
 
    private async Task ProcessSendAsync()
@@ -104,7 +104,6 @@ public sealed class SocketSender : IPooledObject, IAsyncDisposable
       }
       catch (OperationCanceledException)
       {
-         // Suppress cancellation exceptions when stopping.
       }
       catch (Exception ex)
       {
@@ -167,20 +166,7 @@ public sealed class SocketSender : IPooledObject, IAsyncDisposable
 
    public async ValueTask DisposeAsync()
    {
-      Stop();
-
-      if (_sendTask is not null)
-      {
-         try
-         {
-            await _sendTask;
-         }
-         catch
-         {
-            // Suppress exception during disposal.
-         }
-      }
-
+      await StopAsync();
       _cts.Dispose();
    }
 }
