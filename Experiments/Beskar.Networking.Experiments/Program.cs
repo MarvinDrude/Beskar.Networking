@@ -11,27 +11,23 @@ using Beskar.Utilities.Console.Rendering;
 
 Console.Clear();
 
-// 1. Render beautiful header using BoxStyle.Rounded
 ConsoleRender.DrawHeader(
-    "BESKAR NETWORKING EXPERIMENTS", 
-    "Sleek TCP/QUIC Client/Server Connection Playground", 
-    BoxStyle.Rounded, 
+    "BESKAR NETWORKING EXPERIMENTS",
+    "Sleek TCP/QUIC Client/Server Connection Playground",
+    BoxStyle.Rounded,
     ConsoleColor.Yellow
 );
 
-// 2. Select Transport Protocol dynamically using AskChoice
 var protocolKey = ConsoleRender.AskChoice("Select Transport Protocol", new[] { "TCP", "QUIC" }, defaultChoice: "t");
 var isQuic = protocolKey == "q";
 var protocolName = isQuic ? "QUIC" : "TCP";
 
-// 3. Select Port dynamically using AskString
 var portStr = ConsoleRender.AskString("Enter server port number", defaultValue: "1337");
 if (!int.TryParse(portStr, out var port))
 {
     port = 1337;
 }
 
-// 4. Configure Server and Client Builders
 var server = NetworkServerBuilder.Create()
    .ConfigureServers(register =>
    {
@@ -97,13 +93,11 @@ else
    clientBuilder.UseTcp();
 }
 
-// 5. Spin up Server with gorgeous spinner loading
 await ConsoleRender.RunSpinnerAsync(
-    $"Configuring playground using {protocolName} on port {port}...", 
+    $"Configuring playground using {protocolName} on port {port}...",
     async () =>
     {
         await server.StartAsync();
-        // Give socket a brief split second to bind fully
         await Task.Delay(200);
     },
     successMessage: $"{protocolName} Server successfully started and listening."
@@ -112,15 +106,13 @@ await ConsoleRender.RunSpinnerAsync(
 INetworkSession? activeSession = null;
 INetworkStream? activeStream = null;
 
-// Tracking statistics
-int messagesSent = 0;
-int bytesSent = 0;
+var messagesSent = 0;
+var bytesSent = 0;
 
 try
 {
    while (true)
    {
-      // 6. Interactive choice menu for main loop
       var choices = new PromptChoice[]
       {
          new("c", "Connect client to server"),
@@ -203,7 +195,7 @@ try
             }
 
             var msg = ConsoleRender.AskString("Enter message to send", defaultValue: "Hello from active Beskar client!");
-            
+
             try
             {
                await ConsoleRender.RunSpinnerAsync($"Sending message: \"{msg}\"...", async () =>
@@ -212,10 +204,10 @@ try
                   var payload = Encoding.UTF8.GetBytes(msg);
                   await writer.WriteAsync(payload);
                   await writer.FlushAsync();
-                  
+
                   messagesSent++;
                   bytesSent += payload.Length;
-                  
+
                   // Wait a brief delay to let Server's OnSession message read log print during the active spinner
                   await Task.Delay(200);
                }, successMessage: "Payload successfully sent and flushed.");
@@ -251,12 +243,12 @@ try
 finally
 {
    await CloseClientAsync();
-   
+
    await ConsoleRender.RunSpinnerAsync("Stopping and shutting down server listener...", async () =>
    {
       await server.StopAsync();
    }, successMessage: "Server listener successfully stopped.");
-   
+
    ConsoleRender.Success("Playground session ended. Goodbye!");
 }
 

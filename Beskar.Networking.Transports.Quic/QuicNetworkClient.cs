@@ -11,9 +11,10 @@ namespace Beskar.Networking.Transports.Quic;
 /// A high-performance QUIC client implementation built on native System.Net.Quic.
 /// </summary>
 public sealed class QuicNetworkClient(QuicTransportOptions options)
-   : INetworkClient, IDisposable
+   : INetworkClient, IAsyncDisposable
 {
    private readonly QuicTransportOptions _options = options;
+   private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);
 
    /// <inheritdoc />
    public async ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(
@@ -49,7 +50,7 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
          }
 
          var connection = await QuicConnection.ConnectAsync(clientOptions, ct);
-         return new QuicNetworkSession(connection, _options);
+         return new QuicNetworkSession(connection, _options, _ioQueueRegistry);
       }
       catch (QuicException ex)
       {
@@ -61,8 +62,8 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
       }
    }
 
-   public void Dispose()
+   public async ValueTask DisposeAsync()
    {
-      // No managed resources need disposal here
+      await _ioQueueRegistry.DisposeAsync();
    }
 }

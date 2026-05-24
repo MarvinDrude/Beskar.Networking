@@ -6,8 +6,6 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Common.Streams;
-using Beskar.Networking.Transports.Common.Settings;
-using Me.Memory.Pools;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Quic;
@@ -15,7 +13,11 @@ namespace Beskar.Networking.Transports.Quic;
 /// <summary>
 /// Represents a QUIC network session that supports stream multiplexing.
 /// </summary>
-public sealed class QuicNetworkSession : INetworkSession, IAsyncDisposable
+public sealed class QuicNetworkSession(
+   QuicConnection connection,
+   QuicTransportOptions options,
+   QuicIoQueueRegistry ioQueueRegistry)
+   : INetworkSession, IAsyncDisposable
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 
@@ -27,29 +29,12 @@ public sealed class QuicNetworkSession : INetworkSession, IAsyncDisposable
 
    public CancellationToken SessionClosedToken => _cts.Token;
 
-   private readonly QuicConnection _connection;
-   private readonly QuicTransportOptions _options;
+   private readonly QuicConnection _connection = connection;
+   private readonly QuicTransportOptions _options = options;
+   private readonly QuicIoQueueRegistry _ioQueueRegistry = ioQueueRegistry;
    private readonly CancellationTokenSource _cts = new();
 
-   private readonly StreamQueueSettings _streamSettings;
-   private readonly AsyncDisposableObjectPool<StreamConnection> _streamConnectionPool;
-
    private int _disposed;
-
-   public QuicNetworkSession(QuicConnection connection, QuicTransportOptions options)
-   {
-      _connection = connection;
-      _options = options;
-      _streamSettings = options.StreamOptions.CreateQueueSettings();
-
-      _streamConnectionPool = new AsyncDisposableObjectPool<StreamConnection>(new ObjectPoolOptions<StreamConnection>
-      {
-         FactoryFunc = static () => throw new InvalidOperationException("Use the parameterised Get overload to instantiate StreamConnections."),
-         ReturnFunc = static connection => connection.TryResetState(),
-         InitialSize = 0,
-         MaxSize = options.StreamOptions.MaxConnectionPoolSize
-      });
-   }
 
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
@@ -58,11 +43,7 @@ public sealed class QuicNetworkSession : INetworkSession, IAsyncDisposable
          using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
          var quicStream = await _connection.AcceptInboundStreamAsync(linkedCts.Token);
 
-         var connection = _streamConnectionPool.Get(() => new StreamConnection(
-            _streamSettings.ReceiveOptions, _streamSettings.SendOptions));
-
-         connection.Initialize(quicStream);
-         connection.Start();
+         var connection = _ioQueueRegistry.Create(quicStream);
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
          return newStream;
@@ -93,12 +74,7 @@ public sealed class QuicNetworkSession : INetworkSession, IAsyncDisposable
             : QuicStreamType.Unidirectional;
 
          var quicStream = await _connection.OpenOutboundStreamAsync(quicStreamType, linkedCts.Token);
-
-         var connection = _streamConnectionPool.Get(() => new StreamConnection(
-            _streamSettings.ReceiveOptions, _streamSettings.SendOptions));
-
-         connection.Initialize(quicStream);
-         connection.Start();
+         var connection = _ioQueueRegistry.Create(quicStream);
 
          return new QuicNetworkStream(this, quicStream, connection);
       }
@@ -121,7 +97,7 @@ public sealed class QuicNetworkSession : INetworkSession, IAsyncDisposable
    /// </summary>
    public async ValueTask ReturnConnectionAsync(StreamConnection connection)
    {
-      await _streamConnectionPool.ReturnAsync(connection);
+      await _ioQueueRegistry.ReturnAsync(connection);
    }
 
    public async ValueTask DisposeAsync()
@@ -151,8 +127,5 @@ public sealed class QuicNetworkSession : INetworkSession, IAsyncDisposable
       }
 
       await _connection.DisposeAsync();
-      await _streamConnectionPool.DisposeAsync();
-
-      _streamSettings.Dispose();
    }
 }

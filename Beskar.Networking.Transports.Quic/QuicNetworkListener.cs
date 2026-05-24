@@ -19,6 +19,7 @@ public sealed class QuicNetworkListener(
    public EndPoint LocalAddress { get; } = localAddress;
 
    private readonly QuicTransportOptions _options = options;
+   private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);
 
    private QuicListener? _listener;
    private CancellationTokenSource? _acceptCts;
@@ -151,7 +152,8 @@ public sealed class QuicNetworkListener(
          try
          {
             var quicConnection = await listener.AcceptConnectionAsync(token);
-            var session = new QuicNetworkSession(quicConnection, _options);
+            var session = new QuicNetworkSession(quicConnection, _options, _ioQueueRegistry);
+
             await _sessionChannel.Writer.WriteAsync(session, token);
          }
          catch (OperationCanceledException)
