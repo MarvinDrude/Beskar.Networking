@@ -13,8 +13,9 @@ namespace Beskar.Networking.Transports.Tcp;
 public sealed class TcpNetworkSession(
    EndPoint localAddress,
    EndPoint remoteAddress,
-   IDuplexPipe connection)
-   : INetworkSession
+   IDuplexPipe connection,
+   Func<IDuplexPipe, ValueTask>? onDisposeAsync = null)
+   : INetworkSession, IAsyncDisposable
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 
@@ -30,6 +31,7 @@ public sealed class TcpNetworkSession(
    private readonly CancellationTokenSource _cts = new();
 
    private TcpNetworkStream? _stream;
+   private int _disposed;
 
    /// <inheritdoc />
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(
@@ -57,5 +59,29 @@ public sealed class TcpNetworkSession(
 
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(
          new NetworkCodeError(-1, "TCP session only supports a single stream, which has already been opened."));
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      if (Interlocked.Exchange(ref _disposed, 1) == 1)
+      {
+         return;
+      }
+
+      try
+      {
+         await _cts.CancelAsync();
+      }
+      catch
+      {
+         // Ignored
+      }
+
+      _cts.Dispose();
+
+      if (onDisposeAsync is not null)
+      {
+         await onDisposeAsync(_connection);
+      }
    }
 }

@@ -188,7 +188,7 @@ public sealed class TcpNetworkListener(
          }
 
          var connection = _ioQueueRegistry.Create(socket, stream);
-         var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection);
+         var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
 
          await _sessionChannel.Writer.WriteAsync(session, token);
       }

@@ -48,7 +48,7 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
          var localEndPoint = socket.LocalEndPoint ?? socket.RemoteEndPoint ?? endPoint;
          var remoteEndPoint = socket.RemoteEndPoint ?? endPoint;
 
-         var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection);
+         var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
          return session;
       }
       catch (SocketException ex)

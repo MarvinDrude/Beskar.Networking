@@ -31,6 +31,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
          _streamConnectionPool = new AsyncDisposableObjectPool<StreamConnection>(new ObjectPoolOptions<StreamConnection>()
          {
             FactoryFunc = static () => throw new InvalidOperationException(),
+            ReturnFunc = static connection => connection.TryResetState(),
             InitialSize = options.StreamOptions.InitialConnectionPoolSize,
             MaxSize = options.StreamOptions.MaxConnectionPoolSize,
          });
@@ -40,6 +41,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
          _socketConnectionPool = new AsyncDisposableObjectPool<SocketConnection>(new ObjectPoolOptions<SocketConnection>()
          {
             FactoryFunc = static () => throw new InvalidOperationException(),
+            ReturnFunc = static connection => connection.TryResetState(),
             InitialSize = options.SocketOptions.InitialConnectionPoolSize,
             MaxSize = options.SocketOptions.MaxConnectionPoolSize,
          });
@@ -59,6 +61,32 @@ public sealed class TcpIoQueueRegistry : IDisposable
    {
       var ioQueue = _ioQueues[Interlocked.Increment(ref _currentIndex) % _ioQueueCountLong];
       return ioQueue.Create(socket, stream);
+   }
+
+   public async ValueTask ReturnAsync(IDuplexPipe connection)
+   {
+      if (connection is StreamConnection streamConn)
+      {
+         if (_streamConnectionPool is not null)
+         {
+            await _streamConnectionPool.ReturnAsync(streamConn);
+         }
+         else
+         {
+            await streamConn.DisposeAsync();
+         }
+      }
+      else if (connection is SocketConnection socketConn)
+      {
+         if (_socketConnectionPool is not null)
+         {
+            await _socketConnectionPool.ReturnAsync(socketConn);
+         }
+         else
+         {
+            await socketConn.DisposeAsync();
+         }
+      }
    }
 
    public void Dispose()
