@@ -23,6 +23,7 @@
   </Folder>
   <Folder Name="/Utilities/">
     <Project Path="Utilities/Beskar.Utilities.Console/Beskar.Utilities.Console.csproj" />
+    <Project Path="Utilities/Beskar.Utilities.Tracing/Beskar.Utilities.Tracing.csproj" />
   </Folder>
   <Project Path="Beskar.Networking.Abstractions/Beskar.Networking.Abstractions.csproj" />
   <Project Path="Beskar.Networking.Transports.Common/Beskar.Networking.Transports.Common.csproj" />
