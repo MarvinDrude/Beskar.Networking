@@ -1,6 +1,8 @@
 using System.IO.Pipelines;
+using System.Net.Quic;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Networking.Transports.Common.Settings;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Quic;
@@ -48,6 +50,15 @@ public sealed class QuicIoQueueRegistry : IAsyncDisposable
       var connection = _streamConnectionPool.Get(() => new StreamConnection(
          settings.ReceiveOptions, settings.SendOptions));
 
+      if (stream is QuicStream quicStream)
+      {
+         TraceLogger.LogNeutralInfo("QUIC IO Registry: Creating stream connection for QUIC stream {0}", quicStream.Id);
+      }
+      else
+      {
+         TraceLogger.LogNeutralInfo("QUIC IO Registry: Creating stream connection for generic Stream");
+      }
+
       connection.Initialize(stream);
       connection.Start();
 
@@ -56,6 +67,7 @@ public sealed class QuicIoQueueRegistry : IAsyncDisposable
 
    public async ValueTask ReturnAsync(StreamConnection connection)
    {
+      TraceLogger.LogNeutralInfo("QUIC IO Registry: Returning stream connection to pool");
       await _streamConnectionPool.ReturnAsync(connection);
    }
 

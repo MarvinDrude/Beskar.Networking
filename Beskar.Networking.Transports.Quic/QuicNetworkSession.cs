@@ -6,6 +6,7 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Common.Streams;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Quic;
@@ -40,24 +41,29 @@ public sealed class QuicNetworkSession(
    {
       try
       {
+         TraceLogger.LogServerInfo("QUIC Session {0}: Accepting incoming stream...", Id);
          using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
          var quicStream = await _connection.AcceptInboundStreamAsync(linkedCts.Token);
 
          var connection = _ioQueueRegistry.Create(quicStream);
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
+         TraceLogger.LogServerInfo("QUIC Session {0}: Successfully accepted inbound {1} stream {2}", Id, newStream.Direction, newStream.StreamId);
          return newStream;
       }
       catch (QuicException ex)
       {
+         TraceLogger.LogServerError("QUIC Session {0}: QuicException accepting inbound stream (Code: {1}): {2}", Id, (int)ex.QuicError, ex.Message);
          return new NetworkCodeError((int)ex.QuicError, ex.Message);
       }
       catch (OperationCanceledException) when (_cts.IsCancellationRequested)
       {
+         TraceLogger.LogServerWarning("QUIC Session {0}: Stream acceptance cancelled because session is closing.", Id);
          return new NetworkCodeError(-1, "Session has been closed.");
       }
       catch (Exception ex)
       {
+         TraceLogger.LogServerError("QUIC Session {0}: Unexpected exception accepting inbound stream: {1}", Id, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }
    }
@@ -68,6 +74,7 @@ public sealed class QuicNetworkSession(
    {
       try
       {
+         TraceLogger.LogClientInfo("QUIC Session {0}: Opening outbound stream (Direction: {1})...", Id, direction);
          using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
          var quicStreamType = direction == NetworkStreamDirection.Bidirectional
             ? QuicStreamType.Bidirectional
@@ -76,18 +83,23 @@ public sealed class QuicNetworkSession(
          var quicStream = await _connection.OpenOutboundStreamAsync(quicStreamType, linkedCts.Token);
          var connection = _ioQueueRegistry.Create(quicStream);
 
-         return new QuicNetworkStream(this, quicStream, connection);
+         var newStream = new QuicNetworkStream(this, quicStream, connection);
+         TraceLogger.LogClientInfo("QUIC Session {0}: Successfully opened outbound {1} stream {2}", Id, newStream.Direction, newStream.StreamId);
+         return newStream;
       }
       catch (QuicException ex)
       {
+         TraceLogger.LogClientError("QUIC Session {0}: QuicException opening outbound stream (Code: {1}): {2}", Id, (int)ex.QuicError, ex.Message);
          return new NetworkCodeError((int)ex.QuicError, ex.Message);
       }
       catch (OperationCanceledException) when (_cts.IsCancellationRequested)
       {
+         TraceLogger.LogClientWarning("QUIC Session {0}: Stream opening cancelled because session is closing.", Id);
          return new NetworkCodeError(-1, "Session has been closed.");
       }
       catch (Exception ex)
       {
+         TraceLogger.LogClientError("QUIC Session {0}: Unexpected exception opening outbound stream: {1}", Id, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }
    }
@@ -97,6 +109,7 @@ public sealed class QuicNetworkSession(
    /// </summary>
    public async ValueTask ReturnConnectionAsync(StreamConnection connection)
    {
+      TraceLogger.LogNeutralInfo("QUIC Session {0}: Returning stream connection to registry pool", Id);
       await _ioQueueRegistry.ReturnAsync(connection);
    }
 
@@ -106,6 +119,8 @@ public sealed class QuicNetworkSession(
       {
          return;
       }
+
+      TraceLogger.LogNeutralInfo("QUIC Session: Disposing and shutting down active session {0} (Remote: {1}, Local: {2})", Id, RemoteAddress, LocalAddress);
 
       try
       {
@@ -121,9 +136,9 @@ public sealed class QuicNetworkSession(
       {
          await _connection.CloseAsync(_options.DefaultCloseErrorCode);
       }
-      catch
+      catch (Exception ex)
       {
-         // Ignored
+         TraceLogger.LogNeutralWarning("QUIC Session {0}: Error closing connection: {1}", Id, ex.Message);
       }
 
       await _connection.DisposeAsync();

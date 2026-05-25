@@ -4,6 +4,7 @@ using System.Net.Security;
 using System.Threading.Channels;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Quic;
@@ -41,6 +42,7 @@ public sealed class QuicNetworkListener(
 
       try
       {
+         TraceLogger.LogServerInfo("QUIC Listener: Binding socket to address {0}", LocalAddress);
          var ipEndPoint = LocalAddress as IPEndPoint
             ?? throw new ArgumentException("IPEndPoint is required for QUIC listener.", nameof(LocalAddress));
          var alpn = new SslApplicationProtocol(_options.AlpnProtocol);
@@ -82,14 +84,17 @@ public sealed class QuicNetworkListener(
          _acceptCts = new CancellationTokenSource();
 
          _ = AcceptLoopAsync(_listener, _acceptCts.Token);
+         TraceLogger.LogServerInfo("QUIC Listener: Successfully bound and listening on {0}", LocalAddress);
          return true;
       }
       catch (QuicException ex)
       {
+         TraceLogger.LogServerError("QUIC Listener: Failed to bind to {0} (Code: {1}): {2}", LocalAddress, (int)ex.QuicError, ex.Message);
          return new NetworkCodeError((int)ex.QuicError, ex.Message);
       }
       catch (Exception ex)
       {
+         TraceLogger.LogServerError("QUIC Listener: Failed to bind to {0}: {1}", LocalAddress, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }
    }
@@ -98,6 +103,7 @@ public sealed class QuicNetworkListener(
    {
       try
       {
+         TraceLogger.LogServerInfo("QUIC Listener: Unbinding and stopping listener on {0}", LocalAddress);
          if (_acceptCts is not null)
          {
             await _acceptCts.CancelAsync();
@@ -113,10 +119,12 @@ public sealed class QuicNetworkListener(
 
          _sessionChannel.Writer.TryComplete();
 
+         TraceLogger.LogServerInfo("QUIC Listener: Successfully unbound from {0}", LocalAddress);
          return true;
       }
       catch (Exception ex)
       {
+         TraceLogger.LogServerError("QUIC Listener: Error during unbind from {0}: {1}", LocalAddress, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }
    }
@@ -154,8 +162,10 @@ public sealed class QuicNetworkListener(
          try
          {
             var quicConnection = await listener.AcceptConnectionAsync(token);
+            TraceLogger.LogServerInfo("QUIC Listener: Accepted connection from client {0}", quicConnection.RemoteEndPoint);
             var session = new QuicNetworkSession(quicConnection, _options, _ioQueueRegistry);
 
+            TraceLogger.LogServerInfo("QUIC Listener: Enqueuing network session {0} for client {1}", session.Id, quicConnection.RemoteEndPoint);
             await _sessionChannel.Writer.WriteAsync(session, token);
          }
          catch (OperationCanceledException)
@@ -168,6 +178,7 @@ public sealed class QuicNetworkListener(
             {
                break;
             }
+            TraceLogger.LogServerError("QUIC Listener: QuicException accepting connection (Code: {0}): {1}", (int)ex.QuicError, ex.Message);
             WriteToSessionChannel(new NetworkCodeError((int)ex.QuicError, $"Listener acceptance error: {ex.Message}"));
          }
          catch (Exception ex)
@@ -176,6 +187,7 @@ public sealed class QuicNetworkListener(
             {
                break;
             }
+            TraceLogger.LogServerError("QUIC Listener: Unexpected error accepting connection: {0}", ex.Message);
             WriteToSessionChannel(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
          }
       }

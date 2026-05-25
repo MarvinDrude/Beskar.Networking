@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Common.Hosting;
+using Beskar.Networking.Transports.Quic.Extensions;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Tcp.Extensions;
 using Beskar.Utilities.Console.Rendering;
@@ -12,7 +13,7 @@ try { Console.Clear(); } catch {}
 Beskar.Utilities.Tracing.TraceLogger.IsEnabled = true;
 ConsoleRender.DrawHeader(
     "BESKAR NETWORKING EXPERIMENTS",
-    "Automated TCP Client/Server Connection Demo",
+    "Automated QUIC Client/Server Connection Demo",
     BoxStyle.Rounded,
     ConsoleColor.Yellow
 );
@@ -25,7 +26,7 @@ var server = NetworkServerBuilder.Create()
    {
       register.ListenLocalhost(Port, options =>
       {
-         options.UseTcp();
+         options.UseQuic();
          options.OnSession(async session =>
          {
             var streamResult = await session.AcceptStreamAsync();
@@ -64,7 +65,7 @@ var server = NetworkServerBuilder.Create()
    })
    .Build();
 
-var clientBuilder = NetworkClientBuilder.Create().UseTcp();
+var clientBuilder = NetworkClientBuilder.Create().UseQuic();
 
 try
 {

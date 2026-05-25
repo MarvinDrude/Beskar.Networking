@@ -3,6 +3,7 @@ using System.Net.Quic;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Common.Streams;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Transports.Quic;
 
@@ -37,6 +38,7 @@ public sealed class QuicNetworkStream(
          return;
       }
 
+      TraceLogger.LogNeutralInfo("QUIC Stream: Disposing stream wrapper {0} (Direction: {1}) for session {2}", StreamId, Direction, Session.Id);
       await _connection.StopAsync();
       await _quicStream.DisposeAsync();
       await _session.ReturnConnectionAsync(_connection);

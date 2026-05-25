@@ -11,7 +11,7 @@ public static class TraceLogger
 {
    private const string Conditional = "DEBUG";
    public static bool IsEnabled { get; set; } = false;
-   
+
    private static readonly Lock ConsoleLock = new();
 
    private static object?[] ColorizeArgs(object?[] args)
@@ -159,7 +159,7 @@ public static class TraceLogger
             WriteOrigin(ref messageWriter, origin);
             WriteLevel(ref messageWriter, level);
 
-            messageWriter.WriteLine($" {message}");
+            messageWriter.Write($" {message}");
             ConsoleRender.WriteMarkupLine(messageWriter.WrittenSpan.ToString());
          }
          finally

@@ -3,6 +3,7 @@ using System.Net.Quic;
 using System.Net.Security;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Quic;
@@ -27,6 +28,7 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
 
       try
       {
+         TraceLogger.LogClientInfo("QUIC ConnectAsync: Initiating QUIC connection to {0} (ALPN: {1})", endPoint, _options.AlpnProtocol);
          var alpn = new SslApplicationProtocol(_options.AlpnProtocol);
 
          var clientAuthOptions = _options.SslClientOptions ?? new SslClientAuthenticationOptions();
@@ -50,14 +52,18 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
          }
 
          var connection = await QuicConnection.ConnectAsync(clientOptions, ct);
-         return new QuicNetworkSession(connection, _options, _ioQueueRegistry);
+         var session = new QuicNetworkSession(connection, _options, _ioQueueRegistry);
+         TraceLogger.LogClientInfo("QUIC ConnectAsync: Successfully established QUIC session {0} (Remote: {1}, Local: {2})", session.Id, connection.RemoteEndPoint, connection.LocalEndPoint);
+         return session;
       }
       catch (QuicException ex)
       {
+         TraceLogger.LogClientError("QUIC ConnectAsync: QUIC exception connecting to {0} (Code: {1}): {2}", endPoint, (int)ex.QuicError, ex.Message);
          return new NetworkCodeError((int)ex.QuicError, ex.Message);
       }
       catch (Exception ex)
       {
+         TraceLogger.LogClientError("QUIC ConnectAsync: Unexpected exception connecting to {0}: {1}", endPoint, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }
    }
