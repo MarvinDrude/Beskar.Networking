@@ -2,6 +2,7 @@ using System.IO.Pipelines;
 using System.Net.Sockets;
 using Beskar.Networking.Transports.Common.Sockets;
 using Beskar.Networking.Transports.Common.Streams;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Tcp;
@@ -56,6 +57,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
 
    public IDuplexPipe Create(Socket socket, Stream? stream = null)
    {
+      TraceLogger.LogNeutralInfo("TCP IO Registry: Creating duplex pipe connection for socket {0} (Stream-based: {1})", socket.RemoteEndPoint, stream is not null);
       var ioQueue = _ioQueues[Interlocked.Increment(ref _currentIndex) % _ioQueueCountLong];
       return ioQueue.Create(socket, stream);
    }
@@ -66,10 +68,12 @@ public sealed class TcpIoQueueRegistry : IDisposable
       {
          if (_streamConnectionPool is not null)
          {
+            TraceLogger.LogNeutralInfo("TCP IO Registry: Returning stream connection to pool");
             await _streamConnectionPool.ReturnAsync(streamConn);
          }
          else
          {
+            TraceLogger.LogNeutralInfo("TCP IO Registry: Disposing unpooled stream connection");
             await streamConn.DisposeAsync();
          }
       }
@@ -77,10 +81,12 @@ public sealed class TcpIoQueueRegistry : IDisposable
       {
          if (_socketConnectionPool is not null)
          {
+            TraceLogger.LogNeutralInfo("TCP IO Registry: Returning socket connection to pool");
             await _socketConnectionPool.ReturnAsync(socketConn);
          }
          else
          {
+            TraceLogger.LogNeutralInfo("TCP IO Registry: Disposing unpooled socket connection");
             await socketConn.DisposeAsync();
          }
       }

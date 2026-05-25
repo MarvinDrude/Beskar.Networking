@@ -3,6 +3,7 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using System.IO.Pipelines;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Ws;
@@ -40,6 +41,7 @@ public sealed class WsNetworkSession : INetworkSession, IAsyncDisposable
 
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
+      TraceLogger.LogServerInfo("WS Session {0}: Instantiating WebSocket stream wrapper", Id);
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
    }
 
@@ -47,6 +49,7 @@ public sealed class WsNetworkSession : INetworkSession, IAsyncDisposable
       NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
       CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("WS Session {0}: Opening WebSocket stream wrapper", Id);
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
    }
 
@@ -56,6 +59,8 @@ public sealed class WsNetworkSession : INetworkSession, IAsyncDisposable
       {
          return;
       }
+
+      TraceLogger.LogNeutralInfo("WS Session: Disposing and shutting down active WebSocket session {0} (Remote: {1}, Local: {2})", Id, RemoteAddress, LocalAddress);
 
       try
       {

@@ -3,6 +3,7 @@ using System.IO.Pipelines;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Buffers;
 using Me.Memory.Pools;
 
@@ -42,18 +43,21 @@ public static class WsHandshake
       WsTransportOptions options,
       CancellationToken ct)
    {
+      TraceLogger.LogServerInfo("WS Handshake: Starting server WebSocket upgrade handshake on path {0}", options.Path);
       var reader = tcpPipe.Input;
       var writer = tcpPipe.Output;
 
       var headersText = await ReadHttpHeadersAsync(reader, ct);
       if (headersText == null)
       {
+         TraceLogger.LogServerError("WS Handshake: Failed to read HTTP headers from client.");
          return null;
       }
 
       var lines = headersText.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
       if (lines.Length == 0 || !lines[0].StartsWith("GET ", StringComparison.OrdinalIgnoreCase))
       {
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: only GET requests are allowed.");
          await SendErrorResponseAsync(writer, "400 Bad Request", "Only GET requests are allowed.");
          return null;
       }
@@ -61,6 +65,7 @@ public static class WsHandshake
       var path = lines[0].Split(' ')[1];
       if (path != options.Path)
       {
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: specified path {0} does not match expected path {1}", path, options.Path);
          await SendErrorResponseAsync(writer, "404 Not Found", "Specified path is not found.");
          return null;
       }
@@ -94,6 +99,7 @@ public static class WsHandshake
 
       if (!isUpgrade || !isConnectionUpgrade || string.IsNullOrEmpty(clientKey))
       {
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: missing or invalid WebSocket upgrade headers.");
          await SendErrorResponseAsync(writer, "400 Bad Request", "Invalid WebSocket upgrade headers.");
          return null;
       }
@@ -136,6 +142,7 @@ public static class WsHandshake
 
       await writer.FlushAsync(ct);
 
+      TraceLogger.LogServerInfo("WS Handshake: Server WebSocket upgrade handshake successful (Accept Key: {0})", acceptKey);
       return acceptKey;
    }
 
@@ -158,6 +165,7 @@ public static class WsHandshake
       var expectedAcceptKey = ComputeAcceptKey(secWebSocketKey);
 
       var host = endPoint.ToString() ?? "localhost";
+      TraceLogger.LogClientInfo("WS Handshake: Starting client WebSocket handshake with host {0} on path {1}", host, options.Path);
 
       {
          var request = new TextWriterIndentSlim(stackalloc char[512], stackalloc char[1]);
@@ -204,12 +212,14 @@ public static class WsHandshake
       var responseHeaders = await ReadHttpHeadersAsync(reader, ct);
       if (responseHeaders == null)
       {
+         TraceLogger.LogClientError("WS Handshake: Failed to read HTTP response headers from server.");
          return false;
       }
 
       var lines = responseHeaders.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
       if (lines.Length == 0 || !lines[0].Contains("101"))
       {
+         TraceLogger.LogClientError("WS Handshake: Client handshake failed: expected status code 101 Switching Protocols.");
          return false;
       }
 
@@ -227,6 +237,15 @@ public static class WsHandshake
          {
             serverAcceptKeyMatched = true;
          }
+      }
+
+      if (!serverAcceptKeyMatched)
+      {
+         TraceLogger.LogClientError("WS Handshake: Client handshake failed: server accept key validation failed.");
+      }
+      else
+      {
+         TraceLogger.LogClientInfo("WS Handshake: Client WebSocket handshake successfully completed (Expected Accept Key: {0})", expectedAcceptKey);
       }
 
       return serverAcceptKeyMatched;

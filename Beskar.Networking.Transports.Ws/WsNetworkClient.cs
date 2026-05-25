@@ -2,6 +2,7 @@ using System.Net;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Tcp;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Ws;
@@ -24,9 +25,11 @@ public sealed class WsNetworkClient : INetworkClient, IDisposable
       EndPoint endPoint,
       CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("WS ConnectAsync: Initiating WebSocket connection over TCP to {0} (Path: {1})", endPoint, _options.Path);
       var connectResult = await _tcpClient.ConnectAsync(endPoint, ct);
       if (connectResult.Failed)
       {
+         TraceLogger.LogClientError("WS ConnectAsync: Failed to establish TCP connection to {0}: {1}", endPoint, connectResult.Error.Message);
          return connectResult.Error;
       }
 
@@ -37,6 +40,7 @@ public sealed class WsNetworkClient : INetworkClient, IDisposable
          var tcpStreamResult = await tcpSession.AcceptStreamAsync(ct);
          if (tcpStreamResult.Failed)
          {
+            TraceLogger.LogClientError("WS ConnectAsync: Failed to accept TCP stream for session {0}: {1}", tcpSession.Id, tcpStreamResult.Error.Message);
             await ((IAsyncDisposable)tcpSession).DisposeAsync();
             return tcpStreamResult.Error;
          }
@@ -46,6 +50,7 @@ public sealed class WsNetworkClient : INetworkClient, IDisposable
 
          if (!handshakeSuccess)
          {
+            TraceLogger.LogClientError("WS ConnectAsync: WebSocket handshake verification failed for session {0}.", tcpSession.Id);
             await ((IAsyncDisposable)tcpSession).DisposeAsync();
             return new NetworkCodeError(-1, "WebSocket handshake verification failed.");
          }
@@ -53,10 +58,12 @@ public sealed class WsNetworkClient : INetworkClient, IDisposable
          wsPipe = new WsDuplexPipe(tcpPipe, maskOutgoing: true);
          var wsSession = new WsNetworkSession(tcpSession, wsPipe);
 
+         TraceLogger.LogClientInfo("WS ConnectAsync: WebSocket session {0} successfully established for {1}", wsSession.Id, endPoint);
          return wsSession;
       }
       catch (Exception ex)
       {
+         TraceLogger.LogClientError("WS ConnectAsync: Unexpected error establishing WebSocket connection to {0}: {1}", endPoint, ex.Message);
          if (wsPipe is not null)
          {
             await wsPipe.DisposeAsync();

@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Tcp;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Ws;
@@ -29,15 +30,18 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
    public async ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
    {
+      TraceLogger.LogServerInfo("WS Listener: Binding WebSocket listener to address {0} (Path: {1})", LocalAddress, _options.Path);
       var bindResult = await _tcpListener.BindAsync(ct);
       if (bindResult.Failed)
       {
+         TraceLogger.LogServerError("WS Listener: Failed to bind TCP listener to {0}: {1}", LocalAddress, bindResult.Error.Message);
          return bindResult.Error;
       }
 
       _acceptCts = new CancellationTokenSource();
       _acceptLoopTask = AcceptLoopAsync(_acceptCts.Token);
 
+      TraceLogger.LogServerInfo("WS Listener: Successfully bound and listening on {0}", LocalAddress);
       return true;
    }
 
@@ -45,6 +49,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
    {
       try
       {
+         TraceLogger.LogServerInfo("WS Listener: Unbinding and stopping WebSocket listener on {0}", LocalAddress);
          if (_acceptCts is not null)
          {
             await _acceptCts.CancelAsync();
@@ -66,10 +71,12 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
          await _tcpListener.UnbindAsync(ct);
          _sessionChannel.Writer.TryComplete();
 
+         TraceLogger.LogServerInfo("WS Listener: Successfully unbound from {0}", LocalAddress);
          return true;
       }
       catch (Exception ex)
       {
+         TraceLogger.LogServerError("WS Listener: Error during unbind from {0}: {1}", LocalAddress, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }
    }
@@ -114,6 +121,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
             }
 
             var tcpSession = tcpSessionResult.Success;
+            TraceLogger.LogServerInfo("WS Listener: Accepted TCP connection from client {0}, initiating WebSocket server handshake...", tcpSession.RemoteAddress);
 
             _ = Task.Run(async () =>
             {
@@ -126,6 +134,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   var tcpStreamResult = await tcpSession.AcceptStreamAsync(handshakeTimeoutCts.Token);
                   if (tcpStreamResult.Failed)
                   {
+                     TraceLogger.LogServerError("WS Listener: Failed to accept TCP stream for handshake from {0}: {1}", tcpSession.RemoteAddress, tcpStreamResult.Error.Message);
                      await ((IAsyncDisposable)tcpSession).DisposeAsync();
                      return;
                   }
@@ -135,6 +144,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
                   if (acceptKey == null)
                   {
+                     TraceLogger.LogServerError("WS Listener: WebSocket server handshake failed for client {0}.", tcpSession.RemoteAddress);
                      await ((IAsyncDisposable)tcpSession).DisposeAsync();
                      return;
                   }
@@ -142,19 +152,21 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   var wsPipe = new WsDuplexPipe(tcpPipe, maskOutgoing: false);
                   wsSession = new WsNetworkSession(tcpSession, wsPipe);
 
+                  TraceLogger.LogServerInfo("WS Listener: WebSocket server handshake successfully completed for client {0}. Enqueuing session {1}", tcpSession.RemoteAddress, wsSession.Id);
                   await _sessionChannel.Writer.WriteAsync(wsSession, token);
                }
-                catch (Exception)
-                {
-                   if (wsSession != null)
-                   {
-                      await wsSession.DisposeAsync();
-                   }
-                   else
-                   {
-                      await ((IAsyncDisposable)tcpSession).DisposeAsync();
-                   }
-                }
+               catch (Exception ex)
+               {
+                  TraceLogger.LogServerError("WS Listener: Unexpected exception during WebSocket handshake for client {0}: {1}", tcpSession.RemoteAddress, ex.Message);
+                  if (wsSession != null)
+                  {
+                     await wsSession.DisposeAsync();
+                  }
+                  else
+                  {
+                     await ((IAsyncDisposable)tcpSession).DisposeAsync();
+                  }
+               }
             }, token);
          }
          catch (OperationCanceledException)
@@ -164,6 +176,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
          catch (Exception ex)
          {
             if (token.IsCancellationRequested) break;
+            TraceLogger.LogServerError("WS Listener: Unexpected error in acceptance loop: {0}", ex.Message);
             _sessionChannel.Writer.TryWrite(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
          }
       }
