@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Common.Streams;
@@ -243,6 +244,8 @@ public sealed class StreamConnection(
             if (read <= 0)
                break;
 
+            TraceLogger.LogNeutralInfo("StreamConnection: Read {0} bytes from stream", read);
+
             writer.Advance(read);
 
             var fres = await writer.FlushAsync(_cts.Token);
@@ -260,6 +263,7 @@ public sealed class StreamConnection(
 
    private Task SetBuffer(Stream stream, in ReadOnlySequence<byte> data)
    {
+      TraceLogger.LogNeutralInfo("StreamConnection: Transmitting {0} bytes to stream", data.Length);
       if (data.IsSingleSegment)
       {
          var vtask = stream.WriteAsync(data.First, _cts.Token);

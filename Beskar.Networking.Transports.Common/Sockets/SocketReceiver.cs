@@ -1,6 +1,7 @@
 using System.IO.Pipelines;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Common.Sockets;
@@ -18,7 +19,7 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
    private Task? _receiveTask;
    private CancellationTokenSource _cts = new();
    private bool _stopped;
-
+   
    public void Initialize(SocketConnection connection, Socket socket)
    {
       _connection = connection;
@@ -90,6 +91,8 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
             {
                break;
             }
+
+            TraceLogger.LogNeutralInfo("SocketReceiver: Received {0} bytes from socket", bytesRead);
 
             Pipe.Writer.Advance(bytesRead);
 

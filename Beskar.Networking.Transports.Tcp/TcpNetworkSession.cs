@@ -3,6 +3,7 @@ using System.Net;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Tcp;
@@ -39,6 +40,7 @@ public sealed class TcpNetworkSession(
    {
       if (_stream is null)
       {
+         TraceLogger.LogServerInfo("TCP Session {0}: Instantiating bidirectional TCP stream wrapper", Id);
          _stream = new TcpNetworkStream(this, _connection);
       }
 
@@ -51,6 +53,7 @@ public sealed class TcpNetworkSession(
    {
       if (_stream is null)
       {
+         TraceLogger.LogClientInfo("TCP Session {0}: Opening bidirectional TCP stream connection", Id);
          _stream = new TcpNetworkStream(this, _connection);
       }
 
@@ -63,6 +66,9 @@ public sealed class TcpNetworkSession(
       {
          return;
       }
+
+      var origin = onDisposeAsync is not null ? TraceLogOrigin.Server : TraceLogOrigin.Client;
+      TraceLogger.LogInfo("Disposing and shutting down active TCP session {0}", origin, Id);
 
       try
       {

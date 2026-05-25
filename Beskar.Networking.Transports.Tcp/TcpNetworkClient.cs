@@ -3,6 +3,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Tcp;
@@ -19,6 +20,7 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
       Socket? socket = null;
       try
       {
+         TraceLogger.LogClientInfo("TCP ConnectAsync: Initiating socket connection to {0}", endPoint);
          socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
          if (_options.NoDelay)
@@ -35,10 +37,12 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
          }
 
          await socket.ConnectAsync(endPoint, ct);
+         TraceLogger.LogClientInfo("TCP ConnectAsync: Socket successfully connected to {0} (Local: {1})", socket.RemoteEndPoint, socket.LocalEndPoint);
 
          Stream? stream = null;
          if (_options.UseSsl)
          {
+            TraceLogger.LogClientInfo("TCP ConnectAsync: Starting SSL client authentication for {0}", endPoint);
             var networkStream = new NetworkStream(socket, ownsSocket: true);
             var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
 
@@ -46,11 +50,13 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
             if (sslOptions is null)
             {
                socket.Dispose();
+               TraceLogger.LogClientError("TCP ConnectAsync: SSL authentication failed. SslClientOptions are missing.");
                return new NetworkCodeError(-1, "SSL client authentication options are missing.");
             }
 
             await sslStream.AuthenticateAsClientAsync(sslOptions, ct);
             stream = sslStream;
+            TraceLogger.LogClientInfo("TCP ConnectAsync: SSL client successfully authenticated for {0}", endPoint);
          }
          else if (_options.ForceStreamBased)
          {
@@ -63,16 +69,19 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
          var remoteEndPoint = socket.RemoteEndPoint ?? endPoint;
 
          var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
+         TraceLogger.LogClientInfo("TCP ConnectAsync: Network session {0} successfully established for {1}", session.Id, remoteEndPoint);
          return session;
       }
       catch (SocketException ex)
       {
          socket?.Dispose();
+         TraceLogger.LogClientError("TCP ConnectAsync: Socket error connecting to {0}: {1}", endPoint, ex.Message);
          return new NetworkCodeError(ex.ErrorCode, ex.Message);
       }
       catch (Exception ex)
       {
          socket?.Dispose();
+         TraceLogger.LogClientError("TCP ConnectAsync: Unexpected error connecting to {0}: {1}", endPoint, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }
    }

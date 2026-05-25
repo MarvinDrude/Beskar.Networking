@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Threading.Channels;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 using Me.Memory.Results;
 
 namespace Beskar.Networking.Transports.Tcp;
@@ -37,6 +38,7 @@ public sealed class TcpNetworkListener(
    {
       try
       {
+         TraceLogger.LogServerInfo("TCP Listener: Binding socket to address {0}", LocalAddress);
          var socket = new Socket(LocalAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
          socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
          socket.Bind(LocalAddress);
@@ -46,14 +48,17 @@ public sealed class TcpNetworkListener(
          _acceptCts = new CancellationTokenSource();
 
          _ = AcceptLoopAsync(socket, _acceptCts.Token);
+         TraceLogger.LogServerInfo("TCP Listener: Successfully bound and listening on {0}", LocalAddress);
          return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
       catch (SocketException ex)
       {
+         TraceLogger.LogServerError("TCP Listener: Failed to bind to {0}: {1}", LocalAddress, ex.Message);
          return new ValueTask<VoidResult<NetworkCodeError>>(new NetworkCodeError(ex.ErrorCode, ex.Message));
       }
       catch (Exception ex)
       {
+         TraceLogger.LogServerError("TCP Listener: Failed to bind to {0}: {1}", LocalAddress, ex.Message);
          return new ValueTask<VoidResult<NetworkCodeError>>(new NetworkCodeError(-1, ex.Message));
       }
    }
@@ -62,6 +67,7 @@ public sealed class TcpNetworkListener(
    {
       try
       {
+         TraceLogger.LogServerInfo("TCP Listener: Unbinding and stopping listener socket on {0}", LocalAddress);
          _acceptCts?.Cancel();
          _acceptCts?.Dispose();
 
@@ -72,10 +78,12 @@ public sealed class TcpNetworkListener(
 
          _sessionChannel.Writer.TryComplete();
 
+         TraceLogger.LogServerInfo("TCP Listener: Successfully unbound from {0}", LocalAddress);
          return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
       catch (Exception ex)
       {
+         TraceLogger.LogServerError("TCP Listener: Error during unbind from {0}: {1}", LocalAddress, ex.Message);
          return new ValueTask<VoidResult<NetworkCodeError>>(new NetworkCodeError(-1, ex.Message));
       }
    }
@@ -130,6 +138,7 @@ public sealed class TcpNetworkListener(
             var localEndPoint = clientSocket.LocalEndPoint;
             if (localEndPoint is null)
             {
+               TraceLogger.LogServerError("TCP Listener: Rejected connection. Failed to get local endpoint.");
                WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get local endpoint."));
                clientSocket.Dispose();
                return;
@@ -138,11 +147,13 @@ public sealed class TcpNetworkListener(
             var remoteEndPoint = clientSocket.RemoteEndPoint;
             if (remoteEndPoint is null)
             {
+               TraceLogger.LogServerError("TCP Listener: Rejected connection. Failed to get remote endpoint.");
                WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get remote endpoint."));
                clientSocket.Dispose();
                return;
             }
 
+            TraceLogger.LogServerInfo("TCP Listener: Accepted connection from client {0}", remoteEndPoint);
             _ = Task.Run(() => HandshakeAndEnqueueAsync(clientSocket, localEndPoint, remoteEndPoint, token), token);
          }
          catch (OperationCanceledException)
@@ -156,6 +167,7 @@ public sealed class TcpNetworkListener(
                break;
             }
 
+            TraceLogger.LogServerError("TCP Listener: Socket error accepting client: {0}", ex.Message);
             WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, $"Listener acceptance error: {ex.Message}"));
          }
          catch (Exception ex)
@@ -165,79 +177,85 @@ public sealed class TcpNetworkListener(
                break;
             }
 
+            TraceLogger.LogServerError("TCP Listener: Unexpected error accepting client: {0}", ex.Message);
             WriteToSessionChannel(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
          }
       }
    }
 
-    private async Task HandshakeAndEnqueueAsync(
-       Socket socket,
-       EndPoint localEndPoint,
-       EndPoint remoteEndPoint,
-       CancellationToken token)
-    {
-       Stream? stream = null;
-       var success = false;
+   private async Task HandshakeAndEnqueueAsync(
+      Socket socket,
+      EndPoint localEndPoint,
+      EndPoint remoteEndPoint,
+      CancellationToken token)
+   {
+      Stream? stream = null;
+      var success = false;
+      try
+      {
+         if (_options.UseSsl)
+         {
+            TraceLogger.LogServerInfo("TCP Listener: Beginning SSL server authentication for client {0}", remoteEndPoint);
+            using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            handshakeTimeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
 
-       try
-       {
-          if (_options.UseSsl)
-          {
-             using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-             handshakeTimeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+            var networkStream = new NetworkStream(socket, ownsSocket: true);
+            var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
 
-             var networkStream = new NetworkStream(socket, ownsSocket: true);
-             var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
+            var sslOptions = _options.SslServerOptions ?? _options.StreamOptions.SslServerOptions;
+            if (sslOptions is null)
+            {
+               TraceLogger.LogServerError("TCP Listener: SSL handshake aborted for client {0}. SslServerOptions are missing.", remoteEndPoint);
+               WriteToSessionChannel(new NetworkCodeError(-1, "SSL server authentication options are missing."));
+               sslStream.Dispose();
+               return;
+            }
 
-             var sslOptions = _options.SslServerOptions ?? _options.StreamOptions.SslServerOptions;
-             if (sslOptions is null)
-             {
-                WriteToSessionChannel(new NetworkCodeError(-1, "SSL server authentication options are missing."));
-                await sslStream.DisposeAsync();
-                return;
-             }
+            await sslStream.AuthenticateAsServerAsync(sslOptions, handshakeTimeoutCts.Token);
+            stream = sslStream;
+            TraceLogger.LogServerInfo("TCP Listener: SSL server successfully authenticated client {0}", remoteEndPoint);
+         }
+         else if (_options.ForceStreamBased)
+         {
+            stream = new NetworkStream(socket, ownsSocket: true);
+         }
 
-             await sslStream.AuthenticateAsServerAsync(sslOptions, handshakeTimeoutCts.Token);
-             stream = sslStream;
-          }
-          else if (_options.ForceStreamBased)
-          {
-             stream = new NetworkStream(socket, ownsSocket: true);
-          }
+         var connection = _ioQueueRegistry.Create(socket, stream);
+         var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
 
-          var connection = _ioQueueRegistry.Create(socket, stream);
-          var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
-
-          await _sessionChannel.Writer.WriteAsync(session, token);
-          success = true;
-       }
-       catch (OperationCanceledException)
-       {
-          // ignored
-       }
-       catch (SocketException ex)
-       {
-          WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, ex.Message));
-       }
-       catch (Exception ex)
-       {
-          WriteToSessionChannel(new NetworkCodeError(-1, ex.Message));
-       }
-       finally
-       {
-          if (!success)
-          {
-             if (stream is not null)
-             {
-                await stream.DisposeAsync();
-             }
-             else
-             {
-                socket.Dispose();
-             }
-          }
-       }
-    }
+         TraceLogger.LogServerInfo("TCP Listener: Enqueuing network session {0} for client {1}", session.Id, remoteEndPoint);
+         await _sessionChannel.Writer.WriteAsync(session, token);
+         success = true;
+      }
+      catch (OperationCanceledException)
+      {
+         TraceLogger.LogServerError("TCP Listener: Connection handshake timed out or cancelled for client {0}", remoteEndPoint);
+      }
+      catch (SocketException ex)
+      {
+         TraceLogger.LogServerError("TCP Listener: Socket error during handshake for client {0}: {1}", remoteEndPoint, ex.Message);
+         WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, ex.Message));
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogServerError("TCP Listener: Unexpected error during handshake for client {0}: {1}", remoteEndPoint, ex.Message);
+         WriteToSessionChannel(new NetworkCodeError(-1, ex.Message));
+      }
+      finally
+      {
+         if (!success)
+         {
+            if (stream is not null)
+            {
+               await stream.DisposeAsync();
+            }
+            else
+            {
+               socket.Dispose();
+            }
+         }
+      }
+   }
 
    private void WriteToSessionChannel(Result<INetworkSession, NetworkCodeError> result)
    {

@@ -1,6 +1,7 @@
 using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Transports.Tcp;
 
@@ -21,6 +22,7 @@ public sealed class TcpNetworkStream(
 
    public ValueTask DisposeAsync()
    {
+      TraceLogger.LogNeutralInfo("TCP Stream: Disposing stream wrapper for session {0}", Session.Id);
       return ValueTask.CompletedTask;
    }
 }

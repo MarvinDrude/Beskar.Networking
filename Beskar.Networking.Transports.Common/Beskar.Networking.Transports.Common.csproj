@@ -1,10 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
    </PropertyGroup>
 
    <ItemGroup>
      <ProjectReference Include="..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+     <ProjectReference Include="..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
    </ItemGroup>
 
 </Project>

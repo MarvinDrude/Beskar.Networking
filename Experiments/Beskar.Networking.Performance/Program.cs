@@ -486,12 +486,12 @@ public static class Program
 
         stopwatch.Stop();
 
-        // Signal complete
-        await clientStream.Transport.Output.CompleteAsync();
-        await ((IAsyncDisposable)clientSession).DisposeAsync();
+        // Signal complete by disposing the stream wrapper (transmits FIN gracefully)
+        await clientStream.DisposeAsync();
 
         // Wait for server to capture all bytes (including the pre-written one)
         var totalBytesRead = await serverReadTaskCompletion.Task;
+        await ((IAsyncDisposable)clientSession).DisposeAsync();
         await listener.UnbindAsync();
 
         ConsoleRender.WriteMarkupLine($"[green]QUIC Completed:[/] Transferred [white]{totalBytesRead / (1024.0 * 1024.0):N2} MB[/] in [white]{stopwatch.Elapsed.TotalSeconds:N2}s[/]\n");

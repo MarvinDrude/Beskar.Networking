@@ -2,6 +2,7 @@ using System.Buffers;
 using System.IO.Pipelines;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Transports.Common.Sockets;
 
@@ -140,6 +141,8 @@ public sealed class SocketSender(PipeOptions pipeOptions)
          {
             throw new SocketException((int)SocketError.ConnectionAborted);
          }
+
+         TraceLogger.LogNeutralInfo("SocketSender: Transmitted {0} bytes to socket", bytesSent);
          
          memory = memory[bytesSent..];
       }

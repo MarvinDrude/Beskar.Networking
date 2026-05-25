@@ -8,7 +8,8 @@ using Beskar.Networking.Transports.Tcp.Extensions;
 using Beskar.Utilities.Console.Rendering;
 using Beskar.Utilities.Tracing;
 
-Console.Clear();
+try { Console.Clear(); } catch {}
+Beskar.Utilities.Tracing.TraceLogger.IsEnabled = true;
 ConsoleRender.DrawHeader(
     "BESKAR NETWORKING EXPERIMENTS",
     "Automated TCP Client/Server Connection Demo",
