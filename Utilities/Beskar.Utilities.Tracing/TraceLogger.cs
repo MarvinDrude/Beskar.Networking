@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using Beskar.Utilities.Console.Rendering;
 using Me.Memory.Buffers;
 
 namespace Beskar.Utilities.Tracing;
@@ -84,7 +85,7 @@ public static class TraceLogger
          WriteLevel(ref messageWriter, level);
 
          messageWriter.WriteLine($" {message}");
-         System.Console.WriteLine(messageWriter.WrittenSpan);
+         ConsoleRender.WriteMarkup(messageWriter.ToString());
       }
       finally
       {

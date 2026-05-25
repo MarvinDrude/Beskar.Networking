@@ -38,7 +38,7 @@ public sealed class TcpIoQueue : IDisposable
       if (UseStreamBased)
       {
          ArgumentNullException.ThrowIfNull(stream);
-         TraceLogger.LogNeutralInfo("Creating tcp stream connection of socket {Socket}", socket);
+         TraceLogger.LogNeutralInfo("Creating tcp stream connection of socket {0}", socket.RemoteEndPoint);
 
          var connection = StreamConnectionPool.Get(() => new StreamConnection(
             StreamSettings.ReceiveOptions, StreamSettings.SendOptions));
@@ -50,7 +50,7 @@ public sealed class TcpIoQueue : IDisposable
       }
       else
       {
-         TraceLogger.LogNeutralInfo("Creating tcp socket connection of socket {Socket}", socket);
+         TraceLogger.LogNeutralInfo("Creating tcp socket connection of socket {0}", socket.RemoteEndPoint);
          var connection = SocketConnectionPool.Get(() => new SocketConnection(
             SocketSettings.PipeScheduler, SocketSettings.MemoryPool));
 
