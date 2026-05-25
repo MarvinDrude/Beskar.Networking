@@ -53,7 +53,14 @@ public sealed class QuicNetworkSession(
       }
       catch (QuicException ex)
       {
-         TraceLogger.LogServerError("QUIC Session {0}: QuicException accepting inbound stream (Code: {1}): {2}", Id, (int)ex.QuicError, ex.Message);
+         if (ex.QuicError == QuicError.ConnectionAborted)
+         {
+            TraceLogger.LogServerInfo("QUIC Session {0}: Connection closed by peer gracefully or aborted (Application Error Code: {1})", Id, ex.ApplicationErrorCode);
+         }
+         else
+         {
+            TraceLogger.LogServerError("QUIC Session {0}: QuicException accepting inbound stream (Code: {1}): {2}", Id, (int)ex.QuicError, ex.Message);
+         }
          return new NetworkCodeError((int)ex.QuicError, ex.Message);
       }
       catch (OperationCanceledException) when (_cts.IsCancellationRequested)
