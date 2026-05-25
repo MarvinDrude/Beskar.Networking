@@ -131,6 +131,7 @@ public sealed class TcpNetworkListener(
             if (localEndPoint is null)
             {
                WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get local endpoint."));
+               clientSocket.Dispose();
                return;
             }
 
@@ -138,6 +139,7 @@ public sealed class TcpNetworkListener(
             if (remoteEndPoint is null)
             {
                WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get remote endpoint."));
+               clientSocket.Dispose();
                return;
             }
 
@@ -168,58 +170,74 @@ public sealed class TcpNetworkListener(
       }
    }
 
-   private async Task HandshakeAndEnqueueAsync(
-      Socket socket,
-      EndPoint localEndPoint,
-      EndPoint remoteEndPoint,
-      CancellationToken token)
-   {
-      try
-      {
-         Stream? stream = null;
-         if (_options.UseSsl)
-         {
-            using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            handshakeTimeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+    private async Task HandshakeAndEnqueueAsync(
+       Socket socket,
+       EndPoint localEndPoint,
+       EndPoint remoteEndPoint,
+       CancellationToken token)
+    {
+       Stream? stream = null;
+       var success = false;
 
-            var networkStream = new NetworkStream(socket, ownsSocket: true);
-            var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
+       try
+       {
+          if (_options.UseSsl)
+          {
+             using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+             handshakeTimeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
 
-            var sslOptions = _options.SslServerOptions ?? _options.StreamOptions.SslServerOptions;
-            if (sslOptions is null)
-            {
-               WriteToSessionChannel(new NetworkCodeError(-1, "SSL server authentication options are missing."));
-               return;
-            }
+             var networkStream = new NetworkStream(socket, ownsSocket: true);
+             var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
 
-            await sslStream.AuthenticateAsServerAsync(sslOptions, handshakeTimeoutCts.Token);
-            stream = sslStream;
-         }
-         else if (_options.ForceStreamBased)
-         {
-            stream = new NetworkStream(socket, ownsSocket: true);
-         }
+             var sslOptions = _options.SslServerOptions ?? _options.StreamOptions.SslServerOptions;
+             if (sslOptions is null)
+             {
+                WriteToSessionChannel(new NetworkCodeError(-1, "SSL server authentication options are missing."));
+                await sslStream.DisposeAsync();
+                return;
+             }
 
-         var connection = _ioQueueRegistry.Create(socket, stream);
-         var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
+             await sslStream.AuthenticateAsServerAsync(sslOptions, handshakeTimeoutCts.Token);
+             stream = sslStream;
+          }
+          else if (_options.ForceStreamBased)
+          {
+             stream = new NetworkStream(socket, ownsSocket: true);
+          }
 
-         await _sessionChannel.Writer.WriteAsync(session, token);
-      }
-      catch (OperationCanceledException)
-      {
-         // ignored
-      }
-      catch (SocketException ex)
-      {
-         WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, ex.Message));
-         socket.Dispose();
-      }
-      catch (Exception ex)
-      {
-         WriteToSessionChannel(new NetworkCodeError(-1, ex.Message));
-         socket.Dispose();
-      }
-   }
+          var connection = _ioQueueRegistry.Create(socket, stream);
+          var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
+
+          await _sessionChannel.Writer.WriteAsync(session, token);
+          success = true;
+       }
+       catch (OperationCanceledException)
+       {
+          // ignored
+       }
+       catch (SocketException ex)
+       {
+          WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, ex.Message));
+       }
+       catch (Exception ex)
+       {
+          WriteToSessionChannel(new NetworkCodeError(-1, ex.Message));
+       }
+       finally
+       {
+          if (!success)
+          {
+             if (stream is not null)
+             {
+                await stream.DisposeAsync();
+             }
+             else
+             {
+                socket.Dispose();
+             }
+          }
+       }
+    }
 
    private void WriteToSessionChannel(Result<INetworkSession, NetworkCodeError> result)
    {

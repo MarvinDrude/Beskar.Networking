@@ -14,6 +14,7 @@ namespace Beskar.Networking.Transports.Ws;
 public static class WsHandshake
 {
    private const string MagicGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+   private static readonly byte[] EndOfHeadersSequence = "\r\n\r\n"u8.ToArray();
 
    /// <summary>
    /// Computes the Sec-WebSocket-Accept key response for a given client key.
@@ -238,11 +239,11 @@ public static class WsHandshake
          var result = await reader.ReadAsync(ct);
          var buffer = result.Buffer;
 
-         var position = FindSequence(buffer, "\r\n\r\n"u8.ToArray());
+         var position = FindSequence(buffer, EndOfHeadersSequence);
          if (position.HasValue)
          {
             var headerSequence = buffer.Slice(0, position.Value);
-            var headerText = Encoding.ASCII.GetString(headerSequence.ToArray());
+            var headerText = Encoding.ASCII.GetString(headerSequence);
 
             reader.AdvanceTo(buffer.GetPosition(4, position.Value));
             return headerText;
