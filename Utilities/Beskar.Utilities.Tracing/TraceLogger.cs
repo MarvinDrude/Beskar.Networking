@@ -11,7 +11,53 @@ public static class TraceLogger
    private const string Conditional = "DEBUG";
    public static bool IsEnabled { get; set; } = false;
 
+   [Conditional(Conditional)]
+   public static void LogNeutralWarning(string template, params object?[] args)
+      => Log(TraceLogLevel.Warning, string.Format(template, args), TraceLogOrigin.None);
 
+   [Conditional(Conditional)]
+   public static void LogNeutralError(string template, params object?[] args)
+      => Log(TraceLogLevel.Error, string.Format(template, args), TraceLogOrigin.None);
+
+   [Conditional(Conditional)]
+   public static void LogNeutralInfo(string template, params object?[] args)
+      => Log(TraceLogLevel.Info, string.Format(template, args), TraceLogOrigin.None);
+
+   [Conditional(Conditional)]
+   public static void LogClientWarning(string template, params object?[] args)
+      => Log(TraceLogLevel.Warning, string.Format(template, args), TraceLogOrigin.Client);
+
+   [Conditional(Conditional)]
+   public static void LogClientError(string template, params object?[] args)
+      => Log(TraceLogLevel.Error, string.Format(template, args), TraceLogOrigin.Client);
+
+   [Conditional(Conditional)]
+   public static void LogClientInfo(string template, params object?[] args)
+      => Log(TraceLogLevel.Info, string.Format(template, args), TraceLogOrigin.Client);
+
+   [Conditional(Conditional)]
+   public static void LogServerWarning(string template, params object?[] args)
+      => Log(TraceLogLevel.Warning, string.Format(template, args), TraceLogOrigin.Server);
+
+   [Conditional(Conditional)]
+   public static void LogServerError(string template, params object?[] args)
+      => Log(TraceLogLevel.Error, string.Format(template, args), TraceLogOrigin.Server);
+
+   [Conditional(Conditional)]
+   public static void LogServerInfo(string template, params object?[] args)
+      => Log(TraceLogLevel.Info, string.Format(template, args), TraceLogOrigin.Server);
+
+   [Conditional(Conditional)]
+   public static void LogWarning(string template, TraceLogOrigin origin = TraceLogOrigin.Server, params object?[] args)
+      => Log(TraceLogLevel.Warning, string.Format(template, args), origin);
+
+   [Conditional(Conditional)]
+   public static void LogError(string template, TraceLogOrigin origin = TraceLogOrigin.Server, params object?[] args)
+      => Log(TraceLogLevel.Error, string.Format(template, args), origin);
+
+   [Conditional(Conditional)]
+   public static void LogInfo(string template, TraceLogOrigin origin = TraceLogOrigin.Server, params object?[] args)
+      => Log(TraceLogLevel.Info, string.Format(template, args), origin);
 
    [Conditional(Conditional)]
    public static void LogWarning(string message, TraceLogOrigin origin = TraceLogOrigin.Server)
