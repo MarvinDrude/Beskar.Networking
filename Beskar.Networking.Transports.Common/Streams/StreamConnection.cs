@@ -2,7 +2,7 @@ using System.Buffers;
 using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
 using Beskar.Utilities.Tracing;
-using Me.Memory.Pools;
+using Beskar.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Common.Streams;
 

@@ -4,8 +4,10 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Beskar.Utilities.Tracing;
-using Me.Memory.Buffers;
-using Me.Memory.Pools;
+using Beskar.Memory.Buffers;
+using Beskar.Memory.Owners;
+using Beskar.Memory.Pools;
+using Beskar.Memory.Writers;
 
 namespace Beskar.Networking.Transports.Ws;
 

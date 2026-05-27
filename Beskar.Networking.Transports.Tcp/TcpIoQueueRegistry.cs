@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using Beskar.Networking.Transports.Common.Sockets;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
-using Me.Memory.Pools;
+using Beskar.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Tcp;
 

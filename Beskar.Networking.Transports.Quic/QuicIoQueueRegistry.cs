@@ -3,7 +3,7 @@ using System.Net.Quic;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Networking.Transports.Common.Settings;
 using Beskar.Utilities.Tracing;
-using Me.Memory.Pools;
+using Beskar.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Quic;
 

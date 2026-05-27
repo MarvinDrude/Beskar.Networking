@@ -1,5 +1,6 @@
 using System.Diagnostics;
-using Me.Memory.Buffers;
+using Beskar.Memory.Buffers;
+using Beskar.Memory.Writers;
 using Beskar.Utilities.Console.Rendering;
 
 namespace Beskar.Utilities.Tracing;

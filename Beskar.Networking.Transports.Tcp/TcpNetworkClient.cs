@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Utilities.Tracing;
-using Me.Memory.Results;
+using Beskar.Memory.Results;
 
 namespace Beskar.Networking.Transports.Tcp;
 

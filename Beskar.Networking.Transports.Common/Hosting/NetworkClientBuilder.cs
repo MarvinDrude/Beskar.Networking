@@ -1,7 +1,7 @@
 using System.Net;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
-using Me.Memory.Results;
+using Beskar.Memory.Results;
 
 namespace Beskar.Networking.Transports.Common.Hosting;
 

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
    </PropertyGroup>
@@ -8,7 +8,7 @@
    </ItemGroup>
 
    <ItemGroup>
-     <PackageReference Include="Me.Memory" />
+     <PackageReference Include="Beskar.Memory" />
    </ItemGroup>
 
 </Project>

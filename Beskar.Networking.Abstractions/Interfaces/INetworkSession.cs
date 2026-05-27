@@ -1,7 +1,7 @@
-﻿using System.Net;
+using System.Net;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
-using Me.Memory.Results;
+using Beskar.Memory.Results;
 
 namespace Beskar.Networking.Abstractions.Interfaces;
 
