@@ -3,4 +3,19 @@
    <PropertyGroup>
    </PropertyGroup>
 
+   <ItemGroup>
+     <PackageReference Include="Beskar.Memory.Code.EnumGenerator" />
+     <PackageReference Include="Beskar.Memory.Code.PacketGenerator" />
+     <PackageReference Include="Beskar.Memory.Serialization" />
+   </ItemGroup>
+
+   <ItemGroup>
+     <Folder Include="Models\" />
+     <Folder Include="Registries\" />
+   </ItemGroup>
+
+   <ItemGroup>
+     <ProjectReference Include="..\..\Common\Beskar.Networking.Common\Beskar.Networking.Common.csproj" />
+   </ItemGroup>
+
 </Project>
