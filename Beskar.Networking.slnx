@@ -12,6 +12,7 @@
   </Folder>
   <Folder Name="/Clustering/">
     <Project Path="Clustering/Beskar.Networking.Cluster.Protocol/Beskar.Networking.Cluster.Protocol.csproj" />
+    <Project Path="Clustering/Beskar.Networking.Cluster/Beskar.Networking.Cluster.csproj" />
   </Folder>
   <Folder Name="/Common/">
     <Project Path="Common/Beskar.Networking.Common/Beskar.Networking.Common.csproj" />

@@ -1,0 +1,11 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+   </PropertyGroup>
+
+   <ItemGroup>
+     <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+     <ProjectReference Include="..\Beskar.Networking.Cluster.Protocol\Beskar.Networking.Cluster.Protocol.csproj" />
+   </ItemGroup>
+
+</Project>
