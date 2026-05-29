@@ -43,5 +43,5 @@ public struct ShortClusterMemberInfo
    /// The capabilities of the cluster member.
    /// </summary>
    [BeskarOrder(5)]
-   public required string[] Capabilities { get; set; }
+   public required string[] Capabilities { get; init; }
 }

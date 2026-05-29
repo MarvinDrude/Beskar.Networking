@@ -1,8 +1,9 @@
-﻿using Beskar.Memory.Serialization.Attributes;
+using System;
+using Beskar.Memory.Serialization.Attributes;
 using Beskar.Networking.Cluster.Protocol.Enums;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
 
-namespace Beskar.Networking.Cluster.Protocol.Packets;
+namespace Beskar.Networking.Cluster.Protocol.Packets.Node;
 
 /// <summary>
 /// Sent by a cluster node to notify other nodes that it is leaving.

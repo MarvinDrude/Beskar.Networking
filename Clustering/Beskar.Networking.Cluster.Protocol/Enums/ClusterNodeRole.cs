@@ -1,35 +1,35 @@
-﻿using Beskar.Memory.Code.EnumGenerator.Attributes;
+using Beskar.Memory.Code.EnumGenerator.Attributes;
 
 namespace Beskar.Networking.Cluster.Protocol.Enums;
 
 /// <summary>
-/// Represents the role of a cluster node.
+/// Represents the operational role of a cluster node within a shard or consensus group.
 /// </summary>
 [FastEnum]
 public enum ClusterNodeRole : byte
 {
    /// <summary>
-   /// The role is unknown.
+   /// The node is not a member of the cluster.
    /// </summary>
    None = 0,
 
    /// <summary>
-   /// The node is a leader.
+   /// The node is a leader in the shard or consensus group.
    /// </summary>
-   Leader,
+   Leader = 1,
 
    /// <summary>
-   /// The node is a replica.
+   /// The node is a replica in the shard or consensus group.
    /// </summary>
-   Replica,
+   Replica = 2,
 
    /// <summary>
-   /// The node is a candidate for leader election.
+   /// The node is a candidate in the shard or consensus group.
    /// </summary>
-   Candidate,
+   Candidate = 3,
 
    /// <summary>
-   /// The node is an observer.
+   /// The node is an observer in the shard or consensus group.
    /// </summary>
-   Observer
+   Observer = 4
 }

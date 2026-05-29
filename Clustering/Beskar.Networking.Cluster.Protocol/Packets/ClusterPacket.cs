@@ -1,4 +1,5 @@
-﻿
+
+using System;
 using Beskar.Memory.Serialization.Attributes;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
 
@@ -42,6 +43,12 @@ public struct ClusterPacket<TPacket>
    /// </summary>
    [BeskarOrder(4)]
    public long CurrentEpoch { get; init; }
+
+   /// <summary>
+   /// The identifier of the specific shard (consensus group) this packet is routed to.
+   /// </summary>
+   [BeskarOrder(5)]
+   public Guid ShardId { get; init; }
 
    public ClusterPacket()
    {

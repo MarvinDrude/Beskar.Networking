@@ -1,9 +1,10 @@
-﻿using Beskar.Memory.Serialization.Attributes;
+using System;
+using Beskar.Memory.Serialization.Attributes;
 using Beskar.Networking.Cluster.Protocol.Enums;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
 using Beskar.Networking.Cluster.Protocol.Models;
 
-namespace Beskar.Networking.Cluster.Protocol.Packets;
+namespace Beskar.Networking.Cluster.Protocol.Packets.Node;
 
 /// <summary>
 /// Returned by an active cluster node to approve/reject

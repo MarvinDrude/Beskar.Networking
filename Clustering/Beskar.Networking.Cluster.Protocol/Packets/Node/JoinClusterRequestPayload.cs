@@ -1,7 +1,8 @@
-﻿using Beskar.Memory.Serialization.Attributes;
+using System;
+using Beskar.Memory.Serialization.Attributes;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
 
-namespace Beskar.Networking.Cluster.Protocol.Packets;
+namespace Beskar.Networking.Cluster.Protocol.Packets.Node;
 
 /// <summary>
 /// Sent by a new node when attempting to bootstrap or connect
@@ -25,20 +26,18 @@ public struct JoinClusterRequestPayload
 
    /// <summary>
    /// The name of the cluster to join.
-   /// (Prevents joining a different cluster)
    /// </summary>
    [BeskarOrder(2)]
    public required string ClusterName { get; init; }
 
    /// <summary>
    /// The authentication token used to join the cluster.
-   /// (Optional)
    /// </summary>
    [BeskarOrder(3)]
    public string? AuthenticationToken { get; init; }
 
    /// <summary>
-   /// The timestamp of the request (no replays)
+   /// The timestamp of the request.
    /// </summary>
    [BeskarOrder(4)]
    public long Timestamp { get; init; }
