@@ -4,26 +4,44 @@ using Beskar.Networking.Cluster.Protocol.Interfaces;
 
 namespace Beskar.Networking.Cluster.Protocol.Packets;
 
+/// <summary>
+/// All internal cluster packets are wrapped in this structure.
+/// </summary>
 [BeskarObject]
 public struct ClusterPacket<TPacket>
    where TPacket : IClusterPacketPayload
 {
    private const ushort Magic = 0xBE5C;
 
+   /// <summary>
+   /// The magic number of the cluster packet.
+   /// </summary>
    [BeskarOrder(0)]
-   public ushort MagicNumber { get; set; } = Magic;
+   public ushort MagicNumber { get; init; } = Magic;
 
+   /// <summary>
+   /// The version of the cluster packet.
+   /// </summary>
    [BeskarOrder(1)]
-   public ushort Version { get; set; }
+   public ushort Version { get; init; }
 
+   /// <summary>
+   /// The correlation ID of the cluster packet.
+   /// </summary>
    [BeskarOrder(2)]
-   public Guid CorrelationId { get; set; }
+   public Guid CorrelationId { get; init; }
 
+   /// <summary>
+   /// The payload of the cluster packet.
+   /// </summary>
    [BeskarOrder(3)]
-   public int Length { get; set; }
+   public required TPacket Payload { get; init; }
 
+   /// <summary>
+   /// The current epoch of the cluster.
+   /// </summary>
    [BeskarOrder(4)]
-   public required TPacket Payload { get; set; }
+   public long CurrentEpoch { get; init; }
 
    public ClusterPacket()
    {
