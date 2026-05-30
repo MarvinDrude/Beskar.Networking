@@ -3,6 +3,7 @@ using Beskar.Memory.Code.PacketGenerator.Interfaces;
 using Beskar.Memory.Extensions;
 using Beskar.Memory.Serialization;
 using Beskar.Memory.Writers;
+using Beskar.Networking.Cluster.Constants;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
 using Beskar.Networking.Cluster.Protocol.Packets;
 using Beskar.Networking.Cluster.Protocol.Registries;
@@ -20,7 +21,7 @@ public sealed class ClusterCommunicator(
    private readonly ClusterMessageRegistry _messageRegistry = messageRegistry;
 
    private readonly Guid _localNodeId = localNodeId;
-   private const ushort _version = 0x01;
+   private const ushort _version = ClusterConstants.Version;
 
    public Task BroadcastAsync<TPacket>(Guid shardId, scoped in TPacket payload,
       long currentEpoch, CancellationToken ct = default)

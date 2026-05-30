@@ -10,6 +10,7 @@
    </ItemGroup>
 
    <ItemGroup>
+     <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
      <ProjectReference Include="..\..\Common\Beskar.Networking.Common\Beskar.Networking.Common.csproj" />
    </ItemGroup>
 
