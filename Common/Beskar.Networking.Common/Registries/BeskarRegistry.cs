@@ -19,7 +19,7 @@ public abstract class BeskarRegistry<TState>(BeSerializerOptions? options = null
    }
 
    public override void Serialize<T>(
-      ref BufferWriter<byte> writer, T packet)
+      ref BufferWriter<byte> writer, scoped in T packet)
    {
       BeSerializer.Serialize(packet, ref writer, _options);
    }

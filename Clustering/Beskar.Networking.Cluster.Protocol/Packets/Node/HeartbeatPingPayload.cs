@@ -1,6 +1,9 @@
 using System;
+using Beskar.Memory.Code.PacketGenerator.Attributes;
+using Beskar.Memory.Code.PacketGenerator.Interfaces;
 using Beskar.Memory.Serialization.Attributes;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
+using Beskar.Networking.Cluster.Protocol.Registries;
 
 namespace Beskar.Networking.Cluster.Protocol.Packets.Node;
 
@@ -8,8 +11,9 @@ namespace Beskar.Networking.Cluster.Protocol.Packets.Node;
 /// Sent by a cluster node to check if a peer is still physically alive.
 /// </summary>
 [BeskarObject]
+[Packet(typeof(ClusterMessageRegistry), Wrapper = typeof(ClusterPacket<>))]
 public struct HeartbeatPingPayload
-   : IClusterPacketPayload
+   : IClusterPacketPayload, IPacket
 {
    /// <summary>
    /// The unique identifier of the sender node.

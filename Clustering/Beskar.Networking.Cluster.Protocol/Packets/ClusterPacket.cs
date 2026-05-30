@@ -1,5 +1,4 @@
-
-using System;
+using Beskar.Memory.Code.PacketGenerator.Interfaces;
 using Beskar.Memory.Serialization.Attributes;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
 
@@ -9,8 +8,8 @@ namespace Beskar.Networking.Cluster.Protocol.Packets;
 /// All internal cluster packets are wrapped in this structure.
 /// </summary>
 [BeskarObject]
-public struct ClusterPacket<TPacket>
-   where TPacket : IClusterPacketPayload
+public readonly struct ClusterPacket<TPacket> : IPacket
+   where TPacket : IClusterPacketPayload, IPacket
 {
    private const ushort Magic = 0xBE5C;
 

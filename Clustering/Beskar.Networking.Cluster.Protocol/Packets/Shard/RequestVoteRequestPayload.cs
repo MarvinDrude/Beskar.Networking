@@ -1,6 +1,9 @@
 using System;
+using Beskar.Memory.Code.PacketGenerator.Attributes;
+using Beskar.Memory.Code.PacketGenerator.Interfaces;
 using Beskar.Memory.Serialization.Attributes;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
+using Beskar.Networking.Cluster.Protocol.Registries;
 
 namespace Beskar.Networking.Cluster.Protocol.Packets.Shard;
 
@@ -8,8 +11,9 @@ namespace Beskar.Networking.Cluster.Protocol.Packets.Shard;
 /// Sent by a candidate node seeking votes to become the Leader for a specific shard.
 /// </summary>
 [BeskarObject]
+[Packet(typeof(ClusterMessageRegistry), Wrapper = typeof(ClusterPacket<>))]
 public struct RequestVoteRequestPayload
-   : IClusterPacketPayload
+   : IClusterPacketPayload, IPacket
 {
    /// <summary>
    /// The unique identifier of the candidate node requesting the vote.

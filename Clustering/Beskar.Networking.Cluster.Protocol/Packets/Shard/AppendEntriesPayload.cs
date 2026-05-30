@@ -1,6 +1,9 @@
 using System;
+using Beskar.Memory.Code.PacketGenerator.Attributes;
+using Beskar.Memory.Code.PacketGenerator.Interfaces;
 using Beskar.Memory.Serialization.Attributes;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
+using Beskar.Networking.Cluster.Protocol.Registries;
 
 namespace Beskar.Networking.Cluster.Protocol.Packets.Shard;
 
@@ -8,8 +11,9 @@ namespace Beskar.Networking.Cluster.Protocol.Packets.Shard;
 /// Sent by the shard leader to replicate state updates or to assert authority (heartbeat).
 /// </summary>
 [BeskarObject]
+[Packet(typeof(ClusterMessageRegistry), Wrapper = typeof(ClusterPacket<>))]
 public struct AppendEntriesPayload
-   : IClusterPacketPayload
+   : IClusterPacketPayload, IPacket
 {
    /// <summary>
    /// The unique identifier of the leader node.

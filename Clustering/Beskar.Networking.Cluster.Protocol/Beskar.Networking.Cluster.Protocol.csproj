@@ -10,10 +10,6 @@
    </ItemGroup>
 
    <ItemGroup>
-     <Folder Include="Registries\" />
-   </ItemGroup>
-
-   <ItemGroup>
      <ProjectReference Include="..\..\Common\Beskar.Networking.Common\Beskar.Networking.Common.csproj" />
    </ItemGroup>
 

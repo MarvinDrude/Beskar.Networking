@@ -1,7 +1,10 @@
 using System;
+using Beskar.Memory.Code.PacketGenerator.Attributes;
+using Beskar.Memory.Code.PacketGenerator.Interfaces;
 using Beskar.Memory.Serialization.Attributes;
 using Beskar.Networking.Cluster.Protocol.Enums;
 using Beskar.Networking.Cluster.Protocol.Interfaces;
+using Beskar.Networking.Cluster.Protocol.Registries;
 
 namespace Beskar.Networking.Cluster.Protocol.Packets.Roles;
 
@@ -9,8 +12,9 @@ namespace Beskar.Networking.Cluster.Protocol.Packets.Roles;
 /// Sent by a node to notify peers that its operational role in a shard has transitioned.
 /// </summary>
 [BeskarObject]
+[Packet(typeof(ClusterMessageRegistry), Wrapper = typeof(ClusterPacket<>))]
 public struct RoleTransitionNotifyPayload
-   : IClusterPacketPayload
+   : IClusterPacketPayload, IPacket
 {
    /// <summary>
    /// The unique identifier of the node undergoing transition.

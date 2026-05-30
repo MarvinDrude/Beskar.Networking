@@ -16,14 +16,20 @@ public sealed class ShardReplica : IAsyncDisposable
    public long LastLogIndex { get; private set; } = 0;
 
    private PausableAsyncTimer _electionTimer;
+
    private readonly ShardReplicaOptions _options;
+   private readonly ClusterCommunicator _communicator;
 
    // 0 = not disposed, 1 = disposed
    private int _isDisposed;
 
-   public ShardReplica(ShardReplicaOptions options)
+   public ShardReplica(
+      ClusterCommunicator communicator,
+      ShardReplicaOptions options)
    {
+      _communicator = communicator;
       _options = options;
+
       StartNewElectionTimer();
    }
 
