@@ -2,6 +2,8 @@
 using Beskar.Memory.Threading;
 using Beskar.Networking.Cluster.Protocol.Enums;
 using Beskar.Networking.Cluster.Protocol.Options;
+using Beskar.Networking.Cluster.Protocol.Packets.Shard;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Cluster.Engine;
 
@@ -33,26 +35,47 @@ public sealed class ShardReplica : IAsyncDisposable
       StartNewElectionTimer();
    }
 
-   private Task ElectionTimerCallback()
+   private async Task ElectionTimerCallback()
    {
+      TraceLogger.LogNeutralInfo("[Shard {0}][Node {1}] Election timeout reached, starting new election", ShardId, NodeId);
       CurrentRole = ClusterNodeRole.Candidate;
       CurrentEpoch++;
 
+      var voteRequest = new RequestVoteRequestPayload
+      {
+         CandidateNodeId = NodeId,
+         LastLogIndex = LastLogIndex,
+         LastLogEpoch = CurrentEpoch - 1
+      };
 
+      // if vote is split
+      StartNewElectionTimer();
+
+      try
+      {
+         await _communicator.BroadcastAsync(ShardId, voteRequest, CurrentEpoch);
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogNeutralError("[Shard {0}][Node {1}] There was an error during election broadcast {2}", ShardId, NodeId, ex.ToString());
+      }
    }
 
    [MemberNotNull(nameof(_electionTimer))]
    private void StartNewElectionTimer()
    {
+      var timeout = GetRandomElectionTimeout();
+      TraceLogger.LogNeutralInfo("[Shard {0}][Node {1}] Starting new election timer with timeout {2}", ShardId, NodeId, timeout);
+
       if (_electionTimer is null)
       {
          _electionTimer = new PausableAsyncTimer(
-            GetRandomElectionTimeout(), ElectionTimerCallback);
+            timeout, ElectionTimerCallback);
       }
 
       _electionTimer.Pause();
-      _electionTimer.UpdateInterval(GetRandomElectionTimeout());
-      _electionTimer.Resume();
+      _electionTimer.UpdateInterval(timeout);
+      _electionTimer.Resume(waitBeforeExecution: true);
    }
 
    private TimeSpan GetRandomElectionTimeout()

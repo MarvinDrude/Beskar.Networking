@@ -22,20 +22,14 @@ public struct RequestVoteRequestPayload
    public Guid CandidateNodeId { get; init; }
 
    /// <summary>
-   /// The candidate's current epoch (term).
-   /// </summary>
-   [BeskarOrder(1)]
-   public long Term { get; init; }
-
-   /// <summary>
    /// The index of the candidate's last log entry.
    /// </summary>
-   [BeskarOrder(2)]
+   [BeskarOrder(1)]
    public long LastLogIndex { get; init; }
 
    /// <summary>
    /// The epoch (term) of the candidate's last log entry.
    /// </summary>
-   [BeskarOrder(3)]
-   public long LastLogTerm { get; init; }
+   [BeskarOrder(2)]
+   public long LastLogEpoch { get; init; }
 }
