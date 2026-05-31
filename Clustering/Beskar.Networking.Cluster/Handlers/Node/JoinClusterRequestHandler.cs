@@ -13,10 +13,14 @@ public class JoinClusterRequestHandler
       ClusterPacket<JoinClusterRequestPayload> packet,
       CancellationToken ct)
    {
-      if (context.Validator.Validate(context, packet) is not PacketValidationResult.Valid)
+      if (context.Validator.Validate(context, packet) is not PacketValidationResult.Valid
+          || context.Stream is null)
       {
          return;
       }
+
+      context.Host.SessionRegistry.Register(packet.Payload.RequestingNodeId, context.Stream);
+      context.IsJoined = true;
 
       var accept = new JoinClusterResponsePayload()
       {

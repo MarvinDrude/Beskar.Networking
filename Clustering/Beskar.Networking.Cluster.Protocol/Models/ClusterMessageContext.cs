@@ -7,11 +7,13 @@ public sealed class ClusterMessageContext : ISpanFormattable
 {
    public required INetworkSession Session { get; init; }
 
+   public INetworkStream? Stream { get; set; }
+
    public required IPacketValidator Validator { get; init; }
 
    public required IClusterHost Host { get; init; }
 
-   public bool IsJoined { get; init; }
+   public bool IsJoined { get; set; }
 
    public string ToString(string? format, IFormatProvider? formatProvider)
    {

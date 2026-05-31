@@ -27,6 +27,11 @@ public sealed class ClusterHost(
    private Task? _listenerLoopTask;
    private int _isRunning;
 
+   private long _incarnation = 1;
+
+   public long Incarnation => Volatile.Read(ref _incarnation);
+   public long IncrementIncarnation() => Interlocked.Increment(ref _incarnation);
+
    public Guid LocalNodeId { get; } = localNodeId;
 
    public IClusterSessionRegistry SessionRegistry { get; } = sessionRegistry;
@@ -126,8 +131,11 @@ public sealed class ClusterHost(
          if (streamResult.Failed)
             return;
 
+
          var stream = streamResult.Success;
          var reader = stream.Transport.Input;
+
+         context.Stream = stream;
 
          while (!ct.IsCancellationRequested)
          {

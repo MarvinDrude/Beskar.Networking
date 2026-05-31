@@ -5,8 +5,11 @@ namespace Beskar.Networking.Cluster.Protocol.Interfaces;
 public interface IClusterHost
 {
    public Guid LocalNodeId { get; }
+   public long Incarnation { get; }
 
    public IClusterSessionRegistry SessionRegistry { get; }
    public IShardRoutingRegistry RoutingRegistry { get; }
    public ClusterMessageRegistry MessageRegistry { get; }
+
+   public long IncrementIncarnation();
 }
