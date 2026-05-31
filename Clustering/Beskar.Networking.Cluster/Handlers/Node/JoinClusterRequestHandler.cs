@@ -13,12 +13,16 @@ public class JoinClusterRequestHandler
       ClusterPacket<JoinClusterRequestPayload> packet,
       CancellationToken ct)
    {
-      if (context.Validator.Validate(context, packet) is not PacketValidationResult.Valid and var reason)
+      if (context.Validator.Validate(context, packet) is not PacketValidationResult.Valid)
       {
-         TraceLogger.LogNeutralError("[]");
          return;
       }
 
+      var accept = new JoinClusterResponsePayload()
+      {
+         RespondingNodeId = context.Host.LocalNodeId,
 
+         IsSuccess = true
+      };
    }
 }
