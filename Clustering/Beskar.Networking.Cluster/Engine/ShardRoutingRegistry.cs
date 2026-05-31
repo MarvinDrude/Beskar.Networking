@@ -1,11 +1,12 @@
 ﻿using System.Collections.Concurrent;
 using Beskar.Memory.Owners;
 using Beskar.Memory.Writers;
+using Beskar.Networking.Cluster.Protocol.Interfaces;
 using Beskar.Networking.Cluster.Protocol.Models;
 
 namespace Beskar.Networking.Cluster.Engine;
 
-public sealed class ShardRoutingRegistry
+public sealed class ShardRoutingRegistry : IShardRoutingRegistry
 {
    private readonly ConcurrentDictionary<Guid, ShardRouteInfo> _routingTable = [];
 

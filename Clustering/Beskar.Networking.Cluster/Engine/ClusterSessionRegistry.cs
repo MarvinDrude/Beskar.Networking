@@ -1,10 +1,11 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Cluster.Protocol.Interfaces;
 
 namespace Beskar.Networking.Cluster.Engine;
 
-public sealed class ClusterSessionRegistry : IAsyncDisposable
+public sealed class ClusterSessionRegistry : IClusterSessionRegistry
 {
    private readonly ConcurrentDictionary<Guid, INetworkStream> _activeSessions = [];
 

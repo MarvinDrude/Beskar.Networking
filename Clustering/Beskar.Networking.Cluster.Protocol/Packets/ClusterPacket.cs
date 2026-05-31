@@ -11,7 +11,7 @@ namespace Beskar.Networking.Cluster.Protocol.Packets;
 public readonly struct ClusterPacket<TPacket> : IPacket
    where TPacket : IClusterPacketPayload, IPacket
 {
-   private const ushort Magic = 0xBE5C;
+   public const ushort Magic = 0xBE5C;
 
    /// <summary>
    /// The magic number of the cluster packet.

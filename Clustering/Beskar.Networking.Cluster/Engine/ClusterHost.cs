@@ -4,6 +4,7 @@ using Beskar.Memory.Code.PacketGenerator.Enums;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Cluster.Protocol.Interfaces;
 using Beskar.Networking.Cluster.Protocol.Models;
 using Beskar.Networking.Cluster.Protocol.Registries;
 using Beskar.Utilities.Tracing;
@@ -16,19 +17,21 @@ public sealed class ClusterHost(
    ClusterSessionRegistry sessionRegistry,
    ShardRoutingRegistry shardRoutingRegistry,
    ClusterMessageRegistry messageRegistry)
+   : IClusterHost
 {
-   private readonly Guid _localNodeId = localNodeId;
    private readonly INetworkListener _listener = listener;
-
-   private readonly ClusterSessionRegistry _sessionRegistry = sessionRegistry;
-   private readonly ShardRoutingRegistry _routingRegistry = shardRoutingRegistry;
-   private readonly ClusterMessageRegistry _messageRegistry = messageRegistry;
 
    private readonly CancellationTokenSource _cts = new();
    private readonly ConcurrentDictionary<Guid, ShardReplica> _localReplicas = [];
 
    private Task? _listenerLoopTask;
    private int _isRunning;
+
+   public Guid LocalNodeId { get; } = localNodeId;
+
+   public IClusterSessionRegistry SessionRegistry { get; } = sessionRegistry;
+   public IShardRoutingRegistry RoutingRegistry { get; } = shardRoutingRegistry;
+   public ClusterMessageRegistry MessageRegistry { get; } = messageRegistry;
 
    public async Task<VoidResult<StringError>> StartAsync(CancellationToken ct = default)
    {
@@ -37,7 +40,7 @@ public sealed class ClusterHost(
          return new StringError("ClusterHost is already running.");
       }
 
-      TraceLogger.LogNeutralInfo("[ClusterHost {0}] Starting listener on {1}", _localNodeId, _listener.LocalAddress);
+      TraceLogger.LogNeutralInfo("[ClusterHost {0}] Starting listener on {1}", LocalNodeId, _listener.LocalAddress);
 
       var bindResult = await _listener.BindAsync(ct);
       if (bindResult.Failed)
@@ -56,7 +59,7 @@ public sealed class ClusterHost(
          return new StringError("ClusterHost is not running.");
       }
 
-      TraceLogger.LogNeutralInfo("[ClusterHost {0}] Stopping cluster host...", _localNodeId);
+      TraceLogger.LogNeutralInfo("[ClusterHost {0}] Stopping cluster host...", LocalNodeId);
 
       await _cts.CancelAsync();
 
@@ -78,7 +81,7 @@ public sealed class ClusterHost(
          return new StringError(unbindResult.Error.Message);
       }
 
-      await _sessionRegistry.DisposeAsync();
+      await SessionRegistry.DisposeAsync();
       foreach (var replica in _localReplicas.Values)
       {
          await replica.DisposeAsync();
@@ -102,13 +105,15 @@ public sealed class ClusterHost(
             var context = new ClusterMessageContext()
             {
                Session = session,
+               Validator = new PacketValidator(),
+               Host = this,
             };
 
             _ = Task.Run(() => HandleIncomingSessionAsync(context, ct), ct);
          }
          catch (Exception ex) when (ex is not OperationCanceledException)
          {
-            TraceLogger.LogNeutralError("[ClusterHost {0}] Error in listen loop: {1}", _localNodeId, ex.Message);
+            TraceLogger.LogNeutralError("[ClusterHost {0}] Error in listen loop: {1}", LocalNodeId, ex.Message);
          }
       }
    }
@@ -131,7 +136,7 @@ public sealed class ClusterHost(
 
             while (buffer.Length > 0)
             {
-               var result = await _messageRegistry.RoutePacket(ref context, buffer, ct);
+               var result = await MessageRegistry.RoutePacket(ref context, buffer, ct);
                if (result.State.IsSuccess && result.ConsumedBytes > 0)
                {
                   buffer = buffer.Slice(result.ConsumedBytes);
@@ -149,7 +154,7 @@ public sealed class ClusterHost(
       }
       catch (Exception ex) when (ex is not OperationCanceledException)
       {
-         TraceLogger.LogNeutralError("[ClusterHost {0}] Error during incoming session handshake: {1}", _localNodeId, ex.Message);
+         TraceLogger.LogNeutralError("[ClusterHost {0}] Error during incoming session handshake: {1}", LocalNodeId, ex.Message);
       }
    }
 }
