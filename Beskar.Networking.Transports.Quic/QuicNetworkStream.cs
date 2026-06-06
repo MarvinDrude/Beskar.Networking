@@ -39,8 +39,10 @@ public sealed class QuicNetworkStream(
       }
 
       TraceLogger.LogNeutralInfo("QUIC Stream: Disposing stream wrapper {0} (Direction: {1}) for session {2}", StreamId, Direction, Session.Id);
+
       await _connection.StopAsync();
       await _quicStream.DisposeAsync();
+
       await _session.ReturnConnectionAsync(_connection);
    }
 }

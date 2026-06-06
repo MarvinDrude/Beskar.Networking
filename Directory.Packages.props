@@ -4,10 +4,10 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Beskar.Memory" Version="1.6.1" />
-    <PackageVersion Include="Beskar.Memory.Code.EnumGenerator" Version="1.6.1" />
-    <PackageVersion Include="Beskar.Memory.Code.PacketGenerator" Version="1.6.1" />
-    <PackageVersion Include="Beskar.Memory.Serialization" Version="1.6.1" />
+    <PackageVersion Include="Beskar.Memory" Version="1.6.3" />
+    <PackageVersion Include="Beskar.Memory.Code.EnumGenerator" Version="1.6.3" />
+    <PackageVersion Include="Beskar.Memory.Code.PacketGenerator" Version="1.6.3" />
+    <PackageVersion Include="Beskar.Memory.Serialization" Version="1.6.3" />
     <PackageVersion Include="TUnit" Version="1.43.11" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="CommonMark.NET" Version="0.15.1" />

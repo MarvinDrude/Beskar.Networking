@@ -1,8 +1,10 @@
 using System.Net;
 using Beskar.Memory.Results;
+using Beskar.Memory.Threading;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Managed.Events;
 using Beskar.Networking.Abstractions.Options;
 using Beskar.Utilities.Tracing;
 
@@ -32,23 +34,23 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
    /// <summary>
    /// Occurs when the client successfully connects or reconnects to the endpoint.
    /// </summary>
-   public event Action<INetworkSession>? Connected;
+   public HandlerPipeline<ConnectEvent> Connected { get; } = new();
 
    /// <summary>
    /// Occurs when the client is disconnected.
    /// </summary>
-   public event Action? Disconnected;
+   public HandlerPipeline<DisconnectEvent> Disconnected { get; } = new();
 
    /// <summary>
    /// Occurs when the client is starting a reconnection attempt.
    /// Passes the attempt index (1-based) and the delay duration.
    /// </summary>
-   public event Action<int, TimeSpan>? Reconnecting;
+   public HandlerPipeline<ReconnectEvent> Reconnecting { get; } = new();
 
    /// <summary>
    /// Occurs when the client fails to connect after the configured maximum retry attempts.
    /// </summary>
-   public event Action<NetworkCodeError>? ConnectionFailed;
+   public HandlerPipeline<ConnectionFailedEvent> ConnectionFailed { get; } = new();
 
    /// <summary>
    /// Occurs when the connection state of the client changes.
@@ -131,7 +133,7 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
          _sessionClosedRegistration = session.SessionClosedToken.Register(() => OnSessionClosed(session));
 
          TraceLogger.LogClientInfo("ManagedClient ConnectAsync: Connected successfully. Session ID: {0}", session.Id);
-         Connected?.Invoke(session);
+         await Connected.ExecuteAsync(new ConnectEvent(this, session), cancellationToken: ct);
 
          return result;
       }
@@ -196,7 +198,8 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
       }
 
       TraceLogger.LogClientInfo("ManagedClient DisconnectAsync: Client disconnected.");
-      Disconnected?.Invoke();
+      // ReSharper disable once MethodSupportsCancellation
+      await Disconnected.ExecuteAsync(new DisconnectEvent(this));
    }
 
    /// <summary>
@@ -247,7 +250,7 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
          else
          {
             SetState(StateDisconnected);
-            Disconnected?.Invoke();
+            _ = Disconnected.ExecuteAsync(new DisconnectEvent(this));
          }
       }
    }
@@ -297,13 +300,13 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
             SetState(StateFailed);
 
             TraceLogger.LogClientError("ManagedClient: Max reconnect attempts ({0}) reached. Stopping.", _options.MaxRetryAttempts);
-            ConnectionFailed?.Invoke(new NetworkCodeError(-1, "Max reconnect attempts reached."));
+            await ConnectionFailed.ExecuteAsync(new ConnectionFailedEvent(this, new NetworkCodeError(-1, "Max reconnect attempts reached.")), cancellationToken: clientLifetimeToken);
 
             return;
          }
 
          var delay = _options.BackoffPolicy.GetNextDelay(attempt);
-         Reconnecting?.Invoke(attempt, delay);
+         await Reconnecting.ExecuteAsync(new ReconnectEvent(this, attempt, delay), cancellationToken: clientLifetimeToken);
 
          TraceLogger.LogClientWarning("ManagedClient: Connection lost. Reconnect attempt {0} scheduled in {1}ms", attempt, delay.TotalMilliseconds);
 
@@ -319,9 +322,9 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
          TraceLogger.LogClientInfo("ManagedClient: Reconnect attempt {0} connecting to {1}", attempt, endPoint);
 
          var result = await _innerClient.ConnectAsync(endPoint, clientLifetimeToken);
-         if (result.IsSuccess)
+         if (!result.Failed)
          {
-            var session = result.Success!;
+            var session = result.Success;
             if (clientLifetimeToken.IsCancellationRequested)
             {
                await DisposeSession(session);
@@ -340,7 +343,7 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
             _sessionClosedRegistration = session.SessionClosedToken.Register(() => OnSessionClosed(session));
 
             TraceLogger.LogClientInfo("ManagedClient: Reconnected successfully on attempt {0}. Session ID: {1}", attempt, session.Id);
-            Connected?.Invoke(session);
+            await Connected.ExecuteAsync(new ConnectEvent(this, session), cancellationToken: clientLifetimeToken);
 
             return;
          }
@@ -387,7 +390,6 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
       }
    }
 
-   /// <inheritdoc />
    public async ValueTask DisposeAsync()
    {
       await DisconnectAsync();
