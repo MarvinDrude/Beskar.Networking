@@ -5,6 +5,7 @@
 
    <ItemGroup>
      <PackageReference Include="Beskar.Memory" />
+     <ProjectReference Include="..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
    </ItemGroup>
 
 </Project>

@@ -141,6 +141,7 @@ public sealed class QuicNetworkSession(
 
       try
       {
+         // ReSharper disable once MethodSupportsCancellation
          await _connection.CloseAsync(_options.DefaultCloseErrorCode);
       }
       catch (Exception ex)
