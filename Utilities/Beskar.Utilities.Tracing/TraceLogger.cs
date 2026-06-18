@@ -15,14 +15,16 @@ public static class TraceLogger
 
    private static readonly Lock ConsoleLock = new();
 
-   private static object?[] ColorizeArgs(object?[] args)
+   private static object?[] ColorizeArgs(object?[]? args)
    {
-      if (args == null || args.Length == 0) return Array.Empty<object?>();
+      if (args == null || args.Length == 0) return [];
       var colorized = new object?[args.Length];
+
       for (var i = 0; i < args.Length; i++)
       {
          colorized[i] = args[i] is null ? "[yellow]null[/yellow]" : $"[yellow]{args[i]}[/yellow]";
       }
+
       return colorized;
    }
 

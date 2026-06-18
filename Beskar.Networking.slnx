@@ -10,7 +10,6 @@
     <File Path="README.md" />
     <File Path="SECURITY.md" />
   </Folder>
-  <Folder Name="/Clustering/" />
   <Folder Name="/Common/">
     <Project Path="Common/Beskar.Networking.Common/Beskar.Networking.Common.csproj" />
   </Folder>
@@ -18,6 +17,12 @@
     <Project Path="Experiments/Beskar.Networking.Benchmarks/Beskar.Networking.Benchmarks.csproj" />
     <Project Path="Experiments/Beskar.Networking.Experiments/Beskar.Networking.Experiments.csproj" />
     <Project Path="Experiments/Beskar.Networking.Performance/Beskar.Networking.Performance.csproj" />
+  </Folder>
+  <Folder Name="/Mqtt/">
+    <Project Path="Mqtt/Beskar.Mqtt.Client/Beskar.Mqtt.Client.csproj" />
+    <Project Path="Mqtt/Beskar.Mqtt.Common/Beskar.Mqtt.Common.csproj" />
+    <Project Path="Mqtt/Beskar.Mqtt.Protocol/Beskar.Mqtt.Protocol.csproj" />
+    <Project Path="Mqtt/Beskar.Mqtt.Server/Beskar.Mqtt.Server.csproj" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/Beskar.Networking.Transports.Common.Tests/Beskar.Networking.Transports.Common.Tests.csproj" />
