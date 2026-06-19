@@ -3,4 +3,9 @@
    <PropertyGroup>
    </PropertyGroup>
 
+   <ItemGroup>
+     <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+     <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
+   </ItemGroup>
+
 </Project>

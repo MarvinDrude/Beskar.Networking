@@ -40,6 +40,7 @@ public sealed class TcpNetworkListener(
       {
          TraceLogger.LogServerInfo("TCP Listener: Binding socket to address {0}", LocalAddress);
          var socket = new Socket(LocalAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
          socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
          socket.Bind(LocalAddress);
          socket.Listen(512);
@@ -207,7 +208,8 @@ public sealed class TcpNetworkListener(
             {
                TraceLogger.LogServerError("TCP Listener: SSL handshake aborted for client {0}. SslServerOptions are missing.", remoteEndPoint);
                WriteToSessionChannel(new NetworkCodeError(-1, "SSL server authentication options are missing."));
-               sslStream.Dispose();
+               await sslStream.DisposeAsync();
+
                return;
             }
 

@@ -3,4 +3,9 @@
    <PropertyGroup>
    </PropertyGroup>
 
+   <ItemGroup>
+     <Folder Include="Handlers\Interfaces\" />
+     <Folder Include="Parsers\" />
+   </ItemGroup>
+
 </Project>
