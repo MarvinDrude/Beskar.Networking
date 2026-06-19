@@ -4,8 +4,11 @@
    </PropertyGroup>
 
    <ItemGroup>
-     <Folder Include="Handlers\Interfaces\" />
      <Folder Include="Parsers\" />
+   </ItemGroup>
+
+   <ItemGroup>
+     <ProjectReference Include="..\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
    </ItemGroup>
 
 </Project>
