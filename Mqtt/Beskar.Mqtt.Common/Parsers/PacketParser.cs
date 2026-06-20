@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Runtime.InteropServices;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
@@ -67,7 +67,7 @@ public ref struct PacketParser(
       {
          MqttProtocolVersion.V50 => new PacketVersion5Parser(_packetHandler)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
-         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_packetHandler)
+         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_packetHandler, _protocolVersion)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
          _ => ValueTask.FromResult(PacketDispatchResult.ProtocolError)
       };

@@ -9,9 +9,10 @@ using Beskar.Utilities.Tracing;
 namespace Beskar.Mqtt.Common.Parsers.Version3;
 
 [StructLayout(LayoutKind.Auto)]
-public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
+public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, MqttProtocolVersion protocolVersion)
 {
    private readonly IPacketHandler _packetHandler = handler;
+   private readonly MqttProtocolVersion _protocolVersion = protocolVersion;
 
    public ValueTask<PacketDispatchResult> TryDispatch(
       ref RawPacket rawPacket,
@@ -60,6 +61,8 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
          // === Connections
          case MqttPacketType.Connect:
             return DispatchConnect(ref rawPacket, cancellation);
+         case MqttPacketType.ConnAck:
+            return DispatchConnAck(ref rawPacket, cancellation);
          case MqttPacketType.Disconnect:
             return DispatchDisconnect(ref rawPacket, cancellation);
       }
@@ -262,6 +265,24 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
       if (result.Failed)
       {
          TraceLogger.LogNeutralError("Error at parsing ConnectPacket: {0}", result.Error.Detail);
+         return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
+      }
+
+      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      return valueTask.IsCompletedSuccessfully
+         ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+         : AwaitHandler(valueTask);
+   }
+
+   private ValueTask<PacketDispatchResult> DispatchConnAck(
+      ref RawPacket rawPacket, CancellationToken cancellation = default)
+   {
+      var packet = new ConnAckPacket();
+      var result = TryParseConnAckPacket(ref rawPacket, ref packet);
+
+      if (result.Failed)
+      {
+         TraceLogger.LogNeutralError("Error at parsing ConnAckPacket: {0}", result.Error.Detail);
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
