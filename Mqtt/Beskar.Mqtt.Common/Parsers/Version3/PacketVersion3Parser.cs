@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
@@ -30,6 +30,8 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
       switch ((MqttPacketType)packetType)
       {
          // === Publishing
+         case MqttPacketType.Publish:
+            return DispatchPublish(ref rawPacket, cancellation);
 
          // === Pings
          case MqttPacketType.PingReq:
@@ -47,6 +49,24 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
       }
 
       return ValueTask.FromResult(PacketDispatchResult.InvalidPacketType);
+   }
+
+   private ValueTask<PacketDispatchResult> DispatchPublish(
+      ref RawPacket rawPacket, CancellationToken cancellation = default)
+   {
+      var packet = new PublishPacket();
+      var result = TryParsePublishPacket(ref rawPacket, ref packet);
+
+      if (result.Failed)
+      {
+         TraceLogger.LogNeutralError("Error at parsing PublishPacket: {0}", result.Error.Detail);
+         return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
+      }
+
+      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      return valueTask.IsCompletedSuccessfully
+         ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+         : AwaitHandler(valueTask);
    }
 
    private ValueTask<PacketDispatchResult> DispatchPingReq(

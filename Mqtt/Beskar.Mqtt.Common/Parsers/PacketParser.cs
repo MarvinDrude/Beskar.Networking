@@ -48,7 +48,7 @@ public ref struct PacketParser(
          return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.NotEnoughData);
       }
 
-      var rawPacket = new RawPacket(fixedHeader, headerLength + bodyLength)
+      var rawPacket = new RawPacket(fixedHeader, headerLength + bodyLength, bodyLength)
       {
          Reader = reader
       };
