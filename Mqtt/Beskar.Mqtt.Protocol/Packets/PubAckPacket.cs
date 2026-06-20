@@ -5,7 +5,7 @@ namespace Beskar.Mqtt.Protocol.Packets;
 
 [StructLayout(LayoutKind.Auto)]
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-public struct PubAckPacket
+public ref struct PubAckPacket
 {
    public ushort PacketIdentifier;
 

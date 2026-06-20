@@ -5,7 +5,7 @@ namespace Beskar.Mqtt.Protocol.Packets;
 
 [StructLayout(LayoutKind.Auto)]
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-public struct PingRespPacket
+public ref struct PingRespPacket
 {
    public override string ToString()
    {
