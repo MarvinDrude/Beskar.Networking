@@ -52,6 +52,8 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
             return DispatchSubscribe(ref rawPacket, cancellation);
          case MqttPacketType.SubAck:
             return DispatchSubAck(ref rawPacket, cancellation);
+         case MqttPacketType.Unsubscribe:
+            return DispatchUnsubscribe(ref rawPacket, cancellation);
 
          // === Connections
          case MqttPacketType.Connect:
@@ -180,6 +182,24 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
       if (result.Failed)
       {
          TraceLogger.LogNeutralError("Error at parsing SubAckPacket: {0}", result.Error.Detail);
+         return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
+      }
+
+      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      return valueTask.IsCompletedSuccessfully
+         ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+         : AwaitHandler(valueTask);
+   }
+
+   private ValueTask<PacketDispatchResult> DispatchUnsubscribe(
+      ref RawPacket rawPacket, CancellationToken cancellation = default)
+   {
+      var packet = new UnsubscribePacket();
+      var result = TryParseUnsubscribePacket(ref rawPacket, ref packet);
+
+      if (result.Failed)
+      {
+         TraceLogger.LogNeutralError("Error at parsing UnsubscribePacket: {0}", result.Error.Detail);
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
