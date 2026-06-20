@@ -1,15 +1,17 @@
 ﻿using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Extensions;
+using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing;
 using Beskar.Mqtt.Protocol.Parsing.Results;
+using Beskar.Mqtt.Protocol.Validators.Version3;
 
 namespace Beskar.Mqtt.Common.Parsers.Version3;
 
 public readonly ref partial struct PacketVersion3Parser
 {
-   public Result<PacketDispatchResult, StringError> TryParseConnectPacket(
+   private static Result<PacketDispatchResult, StringError> TryParseConnectPacket(
       ref RawPacket rawPacket,
       ref ConnectPacket packet)
    {
@@ -37,6 +39,47 @@ public readonly ref partial struct PacketVersion3Parser
          return new StringError("Could not read keep alive interval.");
       }
 
+      if (!rawPacket.Reader.TryReadRawString(out packet.ClientIdUtf8Bytes))
+      {
+         return new StringError("Could not read raw client id.");
+      }
 
+      if (willFlag)
+      {
+         packet.HasWill = true;
+         packet.WillRetain = willRetain;
+         packet.WillQualityOfService = (QualityOfServiceType)willQoS;
+
+         if (!rawPacket.Reader.TryReadRawString(out packet.WillTopicUtf8Bytes))
+         {
+            return new StringError("Could not read will topic.");
+         }
+
+         if (!rawPacket.Reader.TryReadRawBytes(out packet.WillMessageBytes))
+         {
+            return new StringError("Could not read will message.");
+         }
+      }
+
+      if (usernameFlag)
+      {
+         if (!rawPacket.Reader.TryReadRawString(out packet.UsernameUtf8Bytes))
+         {
+            return new StringError("Could not read username.");
+         }
+      }
+
+      if (passwordFlag)
+      {
+         if (!rawPacket.Reader.TryReadRawBytes(out packet.PasswordBytes))
+         {
+            return new StringError("Could not read password.");
+         }
+      }
+
+      var validateResult = ConnectPacketVersion3Validator.Validate(ref packet);
+      if (validateResult.Failed) return validateResult.Error;
+
+      return PacketDispatchResult.Success;
    }
 }

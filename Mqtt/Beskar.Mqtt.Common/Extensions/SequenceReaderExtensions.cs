@@ -119,5 +119,36 @@ public static class SequenceReaderExtensions
 
          return true;
       }
+
+      public bool TryReadRawString(out ReadOnlySequence<byte> value)
+      {
+         return reader.TryReadRawBytes(out value);
+      }
+
+      public bool TryReadRawBytes(out ReadOnlySequence<byte> value)
+      {
+         if (!reader.TryReadUInt16BigEndian(out var length))
+         {
+            value = default;
+            return false;
+         }
+
+         if (length == 0)
+         {
+            value = ReadOnlySequence<byte>.Empty;
+            return true;
+         }
+
+         if (reader.Remaining < length)
+         {
+            value = default;
+            return false;
+         }
+
+         value = reader.Sequence.Slice(reader.Position, length);
+         reader.Advance(length);
+
+         return true;
+      }
    }
 }

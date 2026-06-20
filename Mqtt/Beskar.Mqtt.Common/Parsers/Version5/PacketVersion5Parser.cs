@@ -10,10 +10,13 @@ public readonly ref struct PacketVersion5Parser(IPacketHandler handler)
 {
    private readonly IPacketHandler _packetHandler = handler;
 
-   public PacketDispatchResult TryDispatch(
+   public ValueTask<PacketDispatchResult> TryDispatch(
       ref RawPacket rawPacket,
-      out int bytesConsumed)
+      out int bytesConsumed,
+      CancellationToken cancellation = default)
    {
-      
+      bytesConsumed = 0;
+
+      return ValueTask.FromResult(PacketDispatchResult.InvalidPacketType);
    }
 }

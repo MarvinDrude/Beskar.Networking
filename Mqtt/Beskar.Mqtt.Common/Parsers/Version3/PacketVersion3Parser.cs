@@ -13,16 +13,17 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
 {
    private readonly IPacketHandler _packetHandler = handler;
 
-   public PacketDispatchResult TryDispatch(
+   public ValueTask<PacketDispatchResult> TryDispatch(
       ref RawPacket rawPacket,
-      out int bytesConsumed)
+      out int bytesConsumed,
+      CancellationToken cancellation = default)
    {
       bytesConsumed = 0;
 
       var packetType = rawPacket.FixedHeader >> 4;
       if (packetType is < 1 or >= 15)
       {
-         return PacketDispatchResult.InvalidPacketType;
+         return ValueTask.FromResult(PacketDispatchResult.InvalidPacketType);
       }
 
       switch ((MqttPacketType)packetType)
@@ -34,11 +35,23 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
             if (result.Failed)
             {
                TraceLogger.LogNeutralError("Error at parsing ConnectPacket: {0}", result.Error.Detail);
-               return PacketDispatchResult.ProtocolError;
+               return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
             }
 
-            _packetHandler.ExecuteAsync(in packet);
-            break;
+            bytesConsumed = rawPacket.TotalLength;
+            var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+
+            return valueTask.IsCompletedSuccessfully
+               ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+               : AwaitHandler(valueTask);
       }
+
+      return ValueTask.FromResult(PacketDispatchResult.InvalidPacketType);
+   }
+
+   private static async ValueTask<PacketDispatchResult> AwaitHandler(ValueTask task)
+   {
+      await task;
+      return PacketDispatchResult.Success;
    }
 }

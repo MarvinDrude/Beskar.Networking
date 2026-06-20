@@ -21,16 +21,17 @@ public ref struct PacketParser(
    private MqttProtocolVersion _protocolVersion = protocolVersion;
    private bool _tryPrivate;
 
-   public Result<PacketDispatchResult, StringError> TryDispatch(
+   public ValueTask<Result<PacketDispatchResult, StringError>> TryDispatch(
       ref SequenceReader<byte> reader,
-      out int bytesConsumed)
+      out int bytesConsumed,
+      CancellationToken cancellation = default)
    {
       bytesConsumed = 0;
 
       if (reader.Remaining < 2)
       {
          // not enough data for a full packet
-         return PacketDispatchResult.NotEnoughData;
+         return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.NotEnoughData);
       }
 
       if (TryParseBodyLength(ref reader, out var fixedHeader,
@@ -38,13 +39,13 @@ public ref struct PacketParser(
           is not PacketDispatchResult.Success and var res)
       {
          // not enough data or protocol error
-         return res;
+         return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(res);
       }
 
       if (reader.Remaining < bodyLength)
       {
          // enough data for the entire body not provided
-         return PacketDispatchResult.NotEnoughData;
+         return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.NotEnoughData);
       }
 
       var rawPacket = new RawPacket(fixedHeader, headerLength + bodyLength)
@@ -55,23 +56,35 @@ public ref struct PacketParser(
       if (_protocolVersion is MqttProtocolVersion.Unknown)
       {
          var protocolResult = ParseProtocolVersion(ref rawPacket, out _tryPrivate);
-         if (protocolResult.Failed) return protocolResult.Error;
+         if (protocolResult.Failed)
+            return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(protocolResult.Error);
 
          _protocolVersion = protocolResult.Success;
       }
 
       var innerConsumed = 0;
-      var result = _protocolVersion switch
+      var dispatchTask = _protocolVersion switch
       {
          MqttProtocolVersion.V50 => new PacketVersion5Parser(_packetHandler)
-            .TryDispatch(ref rawPacket, out innerConsumed),
+            .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
          MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_packetHandler)
-            .TryDispatch(ref rawPacket, out innerConsumed),
-         _ => PacketDispatchResult.ProtocolError
+            .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
+         _ => ValueTask.FromResult(PacketDispatchResult.ProtocolError)
       };
 
+      // innserConsumed is always set in sync path
       bytesConsumed += innerConsumed;
-      return result;
+
+      return dispatchTask.IsCompletedSuccessfully
+         ? ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(dispatchTask.Result)
+         : Awaited(dispatchTask);
+
+      static async ValueTask<Result<PacketDispatchResult, StringError>> Awaited(
+         ValueTask<PacketDispatchResult> task)
+      {
+         var result = await task;
+         return result;
+      }
    }
 
    /// <summary>

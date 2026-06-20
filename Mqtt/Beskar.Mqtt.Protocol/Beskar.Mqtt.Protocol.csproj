@@ -4,7 +4,11 @@
    </PropertyGroup>
 
    <ItemGroup>
-     <Folder Include="Models\" />
+     <Folder Include="Validators\Version5\" />
+   </ItemGroup>
+
+   <ItemGroup>
+     <PackageReference Include="Beskar.Memory" />
    </ItemGroup>
 
 </Project>
