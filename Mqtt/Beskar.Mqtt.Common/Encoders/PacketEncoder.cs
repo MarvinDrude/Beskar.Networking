@@ -52,10 +52,21 @@ public static class PacketEncoder
    public static void WriteSequence(
       ref ByteWriter writer, ReadOnlySequence<byte> sequence)
    {
-      writer.WriteBigEndian((ushort)sequence.Length);
-      foreach (var memory in sequence)
+      var length = (ushort)sequence.Length;
+
+      writer.WriteBigEndian(length);
+      if (length == 0) return;
+
+      if (sequence.IsSingleSegment)
       {
-         writer.WriteBytes(memory.Span);
+         writer.WriteBytes(sequence.First.Span);
+      }
+      else
+      {
+         foreach (var memory in sequence)
+         {
+            writer.WriteBytes(memory.Span);
+         }
       }
    }
 }
