@@ -1,5 +1,25 @@
-﻿namespace Beskar.Mqtt.Protocol.Packets;
+﻿using System.Buffers;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using Beskar.Mqtt.Protocol.Enumerators;
+using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Models;
 
-public struct SubscribePacket
+namespace Beskar.Mqtt.Protocol.Packets;
+
+[StructLayout(LayoutKind.Auto)]
+[DebuggerDisplay("{DebuggerDisplay,nq}")]
+public ref struct SubscribePacket
 {
+   public ushort PacketIdentifier;
+   public ReadOnlySequence<byte> FiltersBytes;
+
+   public override string ToString()
+   {
+      return "SUBSCRIBE";
+   }
+
+   internal string DebuggerDisplay => ToString();
+
+   public FilterEnumerator GetFilters() => new(FiltersBytes);
 }
