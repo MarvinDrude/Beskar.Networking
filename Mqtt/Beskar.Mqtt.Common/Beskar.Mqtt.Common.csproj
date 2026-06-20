@@ -12,4 +12,8 @@
      <PackageReference Include="Beskar.Memory" />
    </ItemGroup>
 
+   <ItemGroup>
+     <Folder Include="Encoders\Version5\" />
+   </ItemGroup>
+
 </Project>
