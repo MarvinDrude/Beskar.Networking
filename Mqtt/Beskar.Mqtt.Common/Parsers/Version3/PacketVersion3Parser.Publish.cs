@@ -41,19 +41,19 @@ public readonly ref partial struct PacketVersion3Parser
       var consumedSoFar = rawPacket.Reader.Consumed - initialConsumed;
       var payloadLength = rawPacket.BodyLength - consumedSoFar;
 
-      if (payloadLength > 0)
+      switch (payloadLength)
       {
-         if (rawPacket.Reader.Remaining < payloadLength)
-         {
+         case < 0:
+            return new StringError("Malformed packet: variable header length exceeds body length.");
+         case > 0 when rawPacket.Reader.Remaining < payloadLength:
             return new StringError("Could not read payload.");
-         }
-
-         packet.Payload = rawPacket.Reader.Sequence.Slice(rawPacket.Reader.Position, payloadLength);
-         rawPacket.Reader.Advance(payloadLength);
-      }
-      else
-      {
-         packet.Payload = ReadOnlySequence<byte>.Empty;
+         case > 0:
+            packet.Payload = rawPacket.Reader.Sequence.Slice(rawPacket.Reader.Position, payloadLength);
+            rawPacket.Reader.Advance(payloadLength);
+            break;
+         default:
+            packet.Payload = ReadOnlySequence<byte>.Empty;
+            break;
       }
 
       var validateResult = PublishPacketVersion3Validator.Validate(ref packet);
