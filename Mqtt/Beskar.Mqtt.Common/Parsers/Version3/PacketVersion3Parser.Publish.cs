@@ -1,8 +1,8 @@
 using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
-using Beskar.Mqtt.Common.Extensions;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing;
 using Beskar.Mqtt.Protocol.Parsing.Results;

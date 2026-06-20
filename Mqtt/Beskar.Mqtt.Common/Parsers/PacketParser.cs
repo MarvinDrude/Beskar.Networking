@@ -2,11 +2,11 @@ using System.Buffers;
 using System.Runtime.InteropServices;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
-using Beskar.Mqtt.Common.Extensions;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Parsers.Version3;
 using Beskar.Mqtt.Common.Parsers.Version5;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Parsing;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 

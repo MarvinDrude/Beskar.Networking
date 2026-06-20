@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Beskar.Mqtt.Protocol.Enumerators;
 using Beskar.Mqtt.Protocol.Enums;
 
 namespace Beskar.Mqtt.Protocol.Packets;
@@ -17,6 +18,9 @@ public ref struct PublishPacket
    public ushort PacketIdentifier;
 
    public ReadOnlySequence<byte> Payload;
+
+   public ReadOnlySequence<byte> PropertiesBytes;
+   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public override string ToString()
    {

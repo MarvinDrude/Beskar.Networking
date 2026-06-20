@@ -5,7 +5,7 @@ using System.Text;
 using Beskar.Memory.Owners;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 
-namespace Beskar.Mqtt.Common.Extensions;
+namespace Beskar.Mqtt.Protocol.Extensions;
 
 public static class SequenceReaderExtensions
 {
