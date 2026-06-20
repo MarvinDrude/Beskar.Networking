@@ -5,18 +5,23 @@ namespace Beskar.Mqtt.Protocol.Enums;
 /// </summary>
 public enum MqttProtocolVersion : byte
 {
-    /// <summary>
-    /// MQTT version 3.1.
-    /// </summary>
-    V31 = 3,
+   /// <summary>
+   /// Unknown
+   /// </summary>
+   Unknown = 0,
 
-    /// <summary>
-    /// MQTT version 3.1.1.
-    /// </summary>
-    V311 = 4,
+   /// <summary>
+   /// MQTT version 3.1.
+   /// </summary>
+   V31 = 3,
 
-    /// <summary>
-    /// MQTT version 5.0.
-    /// </summary>
-    V50 = 5
+   /// <summary>
+   /// MQTT version 3.1.1.
+   /// </summary>
+   V311 = 4,
+
+   /// <summary>
+   /// MQTT version 5.0.
+   /// </summary>
+   V50 = 5
 }

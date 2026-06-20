@@ -4,11 +4,12 @@
    </PropertyGroup>
 
    <ItemGroup>
-     <Folder Include="Parsers\" />
+     <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
+     <ProjectReference Include="..\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
    </ItemGroup>
 
    <ItemGroup>
-     <ProjectReference Include="..\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
+     <PackageReference Include="Beskar.Memory" />
    </ItemGroup>
 
 </Project>

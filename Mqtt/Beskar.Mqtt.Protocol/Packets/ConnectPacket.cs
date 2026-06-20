@@ -1,6 +1,13 @@
-﻿namespace Beskar.Mqtt.Protocol.Packets;
+﻿using System.Buffers;
+using System.Runtime.InteropServices;
 
-public struct ConnectPacket
+namespace Beskar.Mqtt.Protocol.Packets;
+
+[StructLayout(LayoutKind.Auto)]
+public ref struct ConnectPacket
 {
+   public bool IsCleanSession;
+   public ushort KeepAliveInterval;
 
+   public ReadOnlySequence<byte> ClientIdUtf8Bytes;
 }
