@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
@@ -10,21 +9,24 @@ public readonly ref partial struct PacketVersion3Encoder
    public void WritePubAck(in PubAckPacket packet)
    {
       var length = CalculateLength(packet);
-      using var writer = new ByteWriter(_writer.GetSpan(length));
+      var writer = new ByteWriter(_writer.GetSpan(length));
 
+      try
+      {
+         PacketEncoder.WriteFixedHeader(ref writer, MqttPacketType.PubAck, 0, 2);
+         writer.WriteBigEndian(packet.PacketIdentifier);
 
-
-      WriteFixedHeader(MqttPacketType.PubAck, 0, remainingLength);
-
-      var span = _writer.GetSpan(remainingLength);
-      BinaryPrimitives.WriteUInt16BigEndian(span, packet.PacketIdentifier);
-      _writer.Advance(remainingLength);
+         _writer.Advance(writer.Position);
+      }
+      finally
+      {
+         writer.Dispose();
+      }
    }
 
-   public int CalculateLength(in PubAckPacket packet)
+   private static int CalculateLength(in PubAckPacket packet)
    {
       const int remainingLength = 2; // always fixed
       return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
    }
 }
-

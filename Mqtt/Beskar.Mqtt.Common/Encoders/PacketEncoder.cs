@@ -31,6 +31,21 @@ public static class PacketEncoder
    public static void WriteFixedHeader(
       ref ByteWriter writer, MqttPacketType packetType, byte flags, int remainingLength)
    {
+      writer.WriteByte((byte)(((int)packetType << 4) | (flags & 0x0F)));
+      var value = remainingLength;
 
+      do
+      {
+         var encodedByte = (byte)(value & 0x7F);
+         value >>= 7;
+
+         if (value > 0)
+         {
+            encodedByte |= 0x80;
+         }
+
+         writer.WriteByte(encodedByte);
+      }
+      while (value > 0);
    }
 }
