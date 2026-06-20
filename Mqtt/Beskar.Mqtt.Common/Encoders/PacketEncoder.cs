@@ -48,4 +48,14 @@ public static class PacketEncoder
       }
       while (value > 0);
    }
+
+   public static void WriteSequence(
+      ref ByteWriter writer, ReadOnlySequence<byte> sequence)
+   {
+      writer.WriteBigEndian((ushort)sequence.Length);
+      foreach (var memory in sequence)
+      {
+         writer.WriteBytes(memory.Span);
+      }
+   }
 }
