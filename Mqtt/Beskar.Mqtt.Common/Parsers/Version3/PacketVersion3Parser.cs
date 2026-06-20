@@ -32,6 +32,8 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
          // === Publishing
          case MqttPacketType.Publish:
             return DispatchPublish(ref rawPacket, cancellation);
+         case MqttPacketType.PubAck:
+            return DispatchPubAck(ref rawPacket, cancellation);
 
          // === Pings
          case MqttPacketType.PingReq:
@@ -60,6 +62,24 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
       if (result.Failed)
       {
          TraceLogger.LogNeutralError("Error at parsing PublishPacket: {0}", result.Error.Detail);
+         return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
+      }
+
+      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      return valueTask.IsCompletedSuccessfully
+         ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+         : AwaitHandler(valueTask);
+   }
+
+   private ValueTask<PacketDispatchResult> DispatchPubAck(
+      ref RawPacket rawPacket, CancellationToken cancellation = default)
+   {
+      var packet = new PubAckPacket();
+      var result = TryParsePubAckPacket(ref rawPacket, ref packet);
+
+      if (result.Failed)
+      {
+         TraceLogger.LogNeutralError("Error at parsing PubAckPacket: {0}", result.Error.Detail);
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
