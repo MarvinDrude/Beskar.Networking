@@ -1,4 +1,4 @@
-﻿using Beskar.Memory.Results;
+using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Extensions;
 using Beskar.Mqtt.Protocol.Enums;
@@ -11,6 +11,9 @@ namespace Beskar.Mqtt.Common.Parsers.Version3;
 
 public readonly ref partial struct PacketVersion3Parser
 {
+   /// <summary>
+   /// Parses the CONNECT packet variable header and payload (after the protocol name and version have been parsed).
+   /// </summary>
    private static Result<PacketDispatchResult, StringError> TryParseConnectPacket(
       ref RawPacket rawPacket,
       ref ConnectPacket packet)
@@ -33,6 +36,27 @@ public readonly ref partial struct PacketVersion3Parser
       var willRetain = (connectFlags & 0x20) > 0;
       var passwordFlag = (connectFlags & 0x40) > 0;
       var usernameFlag = (connectFlags & 0x80) > 0;
+
+      if (passwordFlag && !usernameFlag)
+      {
+         return new StringError("Protocol Violation: Password Flag is set to 1, but User Name Flag is set to 0.");
+      }
+
+      if (!willFlag)
+      {
+         if (willQoS != 0 || willRetain)
+         {
+            return new StringError(
+               "Protocol Violation: Will Flag is set to 0, but Will QoS and/or Will Retain are not set to 0.");
+         }
+      }
+      else
+      {
+         if (willQoS == 3)
+         {
+            return new StringError("Protocol Violation: Will QoS cannot be 3.");
+         }
+      }
 
       if (!rawPacket.Reader.TryReadUInt16BigEndian(out packet.KeepAliveInterval))
       {

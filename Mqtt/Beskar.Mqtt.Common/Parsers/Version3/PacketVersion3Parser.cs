@@ -26,27 +26,81 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.InvalidPacketType);
       }
 
+      bytesConsumed = rawPacket.TotalLength;
       switch ((MqttPacketType)packetType)
       {
+         // === Publishing
+
+         // === Pings
+         case MqttPacketType.PingReq:
+            return DispatchPingReq(ref rawPacket, cancellation);
+         case MqttPacketType.PingResp:
+            return DispatchPingResp(ref rawPacket, cancellation);
+
+         // === Subscribing
+
+         // === Connections
          case MqttPacketType.Connect:
-            var packet = new ConnectPacket();
-            var result = TryParseConnectPacket(ref rawPacket, ref packet);
-
-            if (result.Failed)
-            {
-               TraceLogger.LogNeutralError("Error at parsing ConnectPacket: {0}", result.Error.Detail);
-               return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
-            }
-
-            bytesConsumed = rawPacket.TotalLength;
-            var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
-
-            return valueTask.IsCompletedSuccessfully
-               ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
-               : AwaitHandler(valueTask);
+            return DispatchConnect(ref rawPacket, cancellation);
+         case MqttPacketType.Disconnect:
+            return DispatchDisconnect(ref rawPacket, cancellation);
       }
 
       return ValueTask.FromResult(PacketDispatchResult.InvalidPacketType);
+   }
+
+   private ValueTask<PacketDispatchResult> DispatchPingReq(
+      ref RawPacket rawPacket, CancellationToken cancellation = default)
+   {
+      var packet = new PingReqPacket();
+      // ping request needs no parsing in v3
+
+      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      return valueTask.IsCompletedSuccessfully
+         ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+         : AwaitHandler(valueTask);
+   }
+
+   private ValueTask<PacketDispatchResult> DispatchPingResp(
+      ref RawPacket rawPacket, CancellationToken cancellation = default)
+   {
+      var packet = new PingRespPacket();
+      // ping response needs no parsing in v3
+
+      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      return valueTask.IsCompletedSuccessfully
+         ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+         : AwaitHandler(valueTask);
+   }
+
+   private ValueTask<PacketDispatchResult> DispatchConnect(
+      ref RawPacket rawPacket, CancellationToken cancellation = default)
+   {
+      var packet = new ConnectPacket();
+      var result = TryParseConnectPacket(ref rawPacket, ref packet);
+
+      if (result.Failed)
+      {
+         TraceLogger.LogNeutralError("Error at parsing ConnectPacket: {0}", result.Error.Detail);
+         return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
+      }
+
+      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      return valueTask.IsCompletedSuccessfully
+         ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+         : AwaitHandler(valueTask);
+   }
+
+   private ValueTask<PacketDispatchResult> DispatchDisconnect(
+      ref RawPacket rawPacket, CancellationToken cancellation = default)
+   {
+      var packet = new DisconnectPacket();
+      // disconnect needs no parsing in v3
+
+      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      return valueTask.IsCompletedSuccessfully
+         ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+         : AwaitHandler(valueTask);
    }
 
    private static async ValueTask<PacketDispatchResult> AwaitHandler(ValueTask task)
