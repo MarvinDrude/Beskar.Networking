@@ -38,6 +38,8 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
             return DispatchPubRec(ref rawPacket, cancellation);
          case MqttPacketType.PubRel:
             return DispatchPubRel(ref rawPacket, cancellation);
+         case MqttPacketType.PubComp:
+            return DispatchPubComp(ref rawPacket, cancellation);
 
          // === Pings
          case MqttPacketType.PingReq:
@@ -120,6 +122,24 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler)
       if (result.Failed)
       {
          TraceLogger.LogNeutralError("Error at parsing PubRelPacket: {0}", result.Error.Detail);
+         return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
+      }
+
+      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      return valueTask.IsCompletedSuccessfully
+         ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
+         : AwaitHandler(valueTask);
+   }
+
+   private ValueTask<PacketDispatchResult> DispatchPubComp(
+      ref RawPacket rawPacket, CancellationToken cancellation = default)
+   {
+      var packet = new PubCompPacket();
+      var result = TryParsePubCompPacket(ref rawPacket, ref packet);
+
+      if (result.Failed)
+      {
+         TraceLogger.LogNeutralError("Error at parsing PubCompPacket: {0}", result.Error.Detail);
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
