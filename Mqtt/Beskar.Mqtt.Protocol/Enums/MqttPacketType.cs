@@ -1,8 +1,11 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// MQTT control packet types (defined in the 4 high bits of the fixed header).
 /// </summary>
+[FastEnum]
 public enum MqttPacketType : byte
 {
    /// <summary>

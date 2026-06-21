@@ -1,9 +1,12 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// Connect Reason Code values (sent in CONNACK).
 /// 3.2.2.2 Connect Reason Code
 /// </summary>
+[FastEnum]
 public enum ConnectReasonCode : byte
 {
    /// <summary>

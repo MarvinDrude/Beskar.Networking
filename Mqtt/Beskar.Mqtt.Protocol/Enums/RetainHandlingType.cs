@@ -1,8 +1,11 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// MQTT v5.0 Subscription option for Retain Handling.
 /// </summary>
+[FastEnum]
 public enum RetainHandlingType : byte
 {
    /// <summary>

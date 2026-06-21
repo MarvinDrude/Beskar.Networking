@@ -9,6 +9,7 @@
 
    <ItemGroup>
      <PackageReference Include="Beskar.Memory" />
+     <PackageReference Include="Beskar.Memory.Code.EnumGenerator" />
    </ItemGroup>
 
 </Project>

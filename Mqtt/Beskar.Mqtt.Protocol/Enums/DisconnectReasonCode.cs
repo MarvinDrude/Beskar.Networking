@@ -1,9 +1,12 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// 3.14.2.1 Disconnect Reason Code
 /// Disconnect Reason Code values.
 /// </summary>
+[FastEnum]
 public enum DisconnectReasonCode : byte
 {
    /// <summary>

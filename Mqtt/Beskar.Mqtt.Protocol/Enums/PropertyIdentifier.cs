@@ -1,8 +1,11 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// MQTT v5.0 Property Identifier byte values.
 /// </summary>
+[FastEnum]
 public enum PropertyIdentifier : byte
 {
    /// <summary>

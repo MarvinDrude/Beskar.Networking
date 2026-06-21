@@ -1,8 +1,11 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// MQTT v5.0 PUBREC Reason Codes.
 /// </summary>
+[FastEnum]
 public enum PubRecReasonCode : byte
 {
    /// <summary>

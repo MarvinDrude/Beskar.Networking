@@ -1,8 +1,11 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// MQTT v3.1.1 Connection Return Codes (CONNACK return codes).
 /// </summary>
+[FastEnum]
 public enum ConnectReturnCode : byte
 {
    /// <summary>

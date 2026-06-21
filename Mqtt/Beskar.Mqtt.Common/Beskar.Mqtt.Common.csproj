@@ -13,7 +13,7 @@
    </ItemGroup>
 
    <ItemGroup>
-     <Folder Include="Builders\" />
+     <Folder Include="Builders\Unsubscribing\" />
      <Folder Include="Encoders\Version5\" />
    </ItemGroup>
 

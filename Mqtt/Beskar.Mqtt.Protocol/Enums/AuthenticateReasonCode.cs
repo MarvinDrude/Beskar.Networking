@@ -1,8 +1,11 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// Authenticate Reason Code values.
 /// </summary>
+[FastEnum]
 public enum AuthenticateReasonCode : byte
 {
    /// <summary>

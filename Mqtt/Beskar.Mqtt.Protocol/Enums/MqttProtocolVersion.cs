@@ -1,8 +1,11 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// Specifies the supported MQTT protocol versions.
 /// </summary>
+[FastEnum]
 public enum MqttProtocolVersion : byte
 {
    /// <summary>

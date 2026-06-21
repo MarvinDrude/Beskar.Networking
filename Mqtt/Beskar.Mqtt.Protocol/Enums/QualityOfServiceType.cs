@@ -1,8 +1,11 @@
+using Beskar.Memory.Code.EnumGenerator.Attributes;
+
 namespace Beskar.Mqtt.Protocol.Enums;
 
 /// <summary>
 /// Quality of Service (QoS) levels for MQTT message delivery.
 /// </summary>
+[FastEnum]
 public enum QualityOfServiceType : byte
 {
    /// <summary>
