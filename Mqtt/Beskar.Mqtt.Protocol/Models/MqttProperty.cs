@@ -104,7 +104,7 @@ public readonly ref struct MqttProperty(
 
    public Result<QualityOfServiceType, StringError> AsMaximumQualityOfService()
    {
-      if (AsByte() is < 1 and var raw)
+      if (AsByte() is <= 1 and var raw)
       {
          return (QualityOfServiceType)raw;
       }

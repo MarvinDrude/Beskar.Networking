@@ -38,7 +38,12 @@ public ref struct FilterEnumerator(ReadOnlySequence<byte> sequence)
          return false;
       }
 
-      Current = new TopicFilter(topicUtf8Bytes, (QualityOfServiceType)qosByte);
+      if ((qosByte & 0xC0) != 0)
+      {
+         return false;
+      }
+
+      Current = new TopicFilter(topicUtf8Bytes, (QualityOfServiceType)(qosByte & 0x03));
       return true;
    }
 }

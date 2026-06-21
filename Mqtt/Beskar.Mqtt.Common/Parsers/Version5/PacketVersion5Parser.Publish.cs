@@ -49,8 +49,8 @@ public readonly ref partial struct PacketVersion5Parser
       {
          switch (enumerator.Current.Identifier)
          {
-            case PropertyIdentifier.ReasonString:
-               packet.ReasonStringUtf8Bytes = enumerator.Current.AsReasonString();
+            case PropertyIdentifier.ResponseTopic:
+               packet.ResponseTopicUtf8Bytes = enumerator.Current.AsResponseTopic();
                break;
             case PropertyIdentifier.PayloadFormatIndicator:
                packet.PayloadFormat = enumerator.Current.AsPayloadFormat();

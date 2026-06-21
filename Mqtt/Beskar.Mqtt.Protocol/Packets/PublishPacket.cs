@@ -24,7 +24,6 @@ public ref struct PublishPacket
    public ReadOnlySequence<byte> ResponseTopicUtf8Bytes;
    public ReadOnlySequence<byte> CorrelationDataBytes;
 
-   public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
    public ReadOnlySequence<byte> ContentTypeUtf8Bytes;
    public ReadOnlySequence<byte> Payload;
 
