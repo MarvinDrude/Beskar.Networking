@@ -13,6 +13,8 @@ public ref struct PubRecPacket
    public ushort PacketIdentifier;
    public PubRecReasonCode ReasonCode;
 
+   public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
+
    public ReadOnlySequence<byte> PropertiesBytes;
    public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 

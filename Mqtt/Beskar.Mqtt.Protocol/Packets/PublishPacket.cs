@@ -17,6 +17,8 @@ public ref struct PublishPacket
    public ReadOnlySequence<byte> TopicUtf8Bytes;
    public ushort PacketIdentifier;
 
+
+
    public ReadOnlySequence<byte> Payload;
 
    public ReadOnlySequence<byte> PropertiesBytes;

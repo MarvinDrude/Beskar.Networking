@@ -43,7 +43,19 @@ public readonly ref partial struct PacketVersion5Parser
          return new StringError("Could not read properties.");
       }
 
+      var enumerator = packet.GetProperties();
 
+      while (enumerator.MoveNext())
+      {
+         switch (enumerator.Current.Identifier)
+         {
+            case PropertyIdentifier.ReasonString:
+            case PropertyIdentifier.UserProperty:
+               break;
+            default:
+               return new StringError($"Invalid property identifier. ({enumerator.Current.Identifier})");
+         }
+      }
 
       var consumedSoFar = rawPacket.Reader.Consumed - initialConsumed;
       var payloadLength = rawPacket.BodyLength - consumedSoFar;

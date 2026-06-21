@@ -11,6 +11,8 @@ public ref struct UnsubAckPacket
 {
    public ushort PacketIdentifier;
 
+   public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
+
    public ReadOnlySequence<byte> PropertiesBytes;
    public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
