@@ -17,9 +17,9 @@ Below are benchmark measurements showing messages processed per second (over loo
 
 | Transport | Throughput (msg/s) | Status                   |
 | :--- | :--- |:-------------------------|
-| **TCP** | **688,000** | Ready                    |
-| **WebSockets (WS)** | **630,000** | Ready |
-| **QUIC** | **260,000** | Ready |
+| **TCP** (No TLS) | **688,000** | Ready                    |
+| **WebSockets (WS)** (No TLS) | **630,000** | Ready |
+| **QUIC** (TLS) | **260,000** | Ready |
 | **MQTT** | *Under Development* | Active Focus / Heavy WIP |
 
 ---
