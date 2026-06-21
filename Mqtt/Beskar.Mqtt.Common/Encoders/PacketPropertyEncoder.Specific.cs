@@ -24,7 +24,7 @@ public ref partial struct PacketPropertyEncoder
 
    public void WriteUserProperty(ReadOnlySpan<byte> nameUtf8, ReadOnlySpan<byte> value)
    {
-      _writer.WriteByte((byte)PropertyIdentifier.UserProperty);
+      Writer.WriteByte((byte)PropertyIdentifier.UserProperty);
       Write(nameUtf8);
       Write(value);
    }
