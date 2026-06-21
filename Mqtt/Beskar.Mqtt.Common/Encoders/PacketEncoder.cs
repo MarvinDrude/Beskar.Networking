@@ -69,4 +69,52 @@ public static class PacketEncoder
          }
       }
    }
+
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
+   public static void WriteVariableByteInteger(ref ByteWriter writer, uint value)
+   {
+      switch (value)
+      {
+         case 0:
+            writer.WriteByte(0);
+            return;
+         case <= 127:
+            writer.WriteByte((byte)value);
+            return;
+      }
+
+      do
+      {
+         var encodedByte = (byte)(value & 0x7F);
+         value >>= 7;
+
+         if (value > 0)
+         {
+            encodedByte |= 0x80;
+         }
+
+         writer.WriteByte(encodedByte);
+      }
+      while (value > 0);
+   }
+
+   public static void WriteProperties(ref ByteWriter writer, ReadOnlySequence<byte> properties)
+   {
+      var length = (uint)properties.Length;
+      WriteVariableByteInteger(ref writer, length);
+
+      if (length == 0) return;
+
+      if (properties.IsSingleSegment)
+      {
+         writer.WriteBytes(properties.First.Span);
+      }
+      else
+      {
+         foreach (var memory in properties)
+         {
+            writer.WriteBytes(memory.Span);
+         }
+      }
+   }
 }
