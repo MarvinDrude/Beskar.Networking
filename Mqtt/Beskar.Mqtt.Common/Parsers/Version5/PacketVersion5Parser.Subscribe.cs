@@ -35,6 +35,8 @@ public readonly ref partial struct PacketVersion5Parser
          return new StringError("Could not read properties.");
       }
 
+
+
       var consumedSoFar = rawPacket.Reader.Consumed - initialConsumed;
       var payloadLength = rawPacket.BodyLength - consumedSoFar;
 

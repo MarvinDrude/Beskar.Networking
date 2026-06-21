@@ -6,6 +6,7 @@ using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
+using Beskar.Mqtt.Protocol.Parsing.Results;
 
 namespace Beskar.Mqtt.Protocol.Models;
 
@@ -81,7 +82,6 @@ public readonly ref struct MqttProperty(
    public ushort AsTopicAlias() => AsTwoByteInteger();
    public ushort AsTopicAliasMaximum() => AsTwoByteInteger();
    public bool AsSubscriptionIdentifierAvailable() => AsByte() == 1;
-   public uint AsSubscriptionIdentifier() => AsFourByteInteger();
    public bool AsSharedSubscriptionAvailable() => AsByte() == 1;
    public ReadOnlySequence<byte> AsServerReference() => AsRawString();
    public bool AsRetainAvailable() => AsByte() == 1;
@@ -90,6 +90,17 @@ public readonly ref struct MqttProperty(
    public ReadOnlySequence<byte> AsResponseInfo() => AsRawString();
    public ushort AsReceiveMaximum() => AsTwoByteInteger();
    public ReadOnlySequence<byte> AsReasonString() => AsRawString();
+
+   public Result<uint, StringError> AsSubscriptionIdentifier()
+   {
+      var reader = new SequenceReader<byte>(ValueBytes);
+      var res = reader.TryReadVariableByteInteger(out var value);
+
+      if (res is not VariableByteIntegerResult.Success)
+         return new StringError($"Read error: {res}");
+
+      return value;
+   }
 
    public Result<QualityOfServiceType, StringError> AsMaximumQualityOfService()
    {

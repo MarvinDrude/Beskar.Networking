@@ -50,6 +50,36 @@ public readonly ref partial struct PacketVersion5Parser
          switch (enumerator.Current.Identifier)
          {
             case PropertyIdentifier.ReasonString:
+               packet.ReasonStringUtf8Bytes = enumerator.Current.AsReasonString();
+               break;
+            case PropertyIdentifier.PayloadFormatIndicator:
+               packet.PayloadFormat = enumerator.Current.AsPayloadFormat();
+               break;
+            case PropertyIdentifier.MessageExpiryInterval:
+               packet.MessageExpiryInterval = enumerator.Current.AsMessageExpiryInterval();
+               break;
+            case PropertyIdentifier.TopicAlias:
+               packet.TopicAlias = enumerator.Current.AsTopicAlias();
+               break;
+            case PropertyIdentifier.CorrelationData:
+               packet.CorrelationDataBytes = enumerator.Current.AsCorrelationData();
+               break;
+            case PropertyIdentifier.ContentType:
+               packet.ContentTypeUtf8Bytes = enumerator.Current.AsContentType();
+               break;
+            case PropertyIdentifier.SubscriptionIdentifier:
+               var subIdResult = enumerator.Current.AsSubscriptionIdentifier();
+               if (subIdResult.Failed) return subIdResult.Error;
+
+               if (packet.SubscriptionIdentifier == 0)
+               {
+                  packet.SubscriptionIdentifier = subIdResult.Success;
+               }
+               else
+               {
+                  packet.HasMultipleSubscriptionIdentifiers = true;
+               }
+               break;
             case PropertyIdentifier.UserProperty:
                break;
             default:
