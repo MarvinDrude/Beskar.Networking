@@ -13,6 +13,9 @@ public ref struct SubAckPacket
    public ushort PacketIdentifier;
    public ReadOnlySequence<byte> ReturnCodesBytes;
 
+   public ReadOnlySequence<byte> PropertiesBytes;
+   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+
    public override string ToString()
    {
       return "SUBACK";

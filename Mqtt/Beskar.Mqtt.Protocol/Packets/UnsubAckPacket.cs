@@ -1,5 +1,7 @@
-﻿using System.Diagnostics;
+using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Beskar.Mqtt.Protocol.Enumerators;
 
 namespace Beskar.Mqtt.Protocol.Packets;
 
@@ -8,6 +10,12 @@ namespace Beskar.Mqtt.Protocol.Packets;
 public ref struct UnsubAckPacket
 {
    public ushort PacketIdentifier;
+
+   public ReadOnlySequence<byte> PropertiesBytes;
+   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+
+   public ReadOnlySequence<byte> ReasonCodesBytes;
+   public UnsubscribeReasonCodeEnumerator GetReasonCodes() => new(ReasonCodesBytes);
 
    public override string ToString()
    {

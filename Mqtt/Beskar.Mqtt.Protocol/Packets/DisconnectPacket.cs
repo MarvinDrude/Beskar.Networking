@@ -1,6 +1,7 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Beskar.Mqtt.Protocol.Enumerators;
 using Beskar.Mqtt.Protocol.Enums;
 
 namespace Beskar.Mqtt.Protocol.Packets;
@@ -14,6 +15,9 @@ public ref struct DisconnectPacket
 
    public ReadOnlySequence<byte> ServerReferenceUtf8Bytes;
    public uint SessionExpiryInterval;
+
+   public ReadOnlySequence<byte> PropertiesBytes;
+   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public override string ToString()
    {

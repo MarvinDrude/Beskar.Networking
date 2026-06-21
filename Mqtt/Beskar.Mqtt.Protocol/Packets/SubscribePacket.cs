@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Beskar.Mqtt.Protocol.Enumerators;
@@ -13,6 +13,9 @@ public ref struct SubscribePacket
 {
    public ushort PacketIdentifier;
    public ReadOnlySequence<byte> FiltersBytes;
+
+   public ReadOnlySequence<byte> PropertiesBytes;
+   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public override string ToString()
    {

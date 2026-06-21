@@ -10,7 +10,9 @@ namespace Beskar.Mqtt.Protocol.Enumerators;
 [StructLayout(LayoutKind.Auto)]
 public ref struct MqttPropertyEnumerator(ReadOnlySequence<byte> sequence)
 {
-   private SequenceReader<byte> _reader = new(sequence);
+   private SequenceReader<byte> _reader = new (sequence);
+   private int _length;
+
    public MqttProperty Current { get; private set; } = default;
 
    public bool MoveNext()

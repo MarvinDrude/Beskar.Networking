@@ -382,7 +382,7 @@ public class Version3ParsingTests
          OnConnAck = (in p) =>
          {
             wasInvoked = true;
-            parsedSessionPresent = p.SessionPresent;
+            parsedSessionPresent = p.IsSessionPresent;
             parsedReturnCode = p.ReturnCode;
          }
       };
@@ -393,7 +393,7 @@ public class Version3ParsingTests
       {
          var originalPacket = new ConnAckPacket
          {
-            SessionPresent = expectedSessionPresent,
+            IsSessionPresent = expectedSessionPresent,
             ReturnCode = expectedReturnCode
          };
 

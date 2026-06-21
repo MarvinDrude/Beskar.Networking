@@ -38,7 +38,7 @@ public readonly ref partial struct PacketVersion3Parser
          {
             return new StringError("Protocol Violation: Connect acknowledge flags must be 0 in MQTT v3.1.");
          }
-         packet.SessionPresent = false;
+         packet.IsSessionPresent = false;
       }
       else // MQTT v3.1.1
       {
@@ -46,7 +46,7 @@ public readonly ref partial struct PacketVersion3Parser
          {
             return new StringError("Protocol Violation: Reserved bits in connect acknowledge flags must be 0 in MQTT v3.1.1.");
          }
-         packet.SessionPresent = (connAckFlags & 0x01) > 0;
+         packet.IsSessionPresent = (connAckFlags & 0x01) > 0;
       }
 
       if (!rawPacket.Reader.TryRead(out var returnCodeByte))

@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -147,6 +147,32 @@ public static class SequenceReaderExtensions
 
          value = reader.Sequence.Slice(reader.Position, length);
          reader.Advance(length);
+
+         return true;
+      }
+
+      public bool TryReadProperties(out ReadOnlySequence<byte> properties)
+      {
+         if (reader.TryReadVariableByteInteger(out var length) != VariableByteIntegerResult.Success)
+         {
+            properties = default;
+            return false;
+         }
+
+         if (length == 0)
+         {
+            properties = ReadOnlySequence<byte>.Empty;
+            return true;
+         }
+
+         if (reader.Remaining < length)
+         {
+            properties = default;
+            return false;
+         }
+
+         properties = reader.Sequence.Slice(reader.Position, (int)length);
+         reader.Advance((int)length);
 
          return true;
       }

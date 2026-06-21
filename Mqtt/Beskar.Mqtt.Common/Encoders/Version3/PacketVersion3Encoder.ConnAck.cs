@@ -16,7 +16,7 @@ public readonly ref partial struct PacketVersion3Encoder
          PacketEncoder.WriteFixedHeader(ref writer, MqttPacketType.ConnAck, 0, 2);
 
          byte connAckFlags = 0;
-         if (_protocolVersion is not MqttProtocolVersion.V31 && packet.SessionPresent)
+         if (_protocolVersion is not MqttProtocolVersion.V31 && packet.IsSessionPresent)
          {
             connAckFlags = 1;
          }

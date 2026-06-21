@@ -12,6 +12,9 @@ public ref struct UnsubscribePacket
    public ushort PacketIdentifier;
    public ReadOnlySequence<byte> FiltersBytes;
 
+   public ReadOnlySequence<byte> PropertiesBytes;
+   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+
    public override string ToString()
    {
       return "UNSUBSCRIBE";
