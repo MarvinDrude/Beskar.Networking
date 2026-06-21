@@ -14,6 +14,8 @@ public ref struct SubscribePacket
    public ushort PacketIdentifier;
    public ReadOnlySequence<byte> FiltersBytes;
 
+   public uint SubscriptionIdentifier;
+
    public ReadOnlySequence<byte> PropertiesBytes;
    public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
