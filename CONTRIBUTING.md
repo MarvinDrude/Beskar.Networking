@@ -1,6 +1,6 @@
 # Contributing to Beskar.Networking
 
-Thank you for your interest in improving Beskar.CodeGeneration! We welcome community contributions to help make this tool more robust and efficient.
+Thank you for your interest in improving Beskar.Networking! We welcome community contributions to help make this tool more robust and efficient.
 
 ## Our Approach to Contributions
 
