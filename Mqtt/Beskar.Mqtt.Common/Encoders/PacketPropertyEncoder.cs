@@ -60,6 +60,22 @@ public ref partial struct PacketPropertyEncoder(ByteWriter writer)
 
       var length = (ushort)span.Length;
       _writer.WriteBigEndian(length);
-      _writer.WriteBytes(span);
+
+      if (length > 0)
+      {
+         _writer.WriteBytes(span);
+      }
+   }
+
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
+   public void Write(ReadOnlySpan<byte> span)
+   {
+      var length = (ushort)span.Length;
+      _writer.WriteBigEndian(length);
+
+      if (length > 0)
+      {
+         _writer.WriteBytes(span);
+      }
    }
 }
