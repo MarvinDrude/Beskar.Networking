@@ -6,6 +6,8 @@ namespace Beskar.Mqtt.Common.Builders.Common;
 
 public sealed class Utf8StringListBuilder(IBufferWriter<byte> writer)
 {
+   public int Count { get; private set; }
+
    private readonly IBufferWriter<byte> _writer = writer;
 
    public Utf8StringListBuilder()
@@ -18,11 +20,12 @@ public sealed class Utf8StringListBuilder(IBufferWriter<byte> writer)
    {
    }
 
-   public void Add(ReadOnlySpan<byte> utf8Bytes)
+   public Utf8StringListBuilder Add(ReadOnlySpan<byte> utf8Bytes)
    {
       if (utf8Bytes.Length == 0)
       {
          WriteEmpty();
+         return this;
       }
 
       var totalSize = 2 + utf8Bytes.Length;
@@ -32,9 +35,12 @@ public sealed class Utf8StringListBuilder(IBufferWriter<byte> writer)
       utf8Bytes.CopyTo(buffer[2..]);
 
       _writer.Advance(totalSize);
+      Count++;
+
+      return this;
    }
 
-   public void Add(ReadOnlySpan<char> str)
+   public Utf8StringListBuilder Add(ReadOnlySpan<char> str)
    {
       var maxByteCount = Encoding.UTF8.GetMaxByteCount(str.Length);
       var totalReservation = 2 + maxByteCount;
@@ -44,11 +50,28 @@ public sealed class Utf8StringListBuilder(IBufferWriter<byte> writer)
 
       BinaryPrimitives.WriteUInt16LittleEndian(destination, (ushort)bytesWritten);
       _writer.Advance(2 + bytesWritten);
+      Count++;
+
+      return this;
    }
 
-   public void Add(string value)
+   public Utf8StringListBuilder Add(string value)
    {
       Add(value.AsSpan());
+      return this;
+   }
+
+   public void Clear()
+   {
+      if (_writer is ArrayBufferWriter<byte> buffer)
+      {
+         buffer.Clear();
+         Count = 0;
+      }
+      else
+      {
+         throw new InvalidOperationException("Backing writer does not support clearing.");
+      }
    }
 
    private void WriteEmpty()
@@ -57,6 +80,7 @@ public sealed class Utf8StringListBuilder(IBufferWriter<byte> writer)
       BinaryPrimitives.WriteUInt16LittleEndian(destination, 0);
 
       _writer.Advance(2);
+      Count++;
    }
 
    public Utf8StringListEnumerator GetEnumerator() => _writer is ArrayBufferWriter<byte> buffer
