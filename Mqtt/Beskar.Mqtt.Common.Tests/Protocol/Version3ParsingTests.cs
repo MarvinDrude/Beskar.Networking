@@ -1,6 +1,9 @@
 using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Mqtt.Common.Builders.Publishing;
+using Beskar.Mqtt.Common.Builders.Subscribing;
+using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Common.Tests.Helpers;
@@ -657,5 +660,195 @@ public class Version3ParsingTests
       await Assert.That(wasInvoked).IsTrue();
       await Assert.That(parsedPacketId).IsEqualTo(expectedPacketId);
       await Assert.That(parsedFilters).IsEquivalentTo(expectedFiltersBytes);
+   }
+
+   [Test]
+   public async Task CorrectPublishHeapEncodingAndParsing()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      var expectedDup = true;
+      var expectedQos = QualityOfServiceType.AtLeastOnce;
+      var expectedRetain = true;
+      var expectedPacketId = (ushort)55;
+      var expectedTopic = "heap/topic/v3";
+      var expectedPayload = new byte[] { 1, 2, 3, 4 };
+
+      var parsedDup = false;
+      var parsedQos = QualityOfServiceType.AtMostOnce;
+      var parsedRetain = false;
+      ushort parsedPacketId = 0;
+      string? parsedTopic = null;
+      byte[]? parsedPayload = null;
+
+      var handler = new TestPacketHandler
+      {
+         OnPublish = (in p) =>
+         {
+            wasInvoked = true;
+            parsedDup = p.Dup;
+            parsedQos = p.QualityOfService;
+            parsedRetain = p.Retain;
+            parsedPacketId = p.PacketIdentifier;
+
+            var topicBytes = new byte[p.TopicUtf8Bytes.Length];
+            p.TopicUtf8Bytes.CopyTo(topicBytes);
+            parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+
+            parsedPayload = new byte[p.Payload.Length];
+            p.Payload.CopyTo(parsedPayload);
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var options = new PublishOptions();
+         options.Dup = expectedDup;
+         options.QualityOfService = expectedQos;
+         options.Retain = expectedRetain;
+         options.TopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedTopic);
+         options.Payload = new ReadOnlySequence<byte>(expectedPayload);
+
+         var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
+         encoder.WritePublish(options, expectedPacketId);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(bytesConsumed).IsEqualTo(buffer.WrittenSpan.Length);
+      await Assert.That(wasInvoked).IsTrue();
+      await Assert.That(parsedDup).IsEqualTo(expectedDup);
+      await Assert.That(parsedQos).IsEqualTo(expectedQos);
+      await Assert.That(parsedRetain).IsEqualTo(expectedRetain);
+      await Assert.That(parsedPacketId).IsEqualTo(expectedPacketId);
+      await Assert.That(parsedTopic).IsEqualTo(expectedTopic);
+      await Assert.That(parsedPayload).IsEquivalentTo(expectedPayload);
+   }
+
+   [Test]
+   public async Task CorrectSubscribeHeapEncodingAndParsing()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      ushort expectedPacketId = 91;
+      var expectedTopic = "heap/sub/v3";
+      var expectedQos = QualityOfServiceType.AtLeastOnce;
+
+      ushort parsedPacketId = 0;
+      var parsedQos = QualityOfServiceType.AtMostOnce;
+      string? parsedTopic = null;
+
+      var handler = new TestPacketHandler
+      {
+         OnSubscribe = (in p) =>
+         {
+            wasInvoked = true;
+            parsedPacketId = p.PacketIdentifier;
+
+            var enumerator = p.GetFilters();
+            if (enumerator.MoveNext())
+            {
+               var filter = enumerator.Current;
+               var topicBytes = new byte[filter.TopicUtf8Bytes.Length];
+               filter.TopicUtf8Bytes.CopyTo(topicBytes);
+               parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+
+               parsedQos = filter.QualityOfService;
+            }
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var options = new SubscribeOptions();
+         options.TopicFilters.Add(expectedTopic, expectedQos);
+
+         var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
+         encoder.WriteSubscribe(options, expectedPacketId);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(bytesConsumed).IsEqualTo(buffer.WrittenSpan.Length);
+      await Assert.That(wasInvoked).IsTrue();
+      await Assert.That(parsedPacketId).IsEqualTo(expectedPacketId);
+      await Assert.That(parsedTopic).IsEqualTo(expectedTopic);
+      await Assert.That(parsedQos).IsEqualTo(expectedQos);
+   }
+
+   [Test]
+   public async Task CorrectUnsubscribeHeapEncodingAndParsing()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      ushort expectedPacketId = 112;
+      var expectedTopic1 = "unsub/v3/1";
+      var expectedTopic2 = "unsub/v3/2";
+
+      ushort parsedPacketId = 0;
+      var parsedFilters = new List<string>();
+
+      var handler = new TestPacketHandler
+      {
+         OnUnsubscribe = (in p) =>
+         {
+            wasInvoked = true;
+            parsedPacketId = p.PacketIdentifier;
+
+            var enumerator = p.GetFilters();
+            while (enumerator.MoveNext())
+            {
+               var filterBytes = new byte[enumerator.Current.Length];
+               enumerator.Current.CopyTo(filterBytes);
+               parsedFilters.Add(System.Text.Encoding.UTF8.GetString(filterBytes));
+            }
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var options = new UnsubscribeOptions();
+         options.TopicFilters.Add(expectedTopic1);
+         options.TopicFilters.Add(expectedTopic2);
+
+         var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
+         encoder.WriteUnsubscribe(options, expectedPacketId);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(bytesConsumed).IsEqualTo(buffer.WrittenSpan.Length);
+      await Assert.That(wasInvoked).IsTrue();
+      await Assert.That(parsedPacketId).IsEqualTo(expectedPacketId);
+      await Assert.That(parsedFilters.Count).IsEqualTo(2);
+      await Assert.That(parsedFilters[0]).IsEqualTo(expectedTopic1);
+      await Assert.That(parsedFilters[1]).IsEqualTo(expectedTopic2);
    }
 }
