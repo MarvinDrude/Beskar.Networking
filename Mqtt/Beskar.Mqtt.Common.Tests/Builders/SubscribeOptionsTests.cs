@@ -23,21 +23,21 @@ public class SubscribeOptionsTests
       // Extract values synchronously to avoid holding ref structs across await boundaries
       var subscriptionId = options.SubscriptionIdentifier;
 
-      bool hasFilter1 = false;
-      string filter1Name = "";
-      QualityOfServiceType filter1Qos = QualityOfServiceType.AtMostOnce;
-      bool filter1NoLocal = false;
-      bool filter1RetainAsPublished = false;
-      RetainHandlingType filter1RetainHandling = RetainHandlingType.SendAtSubscription;
+      var hasFilter1 = false;
+      var filter1Name = "";
+      var filter1Qos = QualityOfServiceType.AtMostOnce;
+      var filter1NoLocal = false;
+      var filter1RetainAsPublished = false;
+      var filter1RetainHandling = RetainHandlingType.SendAtSubscription;
 
-      bool hasFilter2 = false;
-      string filter2Name = "";
-      QualityOfServiceType filter2Qos = QualityOfServiceType.AtMostOnce;
-      bool filter2NoLocal = false;
-      bool filter2RetainAsPublished = false;
-      RetainHandlingType filter2RetainHandling = RetainHandlingType.SendAtSubscription;
+      var hasFilter2 = false;
+      var filter2Name = "";
+      var filter2Qos = QualityOfServiceType.AtMostOnce;
+      var filter2NoLocal = false;
+      var filter2RetainAsPublished = false;
+      var filter2RetainHandling = RetainHandlingType.SendAtSubscription;
 
-      bool hasMoreFilters = true;
+      var hasMoreFilters = true;
 
       {
          var enumerator = options.TopicFilters.GetEnumerator();
@@ -70,10 +70,10 @@ public class SubscribeOptionsTests
          }
       }
 
-      bool hasUserProp = false;
-      string userPropKey = "";
-      string userPropVal = "";
-      bool hasMoreUserProps = true;
+      var hasUserProp = false;
+      var userPropKey = "";
+      var userPropVal = "";
+      var hasMoreUserProps = true;
 
       {
          var userPropEnum = options.UserProperties.GetEnumerator();

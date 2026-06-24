@@ -34,34 +34,34 @@ public class PublishOptionsTests
       var qos = options.QualityOfService;
       var retain = options.Retain;
 
-      byte[] topicBytes = options.TopicUtf8Bytes.ToArray();
+      var topicBytes = options.TopicUtf8Bytes.ToArray();
       var topicStr = System.Text.Encoding.UTF8.GetString(topicBytes);
 
-      byte[] payloadBytes = options.Payload.ToArray();
+      var payloadBytes = options.Payload.ToArray();
       var payloadStr = System.Text.Encoding.UTF8.GetString(payloadBytes);
 
       // Verify serialized properties (ref struct scope block)
-      bool hasPayloadFormat = false;
-      PayloadFormat payloadFormatVal = PayloadFormat.Unspecified;
+      var hasPayloadFormat = false;
+      var payloadFormatVal = PayloadFormat.Unspecified;
 
-      bool hasMessageExpiry = false;
-      uint messageExpiryVal = 0;
+      var hasMessageExpiry = false;
+      var messageExpiryVal = 0U;
 
-      bool hasTopicAlias = false;
-      ushort topicAliasVal = 0;
+      var hasTopicAlias = false;
+      var topicAliasVal = (ushort)0;
 
-      bool hasResponseTopic = false;
-      string responseTopicVal = "";
+      var hasResponseTopic = false;
+      var responseTopicVal = "";
 
-      bool hasCorrelation = false;
-      byte[] correlationVal = [];
+      var hasCorrelation = false;
+      var correlationVal = Array.Empty<byte>();
 
-      bool hasContentType = false;
-      string contentTypeVal = "";
+      var hasContentType = false;
+      var contentTypeVal = "";
 
-      bool hasUserProp = false;
-      string userPropKey = "";
-      string userPropVal = "";
+      var hasUserProp = false;
+      var userPropKey = "";
+      var userPropVal = "";
 
       var propertiesSequence = options.BuildProperties();
 
