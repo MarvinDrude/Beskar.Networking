@@ -9,6 +9,11 @@ namespace Beskar.Mqtt.Common.Builders.Common;
 public sealed class UserPropertyListBuilder(IBufferWriter<byte> writer)
 {
    public int Count { get; private set; }
+   public int ByteCount { get; private set; }
+
+   public ReadOnlySpan<byte> WrittenSpan => _writer is ArrayBufferWriter<byte> buffer
+      ? buffer.WrittenSpan
+      : throw new InvalidOperationException("Backing writer does not support written span.");
 
    private readonly IBufferWriter<byte> _writer = writer;
 
@@ -67,8 +72,11 @@ public sealed class UserPropertyListBuilder(IBufferWriter<byte> writer)
       var wroteValue = Encoding.UTF8.GetBytes(value, span[sizeof(ushort)..]);
       BinaryPrimitives.WriteUInt16BigEndian(span, (ushort)wroteValue);
 
-      _writer.Advance(1 + sizeof(ushort) + wrote + sizeof(ushort) + wroteValue);
+      var byteCount = 1 + sizeof(ushort) + wrote + sizeof(ushort) + wroteValue;
+      _writer.Advance(byteCount);
+
       Count++;
+      ByteCount += byteCount;
 
       return this;
    }
@@ -91,8 +99,11 @@ public sealed class UserPropertyListBuilder(IBufferWriter<byte> writer)
       BinaryPrimitives.WriteUInt16BigEndian(span, (ushort)valueBytes.Length);
       valueBytes.CopyTo(span[sizeof(ushort)..]);
 
-      _writer.Advance(1 + sizeof(ushort) + wrote + sizeof(ushort) + valueBytes.Length);
+      var byteCount = 1 + sizeof(ushort) + wrote + sizeof(ushort) + valueBytes.Length;
+      _writer.Advance(byteCount);
+
       Count++;
+      ByteCount += byteCount;
 
       return this;
    }
@@ -114,7 +125,9 @@ public sealed class UserPropertyListBuilder(IBufferWriter<byte> writer)
       valueBytes.CopyTo(span[sizeof(ushort)..]);
 
       _writer.Advance(count);
+
       Count++;
+      ByteCount += count;
 
       return this;
    }
@@ -125,6 +138,7 @@ public sealed class UserPropertyListBuilder(IBufferWriter<byte> writer)
       {
          buffer.Clear();
          Count = 0;
+         ByteCount = 0;
       }
       else
       {

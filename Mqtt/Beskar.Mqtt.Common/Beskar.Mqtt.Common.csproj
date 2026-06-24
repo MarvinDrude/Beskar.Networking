@@ -13,6 +13,7 @@
    </ItemGroup>
 
    <ItemGroup>
+     <Folder Include="Builders\Publishing\" />
      <Folder Include="Encoders\Version5\" />
    </ItemGroup>
 

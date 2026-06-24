@@ -7,6 +7,11 @@ namespace Beskar.Mqtt.Common.Builders.Common;
 public sealed class Utf8StringListBuilder(IBufferWriter<byte> writer)
 {
    public int Count { get; private set; }
+   public int ByteCount { get; private set; }
+
+   public ReadOnlySpan<byte> WrittenSpan => _writer is ArrayBufferWriter<byte> buffer
+      ? buffer.WrittenSpan
+      : throw new InvalidOperationException("Backing writer does not support written span.");
 
    private readonly IBufferWriter<byte> _writer = writer;
 
@@ -36,6 +41,7 @@ public sealed class Utf8StringListBuilder(IBufferWriter<byte> writer)
 
       _writer.Advance(totalSize);
       Count++;
+      ByteCount += totalSize;
 
       return this;
    }
@@ -50,7 +56,9 @@ public sealed class Utf8StringListBuilder(IBufferWriter<byte> writer)
 
       BinaryPrimitives.WriteUInt16LittleEndian(destination, (ushort)bytesWritten);
       _writer.Advance(2 + bytesWritten);
+
       Count++;
+      ByteCount += 2 + bytesWritten;
 
       return this;
    }
