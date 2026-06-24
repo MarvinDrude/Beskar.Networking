@@ -1,5 +1,4 @@
 using Beskar.Mqtt.Common.Builders.Common;
-using Beskar.Mqtt.Common.Interfaces.Builders;
 
 namespace Beskar.Mqtt.Common.Builders.Unsubscribing;
 
@@ -25,4 +24,6 @@ public sealed class UnsubscribeOptions(int builderCapacity = -1) : UserPropertie
       base.Clear();
       TopicFilters.Clear();
    }
+
+   public static UnsubscribeOptionsBuilder Create() => new();
 }
