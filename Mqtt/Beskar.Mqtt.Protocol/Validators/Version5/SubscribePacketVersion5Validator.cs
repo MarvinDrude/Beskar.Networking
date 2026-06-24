@@ -32,6 +32,11 @@ public static class SubscribePacketVersion5Validator
          {
             return new StringError("Protocol Violation: Invalid QoS level in SUBSCRIBE packet.");
          }
+
+         if (filter.RetainHandling is < 0 or > RetainHandlingType.DoNotSend)
+         {
+            return new StringError("Protocol Violation: Invalid Retain Handling level in SUBSCRIBE packet.");
+         }
       }
       while (enumerator.MoveNext());
 

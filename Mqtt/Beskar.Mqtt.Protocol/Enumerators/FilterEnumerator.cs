@@ -43,7 +43,12 @@ public ref struct FilterEnumerator(ReadOnlySequence<byte> sequence)
          return false;
       }
 
-      Current = new TopicFilter(topicUtf8Bytes, (QualityOfServiceType)(qosByte & 0x03));
+      var qos = (QualityOfServiceType)(qosByte & 0x03);
+      var noLocal = (qosByte & 0x04) != 0;
+      var retainAsPublished = (qosByte & 0x08) != 0;
+      var retainHandling = (RetainHandlingType)((qosByte & 0x30) >> 4);
+
+      Current = new TopicFilter(topicUtf8Bytes, qos, noLocal, retainAsPublished, retainHandling);
       return true;
    }
 }

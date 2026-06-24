@@ -521,6 +521,49 @@ public class Version3ParsingTests
    }
 
    [Test]
+   public async Task InvalidSubscribeParsingWithOptionsUnderV3()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      ushort expectedPacketId = 88;
+      // SUBSCRIBE payload: topic "test" (length 4) + option byte with NL bit set (invalid for v3) -> 0x05 (QoS=1, NL=1)
+      var expectedFiltersBytes = new byte[] { 0x00, 0x04, (byte)'t', (byte)'e', (byte)'s', (byte)'t', 0x05 };
+
+      var handler = new TestPacketHandler
+      {
+         OnSubscribe = (in p) =>
+         {
+            wasInvoked = true;
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var originalPacket = new SubscribePacket
+         {
+            PacketIdentifier = expectedPacketId,
+            FiltersBytes = new ReadOnlySequence<byte>(expectedFiltersBytes)
+         };
+
+         var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
+         encoder.WriteSubscribe(originalPacket);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.ProtocolError);
+      await Assert.That(wasInvoked).IsFalse();
+   }
+
+   [Test]
    public async Task CorrectUnsubAckParsing()
    {
       var buffer = new MemoryBuffer();

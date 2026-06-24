@@ -32,6 +32,11 @@ public static class SubscribePacketVersion3Validator
          {
             return new StringError("Protocol Violation: Invalid QoS level in SUBSCRIBE packet.");
          }
+
+         if (filter.NoLocal || filter.RetainAsPublished || filter.RetainHandling != RetainHandlingType.SendAtSubscription)
+         {
+            return new StringError("Protocol Violation: Reserved bits in SUBSCRIBE packet options byte must be 0 under MQTT v3.1.1.");
+         }
       }
       while (enumerator.MoveNext());
 

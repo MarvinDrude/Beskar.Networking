@@ -614,6 +614,112 @@ public class Version5ParsingTests
    }
 
    [Test]
+   public async Task CorrectSubscribeParsingWithOptions()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      ushort expectedPacketId = 89;
+      // SUBSCRIBE payload: topic "test" (length 4) + option byte: Max QoS = 1, NL = 1, RAP = 1, Retain Handling = 2 -> 0x2D
+      var expectedFiltersBytes = new byte[] { 0x00, 0x04, (byte)'t', (byte)'e', (byte)'s', (byte)'t', 0x2D };
+
+      QualityOfServiceType parsedQos = QualityOfServiceType.AtMostOnce;
+      bool parsedNoLocal = false;
+      bool parsedRetainAsPublished = false;
+      RetainHandlingType parsedRetainHandling = RetainHandlingType.SendAtSubscription;
+
+      var handler = new TestPacketHandler
+      {
+         OnSubscribe = (in p) =>
+         {
+            wasInvoked = true;
+            var enumerator = p.GetFilters();
+            if (enumerator.MoveNext())
+            {
+               var filter = enumerator.Current;
+               parsedQos = filter.QualityOfService;
+               parsedNoLocal = filter.NoLocal;
+               parsedRetainAsPublished = filter.RetainAsPublished;
+               parsedRetainHandling = filter.RetainHandling;
+            }
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var originalPacket = new SubscribePacket
+         {
+            PacketIdentifier = expectedPacketId,
+            FiltersBytes = new ReadOnlySequence<byte>(expectedFiltersBytes),
+            PropertiesBytes = ReadOnlySequence<byte>.Empty
+         };
+
+         var encoder = new PacketVersion5Encoder(buffer);
+         encoder.WriteSubscribe(originalPacket);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(wasInvoked).IsTrue();
+      await Assert.That(parsedQos).IsEqualTo(QualityOfServiceType.AtLeastOnce);
+      await Assert.That(parsedNoLocal).IsTrue();
+      await Assert.That(parsedRetainAsPublished).IsTrue();
+      await Assert.That(parsedRetainHandling).IsEqualTo(RetainHandlingType.DoNotSend);
+   }
+
+   [Test]
+   public async Task InvalidSubscribeParsingWithRetainHandling3()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      ushort expectedPacketId = 90;
+      // SUBSCRIBE payload: topic "test" (length 4) + option byte: Max QoS = 1, Retain Handling = 3 (invalid) -> 0x31
+      var expectedFiltersBytes = new byte[] { 0x00, 0x04, (byte)'t', (byte)'e', (byte)'s', (byte)'t', 0x31 };
+
+      var handler = new TestPacketHandler
+      {
+         OnSubscribe = (in p) =>
+         {
+            wasInvoked = true;
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var originalPacket = new SubscribePacket
+         {
+            PacketIdentifier = expectedPacketId,
+            FiltersBytes = new ReadOnlySequence<byte>(expectedFiltersBytes),
+            PropertiesBytes = ReadOnlySequence<byte>.Empty
+         };
+
+         var encoder = new PacketVersion5Encoder(buffer);
+         encoder.WriteSubscribe(originalPacket);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.ProtocolError);
+      await Assert.That(wasInvoked).IsFalse();
+   }
+
+   [Test]
    public async Task CorrectUnsubscribeParsing()
    {
       var buffer = new MemoryBuffer();
