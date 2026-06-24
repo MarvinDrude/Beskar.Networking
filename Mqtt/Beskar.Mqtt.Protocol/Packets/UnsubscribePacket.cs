@@ -13,7 +13,9 @@ public ref struct UnsubscribePacket
    public ReadOnlySequence<byte> FiltersBytes;
 
    public ReadOnlySequence<byte> PropertiesBytes;
-   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+
+   public readonly UnsubscribeFilterEnumerator GetFilters() => new(FiltersBytes);
 
    public override string ToString()
    {
@@ -21,6 +23,4 @@ public ref struct UnsubscribePacket
    }
 
    internal string DebuggerDisplay => ToString();
-
-   public UnsubscribeFilterEnumerator GetFilters() => new(FiltersBytes);
 }

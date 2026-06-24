@@ -17,7 +17,7 @@ public ref struct SubscribePacket
    public uint SubscriptionIdentifier;
 
    public ReadOnlySequence<byte> PropertiesBytes;
-   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public override string ToString()
    {
@@ -26,5 +26,5 @@ public ref struct SubscribePacket
 
    internal string DebuggerDisplay => ToString();
 
-   public FilterEnumerator GetFilters() => new(FiltersBytes);
+   public readonly FilterEnumerator GetFilters() => new(FiltersBytes);
 }

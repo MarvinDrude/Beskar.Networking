@@ -16,7 +16,7 @@ public ref struct SubAckPacket
    public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
 
    public ReadOnlySequence<byte> PropertiesBytes;
-   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public override string ToString()
    {
@@ -25,5 +25,5 @@ public ref struct SubAckPacket
 
    internal string DebuggerDisplay => ToString();
 
-   public SubscribeReasonCodeEnumerator GetReturnCodes() => new(ReturnCodesBytes);
+   public readonly SubscribeReasonCodeEnumerator GetReturnCodes() => new(ReturnCodesBytes);
 }

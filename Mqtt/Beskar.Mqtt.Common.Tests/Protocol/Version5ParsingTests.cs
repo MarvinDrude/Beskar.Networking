@@ -2,6 +2,9 @@ using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Writers;
+using Beskar.Mqtt.Common.Builders.Publishing;
+using Beskar.Mqtt.Common.Builders.Subscribing;
+using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Encoders.Properties;
 using Beskar.Mqtt.Common.Parsers;
@@ -1276,5 +1279,319 @@ public class Version5ParsingTests
       await Assert.That(parsedPacketId).IsEqualTo(expectedPacketId);
       await Assert.That(parsedReasonCodes).IsEquivalentTo(expectedReasonCodes);
       await Assert.That(parsedReasonString).IsEqualTo(expectedReasonString);
+   }
+
+   [Test]
+   public async Task CorrectPublishHeapEncodingAndParsing()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      var expectedDup = true;
+      var expectedQos = QualityOfServiceType.AtLeastOnce;
+      var expectedRetain = true;
+      var expectedPacketId = (ushort)55;
+      var expectedTopic = "heap/topic";
+      var expectedPayload = new byte[] { 1, 2, 3, 4 };
+      var expectedContentType = "application/json";
+      var expectedResponseTopic = "response/heap";
+      var expectedPayloadFormat = PayloadFormat.CharacterData;
+      var expectedMessageExpiry = 120U;
+      var expectedTopicAlias = (ushort)5;
+
+      var parsedDup = false;
+      var parsedQos = QualityOfServiceType.AtMostOnce;
+      var parsedRetain = false;
+      ushort parsedPacketId = 0;
+      string? parsedTopic = null;
+      byte[]? parsedPayload = null;
+      string? parsedContentType = null;
+      string? parsedResponseTopic = null;
+      PayloadFormat parsedPayloadFormat = PayloadFormat.Unspecified;
+      uint parsedMessageExpiry = 0;
+      ushort parsedTopicAlias = 0;
+      var hasUserProp = false;
+
+      var handler = new TestPacketHandler
+      {
+         OnPublish = (in p) =>
+         {
+            wasInvoked = true;
+            parsedDup = p.Dup;
+            parsedQos = p.QualityOfService;
+            parsedRetain = p.Retain;
+            parsedPacketId = p.PacketIdentifier;
+
+            var topicBytes = new byte[p.TopicUtf8Bytes.Length];
+            p.TopicUtf8Bytes.CopyTo(topicBytes);
+            parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+
+            parsedPayload = new byte[p.Payload.Length];
+            p.Payload.CopyTo(parsedPayload);
+
+            var contentTypeBytes = new byte[p.ContentTypeUtf8Bytes.Length];
+            p.ContentTypeUtf8Bytes.CopyTo(contentTypeBytes);
+            parsedContentType = System.Text.Encoding.UTF8.GetString(contentTypeBytes);
+
+            var respTopicBytes = new byte[p.ResponseTopicUtf8Bytes.Length];
+            p.ResponseTopicUtf8Bytes.CopyTo(respTopicBytes);
+            parsedResponseTopic = System.Text.Encoding.UTF8.GetString(respTopicBytes);
+
+            parsedPayloadFormat = p.PayloadFormat;
+            parsedMessageExpiry = p.MessageExpiryInterval;
+            parsedTopicAlias = p.TopicAlias;
+
+            var propertiesEnumerator = p.GetProperties();
+            while (propertiesEnumerator.MoveNext())
+            {
+               var prop = propertiesEnumerator.Current;
+               if (prop.Identifier == PropertyIdentifier.UserProperty)
+               {
+                  var pair = prop.AsUserProperty();
+                  var keyBytes = new byte[pair.KeyBytes.Length];
+                  pair.KeyBytes.CopyTo(keyBytes);
+                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+
+                  var valBytes = new byte[pair.ValueBytes.Length];
+                  pair.ValueBytes.CopyTo(valBytes);
+                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+
+                  if (key == "user-key" && val == "user-val")
+                  {
+                     hasUserProp = true;
+                  }
+               }
+            }
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var options = new PublishOptions();
+         options.Dup = expectedDup;
+         options.QualityOfService = expectedQos;
+         options.Retain = expectedRetain;
+         options.TopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedTopic);
+         options.Payload = new ReadOnlySequence<byte>(expectedPayload);
+         options.PayloadFormat = expectedPayloadFormat;
+         options.MessageExpiryInterval = expectedMessageExpiry;
+         options.TopicAlias = expectedTopicAlias;
+         options.ContentTypeUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedContentType);
+         options.ResponseTopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedResponseTopic);
+         options.UserProperties.Add("user-key", "user-val");
+
+         var encoder = new PacketVersion5Encoder(buffer);
+         encoder.WritePublish(options, expectedPacketId);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(bytesConsumed).IsEqualTo(buffer.WrittenSpan.Length);
+      await Assert.That(wasInvoked).IsTrue();
+      await Assert.That(parsedDup).IsEqualTo(expectedDup);
+      await Assert.That(parsedQos).IsEqualTo(expectedQos);
+      await Assert.That(parsedRetain).IsEqualTo(expectedRetain);
+      await Assert.That(parsedPacketId).IsEqualTo(expectedPacketId);
+      await Assert.That(parsedTopic).IsEqualTo(expectedTopic);
+      await Assert.That(parsedPayload).IsEquivalentTo(expectedPayload);
+      await Assert.That(parsedContentType).IsEqualTo(expectedContentType);
+      await Assert.That(parsedResponseTopic).IsEqualTo(expectedResponseTopic);
+      await Assert.That(parsedPayloadFormat).IsEqualTo(expectedPayloadFormat);
+      await Assert.That(parsedMessageExpiry).IsEqualTo(expectedMessageExpiry);
+      await Assert.That(parsedTopicAlias).IsEqualTo(expectedTopicAlias);
+      await Assert.That(hasUserProp).IsTrue();
+   }
+
+   [Test]
+   public async Task CorrectSubscribeHeapEncodingAndParsing()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      ushort expectedPacketId = 91;
+      var expectedSubId = 12U;
+      var expectedTopic = "heap/sub";
+      var expectedQos = QualityOfServiceType.AtLeastOnce;
+      var expectedNoLocal = true;
+      var expectedRetainAsPublished = true;
+      var expectedRetainHandling = RetainHandlingType.SendAtSubscription;
+      var hasUserProp = false;
+
+      ushort parsedPacketId = 0;
+      uint parsedSubId = 0;
+      var parsedQos = QualityOfServiceType.AtMostOnce;
+      var parsedNoLocal = false;
+      var parsedRetainAsPublished = false;
+      var parsedRetainHandling = RetainHandlingType.SendAtSubscription;
+      string? parsedTopic = null;
+
+      var handler = new TestPacketHandler
+      {
+         OnSubscribe = (in p) =>
+         {
+            wasInvoked = true;
+            parsedPacketId = p.PacketIdentifier;
+            parsedSubId = p.SubscriptionIdentifier;
+
+            var enumerator = p.GetFilters();
+            if (enumerator.MoveNext())
+            {
+               var filter = enumerator.Current;
+               var topicBytes = new byte[filter.TopicUtf8Bytes.Length];
+               filter.TopicUtf8Bytes.CopyTo(topicBytes);
+               parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+
+               parsedQos = filter.QualityOfService;
+               parsedNoLocal = filter.NoLocal;
+               parsedRetainAsPublished = filter.RetainAsPublished;
+               parsedRetainHandling = filter.RetainHandling;
+            }
+
+            var propertiesEnumerator = p.GetProperties();
+            while (propertiesEnumerator.MoveNext())
+            {
+               var prop = propertiesEnumerator.Current;
+               if (prop.Identifier == PropertyIdentifier.UserProperty)
+               {
+                  var pair = prop.AsUserProperty();
+                  var keyBytes = new byte[pair.KeyBytes.Length];
+                  pair.KeyBytes.CopyTo(keyBytes);
+                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+
+                  var valBytes = new byte[pair.ValueBytes.Length];
+                  pair.ValueBytes.CopyTo(valBytes);
+                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+
+                  if (key == "sub-key" && val == "sub-val")
+                  {
+                     hasUserProp = true;
+                  }
+               }
+            }
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var options = new SubscribeOptions();
+         options.SubscriptionIdentifier = expectedSubId;
+         options.TopicFilters.Add(expectedTopic, expectedQos, expectedNoLocal, expectedRetainAsPublished, expectedRetainHandling);
+         options.UserProperties.Add("sub-key", "sub-val");
+
+         var encoder = new PacketVersion5Encoder(buffer);
+         encoder.WriteSubscribe(options, expectedPacketId);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(bytesConsumed).IsEqualTo(buffer.WrittenSpan.Length);
+      await Assert.That(wasInvoked).IsTrue();
+      await Assert.That(parsedPacketId).IsEqualTo(expectedPacketId);
+      await Assert.That(parsedSubId).IsEqualTo(expectedSubId);
+      await Assert.That(parsedTopic).IsEqualTo(expectedTopic);
+      await Assert.That(parsedQos).IsEqualTo(expectedQos);
+      await Assert.That(parsedNoLocal).IsEqualTo(expectedNoLocal);
+      await Assert.That(parsedRetainAsPublished).IsEqualTo(expectedRetainAsPublished);
+      await Assert.That(parsedRetainHandling).IsEqualTo(expectedRetainHandling);
+      await Assert.That(hasUserProp).IsTrue();
+   }
+
+   [Test]
+   public async Task CorrectUnsubscribeHeapEncodingAndParsing()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      ushort expectedPacketId = 112;
+      var expectedTopic1 = "unsub/1";
+      var expectedTopic2 = "unsub/2";
+      var hasUserProp = false;
+
+      ushort parsedPacketId = 0;
+      var parsedFilters = new System.Collections.Generic.List<string>();
+
+      var handler = new TestPacketHandler
+      {
+         OnUnsubscribe = (in p) =>
+         {
+            wasInvoked = true;
+            parsedPacketId = p.PacketIdentifier;
+
+            var enumerator = p.GetFilters();
+            while (enumerator.MoveNext())
+            {
+               var filterBytes = new byte[enumerator.Current.Length];
+               enumerator.Current.CopyTo(filterBytes);
+               parsedFilters.Add(System.Text.Encoding.UTF8.GetString(filterBytes));
+            }
+
+            var propertiesEnumerator = p.GetProperties();
+            while (propertiesEnumerator.MoveNext())
+            {
+               var prop = propertiesEnumerator.Current;
+               if (prop.Identifier == PropertyIdentifier.UserProperty)
+               {
+                  var pair = prop.AsUserProperty();
+                  var keyBytes = new byte[pair.KeyBytes.Length];
+                  pair.KeyBytes.CopyTo(keyBytes);
+                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+
+                  var valBytes = new byte[pair.ValueBytes.Length];
+                  pair.ValueBytes.CopyTo(valBytes);
+                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+
+                  if (key == "unsub-key" && val == "unsub-val")
+                  {
+                     hasUserProp = true;
+                  }
+               }
+            }
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var options = new UnsubscribeOptions();
+         options.TopicFilters.Add(expectedTopic1);
+         options.TopicFilters.Add(expectedTopic2);
+         options.UserProperties.Add("unsub-key", "unsub-val");
+
+         var encoder = new PacketVersion5Encoder(buffer);
+         encoder.WriteUnsubscribe(options, expectedPacketId);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(bytesConsumed).IsEqualTo(buffer.WrittenSpan.Length);
+      await Assert.That(wasInvoked).IsTrue();
+      await Assert.That(parsedPacketId).IsEqualTo(expectedPacketId);
+      await Assert.That(parsedFilters.Count).IsEqualTo(2);
+      await Assert.That(parsedFilters[0]).IsEqualTo(expectedTopic1);
+      await Assert.That(parsedFilters[1]).IsEqualTo(expectedTopic2);
+      await Assert.That(hasUserProp).IsTrue();
    }
 }

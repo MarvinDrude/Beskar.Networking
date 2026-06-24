@@ -44,10 +44,10 @@ public ref struct ConnectPacket
    public ReadOnlySequence<byte> WillContentTypeUtf8Bytes;
 
    public ReadOnlySequence<byte> PropertiesBytes;
-   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public ReadOnlySequence<byte> WillPropertiesBytes;
-   public MqttPropertyEnumerator GetWillProperties() => new(WillPropertiesBytes);
+   public readonly MqttPropertyEnumerator GetWillProperties() => new(WillPropertiesBytes);
 
    public override string ToString()
    {

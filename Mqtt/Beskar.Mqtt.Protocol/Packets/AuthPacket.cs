@@ -15,7 +15,7 @@ public ref struct AuthPacket
    public ReadOnlySequence<byte> AuthenticationDataBytes;
 
    public ReadOnlySequence<byte> PropertiesBytes;
-   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public override string ToString()
    {

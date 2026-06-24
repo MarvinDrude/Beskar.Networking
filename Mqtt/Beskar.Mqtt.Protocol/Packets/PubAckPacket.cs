@@ -16,7 +16,7 @@ public ref struct PubAckPacket
    public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
 
    public ReadOnlySequence<byte> PropertiesBytes;
-   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public override string ToString()
    {

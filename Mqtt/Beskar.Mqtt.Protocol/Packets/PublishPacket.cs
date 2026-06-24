@@ -28,12 +28,12 @@ public ref struct PublishPacket
    public ReadOnlySequence<byte> Payload;
 
    public ReadOnlySequence<byte> PropertiesBytes;
-   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public uint SubscriptionIdentifier;
    public bool HasMultipleSubscriptionIdentifiers;
 
-   public SubscriptionIdentifierEnumerator GetSubscriptionIdentifiers() => new(PropertiesBytes);
+   public readonly SubscriptionIdentifierEnumerator GetSubscriptionIdentifiers() => new(PropertiesBytes);
 
    public override string ToString()
    {

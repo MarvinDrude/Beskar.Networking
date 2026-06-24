@@ -14,10 +14,10 @@ public ref struct UnsubAckPacket
    public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
 
    public ReadOnlySequence<byte> PropertiesBytes;
-   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public ReadOnlySequence<byte> ReasonCodesBytes;
-   public UnsubscribeReasonCodeEnumerator GetReasonCodes() => new(ReasonCodesBytes);
+   public readonly UnsubscribeReasonCodeEnumerator GetReasonCodes() => new(ReasonCodesBytes);
 
    public override string ToString()
    {

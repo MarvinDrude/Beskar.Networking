@@ -36,7 +36,7 @@ public ref struct ConnAckPacket
    public ReadOnlySequence<byte> AssignedClientIdentifierUtf8Bytes;
 
    public ReadOnlySequence<byte> PropertiesBytes;
-   public MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
 
    public override string ToString()
    {
