@@ -1,8 +1,8 @@
 ﻿using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
-using Beskar.Mqtt.Client.Responses;
 using Beskar.Mqtt.Client.States;
+using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
@@ -31,11 +31,12 @@ public sealed partial class MqttClient : IMqttClient
       _networkClient = client;
    }
 
-   public ValueTask<ClientConnectResponse> ConnectAsync(CancellationToken ct = default)
+   public Task<ClientConnectResult> ConnectAsync(
+      ConnectOptions options, CancellationToken ct = default)
    {
 
 
-      return new ValueTask<ClientConnectResponse>(new ClientConnectResponse());
+      return Task.FromResult(new ClientConnectResult());
    }
 
    public Task<Result<PublishResult, StringError>> PublishAsync(

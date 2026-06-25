@@ -1,5 +1,6 @@
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
@@ -20,14 +21,33 @@ public interface IMqttClient : IAsyncDisposable
    /// </summary>
    public bool IsConnected { get; }
 
+   /// <summary>
+   /// Starts trying to connect to a MQTT server with the options provided.
+   /// Underlying networking options are provided in the creation factory of the client.
+   /// </summary>
+   public Task<ClientConnectResult> ConnectAsync(
+      ConnectOptions options, CancellationToken ct = default);
+
+   /// <summary>
+   /// Send a new PUBLISH Packet given the input options.
+   /// </summary>
    public Task<Result<PublishResult, StringError>> PublishAsync(
       PublishOptions options, CancellationToken ct = default);
 
+   /// <summary>
+   /// Send a new SUBSCRIBE Packet given the input options.
+   /// </summary>
    public Task<Result<SubscribeResult, StringError>> SubscribeAsync(
       SubscribeOptions options, CancellationToken ct = default);
 
+   /// <summary>
+   /// Send a new UNSUBSCRIBE Packet given the input options.
+   /// </summary>
    public Task<Result<UnsubscribeResult, StringError>> UnsubscribeAsync(
       UnsubscribeOptions options, CancellationToken ct = default);
 
+   /// <summary>
+   /// Send a new PING packet.
+   /// </summary>
    public Task<VoidResult<StringError>> PingAsync(CancellationToken ct = default);
 }
