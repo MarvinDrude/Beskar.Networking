@@ -1,14 +1,21 @@
 ﻿using System.Buffers;
+using Beskar.Memory.Results;
+using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Client.Responses;
+using Beskar.Mqtt.Common.Builders.Publishing;
+using Beskar.Mqtt.Common.Builders.Subscribing;
+using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Handlers;
+using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Common.Parsers;
+using Beskar.Mqtt.Common.Results;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Client;
 
-public sealed class MqttClient
+public sealed class MqttClient : IMqttClient
 {
    private readonly INetworkClient _networkClient;
    private readonly IPacketHandler _packetHandler = null!;
@@ -23,9 +30,29 @@ public sealed class MqttClient
       return new ValueTask<ClientConnectResponse>(new ClientConnectResponse());
    }
 
-   /// <summary>
-   /// Internal message receive and parse loop
-   /// </summary>
+   public Task<Result<PublishResult, StringError>> PublishAsync(
+      PublishOptions options, CancellationToken ct = default)
+   {
+      throw new NotImplementedException();
+   }
+
+   public Task<Result<SubscribeResult, StringError>> SubscribeAsync(
+      SubscribeOptions options, CancellationToken ct = default)
+   {
+
+   }
+
+   public Task<Result<UnsubscribeResult, StringError>> UnsubscribeAsync(
+      UnsubscribeOptions options, CancellationToken ct = default)
+   {
+      throw new NotImplementedException();
+   }
+
+   public Task<VoidResult<StringError>> PingAsync(CancellationToken ct = default)
+   {
+      throw new NotImplementedException();
+   }
+
    private async Task RunMessageReceive(INetworkStream networkStream, CancellationToken ct = default)
    {
       try
@@ -78,5 +105,10 @@ public sealed class MqttClient
       {
          // expected
       }
+   }
+
+   public ValueTask DisposeAsync()
+   {
+      throw new NotImplementedException();
    }
 }
