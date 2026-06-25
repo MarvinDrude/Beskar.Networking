@@ -7,8 +7,19 @@ using Beskar.Mqtt.Common.Results;
 
 namespace Beskar.Mqtt.Common.Interfaces;
 
+/// <summary>
+/// Represents a full MQTT Client able to SUBSCRIBE, UNSUBSCRIBE, PUBLISH, PING.
+/// <remarks>Connection states etc. are not fully thread safe.</remarks>
+/// <remarks>PUBLISH, SUBSCRIBE, UNSUBSCRIBE, PING are fully thread safe to call.</remarks>
+/// </summary>
 public interface IMqttClient : IAsyncDisposable
 {
+   /// <summary>
+   /// Whether the MQTT Client is currently connected to the server last
+   /// specified in the Connect Method.
+   /// </summary>
+   public bool IsConnected { get; }
+
    public Task<Result<PublishResult, StringError>> PublishAsync(
       PublishOptions options, CancellationToken ct = default);
 

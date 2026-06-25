@@ -2,6 +2,7 @@
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Client.Responses;
+using Beskar.Mqtt.Client.States;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
@@ -15,10 +16,15 @@ using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Client;
 
-public sealed class MqttClient : IMqttClient
+public sealed partial class MqttClient : IMqttClient
 {
+   public bool IsConnected => (MqttClientConnectionState)_state is MqttClientConnectionState.Connected;
+
    private readonly INetworkClient _networkClient;
    private readonly IPacketHandler _packetHandler = null!;
+
+   private volatile bool _disposed;
+   private volatile int _state = (int)MqttClientConnectionState.Disconnected;
 
    internal MqttClient(INetworkClient client)
    {
@@ -27,6 +33,8 @@ public sealed class MqttClient : IMqttClient
 
    public ValueTask<ClientConnectResponse> ConnectAsync(CancellationToken ct = default)
    {
+
+
       return new ValueTask<ClientConnectResponse>(new ClientConnectResponse());
    }
 
@@ -36,9 +44,15 @@ public sealed class MqttClient : IMqttClient
       throw new NotImplementedException();
    }
 
-   public Task<Result<SubscribeResult, StringError>> SubscribeAsync(
+   public async Task<Result<SubscribeResult, StringError>> SubscribeAsync(
       SubscribeOptions options, CancellationToken ct = default)
    {
+      var validateResult = SubscribeOptionsValidator.Validate(options);
+      if (!validateResult.IsSuccess) return validateResult.Error;
+
+      var clientResult = ValidateClient();
+      if (!clientResult.IsSuccess) return clientResult.Error;
+
 
    }
 
@@ -53,62 +67,22 @@ public sealed class MqttClient : IMqttClient
       throw new NotImplementedException();
    }
 
-   private async Task RunMessageReceive(INetworkStream networkStream, CancellationToken ct = default)
+   private VoidResult<StringError> ValidateClient()
    {
-      try
-      {
-         // duplex input for reading incoming messages
-         var reader = networkStream.Transport.Input;
+      if (_disposed)
+         return new StringError("Client is already disposed.");
 
-         while (true)
-         {
-            var result = await reader.ReadAsync(ct);
-            var buffer = result.Buffer;
+      if (_state is not MqttClientConnectionState.Connected)
+         return new StringError("Client is not connected.");
 
-            if (result.IsCanceled) break;
-            if (buffer.IsEmpty && result.IsCompleted) break;
-
-            var consumed = buffer.Start;
-            var examined = buffer.End;
-
-            while (!buffer.IsEmpty)
-            {
-               var sequenceReader = new SequenceReader<byte>(buffer);
-               var parser = new PacketParser(_packetHandler, MqttProtocolVersion.V50);
-               var valueTask = parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct);
-
-               var parseResult = valueTask.IsCompletedSuccessfully
-                  ? valueTask.Result
-                  : await valueTask.ConfigureAwait(false);
-
-               if (parseResult.Failed || parseResult.Success is PacketDispatchResult.ProtocolError
-                      or PacketDispatchResult.InvalidPacketType)
-               {
-                  // Protocol violation: exit the loop to drop the connection
-                  return;
-               }
-
-               if (parseResult.Success is PacketDispatchResult.NotEnoughData)
-               {
-                  break;
-               }
-
-               consumed = buffer.GetPosition(parsedBytes);
-               buffer = buffer.Slice(consumed);
-            }
-
-            reader.AdvanceTo(consumed, examined);
-            if (result.IsCompleted && buffer.IsEmpty) break;
-         }
-      }
-      catch (OperationCanceledException)
-      {
-         // expected
-      }
+      return true;
    }
 
    public ValueTask DisposeAsync()
    {
-      throw new NotImplementedException();
+      if (_disposed) return ValueTask.CompletedTask;
+      _disposed = true;
+
+      return ValueTask.CompletedTask;
    }
 }
