@@ -112,16 +112,6 @@ public sealed class PublishOptionsBuilder(PublishOptions? options = null)
    /// Sets the Response Topic.
    /// <remarks>MQTT 5.0.0 and above required.</remarks>
    /// </summary>
-   public PublishOptionsBuilder WithResponseTopic(ReadOnlySpan<char> responseTopic)
-   {
-      _options.ResponseTopicUtf8Bytes = Encoding.UTF8.GetBytes([.. responseTopic]);
-      return this;
-   }
-
-   /// <summary>
-   /// Sets the Response Topic.
-   /// <remarks>MQTT 5.0.0 and above required.</remarks>
-   /// </summary>
    public PublishOptionsBuilder WithResponseTopic(ReadOnlySpan<byte> responseTopicUtf8Bytes)
    {
       _options.ResponseTopicUtf8Bytes = responseTopicUtf8Bytes.ToArray();
@@ -155,16 +145,6 @@ public sealed class PublishOptionsBuilder(PublishOptions? options = null)
    public PublishOptionsBuilder WithContentType(string contentType)
    {
       _options.ContentTypeUtf8Bytes = Encoding.UTF8.GetBytes(contentType);
-      return this;
-   }
-
-   /// <summary>
-   /// Sets the Content Type.
-   /// <remarks>MQTT 5.0.0 and above required.</remarks>
-   /// </summary>
-   public PublishOptionsBuilder WithContentType(ReadOnlySpan<char> contentType)
-   {
-      _options.ContentTypeUtf8Bytes = Encoding.UTF8.GetBytes([.. contentType]);
       return this;
    }
 
