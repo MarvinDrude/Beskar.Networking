@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Runtime.CompilerServices;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Client.States;
@@ -16,25 +17,41 @@ using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Client;
 
-public sealed partial class MqttClient : IMqttClient
+public sealed partial class MqttClient(INetworkClient client) : IMqttClient
 {
    public bool IsConnected => (MqttClientConnectionState)_state is MqttClientConnectionState.Connected;
 
-   private readonly INetworkClient _networkClient;
+   private readonly INetworkClient _networkClient = client;
+   private INetworkSession _controlSession;
+
    private readonly IPacketHandler _packetHandler = null!;
 
    private volatile bool _disposed;
    private volatile int _state = (int)MqttClientConnectionState.Disconnected;
 
-   internal MqttClient(INetworkClient client)
-   {
-      _networkClient = client;
-   }
+   private ConnectOptions _connectOptions = new ();
 
-   public Task<ClientConnectResult> ConnectAsync(
+   public async Task<Result<ClientConnectResult, StringError>> ConnectAsync(
       ConnectOptions options, CancellationToken ct = default)
    {
+      var disposedResult = ValidateDisposed();
+      if (disposedResult.Failed) return disposedResult.Error;
 
+      if (CompareExchangeState(MqttClientConnectionState.Connecting, MqttClientConnectionState.Disconnected)
+          is not MqttClientConnectionState.Disconnected)
+      {
+         return new StringError("ConnectAsync called while not being in disconnected state.");
+      }
+
+      try
+      {
+         _connectOptions = options;
+         _networkClient.
+      }
+      catch (Exception error)
+      {
+         return new StringError($"Unexpected error at ConnectAsync: {error}");
+      }
 
       return Task.FromResult(new ClientConnectResult());
    }
@@ -63,20 +80,43 @@ public sealed partial class MqttClient : IMqttClient
       throw new NotImplementedException();
    }
 
-   public Task<VoidResult<StringError>> PingAsync(CancellationToken ct = default)
+   public async Task<VoidResult<StringError>> PingAsync(CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      var clientResult = ValidateClient();
+      if (!clientResult.IsSuccess) return clientResult;
+
+
    }
 
+
+
    private VoidResult<StringError> ValidateClient()
+   {
+      var disposed = ValidateDisposed();
+      if (disposed.Failed)
+         return disposed;
+
+      if ((MqttClientConnectionState)_state is not MqttClientConnectionState.Connected)
+         return new StringError("Client is not connected.");
+
+      return true;
+   }
+
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
+   private VoidResult<StringError> ValidateDisposed()
    {
       if (_disposed)
          return new StringError("Client is already disposed.");
 
-      if (_state is not MqttClientConnectionState.Connected)
-         return new StringError("Client is not connected.");
-
       return true;
+   }
+
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
+   private MqttClientConnectionState CompareExchangeState(
+      MqttClientConnectionState state, MqttClientConnectionState compareState)
+   {
+      return (MqttClientConnectionState)Interlocked.CompareExchange(
+         ref _state, (int)state, (int)compareState);
    }
 
    public ValueTask DisposeAsync()

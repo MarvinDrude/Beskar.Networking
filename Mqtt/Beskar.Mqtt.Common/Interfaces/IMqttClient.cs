@@ -25,7 +25,7 @@ public interface IMqttClient : IAsyncDisposable
    /// Starts trying to connect to a MQTT server with the options provided.
    /// Underlying networking options are provided in the creation factory of the client.
    /// </summary>
-   public Task<ClientConnectResult> ConnectAsync(
+   public Task<Result<ClientConnectResult, StringError>> ConnectAsync(
       ConnectOptions options, CancellationToken ct = default);
 
    /// <summary>
