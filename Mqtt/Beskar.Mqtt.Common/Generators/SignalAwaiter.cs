@@ -18,7 +18,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    // 0 = Pending, 1 = Completed, 2 = Failed/Canceled, 3 = Disposed
    private int _state;
-   private bool _isPruned;
+   private volatile bool _isPruned;
    private int _isPooled;
 
    private CancellationTokenRegistration _cancellationRegistration;
@@ -27,7 +27,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       RunContinuationsAsynchronously = true
    };
 
-   private SignalBroker? _broker;
+   private volatile SignalBroker? _broker;
 
    public ValueTask<TResponseMessage> WaitOneAsync(CancellationToken cancellationToken)
    {

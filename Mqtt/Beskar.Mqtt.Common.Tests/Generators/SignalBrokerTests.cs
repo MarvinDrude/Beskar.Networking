@@ -487,4 +487,29 @@ public class SignalBrokerTests
          Assert.Fail("AddAwaitable hung concurrently with Dispose.");
       }
    }
+
+    [Test]
+    public async Task CollisionDifferentTypes_CompletedNonHeadMultipleSameType_ShouldCompleteAll()
+    {
+       // Arrange
+       using var broker = new SignalBroker();
+
+       using var awaiterB = broker.AddAwaitable<PubAckResponse>(10);
+       using var awaiterA1 = broker.AddAwaitable<PingResponse>(10);
+       using var awaiterA2 = broker.AddAwaitable<PingResponse>(10);
+
+       var taskB = awaiterB.WaitOneAsync(CancellationToken.None).AsTask();
+       var taskA1 = awaiterA1.WaitOneAsync(CancellationToken.None).AsTask();
+       var taskA2 = awaiterA2.WaitOneAsync(CancellationToken.None).AsTask();
+
+       var dispatched1 = broker.TryDispatch(new PingResponse(), 10);
+       await Assert.That(dispatched1).IsTrue();
+       await Assert.That(taskA2.Status == TaskStatus.RanToCompletion).IsTrue();
+       await taskA2;
+
+       var dispatched2 = broker.TryDispatch(new PingResponse(), 10);
+       await Assert.That(dispatched2).IsTrue();
+       await Assert.That(taskA2.Status == TaskStatus.RanToCompletion).IsTrue();
+       await taskA1;
+    }
 }
