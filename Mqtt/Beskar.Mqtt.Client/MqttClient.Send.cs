@@ -24,7 +24,7 @@ public sealed partial class MqttClient
       var clientResult = ValidateClient();
       if (!clientResult.IsSuccess) return clientResult.Error;
 
-
+      throw new NotImplementedException();
    }
 
    public Task<Result<UnsubscribeResult, StringError>> UnsubscribeAsync(
@@ -39,5 +39,6 @@ public sealed partial class MqttClient
       if (!clientResult.IsSuccess) return clientResult;
 
 
+      throw new NotImplementedException();
    }
 }

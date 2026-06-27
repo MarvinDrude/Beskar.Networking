@@ -31,8 +31,14 @@ public sealed partial class MqttClient : IMqttClient
    private readonly PacketIdentifierGenerator _identifierGenerator = new();
 
    private volatile bool _disposed;
+   private volatile bool _gracefulDisconnect;
    private volatile bool _firstConnect = true;
    private volatile int _state = (int)MqttClientConnectionState.Disconnected;
+
+   private CancellationTokenSource _clientTokenSource = new();
+
+   private Task? _keepAliveTask;
+   private DateTimeOffset _lastKeepAliveTimestamp;
 
    private ConnectOptions _connectOptions = new ();
 
@@ -63,6 +69,9 @@ public sealed partial class MqttClient : IMqttClient
             _signalBroker.Reset();
          }
 
+         _clientTokenSource.Dispose();
+         _clientTokenSource = new CancellationTokenSource();
+
          _connectOptions = options;
          _firstConnect = false;
 
@@ -84,9 +93,9 @@ public sealed partial class MqttClient : IMqttClient
          }
 
          var connectResult = result.Success;
-         var keepAliveInterval = _connectOptions.KeepAlivePeriod;
+         StartKeepAliveOnDemand(connectResult);
 
-         if (connectResult.)
+
 
          return result;
       }
@@ -98,10 +107,25 @@ public sealed partial class MqttClient : IMqttClient
 
    private async Task<Result<ClientConnectResult, StringError>> ConnectInternalAsync(CancellationToken ct = default)
    {
+      throw new NotImplementedException();
 
    }
 
+   private void StartKeepAliveOnDemand(ClientConnectResult connectResult)
+   {
+      var keepAliveInterval = _connectOptions.KeepAlivePeriod;
 
+      if (connectResult.ServerKeepAlive is > 0 and var serverKeepAlive)
+      {
+         keepAliveInterval = serverKeepAlive;
+      }
+
+      var timeSpan = TimeSpan.FromSeconds(keepAliveInterval);
+      if (timeSpan.TotalSeconds > 0)
+      {
+         _keepAliveTask = RunKeepAliveTask(timeSpan, _clientTokenSource.Token);
+      }
+   }
 
    private VoidResult<StringError> ValidateClient()
    {
@@ -138,6 +162,7 @@ public sealed partial class MqttClient : IMqttClient
       _disposed = true;
 
       _signalBroker.Dispose();
+      _clientTokenSource.Dispose();
 
       return ValueTask.CompletedTask;
    }
