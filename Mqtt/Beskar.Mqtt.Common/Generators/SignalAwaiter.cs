@@ -8,6 +8,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 {
    public ushort Identifier { get; private set; } = identifier;
    public Type MessageType { get; } = typeof(TResponseMessage);
+   public bool IsPending => Volatile.Read(ref _state) == 0;
 
    /// <summary>
    /// Collision resolution (only for packets not supporting ids)
@@ -17,6 +18,8 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    // 0 = Pending, 1 = Completed, 2 = Failed/Canceled, 3 = Disposed
    private int _state;
+   private bool _isPruned;
+   private int _isPooled;
 
    private CancellationTokenRegistration _cancellationRegistration;
    private ManualResetValueTaskSourceCore<TResponseMessage> _core = new()
@@ -84,10 +87,35 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       }
    }
 
+   private bool TryPool()
+   {
+      if (Interlocked.CompareExchange(ref _isPooled, 1, 0) == 0)
+      {
+         Next = null;
+         _broker = null;
+
+         SignalAwaiterPool<TResponseMessage>.Return(this);
+         return true;
+      }
+
+      return false;
+   }
+
+   public void OnPruned()
+   {
+      _isPruned = true;
+      if (Volatile.Read(ref _state) == 3)
+      {
+         TryPool();
+      }
+   }
+
    public void Reset(ushort newIdentifier, SignalBroker broker)
    {
       Identifier = newIdentifier;
       Next = null;
+      _isPruned = false;
+      _isPooled = 0;
 
       _broker = broker;
       _state = 0;
@@ -119,7 +147,11 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
                _cancellationRegistration.Dispose();
             }
 
-            if (_broker != null)
+            if (_isPruned)
+            {
+               isSafeToPool = true;
+            }
+            else if (_broker != null)
             {
                isSafeToPool = _broker.TryRemove(Identifier, this);
             }
@@ -130,10 +162,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
       if (!isSafeToPool) return;
 
-      Next = null;
-      _broker = null;
-
-      SignalAwaiterPool<TResponseMessage>.Return(this);
+      TryPool();
    }
 
    TResponseMessage IValueTaskSource<TResponseMessage>.GetResult(short token)

@@ -16,4 +16,8 @@ public interface ISignalAwaiter : IDisposable
    public void Cancel();
 
    public bool TryComplete<TIncoming>(TIncoming message);
+
+   public bool IsPending { get; }
+   public void OnPruned();
 }
+

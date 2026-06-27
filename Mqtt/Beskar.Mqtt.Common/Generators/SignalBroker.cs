@@ -20,6 +20,19 @@ public sealed class SignalBroker : IDisposable
       while (true)
       {
          var currentHead = Volatile.Read(ref _waiters[identifier]);
+
+         // Prune dead nodes at the head of the chain
+         if (currentHead is not null && !currentHead.IsPending)
+         {
+            var next = currentHead.Next;
+            if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
+            {
+               currentHead.OnPruned();
+            }
+
+            continue;
+         }
+
          awaitable.Next = currentHead;
 
          // Atomically attempt to set the new awaitable as the head of the chain.
@@ -46,12 +59,24 @@ public sealed class SignalBroker : IDisposable
             return false;
          }
 
+         if (!currentHead.IsPending)
+         {
+            var next = currentHead.Next;
+            if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
+            {
+               currentHead.OnPruned();
+            }
+
+            continue;
+         }
+
          if (currentHead.MessageType == msgType)
          {
             // fast path
             var next = currentHead.Next;
             if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
             {
+               currentHead.OnPruned();
                return currentHead.TryComplete(message);
             }
 
@@ -76,14 +101,40 @@ public sealed class SignalBroker : IDisposable
 
    public bool TryRemove<TResponseMessage>(ushort identifier, SignalAwaiter<TResponseMessage> awaiter)
    {
-      var currentHead = Volatile.Read(ref _waiters[identifier]);
-      if (ReferenceEquals(currentHead, awaiter))
+      while (true)
       {
-         var next = currentHead.Next;
-         return Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead;
-      }
+         var currentHead = Volatile.Read(ref _waiters[identifier]);
+         if (currentHead is null)
+         {
+            return false;
+         }
 
-      return false;
+         // Prune dead nodes at the head of the chain
+         if (!currentHead.IsPending)
+         {
+            var next = currentHead.Next;
+            if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
+            {
+               currentHead.OnPruned();
+            }
+
+            continue;
+         }
+
+         if (ReferenceEquals(currentHead, awaiter))
+         {
+            var next = currentHead.Next;
+            if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
+            {
+               currentHead.OnPruned();
+               return true;
+            }
+
+            continue;
+         }
+
+         return false;
+      }
    }
 
    public void Dispose()
