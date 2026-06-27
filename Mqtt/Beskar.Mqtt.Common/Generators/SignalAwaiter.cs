@@ -112,6 +112,11 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    public void Reset(ushort newIdentifier, SignalBroker broker)
    {
+      _cancellationRegistration.Dispose();
+      _cancellationRegistration = default;
+
+      _core.Reset();
+
       Identifier = newIdentifier;
       Next = null;
       _isPruned = false;
@@ -119,11 +124,6 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
       _broker = broker;
       _state = 0;
-
-      _cancellationRegistration.Dispose();
-      _cancellationRegistration = default;
-
-      _core.Reset();
    }
 
    public void Dispose()

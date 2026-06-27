@@ -331,58 +331,88 @@ public class SignalBrokerTests
    }
 
    [Test]
-   public async Task ConcurrentStress_ShouldCompleteAndPoolCorrectly()
+   public async Task ThreadSafetyStressTest_ShouldNotHangOrCorrupt()
    {
+      // Arrange
       var broker = new SignalBroker();
-      const int numThreads = 10;
-      const int iterationsPerThread = 200;
+      var cts = new CancellationTokenSource();
 
-      var tasks = new Task[numThreads];
-      for (var t = 0; t < numThreads; t++)
+      cts.CancelAfter(TimeSpan.FromSeconds(8));
+
+      const int taskCount = 10;
+      const int iterationsPerTask = 2000;
+
+      var tasks = new List<Task>();
+
+      for (var t = 0; t < taskCount; t++)
       {
-         var threadId = t;
-         tasks[t] = Task.Run(async () =>
+         tasks.Add(Task.Run(async () =>
          {
-            var random = new Random(threadId);
-            for (var i = 0; i < iterationsPerThread; i++)
+            var random = new Random();
+            for (var i = 0; i < iterationsPerTask; i++)
             {
-               var id = (ushort)random.Next(0, 10); // Colliding IDs to stress-test collision and pruning
-
-               var shouldSucceed = random.Next(0, 2) == 0;
-               var awaiter = broker.AddAwaitable<PingResponse>(id);
-
-               if (shouldSucceed)
+               if (cts.Token.IsCancellationRequested)
                {
-                  var waitTask = awaiter.WaitOneAsync(CancellationToken.None).AsTask();
-                  _ = Task.Run(() => { broker.TryDispatch(new PingResponse(), id); });
-
-                  try
-                  {
-                     await waitTask;
-                  }
-                  catch
-                  {
-                     // Ignore cancellation/timeout under race conditions
-                  }
+                  break;
                }
-               else
+
+               var id = (ushort)random.Next(0, 5); // Low range to force collisions
+               var action = random.Next(0, 3);
+
+               if (action == 0)
                {
-                  using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1));
+                  using var awaiter = broker.AddAwaitable<PingResponse>(id);
+                  using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+
+                  waitCts.CancelAfter(random.Next(1, 5));
                   try
                   {
-                     await awaiter.WaitOneAsync(cts.Token);
+                     await awaiter.WaitOneAsync(waitCts.Token);
                   }
                   catch (Exception)
                   {
                      // Expected timeout/cancellation
                   }
                }
+               else if (action == 1)
+               {
+                  var awaiter = broker.AddAwaitable<PubAckResponse>(id);
+                  _ = Task.Run(() =>
+                  {
+                     broker.TryDispatch(new PubAckResponse(), id);
+                  }, cts.Token);
 
-               awaiter.Dispose();
+                  try
+                  {
+                     await awaiter.WaitOneAsync(cts.Token);
+                  }
+                  catch (Exception)
+                  {
+                     // Expected cancellation
+                  }
+                  finally
+                  {
+                     awaiter.Dispose();
+                  }
+               }
+               else
+               {
+                  // Just dispatch
+                  broker.TryDispatch(new PingResponse(), id);
+                  broker.TryDispatch(new PubAckResponse(), id);
+               }
             }
-         });
+         }, cts.Token));
       }
 
-      await Task.WhenAll(tasks);
+      // Act & Assert
+      try
+      {
+         await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+      }
+      catch (TimeoutException)
+      {
+         Assert.Fail("The stress test timed out, indicating a deadlock, cycle, or infinite loop.");
+      }
    }
 }

@@ -116,18 +116,10 @@ public sealed class SignalBroker : IDisposable
             if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
             {
                currentHead.OnPruned();
-            }
-
-            continue;
-         }
-
-         if (ReferenceEquals(currentHead, awaiter))
-         {
-            var next = currentHead.Next;
-            if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
-            {
-               currentHead.OnPruned();
-               return true;
+               if (ReferenceEquals(currentHead, awaiter))
+               {
+                  return true;
+               }
             }
 
             continue;
