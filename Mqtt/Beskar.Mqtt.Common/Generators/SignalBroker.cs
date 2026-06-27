@@ -34,11 +34,19 @@ public sealed class SignalBroker : IDisposable
          }
 
          awaitable.Next = currentHead;
-
-         // Atomically attempt to set the new awaitable as the head of the chain.
-         // If another thread modified the slot in the meantime, it loops and retries.
          if (Interlocked.CompareExchange(ref _waiters[identifier], awaitable, currentHead) == currentHead)
          {
+            if (Volatile.Read(ref _isDisposed) == 1)
+            {
+               if (TryRemove(identifier, awaitable))
+               {
+                  awaitable.Fail(new ObjectDisposedException(nameof(SignalBroker)));
+                  awaitable.Dispose();
+               }
+
+               throw new ObjectDisposedException(nameof(SignalBroker));
+            }
+
             return awaitable;
          }
       }
@@ -144,7 +152,9 @@ public sealed class SignalBroker : IDisposable
          while (current != null)
          {
             current.Fail(exception);
-            current = current.Next;
+            var next = current.Next;
+            current.OnPruned();
+            current = next;
          }
       }
    }

@@ -152,8 +152,8 @@ public class SignalBrokerTests
    {
       // Arrange
       var broker = new SignalBroker();
-      using var awaiter1 = broker.AddAwaitable<PingResponse>(0);
-      using var awaiter2 = broker.AddAwaitable<PubAckResponse>(10);
+      var awaiter1 = broker.AddAwaitable<PingResponse>(0);
+      var awaiter2 = broker.AddAwaitable<PubAckResponse>(10);
 
       var task1 = awaiter1.WaitOneAsync(CancellationToken.None).AsTask();
       var task2 = awaiter2.WaitOneAsync(CancellationToken.None).AsTask();
@@ -185,6 +185,20 @@ public class SignalBrokerTests
       }
 
       await Assert.That(exception2Thrown).IsTrue();
+
+      // Disposing the awaiters should now safely return them to the pool
+      awaiter1.Dispose();
+      awaiter2.Dispose();
+
+      using var newBroker = new SignalBroker();
+      var reused1 = SignalAwaiterPool<PingResponse>.Get(0, newBroker);
+      var reused2 = SignalAwaiterPool<PubAckResponse>.Get(10, newBroker);
+
+      await Assert.That(ReferenceEquals(reused1, awaiter1)).IsTrue();
+      await Assert.That(ReferenceEquals(reused2, awaiter2)).IsTrue();
+
+      reused1.Dispose();
+      reused2.Dispose();
    }
 
    [Test]
@@ -413,6 +427,64 @@ public class SignalBrokerTests
       catch (TimeoutException)
       {
          Assert.Fail("The stress test timed out, indicating a deadlock, cycle, or infinite loop.");
+      }
+   }
+
+   [Test]
+   public async Task AddAwaitable_ConcurrentlyWithDispose_ShouldThrowObjectDisposedExceptionAndNotHang()
+   {
+      // Arrange
+      var broker = new SignalBroker();
+      var startBarrier = new Barrier(3);
+
+      var t1 = Task.Run(() =>
+      {
+         startBarrier.SignalAndWait();
+         try
+         {
+            while (true)
+            {
+               using var awaiter = broker.AddAwaitable<PingResponse>(0);
+            }
+         }
+         catch (ObjectDisposedException)
+         {
+            // Expected
+         }
+      });
+
+      var t2 = Task.Run(() =>
+      {
+         startBarrier.SignalAndWait();
+         try
+         {
+            while (true)
+            {
+               using var awaiter = broker.AddAwaitable<PubAckResponse>(0);
+            }
+         }
+         catch (ObjectDisposedException)
+         {
+            // Expected
+         }
+      });
+
+      var t3 = Task.Run(async () =>
+      {
+         startBarrier.SignalAndWait();
+         // Give t1 and t2 a tiny moment to start calling AddAwaitable
+         await Task.Delay(1);
+         broker.Dispose();
+      });
+
+      // Act & Assert
+      try
+      {
+         await Task.WhenAll(t1, t2, t3).WaitAsync(TimeSpan.FromSeconds(5));
+      }
+      catch (TimeoutException)
+      {
+         Assert.Fail("AddAwaitable hung concurrently with Dispose.");
       }
    }
 }

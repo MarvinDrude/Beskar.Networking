@@ -138,13 +138,14 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
          _cancellationRegistration.Dispose();
       }
 
+      var broker = _broker;
       if (_isPruned)
       {
          isSafeToPool = true;
       }
-      else if (_broker is not null)
+      else if (broker is not null)
       {
-         isSafeToPool = _broker.TryRemove(Identifier, this);
+         isSafeToPool = broker.TryRemove(Identifier, this);
       }
 
       if (!isSafeToPool) return;
