@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Net;
 using System.Runtime.CompilerServices;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
@@ -12,9 +13,10 @@ using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Common.Parsers;
-using Beskar.Mqtt.Common.Results;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing.Results;
+using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Client;
@@ -40,7 +42,7 @@ public sealed partial class MqttClient : IMqttClient
    private Task? _keepAliveTask;
    private DateTimeOffset _lastKeepAliveTimestamp;
 
-   private ConnectOptions _connectOptions = new ();
+   private ConnectOptions _connectOptions = new() { EndPoint = new IPEndPoint(0, 0) };
 
    public MqttClient(INetworkClient networkClient)
    {
@@ -95,8 +97,7 @@ public sealed partial class MqttClient : IMqttClient
          var connectResult = result.Success;
          StartKeepAliveOnDemand(connectResult);
 
-
-
+         CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting);
          return result;
       }
       catch (Exception error)
@@ -107,6 +108,16 @@ public sealed partial class MqttClient : IMqttClient
 
    private async Task<Result<ClientConnectResult, StringError>> ConnectInternalAsync(CancellationToken ct = default)
    {
+      using var combined = CancellationTokenSource.CreateLinkedTokenSource(ct, _clientTokenSource.Token);
+      var connectRes = await _networkClient.ConnectAsync(_connectOptions.EndPoint, combined.Token);
+
+      if (connectRes.Failed)
+      {
+         return new StringError(connectRes.Error.Message);
+      }
+
+
+
       throw new NotImplementedException();
 
    }

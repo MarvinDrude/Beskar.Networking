@@ -1,7 +1,9 @@
 using System;
 using System.Buffers;
+using System.Net;
 using System.Text;
 using Beskar.Mqtt.Common.Builders.Common;
+using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
 
 namespace Beskar.Mqtt.Common.Builders.Connecting;
@@ -9,8 +11,8 @@ namespace Beskar.Mqtt.Common.Builders.Connecting;
 /// <summary>
 /// A fluent builder for creating <see cref="ConnectOptions"/>.
 /// </summary>
-public sealed class ConnectOptionsBuilder(ConnectOptions? options = null)
-   : UserPropertiesBaseOptionsBuilder<ConnectOptionsBuilder, ConnectOptions>(options ?? new ConnectOptions())
+public sealed class ConnectOptionsBuilder(IPEndPoint endPoint, ConnectOptions? options = null)
+   : UserPropertiesBaseOptionsBuilder<ConnectOptionsBuilder, ConnectOptions>(options ?? new ConnectOptions { EndPoint = endPoint })
 {
    /// <summary>
    /// Sets the MQTT protocol version to use for the connection.
@@ -581,6 +583,16 @@ public sealed class ConnectOptionsBuilder(ConnectOptions? options = null)
    public ConnectOptionsBuilder WithWillUserProperty(ReadOnlySpan<byte> nameUtf8Bytes, ReadOnlySpan<byte> valueUtf8Bytes)
    {
       _options.WillUserProperties.Add(nameUtf8Bytes, valueUtf8Bytes);
+      return this;
+   }
+
+   /// <summary>
+   /// Sets the provider used to set Username and Password
+   /// in the CONNECT packet.
+   /// </summary>
+   public ConnectOptionsBuilder WithCredentialsProvider(IMqttCredentialsProvider credentialsProvider)
+   {
+      _options.CredentialsProvider = credentialsProvider;
       return this;
    }
 }

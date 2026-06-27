@@ -1,4 +1,4 @@
-namespace Beskar.Mqtt.Common.Results;
+namespace Beskar.Mqtt.Protocol.Results;
 
 public sealed class SubscribeResult
 {

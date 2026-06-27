@@ -3,7 +3,7 @@ using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Packets;
 
-namespace Beskar.Mqtt.Common.Results;
+namespace Beskar.Mqtt.Protocol.Results;
 
 public sealed class ClientConnectResult
 {

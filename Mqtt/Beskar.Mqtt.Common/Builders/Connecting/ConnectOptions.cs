@@ -1,5 +1,7 @@
 using System.Buffers;
+using System.Net;
 using Beskar.Mqtt.Common.Builders.Common;
+using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
 
 namespace Beskar.Mqtt.Common.Builders.Connecting;
@@ -11,6 +13,11 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    : UserPropertiesBaseOptions(builderCapacity)
 {
    private readonly int _builderCapacity = builderCapacity;
+
+   /// <summary>
+   /// The endpoint of the MQTT Server to connect to.
+   /// </summary>
+   public required IPEndPoint EndPoint { get; set; }
 
    /// <summary>
    /// The MQTT protocol version to use for the connection.
@@ -162,6 +169,11 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    public UserPropertyListBuilder WillUserProperties
       => field ??= new UserPropertyListBuilder(_builderCapacity == -1 ? 128 :  _builderCapacity);
 
+   /// <summary>
+   /// Provider used to fill in username and password in CONNECT
+   /// </summary>
+   public IMqttCredentialsProvider? CredentialsProvider { get; set; }
+
    public override void Clear()
    {
       base.Clear();
@@ -204,5 +216,5 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    /// <summary>
    /// Creates a new ConnectOptionsBuilder.
    /// </summary>
-   public static ConnectOptionsBuilder Create() => new();
+   public static ConnectOptionsBuilder Create(IPEndPoint endPoint) => new(endPoint);
 }

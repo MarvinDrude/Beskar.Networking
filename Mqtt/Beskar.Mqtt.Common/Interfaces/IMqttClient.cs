@@ -4,7 +4,7 @@ using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
-using Beskar.Mqtt.Common.Results;
+using Beskar.Mqtt.Protocol.Results;
 
 namespace Beskar.Mqtt.Common.Interfaces;
 

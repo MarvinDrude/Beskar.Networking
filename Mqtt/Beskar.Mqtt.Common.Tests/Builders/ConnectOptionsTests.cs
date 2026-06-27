@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Net;
 using System.Text;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Protocol.Enums;
@@ -12,7 +13,7 @@ public class ConnectOptionsTests
    public async Task CorrectOptionsBuildingAndReset()
    {
       // Arrange
-      var builder = new ConnectOptionsBuilder()
+      var builder = new ConnectOptionsBuilder(new IPEndPoint(0, 0))
          .WithProtocolVersion(MqttProtocolVersion.V311)
          .WithCleanSession(false)
          .WithKeepAlivePeriod(30)
