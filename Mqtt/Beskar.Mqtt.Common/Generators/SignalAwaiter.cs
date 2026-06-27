@@ -132,36 +132,22 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       if (previousState == 3) return;
 
       var isSafeToPool = false;
-      switch (previousState)
+      if (previousState == 0)
       {
-         case 1:
-            // HAPPY PATH: The broker successfully completed it
-            isSafeToPool = true;
-            break;
-         case 0: // Manual early dispose
-         case 2: // Timed out or manually canceled
-         {
-            if (previousState == 0)
-            {
-               _core.SetException(new OperationCanceledException());
-               _cancellationRegistration.Dispose();
-            }
+         _core.SetException(new OperationCanceledException());
+         _cancellationRegistration.Dispose();
+      }
 
-            if (_isPruned)
-            {
-               isSafeToPool = true;
-            }
-            else if (_broker != null)
-            {
-               isSafeToPool = _broker.TryRemove(Identifier, this);
-            }
-
-            break;
-         }
+      if (_isPruned)
+      {
+         isSafeToPool = true;
+      }
+      else if (_broker is not null)
+      {
+         isSafeToPool = _broker.TryRemove(Identifier, this);
       }
 
       if (!isSafeToPool) return;
-
       TryPool();
    }
 
