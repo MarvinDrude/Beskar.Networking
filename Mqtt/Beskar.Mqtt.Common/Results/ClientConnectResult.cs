@@ -1,6 +1,6 @@
 namespace Beskar.Mqtt.Common.Results;
 
-public class ClientConnectResult
+public sealed class ClientConnectResult
 {
 
 }

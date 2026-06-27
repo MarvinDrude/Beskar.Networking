@@ -137,13 +137,32 @@ public sealed class SignalBroker : IDisposable
       }
    }
 
+   public void Reset()
+   {
+      ThrowIfDisposed();
+      var exception = new OperationCanceledException("The broker was reset.");
+
+      for (var i = 0; i < _waiters.Length; i++)
+      {
+         // Atomically extract the entire chain for this index and wipe the slot
+         var current = Interlocked.Exchange(ref _waiters[i], null);
+
+         while (current != null)
+         {
+            current.Fail(exception);
+            var next = current.Next;
+
+            current.OnPruned();
+            current = next;
+         }
+      }
+   }
+
    public void Dispose()
    {
       if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) != 0) return;
       var exception = new ObjectDisposedException(nameof(SignalBroker));
 
-      // Heavy loop over all, but since we just do this in case of a complete disposal
-      // of a server or client, it should be fine.
       for (var i = 0; i < _waiters.Length; i++)
       {
          // Atomically extract the entire chain for this index and wipe the slot

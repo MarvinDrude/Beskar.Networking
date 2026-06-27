@@ -65,7 +65,7 @@ public class SignalBrokerTests
    }
 
    [Test]
-   public async Task CollisionPingPong_ShouldCompleteInFifoOrder()
+   public async Task CollisionPingPong_ShouldCompleteInLifoOrder()
    {
       // Arrange
       using var broker = new SignalBroker();
@@ -488,28 +488,80 @@ public class SignalBrokerTests
       }
    }
 
-    [Test]
-    public async Task CollisionDifferentTypes_CompletedNonHeadMultipleSameType_ShouldCompleteAll()
-    {
-       // Arrange
-       using var broker = new SignalBroker();
+   [Test]
+   public async Task CollisionDifferentTypes_CompletedNonHeadMultipleSameType_ShouldCompleteAll()
+   {
+      // Arrange
+      using var broker = new SignalBroker();
 
-       using var awaiterB = broker.AddAwaitable<PubAckResponse>(10);
-       using var awaiterA1 = broker.AddAwaitable<PingResponse>(10);
-       using var awaiterA2 = broker.AddAwaitable<PingResponse>(10);
+      using var awaiterB = broker.AddAwaitable<PubAckResponse>(10);
+      using var awaiterA1 = broker.AddAwaitable<PingResponse>(10);
+      using var awaiterA2 = broker.AddAwaitable<PingResponse>(10);
 
-       var taskB = awaiterB.WaitOneAsync(CancellationToken.None).AsTask();
-       var taskA1 = awaiterA1.WaitOneAsync(CancellationToken.None).AsTask();
-       var taskA2 = awaiterA2.WaitOneAsync(CancellationToken.None).AsTask();
+      var taskB = awaiterB.WaitOneAsync(CancellationToken.None).AsTask();
+      var taskA1 = awaiterA1.WaitOneAsync(CancellationToken.None).AsTask();
+      var taskA2 = awaiterA2.WaitOneAsync(CancellationToken.None).AsTask();
 
-       var dispatched1 = broker.TryDispatch(new PingResponse(), 10);
-       await Assert.That(dispatched1).IsTrue();
-       await Assert.That(taskA2.Status == TaskStatus.RanToCompletion).IsTrue();
-       await taskA2;
+      var dispatched1 = broker.TryDispatch(new PingResponse(), 10);
+      await Assert.That(dispatched1).IsTrue();
+      await taskA2;
+      await Assert.That(taskA1.Status == TaskStatus.RanToCompletion).IsFalse();
 
-       var dispatched2 = broker.TryDispatch(new PingResponse(), 10);
-       await Assert.That(dispatched2).IsTrue();
-       await Assert.That(taskA2.Status == TaskStatus.RanToCompletion).IsTrue();
-       await taskA1;
-    }
+      var dispatched2 = broker.TryDispatch(new PingResponse(), 10);
+      await Assert.That(dispatched2).IsTrue();
+      await taskA1;
+   }
+
+   [Test]
+   public async Task Reset_ShouldCancelPendingAwaitersAndAllowReactivation()
+   {
+      // Arrange
+      using var broker = new SignalBroker();
+
+      using var awaiter1 = broker.AddAwaitable<PingResponse>(0);
+      using var awaiter2 = broker.AddAwaitable<PubAckResponse>(10);
+
+      var task1 = awaiter1.WaitOneAsync(CancellationToken.None).AsTask();
+      var task2 = awaiter2.WaitOneAsync(CancellationToken.None).AsTask();
+
+      // Act - Reset the broker
+      broker.Reset();
+
+      // Assert - Pending tasks should be canceled
+      var exception1Thrown = false;
+      try
+      {
+         await task1;
+      }
+      catch (OperationCanceledException ex) when (ex.Message.Contains("The broker was reset."))
+      {
+         exception1Thrown = true;
+      }
+      await Assert.That(exception1Thrown).IsTrue();
+
+      var exception2Thrown = false;
+      try
+      {
+         await task2;
+      }
+      catch (OperationCanceledException ex) when (ex.Message.Contains("The broker was reset."))
+      {
+         exception2Thrown = true;
+      }
+      await Assert.That(exception2Thrown).IsTrue();
+
+      // Assert - Awaiters can be disposed safely to return to pool
+      awaiter1.Dispose();
+      awaiter2.Dispose();
+
+      // Act - Register new awaitables on the reset broker
+      using var awaiter3 = broker.AddAwaitable<PingResponse>(0);
+      var task3 = awaiter3.WaitOneAsync(CancellationToken.None).AsTask();
+
+      var dispatched = broker.TryDispatch(new PingResponse(), 0);
+      await Assert.That(dispatched).IsTrue();
+
+      var result = await task3;
+      await Assert.That(result).IsNotNull();
+   }
 }

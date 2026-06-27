@@ -2,11 +2,13 @@
 using System.Runtime.CompilerServices;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Mqtt.Client.Handlers;
 using Beskar.Mqtt.Client.States;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
+using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Common.Parsers;
@@ -17,19 +19,28 @@ using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Client;
 
-public sealed partial class MqttClient(INetworkClient client) : IMqttClient
+public sealed partial class MqttClient : IMqttClient
 {
    public bool IsConnected => (MqttClientConnectionState)_state is MqttClientConnectionState.Connected;
 
-   private readonly INetworkClient _networkClient = client;
-   private INetworkSession _controlSession;
+   private readonly INetworkClient _networkClient;
+   private INetworkSession? _controlSession;
 
-   private readonly IPacketHandler _packetHandler = null!;
+   private readonly IPacketHandler _packetHandler;
+   private readonly SignalBroker _signalBroker = new();
+   private readonly PacketIdentifierGenerator _identifierGenerator = new();
 
    private volatile bool _disposed;
+   private volatile bool _firstConnect = true;
    private volatile int _state = (int)MqttClientConnectionState.Disconnected;
 
    private ConnectOptions _connectOptions = new ();
+
+   public MqttClient(INetworkClient networkClient)
+   {
+      _networkClient = networkClient;
+      _packetHandler = new ClientPacketHandler(this);
+   }
 
    public async Task<Result<ClientConnectResult, StringError>> ConnectAsync(
       ConnectOptions options, CancellationToken ct = default)
@@ -45,46 +56,48 @@ public sealed partial class MqttClient(INetworkClient client) : IMqttClient
 
       try
       {
+         if (!_firstConnect)
+         {
+            // reset the necessary state fields
+            _identifierGenerator.Reset();
+            _signalBroker.Reset();
+         }
+
          _connectOptions = options;
-         _networkClient.
+         _firstConnect = false;
+
+         Result<ClientConnectResult, StringError> result;
+         if (ct.CanBeCanceled)
+         {
+            result = await ConnectInternalAsync(ct);
+         }
+         else
+         {
+            using var timed = new CancellationTokenSource(_connectOptions.Timeout);
+            result = await ConnectInternalAsync(timed.Token);
+         }
+
+         if (result.Failed)
+         {
+            await DisconnectInternalAsync();
+            return result;
+         }
+
+         var connectResult = result.Success;
+         var keepAliveInterval = _connectOptions.KeepAlivePeriod;
+
+         if (connectResult.)
+
+         return result;
       }
       catch (Exception error)
       {
          return new StringError($"Unexpected error at ConnectAsync: {error}");
       }
-
-      return Task.FromResult(new ClientConnectResult());
    }
 
-   public Task<Result<PublishResult, StringError>> PublishAsync(
-      PublishOptions options, CancellationToken ct = default)
+   private async Task<Result<ClientConnectResult, StringError>> ConnectInternalAsync(CancellationToken ct = default)
    {
-      throw new NotImplementedException();
-   }
-
-   public async Task<Result<SubscribeResult, StringError>> SubscribeAsync(
-      SubscribeOptions options, CancellationToken ct = default)
-   {
-      var validateResult = SubscribeOptionsValidator.Validate(options);
-      if (!validateResult.IsSuccess) return validateResult.Error;
-
-      var clientResult = ValidateClient();
-      if (!clientResult.IsSuccess) return clientResult.Error;
-
-
-   }
-
-   public Task<Result<UnsubscribeResult, StringError>> UnsubscribeAsync(
-      UnsubscribeOptions options, CancellationToken ct = default)
-   {
-      throw new NotImplementedException();
-   }
-
-   public async Task<VoidResult<StringError>> PingAsync(CancellationToken ct = default)
-   {
-      var clientResult = ValidateClient();
-      if (!clientResult.IsSuccess) return clientResult;
-
 
    }
 
@@ -123,6 +136,8 @@ public sealed partial class MqttClient(INetworkClient client) : IMqttClient
    {
       if (_disposed) return ValueTask.CompletedTask;
       _disposed = true;
+
+      _signalBroker.Dispose();
 
       return ValueTask.CompletedTask;
    }
