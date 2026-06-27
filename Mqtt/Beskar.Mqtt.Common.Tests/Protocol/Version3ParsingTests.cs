@@ -4,6 +4,7 @@ using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
+using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Common.Tests.Helpers;
@@ -850,5 +851,110 @@ public class Version3ParsingTests
       await Assert.That(parsedFilters.Count).IsEqualTo(2);
       await Assert.That(parsedFilters[0]).IsEqualTo(expectedTopic1);
       await Assert.That(parsedFilters[1]).IsEqualTo(expectedTopic2);
+   }
+
+   [Test]
+   public async Task CorrectConnectHeapEncodingAndParsing()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      var expectedCleanSession = true;
+      var expectedKeepAlive = (ushort)60;
+      var expectedClientId = "client-heap-v3";
+      var expectedHasWill = true;
+      var expectedWillQos = QualityOfServiceType.ExactlyOnce;
+      var expectedWillRetain = true;
+      var expectedWillTopic = "will/topic/v3";
+      var expectedWillMessage = new byte[] { 1, 3, 5 };
+      var expectedUsername = "admin-v3";
+      var expectedPassword = new byte[] { 2, 4, 6 };
+
+      var parsedCleanSession = false;
+      ushort parsedKeepAlive = 0;
+      string? parsedClientId = null;
+      var parsedHasWill = false;
+      var parsedWillQos = QualityOfServiceType.AtMostOnce;
+      var parsedWillRetain = false;
+      string? parsedWillTopic = null;
+      byte[]? parsedWillMessage = null;
+      string? parsedUsername = null;
+      byte[]? parsedPassword = null;
+
+      var handler = new TestPacketHandler
+      {
+         OnConnect = (in p) =>
+         {
+            wasInvoked = true;
+            parsedCleanSession = p.IsCleanSession;
+            parsedKeepAlive = p.KeepAliveInterval;
+
+            var clientBytes = new byte[p.ClientIdUtf8Bytes.Length];
+            p.ClientIdUtf8Bytes.CopyTo(clientBytes);
+            parsedClientId = System.Text.Encoding.UTF8.GetString(clientBytes);
+
+            parsedHasWill = p.HasWill;
+            parsedWillQos = p.WillQualityOfService;
+            parsedWillRetain = p.WillRetain;
+
+            var willTopicBytes = new byte[p.WillTopicUtf8Bytes.Length];
+            p.WillTopicUtf8Bytes.CopyTo(willTopicBytes);
+            parsedWillTopic = System.Text.Encoding.UTF8.GetString(willTopicBytes);
+
+            parsedWillMessage = new byte[p.WillMessageBytes.Length];
+            p.WillMessageBytes.CopyTo(parsedWillMessage);
+
+            var userBytes = new byte[p.UsernameUtf8Bytes.Length];
+            p.UsernameUtf8Bytes.CopyTo(userBytes);
+            parsedUsername = System.Text.Encoding.UTF8.GetString(userBytes);
+
+            parsedPassword = new byte[p.PasswordBytes.Length];
+            p.PasswordBytes.CopyTo(parsedPassword);
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var options = new ConnectOptions
+         {
+            EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 1883),
+            CleanSession = expectedCleanSession,
+            KeepAlivePeriod = expectedKeepAlive,
+            ClientIdUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedClientId),
+            UsernameUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedUsername),
+            PasswordBytes = expectedPassword,
+            HasWill = expectedHasWill,
+            WillQualityOfService = expectedWillQos,
+            WillRetain = expectedWillRetain,
+            WillTopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedWillTopic),
+            WillPayload = new ReadOnlySequence<byte>(expectedWillMessage)
+         };
+
+         var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
+         encoder.WriteConnect(options);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.Unknown);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(bytesConsumed).IsEqualTo(buffer.WrittenSpan.Length);
+      await Assert.That(wasInvoked).IsTrue();
+      await Assert.That(parsedCleanSession).IsEqualTo(expectedCleanSession);
+      await Assert.That(parsedKeepAlive).IsEqualTo(expectedKeepAlive);
+      await Assert.That(parsedClientId).IsEqualTo(expectedClientId);
+      await Assert.That(parsedHasWill).IsEqualTo(expectedHasWill);
+      await Assert.That(parsedWillQos).IsEqualTo(expectedWillQos);
+      await Assert.That(parsedWillRetain).IsEqualTo(expectedWillRetain);
+      await Assert.That(parsedWillTopic).IsEqualTo(expectedWillTopic);
+      await Assert.That(parsedWillMessage).IsEquivalentTo(expectedWillMessage);
+      await Assert.That(parsedUsername).IsEqualTo(expectedUsername);
+      await Assert.That(parsedPassword).IsEquivalentTo(expectedPassword);
    }
 }

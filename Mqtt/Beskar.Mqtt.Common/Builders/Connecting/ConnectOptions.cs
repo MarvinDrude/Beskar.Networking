@@ -170,7 +170,8 @@ public sealed class ConnectOptions(int builderCapacity = -1)
       => field ??= new UserPropertyListBuilder(_builderCapacity == -1 ? 128 :  _builderCapacity);
 
    /// <summary>
-   /// Provider used to fill in username and password in CONNECT
+   /// Provider used to fill in username and password in CONNECT,
+   /// Overwrites the username and password properties in here.
    /// </summary>
    public IMqttCredentialsProvider? CredentialsProvider { get; set; }
 

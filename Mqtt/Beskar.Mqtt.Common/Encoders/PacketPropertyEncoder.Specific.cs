@@ -88,7 +88,7 @@ public ref partial struct PacketPropertyEncoder
    public void WriteRequestResponseInformation(bool set)
    {
       if (!set) return;
-      Write(PropertyIdentifier.RequestResponseInformation, false);
+      Write(PropertyIdentifier.RequestResponseInformation, true);
    }
 
    public void WriteRequestProblemInformation(bool set)

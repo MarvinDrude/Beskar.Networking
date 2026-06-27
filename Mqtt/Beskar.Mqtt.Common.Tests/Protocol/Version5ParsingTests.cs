@@ -5,6 +5,7 @@ using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
+using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Encoders.Properties;
 using Beskar.Mqtt.Common.Parsers;
@@ -1593,5 +1594,248 @@ public class Version5ParsingTests
       await Assert.That(parsedFilters[0]).IsEqualTo(expectedTopic1);
       await Assert.That(parsedFilters[1]).IsEqualTo(expectedTopic2);
       await Assert.That(hasUserProp).IsTrue();
+   }
+
+   [Test]
+   public async Task CorrectConnectHeapEncodingAndParsing()
+   {
+      var buffer = new MemoryBuffer();
+      var wasInvoked = false;
+
+      var expectedCleanSession = true;
+      var expectedKeepAlive = (ushort)60;
+      var expectedClientId = "client-heap-v5";
+      var expectedHasWill = true;
+      var expectedWillQos = QualityOfServiceType.ExactlyOnce;
+      var expectedWillRetain = true;
+      var expectedWillTopic = "will/topic/v5";
+      var expectedWillMessage = new byte[] { 1, 3, 5, 7 };
+      var expectedUsername = "admin-v5";
+      var expectedPassword = new byte[] { 2, 4, 6, 8 };
+
+      var expectedSessionExpiry = 3600U;
+      var expectedTopicAliasMax = (ushort)10;
+      var expectedMaxPacketSize = 1024U;
+      var expectedRequestResponseInfo = true;
+      var expectedRequestProblemInfo = false;
+      var expectedAuthMethod = "auth-v5";
+      var expectedAuthData = new byte[] { 9, 9, 9 };
+
+      var expectedWillDelay = 10U;
+      var expectedWillPayloadFormat = PayloadFormat.CharacterData;
+      var expectedWillExpiry = 180U;
+      var expectedWillContentType = "text/plain";
+      var expectedWillRespTopic = "will/resp";
+      var expectedWillCorrData = new byte[] { 5, 5, 5 };
+
+      var parsedCleanSession = false;
+      ushort parsedKeepAlive = 0;
+      string? parsedClientId = null;
+      var parsedHasWill = false;
+      var parsedWillQos = QualityOfServiceType.AtMostOnce;
+      var parsedWillRetain = false;
+      string? parsedWillTopic = null;
+      byte[]? parsedWillMessage = null;
+      string? parsedUsername = null;
+      byte[]? parsedPassword = null;
+
+      uint parsedSessionExpiry = 0;
+      ushort parsedTopicAliasMax = 0;
+      uint parsedMaxPacketSize = 0;
+      var parsedRequestResponseInfo = false;
+      var parsedRequestProblemInfo = true;
+      string? parsedAuthMethod = null;
+      byte[]? parsedAuthData = null;
+
+      uint parsedWillDelay = 0;
+      var parsedWillPayloadFormat = PayloadFormat.Unspecified;
+      uint parsedWillExpiry = 0;
+      string? parsedWillContentType = null;
+      string? parsedWillRespTopic = null;
+      byte[]? parsedWillCorrData = null;
+
+      var hasUserProp = false;
+      var hasWillUserProp = false;
+
+      var handler = new TestPacketHandler
+      {
+         OnConnect = (in p) =>
+         {
+            wasInvoked = true;
+            parsedCleanSession = p.IsCleanSession;
+            parsedKeepAlive = p.KeepAliveInterval;
+
+            var clientBytes = new byte[p.ClientIdUtf8Bytes.Length];
+            p.ClientIdUtf8Bytes.CopyTo(clientBytes);
+            parsedClientId = System.Text.Encoding.UTF8.GetString(clientBytes);
+
+            parsedHasWill = p.HasWill;
+            parsedWillQos = p.WillQualityOfService;
+            parsedWillRetain = p.WillRetain;
+
+            var willTopicBytes = new byte[p.WillTopicUtf8Bytes.Length];
+            p.WillTopicUtf8Bytes.CopyTo(willTopicBytes);
+            parsedWillTopic = System.Text.Encoding.UTF8.GetString(willTopicBytes);
+
+            parsedWillMessage = new byte[p.WillMessageBytes.Length];
+            p.WillMessageBytes.CopyTo(parsedWillMessage);
+
+            var userBytes = new byte[p.UsernameUtf8Bytes.Length];
+            p.UsernameUtf8Bytes.CopyTo(userBytes);
+            parsedUsername = System.Text.Encoding.UTF8.GetString(userBytes);
+
+            parsedPassword = new byte[p.PasswordBytes.Length];
+            p.PasswordBytes.CopyTo(parsedPassword);
+
+            parsedSessionExpiry = p.SessionExpiryInterval;
+            parsedTopicAliasMax = p.TopicAliasMaximum;
+            parsedMaxPacketSize = p.MaximumPacketSize;
+            parsedRequestResponseInfo = p.RequestResponseInfo;
+            parsedRequestProblemInfo = p.RequestProblemInfo;
+
+            var authMethodBytes = new byte[p.AuthenticationMethodUtf8Bytes.Length];
+            p.AuthenticationMethodUtf8Bytes.CopyTo(authMethodBytes);
+            parsedAuthMethod = System.Text.Encoding.UTF8.GetString(authMethodBytes);
+
+            parsedAuthData = new byte[p.AuthenticationDataBytes.Length];
+            p.AuthenticationDataBytes.CopyTo(parsedAuthData);
+
+            parsedWillDelay = p.WillDelayInterval;
+            parsedWillPayloadFormat = p.WillPayloadFormatIndicator;
+            parsedWillExpiry = p.WillMessageExpiryInterval;
+
+            var contentTypeBytes = new byte[p.WillContentTypeUtf8Bytes.Length];
+            p.WillContentTypeUtf8Bytes.CopyTo(contentTypeBytes);
+            parsedWillContentType = System.Text.Encoding.UTF8.GetString(contentTypeBytes);
+
+            var respTopicBytes = new byte[p.WillResponseTopicUtf8Bytes.Length];
+            p.WillResponseTopicUtf8Bytes.CopyTo(respTopicBytes);
+            parsedWillRespTopic = System.Text.Encoding.UTF8.GetString(respTopicBytes);
+
+            parsedWillCorrData = new byte[p.WillCorrelationDataBytes.Length];
+            p.WillCorrelationDataBytes.CopyTo(parsedWillCorrData);
+
+            var propertiesEnumerator = p.GetProperties();
+            while (propertiesEnumerator.MoveNext())
+            {
+               var prop = propertiesEnumerator.Current;
+               if (prop.Identifier == PropertyIdentifier.UserProperty)
+               {
+                  var pair = prop.AsUserProperty();
+                  var keyBytes = new byte[pair.KeyBytes.Length];
+                  pair.KeyBytes.CopyTo(keyBytes);
+                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+
+                  var valBytes = new byte[pair.ValueBytes.Length];
+                  pair.ValueBytes.CopyTo(valBytes);
+                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+
+                  if (key == "conn-key" && val == "conn-val")
+                  {
+                     hasUserProp = true;
+                  }
+               }
+            }
+
+            var willPropertiesEnumerator = p.GetWillProperties();
+            while (willPropertiesEnumerator.MoveNext())
+            {
+               var prop = willPropertiesEnumerator.Current;
+               if (prop.Identifier == PropertyIdentifier.UserProperty)
+               {
+                  var pair = prop.AsUserProperty();
+                  var keyBytes = new byte[pair.KeyBytes.Length];
+                  pair.KeyBytes.CopyTo(keyBytes);
+                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+
+                  var valBytes = new byte[pair.ValueBytes.Length];
+                  pair.ValueBytes.CopyTo(valBytes);
+                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+
+                  if (key == "will-key" && val == "will-val")
+                  {
+                     hasWillUserProp = true;
+                  }
+               }
+            }
+         }
+      };
+
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+
+      {
+         var options = new ConnectOptions
+         {
+            EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 1883),
+            CleanSession = expectedCleanSession,
+            KeepAlivePeriod = expectedKeepAlive,
+            ClientIdUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedClientId),
+            UsernameUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedUsername),
+            PasswordBytes = expectedPassword,
+            SessionExpiryInterval = expectedSessionExpiry,
+            TopicAliasMaximum = expectedTopicAliasMax,
+            MaximumPacketSize = expectedMaxPacketSize,
+            RequestResponseInformation = expectedRequestResponseInfo,
+            RequestProblemInformation = expectedRequestProblemInfo,
+            AuthenticationMethodUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedAuthMethod),
+            AuthenticationDataBytes = expectedAuthData,
+            HasWill = expectedHasWill,
+            WillQualityOfService = expectedWillQos,
+            WillRetain = expectedWillRetain,
+            WillTopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedWillTopic),
+            WillPayload = new ReadOnlySequence<byte>(expectedWillMessage),
+            WillDelayInterval = expectedWillDelay,
+            WillPayloadFormatIndicator = expectedWillPayloadFormat,
+            WillMessageExpiryInterval = expectedWillExpiry,
+            WillContentTypeUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedWillContentType),
+            WillResponseTopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedWillRespTopic),
+            WillCorrelationDataBytes = expectedWillCorrData
+         };
+         options.UserProperties.Add("conn-key", "conn-val");
+         options.WillUserProperties.Add("will-key", "will-val");
+
+         var encoder = new PacketVersion5Encoder(buffer);
+         encoder.WriteConnect(options);
+
+         var parser = new PacketParser(handler, MqttProtocolVersion.Unknown);
+         var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+      }
+
+      var result = await dispatchTask;
+
+      await Assert.That(result.Failed).IsFalse();
+      await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(bytesConsumed).IsEqualTo(buffer.WrittenSpan.Length);
+      await Assert.That(wasInvoked).IsTrue();
+      await Assert.That(parsedCleanSession).IsEqualTo(expectedCleanSession);
+      await Assert.That(parsedKeepAlive).IsEqualTo(expectedKeepAlive);
+      await Assert.That(parsedClientId).IsEqualTo(expectedClientId);
+      await Assert.That(parsedHasWill).IsEqualTo(expectedHasWill);
+      await Assert.That(parsedWillQos).IsEqualTo(expectedWillQos);
+      await Assert.That(parsedWillRetain).IsEqualTo(expectedWillRetain);
+      await Assert.That(parsedWillTopic).IsEqualTo(expectedWillTopic);
+      await Assert.That(parsedWillMessage).IsEquivalentTo(expectedWillMessage);
+      await Assert.That(parsedUsername).IsEqualTo(expectedUsername);
+      await Assert.That(parsedPassword).IsEquivalentTo(expectedPassword);
+
+      await Assert.That(parsedSessionExpiry).IsEqualTo(expectedSessionExpiry);
+      await Assert.That(parsedTopicAliasMax).IsEqualTo(expectedTopicAliasMax);
+      await Assert.That(parsedMaxPacketSize).IsEqualTo(expectedMaxPacketSize);
+      await Assert.That(parsedRequestResponseInfo).IsEqualTo(expectedRequestResponseInfo);
+      await Assert.That(parsedRequestProblemInfo).IsEqualTo(expectedRequestProblemInfo);
+      await Assert.That(parsedAuthMethod).IsEqualTo(expectedAuthMethod);
+      await Assert.That(parsedAuthData).IsEquivalentTo(expectedAuthData);
+
+      await Assert.That(parsedWillDelay).IsEqualTo(expectedWillDelay);
+      await Assert.That(parsedWillPayloadFormat).IsEqualTo(expectedWillPayloadFormat);
+      await Assert.That(parsedWillExpiry).IsEqualTo(expectedWillExpiry);
+      await Assert.That(parsedWillContentType).IsEqualTo(expectedWillContentType);
+      await Assert.That(parsedWillRespTopic).IsEqualTo(expectedWillRespTopic);
+      await Assert.That(parsedWillCorrData).IsEquivalentTo(expectedWillCorrData);
+
+      await Assert.That(hasUserProp).IsTrue();
+      await Assert.That(hasWillUserProp).IsTrue();
    }
 }
