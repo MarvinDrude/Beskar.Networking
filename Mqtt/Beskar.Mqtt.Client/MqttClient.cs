@@ -7,16 +7,12 @@ using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Client.Handlers;
 using Beskar.Mqtt.Client.States;
 using Beskar.Mqtt.Common.Builders.Connecting;
-using Beskar.Mqtt.Common.Builders.Publishing;
-using Beskar.Mqtt.Common.Builders.Subscribing;
-using Beskar.Mqtt.Common.Builders.Unsubscribing;
+using Beskar.Mqtt.Common.Encoders;
+using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Interfaces;
-using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Protocol.Enums;
-using Beskar.Mqtt.Protocol.Packets;
-using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
 
@@ -27,7 +23,8 @@ public sealed partial class MqttClient : IMqttClient
    public bool IsConnected => (MqttClientConnectionState)_state is MqttClientConnectionState.Connected;
 
    private readonly INetworkClient _networkClient;
-   private INetworkSession? _controlSession;
+   private INetworkSession? _networkSession;
+   private INetworkStream? _controlStream;
 
    private readonly IPacketHandler _packetHandler;
    private readonly SignalBroker _signalBroker = new();
@@ -37,6 +34,8 @@ public sealed partial class MqttClient : IMqttClient
    private volatile bool _gracefulDisconnect;
    private volatile bool _firstConnect = true;
    private volatile int _state = (int)MqttClientConnectionState.Disconnected;
+
+   private MqttProtocolVersion _protocolVersion = MqttProtocolVersion.Unknown;
 
    private CancellationTokenSource _clientTokenSource = new();
 
@@ -65,6 +64,8 @@ public sealed partial class MqttClient : IMqttClient
 
       try
       {
+         _protocolVersion = options.ProtocolVersion;
+
          if (!_firstConnect)
          {
             // reset the necessary state fields
@@ -117,6 +118,17 @@ public sealed partial class MqttClient : IMqttClient
          return new StringError(connectRes.Error.Message);
       }
 
+      _networkSession = connectRes.Success;
+
+      // even under QUIC, first and foremost we have one main control stream
+      var streamRes = await _networkSession.AcceptStreamAsync(ct);
+      if (streamRes.Failed)
+      {
+         return new StringError(streamRes.Error.Message);
+      }
+
+      _controlStream = streamRes.Success;
+
       if (_connectOptions.CredentialsProvider is { } credProvider)
       {
          var credsTask = credProvider.GetCredentialsAsync(_connectOptions, combined.Token);
@@ -126,6 +138,11 @@ public sealed partial class MqttClient : IMqttClient
          _connectOptions.PasswordBytes = creds.Password;
       }
 
+      using (await _controlStream.AcquireWriterLock(ct))
+      {
+         var valueTask = _protocolVersion is MqttProtocolVersion.V50
+            ? new PacketVersion5Encoder(_controlStream.Transport.Output).WriteConnect(_connectOptions);
+      }
 
 
       throw new NotImplementedException();
