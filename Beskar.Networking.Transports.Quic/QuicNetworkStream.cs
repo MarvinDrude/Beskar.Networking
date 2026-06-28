@@ -2,6 +2,7 @@ using System.IO.Pipelines;
 using System.Net.Quic;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Threading;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
 
@@ -19,6 +20,7 @@ public sealed class QuicNetworkStream(
    private readonly QuicNetworkSession _session = session;
    private readonly QuicStream _quicStream = quicStream;
    private readonly StreamConnection _connection = connection;
+   private readonly AsyncLock _asyncLock = new();
 
    private int _disposed;
    public long StreamId => _quicStream.Id;
@@ -30,6 +32,11 @@ public sealed class QuicNetworkStream(
    public NetworkStreamDirection Direction => _quicStream.Type == QuicStreamType.Bidirectional
       ? NetworkStreamDirection.Bidirectional
       : NetworkStreamDirection.Unidirectional;
+
+   public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default)
+   {
+      return _asyncLock.LockAsync(cancellationToken);
+   }
 
    public async ValueTask DisposeAsync()
    {

@@ -1,6 +1,7 @@
 using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Threading;
 using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Transports.Ws;
@@ -19,6 +20,13 @@ public sealed class WsNetworkStream(
    public IDuplexPipe Transport { get; } = transport;
 
    public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;
+
+   private readonly AsyncLock _asyncLock = new();
+
+   public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default)
+   {
+      return _asyncLock.LockAsync(cancellationToken);
+   }
 
    public ValueTask DisposeAsync()
    {

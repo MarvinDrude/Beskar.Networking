@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Client.Handlers;
@@ -114,6 +115,15 @@ public sealed partial class MqttClient : IMqttClient
       if (connectRes.Failed)
       {
          return new StringError(connectRes.Error.Message);
+      }
+
+      if (_connectOptions.CredentialsProvider is { } credProvider)
+      {
+         var credsTask = credProvider.GetCredentialsAsync(_connectOptions, combined.Token);
+         var creds = credsTask.IsCompletedSuccessfully ? credsTask.Result : await credsTask;
+
+         _connectOptions.UsernameUtf8Bytes = Encoding.UTF8.GetBytes(creds.UserName);
+         _connectOptions.PasswordBytes = creds.Password;
       }
 
 
