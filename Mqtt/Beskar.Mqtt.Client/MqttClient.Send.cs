@@ -61,6 +61,8 @@ public sealed partial class MqttClient
             case MqttProtocolVersion.V311:
                new PacketVersion3Encoder(writer, _protocolVersion).WriteConnect(options);
                break;
+            default:
+               throw new InvalidOperationException("Unkown protocol version.");
          }
 
          await writer.FlushAsync(ct);

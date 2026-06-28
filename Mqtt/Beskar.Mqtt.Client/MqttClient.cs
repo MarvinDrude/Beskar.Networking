@@ -138,11 +138,7 @@ public sealed partial class MqttClient : IMqttClient
          _connectOptions.PasswordBytes = creds.Password;
       }
 
-      using (await _controlStream.AcquireWriterLock(ct))
-      {
-         var valueTask = _protocolVersion is MqttProtocolVersion.V50
-            ? new PacketVersion5Encoder(_controlStream.Transport.Output).WriteConnect(_connectOptions);
-      }
+      await SendConnect(_controlStream, _connectOptions, ct);
 
 
       throw new NotImplementedException();
