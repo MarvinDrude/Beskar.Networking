@@ -595,4 +595,14 @@ public sealed class ConnectOptionsBuilder(IPEndPoint endPoint, ConnectOptions? o
       _options.CredentialsProvider = credentialsProvider;
       return this;
    }
+
+   /// <summary>
+   /// Used to control how the auth flow should interact with the
+   /// auth challenge from the server.
+   /// </summary>
+   public ConnectOptionsBuilder WithAuthHandler(IMqttAuthenticationHandler authHandler)
+   {
+      _options.AuthenticationHandler = authHandler;
+      return this;
+   }
 }

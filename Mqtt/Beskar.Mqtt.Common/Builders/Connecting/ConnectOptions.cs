@@ -175,6 +175,12 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    /// </summary>
    public IMqttCredentialsProvider? CredentialsProvider { get; set; }
 
+   /// <summary>
+   /// Used to control how the auth flow should interact with the
+   /// auth challenge from the server.
+   /// </summary>
+   public IMqttAuthenticationHandler? AuthenticationHandler { get; set; }
+
    public override void Clear()
    {
       base.Clear();
@@ -212,6 +218,9 @@ public sealed class ConnectOptions(int builderCapacity = -1)
       WillContentTypeUtf8Bytes = ReadOnlyMemory<byte>.Empty;
       WillResponseTopicUtf8Bytes = ReadOnlyMemory<byte>.Empty;
       WillCorrelationDataBytes = ReadOnlyMemory<byte>.Empty;
+
+      CredentialsProvider = null;
+      AuthenticationHandler = null;
    }
 
    /// <summary>

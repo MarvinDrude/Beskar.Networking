@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -39,6 +39,7 @@ public sealed partial class MqttClient : IMqttClient
 
    private CancellationTokenSource _clientTokenSource = new();
 
+   private Task? _receiveTask;
    private Task? _keepAliveTask;
    private DateTimeOffset _lastKeepAliveTimestamp;
 
@@ -108,6 +109,12 @@ public sealed partial class MqttClient : IMqttClient
       }
    }
 
+
+   internal bool TryDispatch<T>(T packet, ushort identifier)
+   {
+      return _signalBroker.TryDispatch(packet, identifier);
+   }
+
    private async Task<Result<ClientConnectResult, StringError>> ConnectInternalAsync(CancellationToken ct = default)
    {
       using var combined = CancellationTokenSource.CreateLinkedTokenSource(ct, _clientTokenSource.Token);
@@ -121,13 +128,14 @@ public sealed partial class MqttClient : IMqttClient
       _networkSession = connectRes.Success;
 
       // even under QUIC, first and foremost we have one main control stream
-      var streamRes = await _networkSession.AcceptStreamAsync(ct);
+      var streamRes = await _networkSession.AcceptStreamAsync(combined.Token);
       if (streamRes.Failed)
       {
          return new StringError(streamRes.Error.Message);
       }
 
       _controlStream = streamRes.Success;
+      _receiveTask = RunMessageReceive(_controlStream, _clientTokenSource.Token);
 
       if (_connectOptions.CredentialsProvider is { } credProvider)
       {
@@ -138,11 +146,50 @@ public sealed partial class MqttClient : IMqttClient
          _connectOptions.PasswordBytes = creds.Password;
       }
 
-      await SendConnect(_controlStream, _connectOptions, ct);
+      var first = true;
+      while (true)
+      {
+         using var connAckAwaiter = _signalBroker.AddAwaitable<ClientConnectResult>(0);
+         using var authAwaiter = _signalBroker.AddAwaitable<AuthPacketResult>(0);
+
+         if (first)
+         {
+            await SendConnect(_controlStream, _connectOptions, combined.Token);
+            first = false;
+         }
+
+         var connAckTask = connAckAwaiter.WaitOneAsync(combined.Token).AsTask();
+         var authTask = authAwaiter.WaitOneAsync(combined.Token).AsTask();
+
+         var completedTask = await Task.WhenAny(connAckTask, authTask, _receiveTask);
+
+         if (completedTask == _receiveTask)
+         {
+            await _receiveTask;
+            return new StringError("Connection closed unexpectedly during handshake.");
+         }
+
+         if (completedTask == connAckTask)
+         {
+            var connAckResult = await connAckTask;
+            if (connAckResult.ReasonCode != ConnectReasonCode.Success)
+            {
+               return new StringError($"Connection refused: {connAckResult.ReasonCode}");
+            }
+
+            return connAckResult;
+         }
+
+         var authResult = await authTask;
+         if (_connectOptions.AuthenticationMethodUtf8Bytes.IsEmpty)
+         {
+            return new StringError("Received AUTH packet from server, but no authentication method is configured.");
+         }
 
 
-      throw new NotImplementedException();
 
+         throw new NotImplementedException();
+      }
    }
 
    private void StartKeepAliveOnDemand(ClientConnectResult connectResult)

@@ -16,6 +16,7 @@ public sealed partial class MqttClient
 
    private ValueTask DisconnectRoutineAsync(bool beforeConnected)
    {
+      _clientTokenSource.Cancel();
       return ValueTask.CompletedTask;
    }
 

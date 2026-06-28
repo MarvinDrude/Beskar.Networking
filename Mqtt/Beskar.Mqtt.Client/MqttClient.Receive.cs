@@ -29,7 +29,7 @@ public sealed partial class MqttClient
             while (!buffer.IsEmpty)
             {
                var sequenceReader = new SequenceReader<byte>(buffer);
-               var parser = new PacketParser(_packetHandler, MqttProtocolVersion.V50);
+               var parser = new PacketParser(_packetHandler, _protocolVersion);
                var valueTask = parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct);
 
                var parseResult = valueTask.IsCompletedSuccessfully

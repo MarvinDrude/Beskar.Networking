@@ -17,8 +17,10 @@ public ref struct PacketParser(
    IPacketHandler handler,
    MqttProtocolVersion protocolVersion)
 {
+   public MqttProtocolVersion ProtocolVersion { get; private set; } = protocolVersion;
+   public bool TryPrivate => _tryPrivate;
+
    private readonly IPacketHandler _packetHandler = handler;
-   private MqttProtocolVersion _protocolVersion = protocolVersion;
    private bool _tryPrivate;
 
    public ValueTask<Result<PacketDispatchResult, StringError>> TryDispatch(
@@ -53,21 +55,22 @@ public ref struct PacketParser(
          Reader = reader
       };
 
-      if (_protocolVersion is MqttProtocolVersion.Unknown)
+      var packetType = (MqttPacketType)(rawPacket.FixedHeader >> 4);
+      if (ProtocolVersion is MqttProtocolVersion.Unknown || packetType is MqttPacketType.Connect)
       {
          var protocolResult = ParseProtocolVersion(ref rawPacket, out _tryPrivate);
          if (protocolResult.Failed)
             return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(protocolResult.Error);
 
-         _protocolVersion = protocolResult.Success;
+         ProtocolVersion = protocolResult.Success;
       }
 
       var innerConsumed = 0;
-      var dispatchTask = _protocolVersion switch
+      var dispatchTask = ProtocolVersion switch
       {
          MqttProtocolVersion.V50 => new PacketVersion5Parser(_packetHandler)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
-         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_packetHandler, _protocolVersion)
+         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_packetHandler, ProtocolVersion)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
          _ => ValueTask.FromResult(PacketDispatchResult.ProtocolError)
       };

@@ -1,5 +1,6 @@
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Mqtt.Protocol.Results;
 
 namespace Beskar.Mqtt.Client.Handlers;
 
@@ -9,12 +10,18 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in AuthPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      var result = AuthPacketResult.Create(in packet);
+      _client.TryDispatch(result, 0);
+
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in ConnAckPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      var result = ClientConnectResult.Create(in packet);
+      _client.TryDispatch(result, 0);
+
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in ConnectPacket packet, CancellationToken ct = default)
