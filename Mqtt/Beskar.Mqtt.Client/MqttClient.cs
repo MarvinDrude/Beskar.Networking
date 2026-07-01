@@ -12,6 +12,7 @@ using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Interfaces;
+using Beskar.Mqtt.Common.Models;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -186,9 +187,17 @@ public sealed partial class MqttClient : IMqttClient
             return new StringError("Received AUTH packet from server, but no authentication method is configured.");
          }
 
-
-
-         throw new NotImplementedException();
+         if (_connectOptions.AuthenticationHandler is { } handler)
+         {
+            await handler.ExecuteAsync(new MqttAuthContext()
+            {
+               AuthPacket = authResult
+            }, combined.Token);
+         }
+         else
+         {
+            return new StringError("Received AUTH packet from server, but no handler is configured.");
+         }
       }
    }
 
