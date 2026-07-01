@@ -12,6 +12,7 @@ using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Threading;
 
 namespace Beskar.Mqtt.Client;
 
@@ -58,7 +59,7 @@ public sealed partial class MqttClient
       throw new NotImplementedException();
    }
 
-   private async Task<TResponse> SendAndAck<TPacket, TResponse>(TPacket packet, INetworkStream stream, CancellationToken ct = default)
+   private Task<TResponse> SendAndAck<TPacket, TResponse>(in TPacket packet, INetworkStream stream, CancellationToken ct = default)
       where TPacket : IRawMqttPacket
    {
       ushort identifier = 0;
@@ -67,10 +68,86 @@ public sealed partial class MqttClient
          identifier = _identifierGenerator.GenerateNextIdentifier();
       }
 
-      using var signalAwaiter = _signalBroker.AddAwaitable<TResponse>(identifier);
+      var signalAwaiter = _signalBroker.AddAwaitable<TResponse>(identifier);
       try
       {
-         using (await stream.AcquireWriterLock(ct))
+         var lockTask = stream.AcquireWriterLock(ct);
+         if (!lockTask.IsCompletedSuccessfully)
+            return SendAndAckSlowAsync(packet, lockTask, signalAwaiter, stream, ct);
+
+         var lockToken = lockTask.Result;
+         try
+         {
+            var writer = stream.Transport.Output;
+            switch (_protocolVersion)
+            {
+               case MqttProtocolVersion.V50:
+                  new PacketVersion5Encoder(writer).Write(in packet);
+                  break;
+               case MqttProtocolVersion.V31:
+               case MqttProtocolVersion.V311:
+                  new PacketVersion3Encoder(writer, _protocolVersion).Write(in packet);
+                  break;
+               default:
+                  throw new InvalidOperationException("Unknown protocol version.");
+            }
+
+            var flushTask = writer.FlushAsync(ct);
+            if (!flushTask.IsCompletedSuccessfully)
+               return CompleteFlushAndAckAsync(flushTask, lockToken, signalAwaiter, ct);
+
+            flushTask.GetAwaiter().GetResult();
+            lockToken.Dispose();
+
+            return signalAwaiter.WaitOneAsync(ct).AsTask();
+         }
+         catch (Exception error)
+         {
+            lockToken.Dispose();
+            signalAwaiter.Fail(error);
+
+            return signalAwaiter.WaitOneAsync(ct).AsTask();
+         }
+      }
+      catch (Exception error)
+      {
+         signalAwaiter.Fail(error);
+         return signalAwaiter.WaitOneAsync(ct).AsTask();
+      }
+   }
+
+   private static async Task<TResponse> CompleteFlushAndAckAsync<TResponse>(
+      ValueTask<System.IO.Pipelines.FlushResult> flushTask,
+      LockReleaser lockToken,
+      SignalAwaiter<TResponse> signalAwaiter,
+      CancellationToken ct)
+   {
+      try
+      {
+         using (lockToken)
+         {
+            await flushTask;
+         }
+      }
+      catch (Exception error)
+      {
+         signalAwaiter.Fail(error);
+      }
+
+      return await signalAwaiter.WaitOneAsync(ct);
+   }
+
+   private async Task<TResponse> SendAndAckSlowAsync<TPacket, TResponse>(
+      TPacket packet,
+      ValueTask<LockReleaser> lockTask,
+      SignalAwaiter<TResponse> signalAwaiter,
+      INetworkStream stream,
+      CancellationToken ct)
+      where TPacket : IRawMqttPacket
+   {
+      try
+      {
+         using (await lockTask)
          {
             var writer = stream.Transport.Output;
             switch (_protocolVersion)
@@ -83,7 +160,7 @@ public sealed partial class MqttClient
                   new PacketVersion3Encoder(writer, _protocolVersion).Write(packet);
                   break;
                default:
-                  throw new InvalidOperationException("Unkown protocol version.");
+                  throw new InvalidOperationException("Unknown protocol version.");
             }
 
             await writer.FlushAsync(ct);
