@@ -108,9 +108,9 @@ public sealed partial class MqttClient : IMqttClient
    }
 
 
-   internal bool TryDispatch<T>(ref T packet, ushort identifier)
+   internal bool TryDispatch<T>(in T packet, ushort identifier)
    {
-      return _signalBroker.TryDispatch(ref packet, identifier);
+      return _signalBroker.TryDispatch(in packet, identifier);
    }
 
    private async Task<Result<ClientConnectResult, StringError>> ConnectInternalAsync(CancellationToken ct = default)

@@ -52,7 +52,7 @@ public sealed class SignalBroker : IDisposable
       }
    }
 
-   public bool TryDispatch<TResponseMessage>(ref TResponseMessage message, ushort identifier)
+   public bool TryDispatch<TResponseMessage>(in TResponseMessage message, ushort identifier)
    {
       if (message is null)
       {
@@ -88,7 +88,7 @@ public sealed class SignalBroker : IDisposable
             if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
             {
                currentHead.OnPruned();
-               return currentHead.TryComplete(ref message);
+               return currentHead.TryComplete(in message);
             }
 
             // oh no a collision! retry
@@ -100,7 +100,7 @@ public sealed class SignalBroker : IDisposable
          {
             if (current.MessageType == msgType)
             {
-               return current.TryComplete(ref message);
+               return current.TryComplete(in message);
             }
 
             current = current.Next;

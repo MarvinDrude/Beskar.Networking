@@ -11,7 +11,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
    public ValueTask ExecuteAsync(in AuthPacket packet, CancellationToken ct = default)
    {
       var result = AuthPacketResult.Create(in packet);
-      _client.TryDispatch(ref result, 0);
+      _client.TryDispatch(in result, 0);
 
       return ValueTask.CompletedTask;
    }
@@ -19,7 +19,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
    public ValueTask ExecuteAsync(in ConnAckPacket packet, CancellationToken ct = default)
    {
       var result = ClientConnectResult.Create(in packet);
-      _client.TryDispatch(ref result, 0);
+      _client.TryDispatch(in result, 0);
 
       return ValueTask.CompletedTask;
    }

@@ -54,11 +54,11 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       return false;
    }
 
-   public bool TryComplete<TIncoming>(ref TIncoming message)
+   public bool TryComplete<TIncoming>(in TIncoming message)
    {
       if (typeof(TIncoming) == typeof(TResponseMessage))
       {
-         return TryComplete(Unsafe.As<TIncoming, TResponseMessage>(ref message));
+         return TryComplete(Unsafe.As<TIncoming, TResponseMessage>(ref Unsafe.AsRef(in message)));
       }
 
       if (message is TResponseMessage responseMessage)
