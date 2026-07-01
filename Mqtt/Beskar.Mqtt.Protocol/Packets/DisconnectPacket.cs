@@ -3,12 +3,13 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Beskar.Mqtt.Protocol.Enumerators;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Interfaces;
 
 namespace Beskar.Mqtt.Protocol.Packets;
 
 [StructLayout(LayoutKind.Auto)]
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-public ref struct DisconnectPacket
+public struct DisconnectPacket : IRawMqttPacket
 {
    public DisconnectReasonCode ReasonCode;
    public ReadOnlySequence<byte> ReasonUtf8Bytes;

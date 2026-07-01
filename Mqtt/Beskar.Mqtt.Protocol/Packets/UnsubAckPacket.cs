@@ -2,12 +2,13 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Beskar.Mqtt.Protocol.Enumerators;
+using Beskar.Mqtt.Protocol.Interfaces;
 
 namespace Beskar.Mqtt.Protocol.Packets;
 
 [StructLayout(LayoutKind.Auto)]
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-public ref struct UnsubAckPacket
+public struct UnsubAckPacket : IRawMqttPacket
 {
    public ushort PacketIdentifier;
 

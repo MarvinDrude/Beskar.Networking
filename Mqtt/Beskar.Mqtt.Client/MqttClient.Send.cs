@@ -7,6 +7,7 @@ using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
 
@@ -29,6 +30,10 @@ public sealed partial class MqttClient
       var clientResult = ValidateClient();
       if (!clientResult.IsSuccess) return clientResult.Error;
 
+      if (_controlStream is not { } stream)
+      {
+         return new StringError("Invalid control stream.");
+      }
       throw new NotImplementedException();
    }
 
@@ -43,9 +48,15 @@ public sealed partial class MqttClient
       var clientResult = ValidateClient();
       if (!clientResult.IsSuccess) return clientResult;
 
+      if (_controlStream is not { } stream)
+      {
+         return new StringError("Invalid control stream.");
+      }
 
       throw new NotImplementedException();
    }
+
+
 
    private async Task SendConnect(INetworkStream stream, ConnectOptions options, CancellationToken ct = default)
    {

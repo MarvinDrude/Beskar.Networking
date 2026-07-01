@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -7,8 +6,6 @@ using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Client.Handlers;
 using Beskar.Mqtt.Client.States;
 using Beskar.Mqtt.Common.Builders.Connecting;
-using Beskar.Mqtt.Common.Encoders;
-using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Interfaces;
@@ -111,9 +108,9 @@ public sealed partial class MqttClient : IMqttClient
    }
 
 
-   internal bool TryDispatch<T>(T packet, ushort identifier)
+   internal bool TryDispatch<T>(ref T packet, ushort identifier)
    {
-      return _signalBroker.TryDispatch(packet, identifier);
+      return _signalBroker.TryDispatch(ref packet, identifier);
    }
 
    private async Task<Result<ClientConnectResult, StringError>> ConnectInternalAsync(CancellationToken ct = default)
@@ -148,6 +145,8 @@ public sealed partial class MqttClient : IMqttClient
       }
 
       var first = true;
+      AuthPacketResult? authResult = null;
+
       while (true)
       {
          using var connAckAwaiter = _signalBroker.AddAwaitable<ClientConnectResult>(0);
@@ -157,6 +156,21 @@ public sealed partial class MqttClient : IMqttClient
          {
             await SendConnect(_controlStream, _connectOptions, combined.Token);
             first = false;
+         }
+         else
+         {
+            if (_connectOptions.AuthenticationHandler is { } handler
+                && authResult is not null)
+            {
+               await handler.ExecuteAsync(new MqttAuthContext()
+               {
+                  AuthPacket = authResult
+               }, combined.Token);
+            }
+            else
+            {
+               return new StringError("Received AUTH packet from server, but no handler is configured.");
+            }
          }
 
          var connAckTask = connAckAwaiter.WaitOneAsync(combined.Token).AsTask();
@@ -181,22 +195,10 @@ public sealed partial class MqttClient : IMqttClient
             return connAckResult;
          }
 
-         var authResult = await authTask;
+         authResult = await authTask;
          if (_connectOptions.AuthenticationMethodUtf8Bytes.IsEmpty)
          {
             return new StringError("Received AUTH packet from server, but no authentication method is configured.");
-         }
-
-         if (_connectOptions.AuthenticationHandler is { } handler)
-         {
-            await handler.ExecuteAsync(new MqttAuthContext()
-            {
-               AuthPacket = authResult
-            }, combined.Token);
-         }
-         else
-         {
-            return new StringError("Received AUTH packet from server, but no handler is configured.");
          }
       }
    }

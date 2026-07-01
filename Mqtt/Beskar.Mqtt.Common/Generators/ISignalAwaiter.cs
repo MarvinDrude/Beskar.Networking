@@ -1,8 +1,8 @@
 namespace Beskar.Mqtt.Common.Generators;
 
-public interface ISignalAwaiter<in TResponseMessage> : ISignalAwaiter
+public interface ISignalAwaiter<TResponseMessage> : ISignalAwaiter
 {
-   public bool TryComplete(TResponseMessage message);
+   public bool TryComplete(in TResponseMessage message);
 }
 
 public interface ISignalAwaiter : IDisposable
@@ -15,7 +15,7 @@ public interface ISignalAwaiter : IDisposable
    public void Fail(Exception exception);
    public void Cancel();
 
-   public bool TryComplete<TIncoming>(TIncoming message);
+   public bool TryComplete<TIncoming>(ref TIncoming message);
 
    public bool IsPending { get; }
    public void OnPruned();

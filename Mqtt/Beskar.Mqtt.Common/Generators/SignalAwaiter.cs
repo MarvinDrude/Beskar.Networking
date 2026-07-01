@@ -41,7 +41,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       return new ValueTask<TResponseMessage>(this, _core.Version);
    }
 
-   public bool TryComplete(TResponseMessage message)
+   public bool TryComplete(in TResponseMessage message)
    {
       if (Interlocked.CompareExchange(ref _state, 1, 0) == 0)
       {
@@ -54,7 +54,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       return false;
    }
 
-   public bool TryComplete<TIncoming>(TIncoming message)
+   public bool TryComplete<TIncoming>(ref TIncoming message)
    {
       if (typeof(TIncoming) == typeof(TResponseMessage))
       {

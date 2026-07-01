@@ -3,13 +3,14 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Beskar.Mqtt.Protocol.Enumerators;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Models;
 
 namespace Beskar.Mqtt.Protocol.Packets;
 
 [StructLayout(LayoutKind.Auto)]
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-public ref struct SubscribePacket
+public struct SubscribePacket : IRawMqttPacket
 {
    public ushort PacketIdentifier;
    public ReadOnlySequence<byte> FiltersBytes;

@@ -3,12 +3,13 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Beskar.Mqtt.Protocol.Enumerators;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Interfaces;
 
 namespace Beskar.Mqtt.Protocol.Packets;
 
 [StructLayout(LayoutKind.Auto)]
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-public ref struct ConnAckPacket
+public struct ConnAckPacket : IRawMqttPacket
 {
    public bool IsSessionPresent;
    public ConnectReturnCode ReturnCode;

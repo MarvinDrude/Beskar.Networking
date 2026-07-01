@@ -2,11 +2,12 @@ using System.Buffers;
 using System.Runtime.InteropServices;
 using Beskar.Mqtt.Protocol.Enumerators;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Interfaces;
 
 namespace Beskar.Mqtt.Protocol.Packets;
 
 [StructLayout(LayoutKind.Auto)]
-public ref struct AuthPacket
+public struct AuthPacket : IRawMqttPacket
 {
    public AuthenticateReasonCode ReasonCode;
    public ReadOnlySequence<byte> ReasonUtf8Bytes;
