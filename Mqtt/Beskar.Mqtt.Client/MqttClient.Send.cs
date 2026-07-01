@@ -6,7 +6,9 @@ using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Encoders.Version5;
+using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -56,7 +58,44 @@ public sealed partial class MqttClient
       throw new NotImplementedException();
    }
 
+   private async Task<TResponse> SendAndAck<TPacket, TResponse>(TPacket packet, INetworkStream stream, CancellationToken ct = default)
+      where TPacket : IRawMqttPacket
+   {
+      ushort identifier = 0;
+      if (packet is not PingReqPacket)
+      {
+         identifier = _identifierGenerator.GenerateNextIdentifier();
+      }
 
+      using var signalAwaiter = _signalBroker.AddAwaitable<TResponse>(identifier);
+      try
+      {
+         using (await stream.AcquireWriterLock(ct))
+         {
+            var writer = stream.Transport.Output;
+            switch (_protocolVersion)
+            {
+               case MqttProtocolVersion.V50:
+                  new PacketVersion5Encoder(writer).Write(packet);
+                  break;
+               case MqttProtocolVersion.V31:
+               case MqttProtocolVersion.V311:
+                  new PacketVersion3Encoder(writer, _protocolVersion).Write(packet);
+                  break;
+               default:
+                  throw new InvalidOperationException("Unkown protocol version.");
+            }
+
+            await writer.FlushAsync(ct);
+         }
+      }
+      catch (Exception error)
+      {
+         signalAwaiter.Fail(error);
+      }
+
+      return await signalAwaiter.WaitOneAsync(ct);
+   }
 
    private async Task SendConnect(INetworkStream stream, ConnectOptions options, CancellationToken ct = default)
    {
