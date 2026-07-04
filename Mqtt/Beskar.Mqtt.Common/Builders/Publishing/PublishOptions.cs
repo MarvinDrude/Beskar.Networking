@@ -14,14 +14,29 @@ public sealed class PublishOptions(int builderCapacity = -1) : UserPropertiesBas
 {
    private readonly int _builderCapacity = builderCapacity;
 
+   /// <summary>
+   /// Gets or sets whether this is a duplicate delivery of an earlier PUBLISH packet.
+   /// </summary>
    public bool Dup { get; set; }
 
+   /// <summary>
+   /// Gets or sets the Quality of Service level for the message.
+   /// </summary>
    public QualityOfServiceType QualityOfService { get; set; } = QualityOfServiceType.AtMostOnce;
 
+   /// <summary>
+   /// Gets or sets whether the message should be retained by the broker.
+   /// </summary>
    public bool Retain { get; set; }
 
+   /// <summary>
+   /// Gets or sets the topic name as a UTF-8 encoded byte array.
+   /// </summary>
    public ReadOnlyMemory<byte> TopicUtf8Bytes { get; set; }
 
+   /// <summary>
+   /// Gets or sets the payload containing the actual data being published.
+   /// </summary>
    public ReadOnlySequence<byte> Payload { get; set; }
 
    /// <summary>
@@ -147,4 +162,9 @@ public sealed class PublishOptions(int builderCapacity = -1) : UserPropertiesBas
          propEncoder.Encoder.Writer.Dispose();
       }
    }
+
+   /// <summary>
+   /// Creates a new PublishOptionsBuilder.
+   /// </summary>
+   public static PublishOptionsBuilder Create() => new();
 }

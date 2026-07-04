@@ -49,6 +49,8 @@ public sealed partial class MqttClient : IMqttClient
    {
       _networkClient = networkClient;
       _packetHandler = new ClientPacketHandler(this);
+
+      _gracefulDisconnect = false;
    }
 
    public async Task<Result<ClientConnectResult, StringError>> ConnectAsync(
@@ -250,14 +252,14 @@ public sealed partial class MqttClient : IMqttClient
          ref _state, (int)state, (int)compareState);
    }
 
-   public ValueTask DisposeAsync()
+   public async ValueTask DisposeAsync()
    {
-      if (_disposed) return ValueTask.CompletedTask;
+      if (_disposed) return;
       _disposed = true;
 
       _signalBroker.Dispose();
       _clientTokenSource.Dispose();
 
-      return ValueTask.CompletedTask;
+      await _networkClient.DisposeAsync();
    }
 }

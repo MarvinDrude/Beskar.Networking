@@ -141,6 +141,28 @@ public class PublishOptionsTests
    }
 
    [Test]
+   public async Task CorrectPublishOptionsBuildingWithMemoryOverloads()
+   {
+      // Arrange
+      ReadOnlyMemory<byte> topicBytes = "sensor/temp"u8.ToArray();
+      ReadOnlyMemory<byte> responseTopicBytes = "sensor/temp/response"u8.ToArray();
+      ReadOnlyMemory<byte> contentTypeBytes = "text/plain"u8.ToArray();
+
+      var builder = PublishOptions.Create()
+         .WithTopic(topicBytes)
+         .WithResponseTopic(responseTopicBytes)
+         .WithContentType(contentTypeBytes);
+
+      // Act
+      var options = builder.Build();
+
+      // Assert
+      await Assert.That(options.TopicUtf8Bytes.ToArray()).IsEquivalentTo(topicBytes.ToArray());
+      await Assert.That(options.ResponseTopicUtf8Bytes.ToArray()).IsEquivalentTo(responseTopicBytes.ToArray());
+      await Assert.That(options.ContentTypeUtf8Bytes.ToArray()).IsEquivalentTo(contentTypeBytes.ToArray());
+   }
+
+   [Test]
    public async Task ClearResetsAllPublishOptions()
    {
       // Arrange

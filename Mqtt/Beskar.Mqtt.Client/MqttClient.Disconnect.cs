@@ -31,6 +31,7 @@ public sealed partial class MqttClient
             return;
          }
 
+         _gracefulDisconnect = true;
          _disconnectReason = new MqttClientDisconnectReason(true, (int)options.ReasonCode);
 
          using (await stream.AcquireWriterLock(ct))
@@ -55,6 +56,7 @@ public sealed partial class MqttClient
       finally
       {
          await DisconnectRoutineAsync(beforeConnected);
+         _gracefulDisconnect = false;
       }
    }
 
@@ -70,7 +72,7 @@ public sealed partial class MqttClient
 
    private async ValueTask DisconnectRoutineAsync(bool beforeConnected)
    {
-      _clientTokenSource.Cancel();
+      await _clientTokenSource.CancelAsync();
 
       try
       {
@@ -79,6 +81,23 @@ public sealed partial class MqttClient
       catch (Exception)
       {
          // ignored
+      }
+
+      try
+      {
+         var task = _keepAliveTask;
+         if (task is not null)
+         {
+            await task;
+         }
+      }
+      catch (Exception)
+      {
+         // ignored
+      }
+      finally
+      {
+         CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Disconnecting);
       }
    }
 
