@@ -1,6 +1,7 @@
 using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
@@ -9,6 +10,7 @@ using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
@@ -52,9 +54,13 @@ public sealed partial class MqttClient
             subAck = await SendAndAck<SubscribeOptions, SubAckPacket>(options, stream, tokenSource.Token);
          }
 
-         var reasonBytes = new byte[subAck.ReasonStringUtf8Bytes.Length];
-         subAck.ReasonStringUtf8Bytes.CopyTo(reasonBytes);
-         var reasonString = System.Text.Encoding.UTF8.GetString(reasonBytes);
+
+
+         string? reasonString = null;
+         if (subAck.ReasonStringUtf8Bytes.Length > 0)
+         {
+            reasonString = subAck.ReasonStringUtf8Bytes.GetUtf8String();
+         }
 
          return new SubscribeResult
          {

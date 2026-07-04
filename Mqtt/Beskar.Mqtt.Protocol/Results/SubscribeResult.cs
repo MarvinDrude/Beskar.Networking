@@ -11,7 +11,7 @@ public sealed class SubscribeResult
    /// Reason string
    /// <remarks>MQTT 5.0.0 and above required.</remarks>
    /// </summary>
-   public required string ReasonString { get; init; }
+   public required string? ReasonString { get; init; }
 
 
 }
