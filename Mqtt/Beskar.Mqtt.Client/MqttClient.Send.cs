@@ -22,12 +22,6 @@ namespace Beskar.Mqtt.Client;
 
 public sealed partial class MqttClient
 {
-   public Task<Result<PublishResult, StringError>> PublishAsync(
-      PublishOptions options, CancellationToken ct = default)
-   {
-      throw new NotImplementedException();
-   }
-
    public async Task<Result<SubscribeResult, StringError>> SubscribeAsync(
       SubscribeOptions options, CancellationToken ct = default)
    {
