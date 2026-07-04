@@ -43,6 +43,7 @@ public sealed partial class MqttClient
    public Task<Result<UnsubscribeResult, StringError>> UnsubscribeAsync(
       UnsubscribeOptions options, CancellationToken ct = default)
    {
+
       throw new NotImplementedException();
    }
 
@@ -56,7 +57,17 @@ public sealed partial class MqttClient
          return new StringError("Invalid control stream.");
       }
 
-      throw new NotImplementedException();
+      if (ct.CanBeCanceled)
+      {
+         await SendAndAck<PingReqPacket, PingRespPacket>(new PingReqPacket(), stream, ct);
+      }
+      else
+      {
+         using var timeout = new CancellationTokenSource(_connectOptions.Timeout);
+         await SendAndAck<PingReqPacket, PingRespPacket>(new PingReqPacket(), stream, timeout.Token);
+      }
+
+      return true;
    }
 
    private Task<TResponse> SendAndAck<TPacket, TResponse>(in TPacket packet, INetworkStream stream, CancellationToken ct = default)

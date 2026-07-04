@@ -18,7 +18,7 @@ public sealed class QuicNetworkSession(
    QuicConnection connection,
    QuicTransportOptions options,
    QuicIoQueueRegistry ioQueueRegistry)
-   : INetworkSession, IAsyncDisposable
+   : INetworkSession
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 

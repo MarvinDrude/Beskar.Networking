@@ -11,7 +11,7 @@ namespace Beskar.Networking.Transports.Ws;
 /// <summary>
 /// Represents an active WebSocket network session.
 /// </summary>
-public sealed class WsNetworkSession : INetworkSession, IAsyncDisposable
+public sealed class WsNetworkSession : INetworkSession
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 

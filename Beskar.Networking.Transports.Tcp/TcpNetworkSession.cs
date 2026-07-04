@@ -16,7 +16,7 @@ public sealed class TcpNetworkSession(
    EndPoint remoteAddress,
    IDuplexPipe connection,
    Func<IDuplexPipe, ValueTask>? onDisposeAsync = null)
-   : INetworkSession, IAsyncDisposable
+   : INetworkSession
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 
