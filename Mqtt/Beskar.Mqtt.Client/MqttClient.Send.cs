@@ -8,6 +8,7 @@ using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Generators;
+using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Interfaces;
@@ -81,12 +82,25 @@ public sealed partial class MqttClient
             reasonString = subAck.ReasonStringUtf8Bytes.GetUtf8String();
          }
 
+         var subscriptions = new MqttTopicSubscriptionResult[filterBuilder.Count];
+         for (var i = 0; i < filterBuilder.Count; i++)
+         {
+            subscriptions[i] = new MqttTopicSubscriptionResult
+            {
+               TopicFilter = filterBuilder.WrittenSpan[i],
+               ReasonCode = reasonCodeBuilder.Count > i ? reasonCodeBuilder.WrittenSpan[i] : SubscribeReasonCode.GrantedQos0
+            };
+         }
+
          return new SubscribeResult
          {
             PacketIdentifier = subAck.PacketIdentifier,
-            ReasonString = reasonString
+            ReasonString = reasonString,
+            Subscriptions = subscriptions,
+            UserProperties = UserPropertyCollection.Create(subAck.PropertiesBytes)
          };
       }
+
       catch (Exception error)
       {
          return new StringError(error.ToString());
