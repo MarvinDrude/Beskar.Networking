@@ -107,11 +107,82 @@ public sealed partial class MqttClient
       }
    }
 
-   public Task<Result<UnsubscribeResult, StringError>> UnsubscribeAsync(
+   public async Task<Result<UnsubscribeResult, StringError>> UnsubscribeAsync(
       UnsubscribeOptions options, CancellationToken ct = default)
    {
+      var validateResult = UnsubscribeOptionsValidator.Validate(options);
+      if (!validateResult.IsSuccess) return validateResult.Error;
 
-      throw new NotImplementedException();
+      var clientResult = ValidateClient();
+      if (!clientResult.IsSuccess) return clientResult.Error;
+
+      if (_controlStream is not { } stream)
+      {
+         return new StringError("Invalid control stream.");
+      }
+
+      try
+      {
+         UnsubAckPacket unsubAck;
+         if (ct.CanBeCanceled)
+         {
+            unsubAck = await SendAndAck<UnsubscribeOptions, UnsubAckPacket>(options, stream, ct);
+         }
+         else
+         {
+            using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
+            unsubAck = await SendAndAck<UnsubscribeOptions, UnsubAckPacket>(options, stream, tokenSource.Token);
+         }
+
+         using var filterBuilder = new ArrayBuilder<string>(12);
+         var filterEnumerator = options.TopicFilters.GetEnumerator();
+
+         while (filterEnumerator.MoveNext())
+         {
+            filterBuilder.Add(System.Text.Encoding.UTF8.GetString(filterEnumerator.Current));
+         }
+
+         using var reasonCodeBuilder = new ArrayBuilder<UnsubscribeReasonCode>(12);
+         var reasonCodeEnumerator = unsubAck.GetReasonCodes();
+
+         while (reasonCodeEnumerator.MoveNext())
+         {
+            reasonCodeBuilder.Add(reasonCodeEnumerator.Current);
+         }
+
+         if (reasonCodeBuilder.Count != 0 && filterBuilder.Count != reasonCodeBuilder.Count)
+         {
+            return new StringError("The reason codes length is different to topic filters.");
+         }
+
+         string? reasonString = null;
+         if (unsubAck.ReasonStringUtf8Bytes.Length > 0)
+         {
+            reasonString = unsubAck.ReasonStringUtf8Bytes.GetUtf8String();
+         }
+
+         var unsubscriptions = new MqttTopicUnsubscriptionResult[filterBuilder.Count];
+         for (var i = 0; i < filterBuilder.Count; i++)
+         {
+            unsubscriptions[i] = new MqttTopicUnsubscriptionResult
+            {
+               TopicFilter = filterBuilder.WrittenSpan[i],
+               ReasonCode = reasonCodeBuilder.Count > i ? reasonCodeBuilder.WrittenSpan[i] : UnsubscribeReasonCode.Success
+            };
+         }
+
+         return new UnsubscribeResult
+         {
+            PacketIdentifier = unsubAck.PacketIdentifier,
+            ReasonString = reasonString,
+            Unsubscriptions = unsubscriptions,
+            UserProperties = UserPropertyCollection.Create(unsubAck.PropertiesBytes)
+         };
+      }
+      catch (Exception error)
+      {
+         return new StringError(error.ToString());
+      }
    }
 
    public async Task<VoidResult<StringError>> PingAsync(CancellationToken ct = default)
