@@ -5,6 +5,7 @@ using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
+using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
 
@@ -103,6 +104,10 @@ public readonly ref partial struct PacketVersion5Encoder(IBufferWriter<byte> wri
       else if (typeof(TOptions) == typeof(UnsubscribeOptions))
       {
          WriteUnsubscribe(Unsafe.As<TOptions, UnsubscribeOptions>(ref options), packetIdentifier);
+      }
+      else if (typeof(TOptions) == typeof(DisconnectOptions))
+      {
+         WriteDisconnect(Unsafe.As<TOptions, DisconnectOptions>(ref options));
       }
       else
       {

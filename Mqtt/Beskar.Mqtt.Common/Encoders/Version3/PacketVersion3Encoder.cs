@@ -5,6 +5,7 @@ using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
+using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
@@ -74,6 +75,10 @@ public readonly ref partial struct PacketVersion3Encoder(
       {
          WriteConnAck(in Unsafe.As<TPacket, ConnAckPacket>(ref Unsafe.AsRef(in packet)));
       }
+      else if (typeof(TPacket) == typeof(DisconnectPacket))
+      {
+         WriteDisconnect(in Unsafe.As<TPacket, DisconnectPacket>(ref Unsafe.AsRef(in packet)));
+      }
       else
       {
          throw new NotSupportedException($"Packet type {typeof(TPacket).Name} is not supported by PacketVersion3Encoder.");
@@ -99,10 +104,13 @@ public readonly ref partial struct PacketVersion3Encoder(
       {
          WriteUnsubscribe(Unsafe.As<TOptions, UnsubscribeOptions>(ref options), packetIdentifier);
       }
+      else if (typeof(TOptions) == typeof(DisconnectOptions))
+      {
+         WriteDisconnect(Unsafe.As<TOptions, DisconnectOptions>(ref options));
+      }
       else
       {
          throw new NotSupportedException($"Options type {typeof(TOptions).Name} is not supported by PacketVersion3Encoder.");
       }
    }
 }
-
