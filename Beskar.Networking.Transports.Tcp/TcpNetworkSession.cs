@@ -81,6 +81,18 @@ public sealed class TcpNetworkSession(
 
       _cts.Dispose();
 
+      if (_stream is not null)
+      {
+         try
+         {
+            await _stream.DisposeAsync();
+         }
+         catch
+         {
+            // Ignored
+         }
+      }
+
       if (onDisposeAsync is not null)
       {
          await onDisposeAsync(_connection);

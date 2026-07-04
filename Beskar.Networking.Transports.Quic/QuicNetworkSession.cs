@@ -1,7 +1,6 @@
-using System.IO.Pipelines;
 using System.Net;
 using System.Net.Quic;
-using System.Net.Security;
+using System.Collections.Concurrent;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -35,6 +34,8 @@ public sealed class QuicNetworkSession(
    private readonly QuicIoQueueRegistry _ioQueueRegistry = ioQueueRegistry;
    private readonly CancellationTokenSource _cts = new();
 
+   private readonly ConcurrentDictionary<long, QuicNetworkStream> _activeStreams = new();
+
    private int _disposed;
 
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
@@ -48,6 +49,8 @@ public sealed class QuicNetworkSession(
          var connection = _ioQueueRegistry.Create(quicStream);
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
+         _activeStreams.TryAdd(newStream.StreamId, newStream);
+
          TraceLogger.LogServerInfo("QUIC Session {0}: Successfully accepted inbound {1} stream {2}", Id, newStream.Direction, newStream.StreamId);
          return newStream;
       }
@@ -91,6 +94,8 @@ public sealed class QuicNetworkSession(
          var connection = _ioQueueRegistry.Create(quicStream);
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
+         _activeStreams.TryAdd(newStream.StreamId, newStream);
+
          TraceLogger.LogClientInfo("QUIC Session {0}: Successfully opened outbound {1} stream {2}", Id, newStream.Direction, newStream.StreamId);
          return newStream;
       }
@@ -114,8 +119,10 @@ public sealed class QuicNetworkSession(
    /// <summary>
    /// Returns a retired stream connection adapter to the shared connection pool.
    /// </summary>
-   public async ValueTask ReturnConnectionAsync(StreamConnection connection)
+   public async ValueTask ReturnConnectionAsync(QuicNetworkStream stream, StreamConnection connection)
    {
+      _activeStreams.TryRemove(stream.StreamId, out _);
+
       TraceLogger.LogNeutralInfo("QUIC Session {0}: Returning stream connection to registry pool", Id);
       await _ioQueueRegistry.ReturnAsync(connection);
    }
@@ -138,6 +145,19 @@ public sealed class QuicNetworkSession(
          // Ignored
       }
       _cts.Dispose();
+
+      foreach (var stream in _activeStreams.Values)
+      {
+         try
+         {
+            await stream.DisposeAsync();
+         }
+         catch
+         {
+            // Ignored
+         }
+      }
+      _activeStreams.Clear();
 
       try
       {

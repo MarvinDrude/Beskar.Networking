@@ -50,6 +50,6 @@ public sealed class QuicNetworkStream(
       await _connection.StopAsync();
       await _quicStream.DisposeAsync();
 
-      await _session.ReturnConnectionAsync(_connection);
+      await _session.ReturnConnectionAsync(this, _connection);
    }
 }
