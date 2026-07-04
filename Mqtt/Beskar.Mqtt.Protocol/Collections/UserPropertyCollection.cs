@@ -76,4 +76,6 @@ public sealed class UserPropertyCollection : IReadOnlyList<MqttUserProperty>
    public static UserPropertyCollection Create(ReadOnlySpan<byte> data) => [with(data.ToArray())];
    public static UserPropertyCollection Create(ReadOnlyMemory<byte> data) => [with(data)];
    public static UserPropertyCollection Create(ReadOnlySequence<byte> data) => [with(data)];
+
+   public static readonly UserPropertyCollection Empty = Create(ReadOnlySequence<byte>.Empty);
 }

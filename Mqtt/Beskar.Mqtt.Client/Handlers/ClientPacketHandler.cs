@@ -26,7 +26,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in ConnectPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      throw new InvalidOperationException("CONNECT received by client is not supported.");
    }
 
    public ValueTask ExecuteAsync(in DisconnectPacket packet, CancellationToken ct = default)
@@ -36,22 +36,26 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in PingReqPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      _client.TryDispatch(in packet, 0);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PingRespPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      _client.TryDispatch(in packet, 0);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PubAckPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      _client.TryDispatch(in packet, packet.PacketIdentifier);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PubCompPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      _client.TryDispatch(in packet, packet.PacketIdentifier);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PublishPacket packet, CancellationToken ct = default)
@@ -61,12 +65,14 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in PubRecPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      _client.TryDispatch(in packet, packet.PacketIdentifier);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PubRelPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      _client.TryDispatch(in packet, packet.PacketIdentifier);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in SubAckPacket packet, CancellationToken ct = default)
