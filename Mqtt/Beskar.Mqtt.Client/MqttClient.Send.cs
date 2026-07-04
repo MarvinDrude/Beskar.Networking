@@ -37,7 +37,20 @@ public sealed partial class MqttClient
       {
          return new StringError("Invalid control stream.");
       }
-      throw new NotImplementedException();
+
+
+
+      if (ct.CanBeCanceled)
+      {
+         await SendAndAck<Subscribe, SubAckPacket>(new PingReqPacket(), stream, ct);
+      }
+      else
+      {
+         using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
+         await SendAndAck<PingReqPacket, SubAckPacket>(new PingReqPacket(), stream, tokenSource.Token);
+      }
+
+      return true;
    }
 
    public Task<Result<UnsubscribeResult, StringError>> UnsubscribeAsync(
@@ -63,8 +76,8 @@ public sealed partial class MqttClient
       }
       else
       {
-         using var timeout = new CancellationTokenSource(_connectOptions.Timeout);
-         await SendAndAck<PingReqPacket, PingRespPacket>(new PingReqPacket(), stream, timeout.Token);
+         using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
+         await SendAndAck<PingReqPacket, PingRespPacket>(new PingReqPacket(), stream, tokenSource.Token);
       }
 
       return true;
