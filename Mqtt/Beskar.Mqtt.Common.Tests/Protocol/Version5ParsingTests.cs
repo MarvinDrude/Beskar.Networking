@@ -1299,6 +1299,7 @@ public class Version5ParsingTests
       var expectedPayloadFormat = PayloadFormat.CharacterData;
       var expectedMessageExpiry = 120U;
       var expectedTopicAlias = (ushort)5;
+      var expectedSubIds = new List<uint> { 77, 88 };
 
       var parsedDup = false;
       var parsedQos = QualityOfServiceType.AtMostOnce;
@@ -1312,6 +1313,7 @@ public class Version5ParsingTests
       uint parsedMessageExpiry = 0;
       ushort parsedTopicAlias = 0;
       var hasUserProp = false;
+      var parsedSubIds = new List<uint>();
 
       var handler = new TestPacketHandler
       {
@@ -1342,6 +1344,12 @@ public class Version5ParsingTests
             parsedMessageExpiry = p.MessageExpiryInterval;
             parsedTopicAlias = p.TopicAlias;
 
+            var subIdEnumerator = p.GetSubscriptionIdentifiers();
+            while (subIdEnumerator.MoveNext())
+            {
+               parsedSubIds.Add(subIdEnumerator.Current);
+            }
+
             var propertiesEnumerator = p.GetProperties();
             while (propertiesEnumerator.MoveNext())
             {
@@ -1370,18 +1378,21 @@ public class Version5ParsingTests
       int bytesConsumed;
 
       {
-         var options = new PublishOptions();
-         options.Dup = expectedDup;
-         options.QualityOfService = expectedQos;
-         options.Retain = expectedRetain;
-         options.TopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedTopic);
-         options.Payload = new ReadOnlySequence<byte>(expectedPayload);
-         options.PayloadFormat = expectedPayloadFormat;
-         options.MessageExpiryInterval = expectedMessageExpiry;
-         options.TopicAlias = expectedTopicAlias;
-         options.ContentTypeUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedContentType);
-         options.ResponseTopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedResponseTopic);
-         options.UserProperties.Add("user-key", "user-val");
+         var options = PublishOptions.Create()
+            .WithDup(expectedDup)
+            .WithQualityOfService(expectedQos)
+            .WithRetain(expectedRetain)
+            .WithTopic(expectedTopic)
+            .WithPayload(expectedPayload)
+            .WithPayloadFormat(expectedPayloadFormat)
+            .WithMessageExpiryInterval(expectedMessageExpiry)
+            .WithTopicAlias(expectedTopicAlias)
+            .WithContentType(expectedContentType)
+            .WithResponseTopic(expectedResponseTopic)
+            .WithUserProperty("user-key", "user-val")
+            .WithSubscriptionIdentifier(77)
+            .WithSubscriptionIdentifier(88)
+            .Build();
 
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePublish(options, expectedPacketId);
@@ -1409,6 +1420,7 @@ public class Version5ParsingTests
       await Assert.That(parsedMessageExpiry).IsEqualTo(expectedMessageExpiry);
       await Assert.That(parsedTopicAlias).IsEqualTo(expectedTopicAlias);
       await Assert.That(hasUserProp).IsTrue();
+      await Assert.That(parsedSubIds).IsEquivalentTo(expectedSubIds);
    }
 
    [Test]

@@ -75,9 +75,17 @@ public sealed class PublishOptions(int builderCapacity = -1) : UserPropertiesBas
    /// </summary>
    public ReadOnlyMemory<byte> ContentTypeUtf8Bytes { get; set; }
 
+   /// <summary>
+   /// The subscription identifiers associated with the message.
+   /// <remarks>MQTT 5.0.0 and above required.</remarks>
+   /// </summary>
+   public SubscriptionIdentifierListBuilder SubscriptionIdentifiers
+      => field ??= new SubscriptionIdentifierListBuilder(_builderCapacity == -1 ? 128 : _builderCapacity);
+
    public override void Clear()
    {
       base.Clear();
+      SubscriptionIdentifiers.Clear();
 
       Dup = false;
       QualityOfService = QualityOfServiceType.AtMostOnce;
@@ -102,6 +110,7 @@ public sealed class PublishOptions(int builderCapacity = -1) : UserPropertiesBas
    {
       var estimate = 128
          + UserProperties.ByteCount
+         + SubscriptionIdentifiers.ByteCount
          + ResponseTopicUtf8Bytes.Length
          + ContentTypeUtf8Bytes.Length
          + CorrelationData.Length;
@@ -112,6 +121,15 @@ public sealed class PublishOptions(int builderCapacity = -1) : UserPropertiesBas
 
       try
       {
+         if (SubscriptionIdentifiers.Count > 0)
+         {
+            var enumerator = SubscriptionIdentifiers.GetEnumerator();
+            while (enumerator.MoveNext())
+            {
+               propEncoder.WriteSubscriptionIdentifier(enumerator.Current);
+            }
+         }
+
          if (PayloadFormat is not PayloadFormat.Unspecified)
          {
             propEncoder.WritePayloadFormatIndicator(PayloadFormat);

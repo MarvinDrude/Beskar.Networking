@@ -163,6 +163,45 @@ public class PublishOptionsTests
    }
 
    [Test]
+   public async Task CorrectPublishOptionsWithSubscriptionIdentifiers()
+   {
+      // Arrange
+      var builder = PublishOptions.Create()
+         .WithTopic("sensor/temp")
+         .WithSubscriptionIdentifier(10)
+         .WithSubscriptionIdentifier(20);
+
+      // Act
+      var options = builder.Build();
+
+      // Assert
+      await Assert.That(options.SubscriptionIdentifiers.Count).IsEqualTo(2);
+
+      var ids = new List<uint>();
+      var enumerator = options.SubscriptionIdentifiers.GetEnumerator();
+      while (enumerator.MoveNext())
+      {
+         ids.Add(enumerator.Current);
+      }
+      await Assert.That(ids).IsEquivalentTo(new uint[] { 10, 20 });
+
+      // Verify properties serialization
+      var propertiesSequence = options.BuildProperties();
+      var serializedIds = new List<uint>();
+      var propEnumerator = new MqttPropertyEnumerator(propertiesSequence);
+      while (propEnumerator.MoveNext())
+      {
+         var prop = propEnumerator.Current;
+         if (prop.Identifier == PropertyIdentifier.SubscriptionIdentifier)
+         {
+            var res = prop.AsSubscriptionIdentifier();
+            serializedIds.Add(res.Success);
+         }
+      }
+      await Assert.That(serializedIds).IsEquivalentTo(new uint[] { 10, 20 });
+   }
+
+   [Test]
    public async Task ClearResetsAllPublishOptions()
    {
       // Arrange
@@ -172,7 +211,8 @@ public class PublishOptionsTests
          .WithRetain(true)
          .WithTopic("topic")
          .WithPayload("payload")
-         .WithMessageExpiryInterval(60);
+         .WithMessageExpiryInterval(60)
+         .WithSubscriptionIdentifier(99);
 
       var options = builder.Build();
 
@@ -186,6 +226,7 @@ public class PublishOptionsTests
       await Assert.That(options.TopicUtf8Bytes.IsEmpty).IsTrue();
       await Assert.That(options.Payload.IsEmpty).IsTrue();
       await Assert.That(options.MessageExpiryInterval.HasValue).IsFalse();
+      await Assert.That(options.SubscriptionIdentifiers.Count).IsEqualTo(0);
       await Assert.That(options.BuildProperties().IsEmpty).IsTrue();
    }
 }

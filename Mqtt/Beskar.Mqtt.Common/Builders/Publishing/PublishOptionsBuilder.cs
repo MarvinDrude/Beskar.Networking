@@ -219,4 +219,14 @@ public sealed class PublishOptionsBuilder(PublishOptions? options = null)
       _options.ContentTypeUtf8Bytes = contentTypeUtf8Bytes;
       return this;
    }
+
+   /// <summary>
+   /// Adds a subscription identifier to the message.
+   /// <remarks>MQTT 5.0.0 and above required.</remarks>
+   /// </summary>
+   public PublishOptionsBuilder WithSubscriptionIdentifier(uint subscriptionIdentifier)
+   {
+      _options.SubscriptionIdentifiers.Add(subscriptionIdentifier);
+      return this;
+   }
 }

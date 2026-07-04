@@ -68,6 +68,15 @@ public readonly ref partial struct PacketVersion5Encoder
                propEncoder.WriteTopicAlias(options.TopicAlias.Value);
             }
 
+            if (options.SubscriptionIdentifiers.Count > 0)
+            {
+               var enumerator = options.SubscriptionIdentifiers.GetEnumerator();
+               while (enumerator.MoveNext())
+               {
+                  propEncoder.WriteSubscriptionIdentifier(enumerator.Current);
+               }
+            }
+
             if (options.UserProperties.Count > 0)
             {
                var enumerator = options.UserProperties.GetEnumerator();
@@ -157,6 +166,7 @@ public readonly ref partial struct PacketVersion5Encoder
          len += 3;
       }
 
+      len += options.SubscriptionIdentifiers.ByteCount;
       len += options.UserProperties.ByteCount;
 
       return len;
