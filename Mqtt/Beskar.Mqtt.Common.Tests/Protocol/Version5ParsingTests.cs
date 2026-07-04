@@ -66,7 +66,7 @@ public class Version5ParsingTests
          {
             PacketIdentifier = originalPacketId,
             ReasonCode = expectedReasonCode,
-            PropertiesBytes = propBuffer.WrittenSequence
+            PropertiesBytes = propBuffer.WrittenSequence.ToArray()
          };
 
          var encoder = new PacketVersion5Encoder(buffer);
@@ -116,7 +116,7 @@ public class Version5ParsingTests
          {
             PacketIdentifier = originalPacketId,
             ReasonCode = PubAckReasonCode.Success,
-            PropertiesBytes = ReadOnlySequence<byte>.Empty
+            PropertiesBytes = ReadOnlyMemory<byte>.Empty
          };
 
          var encoder = new PacketVersion5Encoder(buffer);
@@ -820,12 +820,12 @@ public class Version5ParsingTests
             propWriter.Dispose();
          }
 
-         var originalPacket = new PubAckPacket
-         {
-            PacketIdentifier = originalPacketId,
-            ReasonCode = expectedReasonCode,
-            PropertiesBytes = propBuffer.WrittenSequence
-         };
+          var originalPacket = new PubAckPacket
+          {
+             PacketIdentifier = originalPacketId,
+             ReasonCode = expectedReasonCode,
+             PropertiesBytes = propBuffer.WrittenSequence.ToArray()
+          };
 
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubAck(originalPacket);
@@ -870,12 +870,12 @@ public class Version5ParsingTests
       int bytesConsumed;
 
       {
-         var originalPacket = new PubRecPacket
-         {
-            PacketIdentifier = originalPacketId,
-            ReasonCode = PubRecReasonCode.Success,
-            PropertiesBytes = ReadOnlySequence<byte>.Empty
-         };
+          var originalPacket = new PubRecPacket
+          {
+             PacketIdentifier = originalPacketId,
+             ReasonCode = PubRecReasonCode.Success,
+             PropertiesBytes = ReadOnlyMemory<byte>.Empty
+          };
 
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRec(originalPacket);
@@ -940,12 +940,12 @@ public class Version5ParsingTests
             propWriter.Dispose();
          }
 
-         var originalPacket = new PubRelPacket
-         {
-            PacketIdentifier = originalPacketId,
-            ReasonCode = expectedReasonCode,
-            PropertiesBytes = propBuffer.WrittenSequence
-         };
+          var originalPacket = new PubRelPacket
+          {
+             PacketIdentifier = originalPacketId,
+             ReasonCode = expectedReasonCode,
+             PropertiesBytes = propBuffer.WrittenSequence.ToArray()
+          };
 
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRel(originalPacket);
@@ -990,12 +990,12 @@ public class Version5ParsingTests
       int bytesConsumed;
 
       {
-         var originalPacket = new PubRelPacket
-         {
-            PacketIdentifier = originalPacketId,
-            ReasonCode = PubRelReasonCode.Success,
-            PropertiesBytes = ReadOnlySequence<byte>.Empty
-         };
+          var originalPacket = new PubRelPacket
+          {
+             PacketIdentifier = originalPacketId,
+             ReasonCode = PubRelReasonCode.Success,
+             PropertiesBytes = ReadOnlyMemory<byte>.Empty
+          };
 
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRel(originalPacket);
@@ -1064,7 +1064,7 @@ public class Version5ParsingTests
          {
             PacketIdentifier = originalPacketId,
             ReasonCode = expectedReasonCode,
-            PropertiesBytes = propBuffer.WrittenSequence
+            PropertiesBytes = propBuffer.WrittenSequence.ToArray()
          };
 
          var encoder = new PacketVersion5Encoder(buffer);
@@ -1114,7 +1114,7 @@ public class Version5ParsingTests
          {
             PacketIdentifier = originalPacketId,
             ReasonCode = PubCompReasonCode.Success,
-            PropertiesBytes = ReadOnlySequence<byte>.Empty
+            PropertiesBytes = ReadOnlyMemory<byte>.Empty
          };
 
          var encoder = new PacketVersion5Encoder(buffer);
@@ -1186,8 +1186,8 @@ public class Version5ParsingTests
          var originalPacket = new SubAckPacket
          {
             PacketIdentifier = expectedPacketId,
-            ReturnCodesBytes = new ReadOnlySequence<byte>(expectedReturnCodes),
-            PropertiesBytes = propBuffer.WrittenSequence
+            ReturnCodesBytes = expectedReturnCodes,
+            PropertiesBytes = propBuffer.WrittenSequence.ToArray()
          };
 
          var encoder = new PacketVersion5Encoder(buffer);
@@ -1259,8 +1259,8 @@ public class Version5ParsingTests
          var originalPacket = new UnsubAckPacket
          {
             PacketIdentifier = expectedPacketId,
-            ReasonCodesBytes = new ReadOnlySequence<byte>(expectedReasonCodes),
-            PropertiesBytes = propBuffer.WrittenSequence
+            ReasonCodesBytes = expectedReasonCodes,
+            PropertiesBytes = propBuffer.WrittenSequence.ToArray()
          };
 
          var encoder = new PacketVersion5Encoder(buffer);

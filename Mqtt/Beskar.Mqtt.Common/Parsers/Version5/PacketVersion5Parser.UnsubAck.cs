@@ -30,10 +30,11 @@ public readonly ref partial struct PacketVersion5Parser
          return new StringError("Could not read packet identifier.");
       }
 
-      if (!rawPacket.Reader.TryReadProperties(out packet.PropertiesBytes))
+      if (!rawPacket.Reader.TryReadProperties(out var propertiesSequence))
       {
          return new StringError("Could not read properties.");
       }
+      packet.PropertiesBytes = propertiesSequence.ToArray();
 
       var enumerator = packet.GetProperties();
       var foundReasonString = false;
@@ -43,7 +44,7 @@ public readonly ref partial struct PacketVersion5Parser
          switch (enumerator.Current.Identifier)
          {
             case PropertyIdentifier.ReasonString:
-               packet.ReasonStringUtf8Bytes = enumerator.Current.AsReasonString();
+               packet.ReasonStringUtf8Bytes = enumerator.Current.AsReasonString().ToArray();
                foundReasonString = true;
                break;
             case PropertyIdentifier.UserProperty:
@@ -73,12 +74,12 @@ public readonly ref partial struct PacketVersion5Parser
             return new StringError("Could not read unsuback reason codes payload.");
          }
 
-         packet.ReasonCodesBytes = rawPacket.Reader.Sequence.Slice(rawPacket.Reader.Position, payloadLength);
+         packet.ReasonCodesBytes = rawPacket.Reader.Sequence.Slice(rawPacket.Reader.Position, payloadLength).ToArray();
          rawPacket.Reader.Advance(payloadLength);
       }
       else
       {
-         packet.ReasonCodesBytes = ReadOnlySequence<byte>.Empty;
+         packet.ReasonCodesBytes = ReadOnlyMemory<byte>.Empty;
       }
 
       return PacketDispatchResult.Success;

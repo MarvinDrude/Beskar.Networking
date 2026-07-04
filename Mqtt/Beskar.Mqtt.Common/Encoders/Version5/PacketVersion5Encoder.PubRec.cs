@@ -1,3 +1,4 @@
+using System.Buffers;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
@@ -22,7 +23,7 @@ public readonly ref partial struct PacketVersion5Encoder
             writer.WriteByte((byte)packet.ReasonCode);
             if (remainingLength > 3)
             {
-               PacketEncoder.WriteProperties(ref writer, packet.PropertiesBytes);
+               PacketEncoder.WriteProperties(ref writer, new ReadOnlySequence<byte>(packet.PropertiesBytes));
             }
          }
 
@@ -52,6 +53,6 @@ public readonly ref partial struct PacketVersion5Encoder
          return 3;
       }
 
-      return 3 + CalculatePropertiesLength(packet.PropertiesBytes);
+      return 3 + CalculatePropertiesLength(new ReadOnlySequence<byte>(packet.PropertiesBytes));
    }
 }

@@ -18,10 +18,7 @@ public readonly ref partial struct PacketVersion3Encoder
 
          writer.WriteBigEndian(packet.PacketIdentifier);
 
-         foreach (var memory in packet.ReturnCodesBytes)
-         {
-            writer.WriteBytes(memory.Span);
-         }
+         writer.WriteBytes(packet.ReturnCodesBytes.Span);
 
          _writer.Advance(writer.Position);
       }

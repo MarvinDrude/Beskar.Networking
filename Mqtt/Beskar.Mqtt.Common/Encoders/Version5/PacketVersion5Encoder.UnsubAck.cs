@@ -1,3 +1,4 @@
+using System.Buffers;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
@@ -17,19 +18,9 @@ public readonly ref partial struct PacketVersion5Encoder
          PacketEncoder.WriteFixedHeader(ref writer, MqttPacketType.UnsubAck, 0, remainingLength);
          writer.WriteBigEndian(packet.PacketIdentifier);
 
-         PacketEncoder.WriteProperties(ref writer, packet.PropertiesBytes);
+         PacketEncoder.WriteProperties(ref writer, new ReadOnlySequence<byte>(packet.PropertiesBytes));
 
-         if (packet.ReasonCodesBytes.IsSingleSegment)
-         {
-            writer.WriteBytes(packet.ReasonCodesBytes.First.Span);
-         }
-         else
-         {
-            foreach (var memory in packet.ReasonCodesBytes)
-            {
-               writer.WriteBytes(memory.Span);
-            }
-         }
+         writer.WriteBytes(packet.ReasonCodesBytes.Span);
 
          _writer.Advance(writer.Position);
       }
@@ -47,6 +38,6 @@ public readonly ref partial struct PacketVersion5Encoder
 
    private static int CalculateRemainingLength(in UnsubAckPacket packet)
    {
-      return 2 + CalculatePropertiesLength(packet.PropertiesBytes) + (int)packet.ReasonCodesBytes.Length;
+      return 2 + CalculatePropertiesLength(new ReadOnlySequence<byte>(packet.PropertiesBytes)) + packet.ReasonCodesBytes.Length;
    }
 }

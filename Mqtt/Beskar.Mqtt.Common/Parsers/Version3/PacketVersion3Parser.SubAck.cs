@@ -45,12 +45,12 @@ public readonly ref partial struct PacketVersion3Parser
             return new StringError("Could not read return codes payload.");
          }
 
-         packet.ReturnCodesBytes = rawPacket.Reader.Sequence.Slice(rawPacket.Reader.Position, payloadLength);
+         packet.ReturnCodesBytes = rawPacket.Reader.Sequence.Slice(rawPacket.Reader.Position, payloadLength).ToArray();
          rawPacket.Reader.Advance(payloadLength);
       }
       else
       {
-         packet.ReturnCodesBytes = ReadOnlySequence<byte>.Empty;
+         packet.ReturnCodesBytes = ReadOnlyMemory<byte>.Empty;
       }
 
       var validateResult = SubAckPacketVersion3Validator.Validate(ref packet);

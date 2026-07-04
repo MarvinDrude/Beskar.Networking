@@ -1,3 +1,4 @@
+using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Protocol.Enums;
@@ -42,10 +43,11 @@ public readonly ref partial struct PacketVersion5Parser
 
          if (rawPacket.BodyLength > 3)
          {
-            if (!rawPacket.Reader.TryReadProperties(out packet.PropertiesBytes))
+            if (!rawPacket.Reader.TryReadProperties(out var propertiesSequence))
             {
                return new StringError("Could not read properties.");
             }
+            packet.PropertiesBytes = propertiesSequence.ToArray();
 
             var enumerator = packet.GetProperties();
             var foundReasonString = false;
@@ -55,7 +57,7 @@ public readonly ref partial struct PacketVersion5Parser
                switch (enumerator.Current.Identifier)
                {
                   case PropertyIdentifier.ReasonString:
-                     packet.ReasonStringUtf8Bytes = enumerator.Current.AsReasonString();
+                     packet.ReasonStringUtf8Bytes = enumerator.Current.AsReasonString().ToArray();
                      foundReasonString = true;
                      break;
                   case PropertyIdentifier.UserProperty:
@@ -72,13 +74,13 @@ public readonly ref partial struct PacketVersion5Parser
          }
          else
          {
-            packet.PropertiesBytes = System.Buffers.ReadOnlySequence<byte>.Empty;
+            packet.PropertiesBytes = ReadOnlyMemory<byte>.Empty;
          }
       }
       else
       {
          packet.ReasonCode = PubCompReasonCode.Success;
-         packet.PropertiesBytes = System.Buffers.ReadOnlySequence<byte>.Empty;
+         packet.PropertiesBytes = ReadOnlyMemory<byte>.Empty;
       }
 
       return PacketDispatchResult.Success;

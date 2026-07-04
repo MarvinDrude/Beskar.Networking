@@ -27,4 +27,12 @@ public static class Utf8Extensions
          return Encoding.UTF8.GetString(span);
       }
    }
+
+   extension(ReadOnlyMemory<byte> data)
+   {
+      public string? GetUtf8String()
+      {
+         return data.IsEmpty ? null : Encoding.UTF8.GetString(data.Span);
+      }
+   }
 }

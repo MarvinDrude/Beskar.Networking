@@ -12,12 +12,12 @@ namespace Beskar.Mqtt.Protocol.Packets;
 public struct SubAckPacket : IRawMqttPacket
 {
    public ushort PacketIdentifier;
-   public ReadOnlySequence<byte> ReturnCodesBytes;
+   public ReadOnlyMemory<byte> ReturnCodesBytes;
 
-   public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
+   public ReadOnlyMemory<byte> ReasonStringUtf8Bytes;
 
-   public ReadOnlySequence<byte> PropertiesBytes;
-   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public ReadOnlyMemory<byte> PropertiesBytes;
+   public readonly MqttPropertyEnumerator GetProperties() => new(new ReadOnlySequence<byte>(PropertiesBytes));
 
    public override string ToString()
    {
@@ -26,5 +26,5 @@ public struct SubAckPacket : IRawMqttPacket
 
    internal string DebuggerDisplay => ToString();
 
-   public readonly SubscribeReasonCodeEnumerator GetReturnCodes() => new(ReturnCodesBytes);
+   public readonly SubscribeReasonCodeEnumerator GetReturnCodes() => new(new ReadOnlySequence<byte>(ReturnCodesBytes));
 }

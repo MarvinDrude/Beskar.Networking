@@ -14,10 +14,10 @@ public struct PubRecPacket : IRawMqttPacket
    public ushort PacketIdentifier;
    public PubRecReasonCode ReasonCode;
 
-   public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
+   public ReadOnlyMemory<byte> ReasonStringUtf8Bytes;
 
-   public ReadOnlySequence<byte> PropertiesBytes;
-   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public ReadOnlyMemory<byte> PropertiesBytes;
+   public readonly MqttPropertyEnumerator GetProperties() => new(new ReadOnlySequence<byte>(PropertiesBytes));
 
    public override string ToString()
    {

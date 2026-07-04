@@ -450,7 +450,7 @@ public class Version3ParsingTests
          var originalPacket = new SubAckPacket
          {
             PacketIdentifier = expectedPacketId,
-            ReturnCodesBytes = new ReadOnlySequence<byte>(expectedReturnCodes)
+            ReturnCodesBytes = expectedReturnCodes
          };
 
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);

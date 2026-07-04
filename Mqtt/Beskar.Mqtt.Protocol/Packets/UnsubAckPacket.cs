@@ -12,13 +12,13 @@ public struct UnsubAckPacket : IRawMqttPacket
 {
    public ushort PacketIdentifier;
 
-   public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
+   public ReadOnlyMemory<byte> ReasonStringUtf8Bytes;
 
-   public ReadOnlySequence<byte> PropertiesBytes;
-   public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);
+   public ReadOnlyMemory<byte> PropertiesBytes;
+   public readonly MqttPropertyEnumerator GetProperties() => new(new ReadOnlySequence<byte>(PropertiesBytes));
 
-   public ReadOnlySequence<byte> ReasonCodesBytes;
-   public readonly UnsubscribeReasonCodeEnumerator GetReasonCodes() => new(ReasonCodesBytes);
+   public ReadOnlyMemory<byte> ReasonCodesBytes;
+   public readonly UnsubscribeReasonCodeEnumerator GetReasonCodes() => new(new ReadOnlySequence<byte>(ReasonCodesBytes));
 
    public override string ToString()
    {
