@@ -1,4 +1,3 @@
-using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Writers;
@@ -12,6 +11,7 @@ using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Interfaces;
+using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -54,7 +54,26 @@ public sealed partial class MqttClient
             subAck = await SendAndAck<SubscribeOptions, SubAckPacket>(options, stream, tokenSource.Token);
          }
 
+         using var filterBuilder = new ArrayBuilder<MqttTopicFilter>(12);
+         var filterEnumerator = options.TopicFilters.GetEnumerator();
 
+         while (filterEnumerator.MoveNext())
+         {
+            filterBuilder.Add(new MqttTopicFilter(filterEnumerator.Current));
+         }
+
+         using var reasonCodeBuilder = new ArrayBuilder<SubscribeReasonCode>(12);
+         var reasonCodeEnumerator = subAck.GetReturnCodes();
+
+         while (reasonCodeEnumerator.MoveNext())
+         {
+            reasonCodeBuilder.Add(reasonCodeEnumerator.Current);
+         }
+
+         if (reasonCodeBuilder.Count != 0 && filterBuilder.Count != reasonCodeBuilder.Count)
+         {
+            return new StringError("The reason codes length is different to topic filters.");
+         }
 
          string? reasonString = null;
          if (subAck.ReasonStringUtf8Bytes.Length > 0)

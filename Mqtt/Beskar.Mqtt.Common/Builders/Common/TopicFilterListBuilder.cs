@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Text;
 using Beskar.Mqtt.Protocol.Enumerators;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Models;
 
 namespace Beskar.Mqtt.Common.Builders.Common;
 
@@ -26,8 +27,12 @@ public sealed class TopicFilterListBuilder(IBufferWriter<byte> writer)
       ? new ReadOnlySequence<byte>(buffer.WrittenMemory)
       : throw new InvalidOperationException("Backing writer is not an ArrayBufferWriter.");
 
-   public FilterEnumerator GetEnumerator() => _writer is ArrayBufferWriter<byte> buffer
-      ? new FilterEnumerator(new ReadOnlySequence<byte>(buffer.WrittenMemory))
+   public ReadOnlySpan<byte> WrittenSpan => _writer is ArrayBufferWriter<byte> buffer
+      ? buffer.WrittenSpan
+      : throw new InvalidOperationException("Backing writer does not support written span.");
+
+   public TopicFilterListEnumerator GetEnumerator() => _writer is ArrayBufferWriter<byte> buffer
+      ? new TopicFilterListEnumerator(buffer.WrittenMemory)
       : throw new InvalidOperationException("Backing writer does not support automatic enumerator.");
 
    public TopicFilterListBuilder Add(
@@ -105,4 +110,40 @@ public sealed class TopicFilterListBuilder(IBufferWriter<byte> writer)
          throw new InvalidOperationException("Backing writer does not support clearing.");
       }
    }
+
+   public ref struct TopicFilterListEnumerator(ReadOnlyMemory<byte> buffer)
+   {
+      private ReadOnlyMemory<byte> _remaining = buffer;
+      private TopicFilter _current = default;
+
+      public readonly TopicFilter Current => _current;
+
+      public bool MoveNext()
+      {
+         if (_remaining.IsEmpty)
+         {
+            return false;
+         }
+
+         var span = _remaining.Span;
+         var topicLength = BinaryPrimitives.ReadUInt16BigEndian(span);
+         var totalLength = sizeof(ushort) + topicLength + 1;
+
+         var topicUtf8Bytes = _remaining.Slice(sizeof(ushort), topicLength);
+         var optionByte = span[sizeof(ushort) + topicLength];
+
+         var qos = (QualityOfServiceType)(optionByte & 0x03);
+         var noLocal = (optionByte & 0x04) != 0;
+         var retainAsPublished = (optionByte & 0x08) != 0;
+         var retainHandling = (RetainHandlingType)((optionByte & 0x30) >> 4);
+
+         _current = new TopicFilter(new ReadOnlySequence<byte>(topicUtf8Bytes), qos, noLocal, retainAsPublished, retainHandling);
+         _remaining = _remaining[totalLength..];
+
+         return true;
+      }
+
+      public readonly TopicFilterListEnumerator GetEnumerator() => this;
+   }
+
 }
