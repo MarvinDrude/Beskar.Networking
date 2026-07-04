@@ -11,6 +11,7 @@ using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Common.Models;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
 
@@ -205,6 +206,12 @@ public sealed partial class MqttClient : IMqttClient
             return new StringError("Received AUTH packet from server, but no authentication method is configured.");
          }
       }
+   }
+
+   internal ValueTask HandleDisconnect(DisconnectPacket packet, CancellationToken ct = default)
+   {
+      _disconnectReason = new MqttClientDisconnectReason(false, (int)packet.ReasonCode);
+      return DisconnectInternalAsync();
    }
 
    private void StartKeepAliveOnDemand(ClientConnectResult connectResult)

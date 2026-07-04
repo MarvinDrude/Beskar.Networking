@@ -31,7 +31,12 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in DisconnectPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      return Awaited(packet);
+
+      async ValueTask Awaited(DisconnectPacket packet)
+      {
+         await _client.HandleDisconnect(packet, ct);
+      }
    }
 
    public ValueTask ExecuteAsync(in PingReqPacket packet, CancellationToken ct = default)
