@@ -1,8 +1,9 @@
 using Beskar.Mqtt.Common.Interfaces.Builders;
+using Beskar.Mqtt.Protocol.Interfaces;
 
 namespace Beskar.Mqtt.Common.Builders.Common;
 
-public abstract class UserPropertiesBaseOptions(int builderCapacity = -1) : IClearableOptions
+public abstract class UserPropertiesBaseOptions(int builderCapacity = -1) : IClearableOptions, IHeapMqttOptions
 {
    /// <summary>
    /// Key-Value pairs by the user.

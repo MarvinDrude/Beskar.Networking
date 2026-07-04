@@ -71,21 +71,23 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in SubAckPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      _client.TryDispatch(in packet, packet.PacketIdentifier);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in SubscribePacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      throw new InvalidOperationException("SUB received by client is not supported.");
    }
 
    public ValueTask ExecuteAsync(in UnsubAckPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      _client.TryDispatch(in packet, packet.PacketIdentifier);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in UnsubscribePacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      throw new InvalidOperationException("UNSUB received by client is not supported.");
    }
 }

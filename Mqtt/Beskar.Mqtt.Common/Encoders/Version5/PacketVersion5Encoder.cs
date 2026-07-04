@@ -1,6 +1,10 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Common.Builders.Publishing;
+using Beskar.Mqtt.Common.Builders.Subscribing;
+using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
 
@@ -78,6 +82,31 @@ public readonly ref partial struct PacketVersion5Encoder(IBufferWriter<byte> wri
       else
       {
          throw new NotSupportedException($"Packet type {typeof(TPacket).Name} is not supported by PacketVersion5Encoder.");
+      }
+   }
+
+   public void Write<TOptions>(TOptions options, ushort packetIdentifier = 0)
+      where TOptions : class, IHeapMqttOptions
+   {
+      if (typeof(TOptions) == typeof(ConnectOptions))
+      {
+         WriteConnect(Unsafe.As<TOptions, ConnectOptions>(ref options));
+      }
+      else if (typeof(TOptions) == typeof(PublishOptions))
+      {
+         WritePublish(Unsafe.As<TOptions, PublishOptions>(ref options), packetIdentifier);
+      }
+      else if (typeof(TOptions) == typeof(SubscribeOptions))
+      {
+         WriteSubscribe(Unsafe.As<TOptions, SubscribeOptions>(ref options), packetIdentifier);
+      }
+      else if (typeof(TOptions) == typeof(UnsubscribeOptions))
+      {
+         WriteUnsubscribe(Unsafe.As<TOptions, UnsubscribeOptions>(ref options), packetIdentifier);
+      }
+      else
+      {
+         throw new NotSupportedException($"Options type {typeof(TOptions).Name} is not supported by PacketVersion5Encoder.");
       }
    }
 }

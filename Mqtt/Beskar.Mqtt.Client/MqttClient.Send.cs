@@ -1,3 +1,4 @@
+using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Builders.Connecting;
@@ -38,19 +39,33 @@ public sealed partial class MqttClient
          return new StringError("Invalid control stream.");
       }
 
-
-
-      if (ct.CanBeCanceled)
+      try
       {
-         await SendAndAck<Subscribe, SubAckPacket>(new PingReqPacket(), stream, ct);
-      }
-      else
-      {
-         using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
-         await SendAndAck<PingReqPacket, SubAckPacket>(new PingReqPacket(), stream, tokenSource.Token);
-      }
+         SubAckPacket subAck;
+         if (ct.CanBeCanceled)
+         {
+            subAck = await SendAndAck<SubscribeOptions, SubAckPacket>(options, stream, ct);
+         }
+         else
+         {
+            using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
+            subAck = await SendAndAck<SubscribeOptions, SubAckPacket>(options, stream, tokenSource.Token);
+         }
 
-      return true;
+         var reasonBytes = new byte[subAck.ReasonStringUtf8Bytes.Length];
+         subAck.ReasonStringUtf8Bytes.CopyTo(reasonBytes);
+         var reasonString = System.Text.Encoding.UTF8.GetString(reasonBytes);
+
+         return new SubscribeResult
+         {
+            PacketIdentifier = subAck.PacketIdentifier,
+            ReasonString = reasonString
+         };
+      }
+      catch (Exception error)
+      {
+         return new StringError(error.ToString());
+      }
    }
 
    public Task<Result<UnsubscribeResult, StringError>> UnsubscribeAsync(
@@ -70,14 +85,21 @@ public sealed partial class MqttClient
          return new StringError("Invalid control stream.");
       }
 
-      if (ct.CanBeCanceled)
+      try
       {
-         await SendAndAck<PingReqPacket, PingRespPacket>(new PingReqPacket(), stream, ct);
+         if (ct.CanBeCanceled)
+         {
+            await SendAndAck<PingReqPacket, PingRespPacket>(new PingReqPacket(), stream, ct);
+         }
+         else
+         {
+            using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
+            await SendAndAck<PingReqPacket, PingRespPacket>(new PingReqPacket(), stream, tokenSource.Token);
+         }
       }
-      else
+      catch (Exception error)
       {
-         using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
-         await SendAndAck<PingReqPacket, PingRespPacket>(new PingReqPacket(), stream, tokenSource.Token);
+         return new StringError(error.ToString());
       }
 
       return true;
@@ -111,6 +133,63 @@ public sealed partial class MqttClient
                case MqttProtocolVersion.V31:
                case MqttProtocolVersion.V311:
                   new PacketVersion3Encoder(writer, _protocolVersion).Write(in packet);
+                  break;
+               default:
+                  throw new InvalidOperationException("Unknown protocol version.");
+            }
+
+            var flushTask = writer.FlushAsync(ct);
+            if (!flushTask.IsCompletedSuccessfully)
+               return CompleteFlushAndAckAsync(flushTask, lockToken, signalAwaiter, ct);
+
+            flushTask.GetAwaiter().GetResult();
+            lockToken.Dispose();
+
+            return signalAwaiter.WaitOneAsync(ct).AsTask();
+         }
+         catch (Exception error)
+         {
+            lockToken.Dispose();
+            signalAwaiter.Fail(error);
+
+            return signalAwaiter.WaitOneAsync(ct).AsTask();
+         }
+      }
+      catch (Exception error)
+      {
+         signalAwaiter.Fail(error);
+         return signalAwaiter.WaitOneAsync(ct).AsTask();
+      }
+   }
+
+   private Task<TResponse> SendAndAck<TOptions, TResponse>(TOptions options, INetworkStream stream, CancellationToken ct = default)
+      where TOptions : class, IHeapMqttOptions
+   {
+      ushort identifier = 0;
+      if (options is not ConnectOptions)
+      {
+         identifier = _identifierGenerator.GenerateNextIdentifier();
+      }
+
+      var signalAwaiter = _signalBroker.AddAwaitable<TResponse>(identifier);
+      try
+      {
+         var lockTask = stream.AcquireWriterLock(ct);
+         if (!lockTask.IsCompletedSuccessfully)
+            return SendAndAckSlowAsync(options, identifier, lockTask, signalAwaiter, stream, ct);
+
+         var lockToken = lockTask.Result;
+         try
+         {
+            var writer = stream.Transport.Output;
+            switch (_protocolVersion)
+            {
+               case MqttProtocolVersion.V50:
+                  new PacketVersion5Encoder(writer).Write(options, identifier);
+                  break;
+               case MqttProtocolVersion.V31:
+               case MqttProtocolVersion.V311:
+                  new PacketVersion3Encoder(writer, _protocolVersion).Write(options, identifier);
                   break;
                default:
                   throw new InvalidOperationException("Unknown protocol version.");
@@ -182,6 +261,44 @@ public sealed partial class MqttClient
                case MqttProtocolVersion.V31:
                case MqttProtocolVersion.V311:
                   new PacketVersion3Encoder(writer, _protocolVersion).Write(packet);
+                  break;
+               default:
+                  throw new InvalidOperationException("Unknown protocol version.");
+            }
+
+            await writer.FlushAsync(ct);
+         }
+      }
+      catch (Exception error)
+      {
+         signalAwaiter.Fail(error);
+      }
+
+      return await signalAwaiter.WaitOneAsync(ct);
+   }
+
+   private async Task<TResponse> SendAndAckSlowAsync<TOptions, TResponse>(
+      TOptions options,
+      ushort identifier,
+      ValueTask<LockReleaser> lockTask,
+      SignalAwaiter<TResponse> signalAwaiter,
+      INetworkStream stream,
+      CancellationToken ct)
+      where TOptions : class, IHeapMqttOptions
+   {
+      try
+      {
+         using (await lockTask)
+         {
+            var writer = stream.Transport.Output;
+            switch (_protocolVersion)
+            {
+               case MqttProtocolVersion.V50:
+                  new PacketVersion5Encoder(writer).Write(options, identifier);
+                  break;
+               case MqttProtocolVersion.V31:
+               case MqttProtocolVersion.V311:
+                  new PacketVersion3Encoder(writer, _protocolVersion).Write(options, identifier);
                   break;
                default:
                   throw new InvalidOperationException("Unknown protocol version.");
