@@ -68,20 +68,18 @@ public sealed partial class MqttClient
          : DisconnectRoutineAsync(beforeConnected);
    }
 
-   private ValueTask DisconnectRoutineAsync(bool beforeConnected)
+   private async ValueTask DisconnectRoutineAsync(bool beforeConnected)
    {
       _clientTokenSource.Cancel();
 
       try
       {
-         if (_networkClient.)
+         await _networkClient.DisconnectAsync();
       }
       catch (Exception)
       {
          // ignored
       }
-
-      return ValueTask.CompletedTask;
    }
 
    private bool DisconnectingAlreadyInProcessOrDone()

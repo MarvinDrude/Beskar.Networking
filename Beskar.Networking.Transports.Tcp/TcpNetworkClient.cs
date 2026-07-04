@@ -9,10 +9,12 @@ using Beskar.Memory.Results;
 namespace Beskar.Networking.Transports.Tcp;
 
 public sealed class TcpNetworkClient(TcpTransportOptions options)
-   : INetworkClient, IDisposable
+   : INetworkClient
 {
    private readonly TcpTransportOptions _options = options;
    private readonly TcpIoQueueRegistry _ioQueueRegistry = new(options);
+
+   private TcpNetworkSession? _activeSession;
 
    public async ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(
       EndPoint endPoint, CancellationToken ct = default)
@@ -69,6 +71,13 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
          var remoteEndPoint = socket.RemoteEndPoint ?? endPoint;
 
          var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
+
+         var oldSession = Interlocked.Exchange(ref _activeSession, session);
+         if (oldSession is not null)
+         {
+            await oldSession.DisposeAsync();
+         }
+
          TraceLogger.LogClientInfo("TCP ConnectAsync: Network session {0} successfully established for {1}", session.Id, remoteEndPoint);
          return session;
       }
@@ -86,8 +95,30 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
       }
    }
 
-   public void Dispose()
+   public async ValueTask DisconnectAsync(CancellationToken ct = default)
    {
+      var session = Interlocked.Exchange(ref _activeSession, null);
+      if (session is not null)
+      {
+         await session.DisposeAsync();
+      }
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      var session = Interlocked.Exchange(ref _activeSession, null);
+      if (session is not null)
+      {
+         try
+         {
+            await session.DisposeAsync();
+         }
+         catch
+         {
+            // Ignored
+         }
+      }
+
       _ioQueueRegistry.Dispose();
    }
 }

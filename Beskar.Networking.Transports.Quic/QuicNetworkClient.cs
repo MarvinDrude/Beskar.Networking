@@ -12,10 +12,12 @@ namespace Beskar.Networking.Transports.Quic;
 /// A high-performance QUIC client implementation built on native System.Net.Quic.
 /// </summary>
 public sealed class QuicNetworkClient(QuicTransportOptions options)
-   : INetworkClient, IAsyncDisposable
+   : INetworkClient
 {
    private readonly QuicTransportOptions _options = options;
    private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);
+
+   private QuicNetworkSession? _activeSession;
 
    /// <inheritdoc />
    public async ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(
@@ -53,6 +55,13 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
 
          var connection = await QuicConnection.ConnectAsync(clientOptions, ct);
          var session = new QuicNetworkSession(connection, _options, _ioQueueRegistry);
+
+         var oldSession = Interlocked.Exchange(ref _activeSession, session);
+         if (oldSession is not null)
+         {
+            await oldSession.DisposeAsync();
+         }
+
          TraceLogger.LogClientInfo("QUIC ConnectAsync: Successfully established QUIC session {0} (Remote: {1}, Local: {2})", session.Id, connection.RemoteEndPoint, connection.LocalEndPoint);
          return session;
       }
@@ -68,8 +77,18 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
       }
    }
 
+   public async ValueTask DisconnectAsync(CancellationToken ct = default)
+   {
+      var session = Interlocked.Exchange(ref _activeSession, null);
+      if (session is not null)
+      {
+         await session.DisposeAsync();
+      }
+   }
+
    public async ValueTask DisposeAsync()
    {
+      await DisconnectAsync();
       await _ioQueueRegistry.DisposeAsync();
    }
 }

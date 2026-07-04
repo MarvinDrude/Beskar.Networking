@@ -322,7 +322,11 @@ public class FakeNetworkClient : INetworkClient
    private int _connectCount;
    public int ConnectCount => Volatile.Read(ref _connectCount);
 
+   private int _disconnectCount;
+   public int DisconnectCount => Volatile.Read(ref _disconnectCount);
+
    public Func<EndPoint, CancellationToken, ValueTask<Result<INetworkSession, NetworkCodeError>>>? OnConnectAsync { get; set; }
+   public Func<CancellationToken, ValueTask>? OnDisconnectAsync { get; set; }
 
    public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint, CancellationToken ct = default)
    {
@@ -333,5 +337,20 @@ public class FakeNetworkClient : INetworkClient
       }
       return ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(
          new NetworkCodeError(-1, "Not configured")));
+   }
+
+   public ValueTask DisconnectAsync(CancellationToken ct = default)
+   {
+      Interlocked.Increment(ref _disconnectCount);
+      if (OnDisconnectAsync is not null)
+      {
+         return OnDisconnectAsync(ct);
+      }
+      return ValueTask.CompletedTask;
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      await DisconnectAsync();
    }
 }

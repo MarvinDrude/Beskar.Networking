@@ -148,4 +148,32 @@ public class TcpTransportTests
       await ((IAsyncDisposable)serverSession).DisposeAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task TcpClient_DisconnectAsync_ClosesSessionAndCancelsSessionClosedToken()
+   {
+      var port = GetFreePort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var options = new TcpTransportOptions();
+      var listener = new TcpNetworkListener(endPoint, options);
+
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new TcpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(endPoint);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var sessionClosedToken = clientSession.SessionClosedToken;
+
+      await Assert.That(sessionClosedToken.IsCancellationRequested).IsFalse();
+
+      await client.DisconnectAsync(sessionClosedToken);
+
+      await Assert.That(sessionClosedToken.IsCancellationRequested).IsTrue();
+
+      await listener.UnbindAsync(sessionClosedToken);
+   }
 }

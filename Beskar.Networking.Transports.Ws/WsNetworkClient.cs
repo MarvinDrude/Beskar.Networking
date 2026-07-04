@@ -1,4 +1,5 @@
 using System.Net;
+using System.Threading;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Tcp;
@@ -10,10 +11,12 @@ namespace Beskar.Networking.Transports.Ws;
 /// <summary>
 /// A high-performance WebSocket client.
 /// </summary>
-public sealed class WsNetworkClient : INetworkClient, IDisposable
+public sealed class WsNetworkClient : INetworkClient
 {
    private readonly WsTransportOptions _options;
    private readonly TcpNetworkClient _tcpClient;
+
+   private WsNetworkSession? _activeSession;
 
    public WsNetworkClient(WsTransportOptions options)
    {
@@ -58,6 +61,12 @@ public sealed class WsNetworkClient : INetworkClient, IDisposable
          wsPipe = new WsDuplexPipe(tcpPipe, maskOutgoing: true);
          var wsSession = new WsNetworkSession(tcpSession, wsPipe);
 
+         var oldSession = Interlocked.Exchange(ref _activeSession, wsSession);
+         if (oldSession is not null)
+         {
+            await oldSession.DisposeAsync();
+         }
+
          TraceLogger.LogClientInfo("WS ConnectAsync: WebSocket session {0} successfully established for {1}", wsSession.Id, endPoint);
          return wsSession;
       }
@@ -73,8 +82,32 @@ public sealed class WsNetworkClient : INetworkClient, IDisposable
       }
    }
 
-   public void Dispose()
+   public async ValueTask DisconnectAsync(CancellationToken ct = default)
    {
-      _tcpClient.Dispose();
+      var session = Interlocked.Exchange(ref _activeSession, null);
+      if (session is not null)
+      {
+         await session.DisposeAsync();
+      }
+
+      await _tcpClient.DisconnectAsync(ct);
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      var session = Interlocked.Exchange(ref _activeSession, null);
+      if (session is not null)
+      {
+         try
+         {
+            await session.DisposeAsync();
+         }
+         catch
+         {
+            // Ignored
+         }
+      }
+
+      await _tcpClient.DisposeAsync();
    }
 }

@@ -151,56 +151,65 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
       return result.Error;
    }
 
-   /// <summary>
-   /// Disconnects the client, cancels any active reconnection attempt, and disposes the current session.
-   /// </summary>
-   public async ValueTask DisconnectAsync()
-   {
-      var currentState = Volatile.Read(ref _stateInt);
-      while (currentState != StateDisconnected)
-      {
-         var oldState = Interlocked.CompareExchange(ref _stateInt, StateDisconnected, currentState);
-         if (oldState == currentState)
-         {
-            StateChanged?.Invoke((ConnectionState)currentState, ConnectionState.Disconnected);
-            break;
-         }
-
-         currentState = oldState;
-      }
-
-      var cts = Interlocked.Exchange(ref _clientLifetimeCts, null);
-      if (cts is not null)
-      {
-         await cts.CancelAsync();
-         cts.Dispose();
-      }
-
-      var session = Interlocked.Exchange(ref _currentSession, null);
-      if (session is not null)
-      {
-         await DisposeSession(session);
-      }
-
-      await _sessionClosedRegistration.DisposeAsync();
-
-      var task = Interlocked.Exchange(ref _reconnectTask, null);
-      if (task is not null)
-      {
-         try
-         {
-            await task;
-         }
-         catch
-         {
-            // Ignore background reconnection task cancellation exceptions
-         }
-      }
-
-      TraceLogger.LogClientInfo("ManagedClient DisconnectAsync: Client disconnected.");
-      // ReSharper disable once MethodSupportsCancellation
-      await Disconnected.ExecuteAsync(new DisconnectEvent(this));
-   }
+    /// <summary>
+    /// Disconnects the client, cancels any active reconnection attempt, and disposes the current session.
+    /// </summary>
+    public async ValueTask DisconnectAsync(CancellationToken ct = default)
+    {
+       var currentState = Volatile.Read(ref _stateInt);
+       while (currentState != StateDisconnected)
+       {
+          var oldState = Interlocked.CompareExchange(ref _stateInt, StateDisconnected, currentState);
+          if (oldState == currentState)
+          {
+             StateChanged?.Invoke((ConnectionState)currentState, ConnectionState.Disconnected);
+             break;
+          }
+ 
+          currentState = oldState;
+       }
+ 
+       var cts = Interlocked.Exchange(ref _clientLifetimeCts, null);
+       if (cts is not null)
+       {
+          await cts.CancelAsync();
+          cts.Dispose();
+       }
+ 
+       var session = Interlocked.Exchange(ref _currentSession, null);
+       if (session is not null)
+       {
+          await DisposeSession(session);
+       }
+ 
+       try
+       {
+          await _innerClient.DisconnectAsync(ct);
+       }
+       catch (Exception ex)
+       {
+          TraceLogger.LogClientError("ManagedClient: Error disconnecting inner client: {0}", ex.Message);
+       }
+ 
+       await _sessionClosedRegistration.DisposeAsync();
+ 
+       var task = Interlocked.Exchange(ref _reconnectTask, null);
+       if (task is not null)
+       {
+          try
+          {
+             await task;
+          }
+          catch
+          {
+             // Ignore background reconnection task cancellation exceptions
+          }
+       }
+ 
+       TraceLogger.LogClientInfo("ManagedClient DisconnectAsync: Client disconnected.");
+       // ReSharper disable once MethodSupportsCancellation
+       await Disconnected.ExecuteAsync(new DisconnectEvent(this));
+    }
 
    /// <summary>
    /// Opens a new stream on the active network session.
