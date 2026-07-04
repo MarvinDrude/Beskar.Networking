@@ -1,6 +1,7 @@
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
@@ -27,6 +28,13 @@ public interface IMqttClient : IAsyncDisposable
    /// </summary>
    public Task<Result<ClientConnectResult, StringError>> ConnectAsync(
       ConnectOptions options, CancellationToken ct = default);
+
+   /// <summary>
+   /// Tries to disconnect from the MQTT server if not already in process
+   /// or
+   /// </summary>
+   public Task DisconnectAsync(
+      DisconnectOptions options, CancellationToken ct = default);
 
    /// <summary>
    /// Send a new PUBLISH Packet given the input options.

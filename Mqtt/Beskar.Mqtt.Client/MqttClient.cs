@@ -29,9 +29,11 @@ public sealed partial class MqttClient : IMqttClient
    private readonly PacketIdentifierGenerator _identifierGenerator = new();
 
    private volatile bool _disposed;
-   private volatile bool _gracefulDisconnect;
    private volatile bool _firstConnect = true;
    private volatile int _state = (int)MqttClientConnectionState.Disconnected;
+
+   private volatile bool _gracefulDisconnect;
+   private MqttClientDisconnectReason? _disconnectReason;
 
    private MqttProtocolVersion _protocolVersion = MqttProtocolVersion.Unknown;
 
