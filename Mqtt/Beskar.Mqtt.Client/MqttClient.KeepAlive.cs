@@ -1,7 +1,15 @@
+using System.Runtime.CompilerServices;
+
 namespace Beskar.Mqtt.Client;
 
 public sealed partial class MqttClient
 {
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
+   private void ResetKeepAliveTimestamp()
+   {
+      _lastKeepAliveTimestamp = DateTimeOffset.UtcNow;
+   }
+
    private async Task RunKeepAliveTask(TimeSpan keepAliveInterval, CancellationToken ct)
    {
       try
@@ -20,7 +28,11 @@ public sealed partial class MqttClient
             using var combined = CancellationTokenSource.CreateLinkedTokenSource(ct);
             combined.CancelAfter(keepAliveInterval / 2);
 
-            _ = await PingAsync(combined.Token);
+            var pingResult = await PingAsync(combined.Token);
+            if (pingResult.Failed)
+            {
+               throw new Exception($"Keep-alive ping failed: {pingResult.Error.Detail}");
+            }
          }
       }
       catch (OperationCanceledException)

@@ -249,6 +249,7 @@ public sealed partial class MqttClient
 
             // consume flush task
             _ = flushTask.Result.IsCompleted;
+            ResetKeepAliveTimestamp();
 
             lockToken.Dispose();
             return signalAwaiter.WaitOneAsync(ct).AsTask();
@@ -307,6 +308,7 @@ public sealed partial class MqttClient
 
             // consume flush task
             _ = flushTask.Result.IsCompleted;
+            ResetKeepAliveTimestamp();
 
             lockToken.Dispose();
             return signalAwaiter.WaitOneAsync(ct).AsTask();
@@ -326,7 +328,7 @@ public sealed partial class MqttClient
       }
    }
 
-   private static async Task<TResponse> CompleteFlushAndAckAsync<TResponse>(
+   private async Task<TResponse> CompleteFlushAndAckAsync<TResponse>(
       ValueTask<System.IO.Pipelines.FlushResult> flushTask,
       LockReleaser lockToken,
       SignalAwaiter<TResponse> signalAwaiter,
@@ -337,6 +339,7 @@ public sealed partial class MqttClient
          using (lockToken)
          {
             await flushTask;
+            ResetKeepAliveTimestamp();
          }
       }
       catch (Exception error)
@@ -374,6 +377,7 @@ public sealed partial class MqttClient
             }
 
             await writer.FlushAsync(ct);
+            ResetKeepAliveTimestamp();
          }
       }
       catch (Exception error)
@@ -412,6 +416,7 @@ public sealed partial class MqttClient
             }
 
             await writer.FlushAsync(ct);
+            ResetKeepAliveTimestamp();
          }
       }
       catch (Exception error)
@@ -453,6 +458,7 @@ public sealed partial class MqttClient
 
             // consume flush task
             _ = flushTask.Result.IsCompleted;
+            ResetKeepAliveTimestamp();
 
             lockToken.Dispose();
             return Task.CompletedTask;
@@ -501,6 +507,7 @@ public sealed partial class MqttClient
             
             // consume flush task
             _ = flushTask.Result.IsCompleted;
+            ResetKeepAliveTimestamp();
 
             lockToken.Dispose();
             return Task.CompletedTask;
@@ -517,13 +524,14 @@ public sealed partial class MqttClient
       }
    }
 
-   private static async Task CompleteFlushAsync(
+   private async Task CompleteFlushAsync(
       ValueTask<System.IO.Pipelines.FlushResult> flushTask,
       LockReleaser lockToken)
    {
       using (lockToken)
       {
          await flushTask;
+         ResetKeepAliveTimestamp();
       }
    }
 
@@ -551,6 +559,7 @@ public sealed partial class MqttClient
          }
 
          await writer.FlushAsync(ct);
+         ResetKeepAliveTimestamp();
       }
    }
 
@@ -579,6 +588,7 @@ public sealed partial class MqttClient
          }
 
          await writer.FlushAsync(ct);
+         ResetKeepAliveTimestamp();
       }
    }
 
