@@ -39,24 +39,7 @@ public sealed partial class MqttClient
    {
       try
       {
-         using (await stream.AcquireWriterLock(ct))
-         {
-            var writer = stream.Transport.Output;
-            switch (_protocolVersion)
-            {
-               case MqttProtocolVersion.V50:
-                  new PacketVersion5Encoder(writer).WritePublish(options);
-                  break;
-               case MqttProtocolVersion.V31:
-               case MqttProtocolVersion.V311:
-                  new PacketVersion3Encoder(writer, _protocolVersion).WritePublish(options);
-                  break;
-               default:
-                  throw new InvalidOperationException("Unkown protocol version.");
-            }
-
-            await writer.FlushAsync(ct);
-         }
+         await Send(options, stream, 0, ct);
 
          return new PublishResult()
          {

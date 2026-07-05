@@ -5,6 +5,7 @@ using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
+using Beskar.Mqtt.Common.Handlers.Contexts;
 using Beskar.Mqtt.Protocol.Results;
 
 namespace Beskar.Mqtt.Common.Interfaces;
@@ -58,4 +59,12 @@ public interface IMqttClient : IAsyncDisposable
    /// Send a new PING packet.
    /// </summary>
    public Task<VoidResult<StringError>> PingAsync(CancellationToken ct = default);
+
+   /// <summary>
+   /// Adds a message receive handler that is called for all incoming published messages
+   /// that match the ones that you subscribed to.
+   /// </summary>
+   /// <returns>Returns a disposable that when disposed, removes the message receive handler.</returns>
+   public IDisposable AddMessageReceiveHandler(
+      Func<MessageReceiveContext, CancellationToken, ValueTask> messageReceiveHandler);
 }

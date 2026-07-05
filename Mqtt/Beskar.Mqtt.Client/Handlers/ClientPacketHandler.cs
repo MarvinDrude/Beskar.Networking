@@ -1,4 +1,7 @@
+using Beskar.Memory.Threading;
 using Beskar.Mqtt.Common.Handlers;
+using Beskar.Mqtt.Common.Handlers.Contexts;
+using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 
@@ -41,8 +44,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in PingReqPacket packet, CancellationToken ct = default)
    {
-      _client.TryDispatch(in packet, 0);
-      return ValueTask.CompletedTask;
+      throw new InvalidOperationException("PING_REQ received by client is not supported. (other way around)");
    }
 
    public ValueTask ExecuteAsync(in PingRespPacket packet, CancellationToken ct = default)
@@ -65,7 +67,20 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in PublishPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      var converted = new MqttPublishMessage(packet);
+      var context = new MessageReceiveContext()
+      {
+         Message = converted
+      };
+
+      // probably best here to defer actual handlers to run on new task?
+      _ = Task.Run(async () =>
+      {
+         await _client.Events.OnMessageReceive.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+
+
+      }, ct);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PubRecPacket packet, CancellationToken ct = default)

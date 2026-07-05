@@ -246,9 +246,7 @@ public sealed partial class MqttClient
             if (!flushTask.IsCompletedSuccessfully)
                return CompleteFlushAndAckAsync(flushTask, lockToken, signalAwaiter, ct);
 
-            flushTask.GetAwaiter().GetResult();
             lockToken.Dispose();
-
             return signalAwaiter.WaitOneAsync(ct).AsTask();
          }
          catch (Exception error)
@@ -303,9 +301,7 @@ public sealed partial class MqttClient
             if (!flushTask.IsCompletedSuccessfully)
                return CompleteFlushAndAckAsync(flushTask, lockToken, signalAwaiter, ct);
 
-            flushTask.GetAwaiter().GetResult();
             lockToken.Dispose();
-
             return signalAwaiter.WaitOneAsync(ct).AsTask();
          }
          catch (Exception error)
@@ -418,26 +414,163 @@ public sealed partial class MqttClient
 
       return await signalAwaiter.WaitOneAsync(ct);
    }
-
-   private async Task SendConnect(INetworkStream stream, ConnectOptions options, CancellationToken ct = default)
+   private Task Send<TPacket>(in TPacket packet, INetworkStream stream, CancellationToken ct = default)
+      where TPacket : IRawMqttPacket
    {
-      using (await stream.AcquireWriterLock(ct))
+      try
+      {
+         var lockTask = stream.AcquireWriterLock(ct);
+         if (!lockTask.IsCompletedSuccessfully)
+            return SendSlowAsync(packet, lockTask, stream, ct);
+
+         var lockToken = lockTask.Result;
+         try
+         {
+            var writer = stream.Transport.Output;
+            switch (_protocolVersion)
+            {
+               case MqttProtocolVersion.V50:
+                  new PacketVersion5Encoder(writer).Write(in packet);
+                  break;
+               case MqttProtocolVersion.V31:
+               case MqttProtocolVersion.V311:
+                  new PacketVersion3Encoder(writer, _protocolVersion).Write(in packet);
+                  break;
+               default:
+                  throw new InvalidOperationException("Unknown protocol version.");
+            }
+
+            var flushTask = writer.FlushAsync(ct);
+            if (!flushTask.IsCompletedSuccessfully)
+               return CompleteFlushAsync(flushTask, lockToken);
+
+            lockToken.Dispose();
+            return Task.CompletedTask;
+         }
+         catch (Exception error)
+         {
+            lockToken.Dispose();
+            return Task.FromException(error);
+         }
+      }
+      catch (Exception error)
+      {
+         return Task.FromException(error);
+      }
+   }
+
+   private Task Send<TOptions>(TOptions options, INetworkStream stream, ushort identifier = 0, CancellationToken ct = default)
+      where TOptions : class, IHeapMqttOptions
+   {
+      try
+      {
+         var lockTask = stream.AcquireWriterLock(ct);
+         if (!lockTask.IsCompletedSuccessfully)
+            return SendSlowAsync(options, identifier, lockTask, stream, ct);
+
+         var lockToken = lockTask.Result;
+         try
+         {
+            var writer = stream.Transport.Output;
+            switch (_protocolVersion)
+            {
+               case MqttProtocolVersion.V50:
+                  new PacketVersion5Encoder(writer).Write(options, identifier);
+                  break;
+               case MqttProtocolVersion.V31:
+               case MqttProtocolVersion.V311:
+                  new PacketVersion3Encoder(writer, _protocolVersion).Write(options, identifier);
+                  break;
+               default:
+                  throw new InvalidOperationException("Unknown protocol version.");
+            }
+
+            var flushTask = writer.FlushAsync(ct);
+            if (!flushTask.IsCompletedSuccessfully)
+               return CompleteFlushAsync(flushTask, lockToken);
+
+            lockToken.Dispose();
+            return Task.CompletedTask;
+         }
+         catch (Exception error)
+         {
+            lockToken.Dispose();
+            return Task.FromException(error);
+         }
+      }
+      catch (Exception error)
+      {
+         return Task.FromException(error);
+      }
+   }
+
+   private static async Task CompleteFlushAsync(
+      ValueTask<System.IO.Pipelines.FlushResult> flushTask,
+      LockReleaser lockToken)
+   {
+      using (lockToken)
+      {
+         await flushTask;
+      }
+   }
+
+   private async Task SendSlowAsync<TPacket>(
+      TPacket packet,
+      ValueTask<LockReleaser> lockTask,
+      INetworkStream stream,
+      CancellationToken ct)
+      where TPacket : IRawMqttPacket
+   {
+      using (await lockTask)
       {
          var writer = stream.Transport.Output;
          switch (_protocolVersion)
          {
             case MqttProtocolVersion.V50:
-               new PacketVersion5Encoder(writer).WriteConnect(options);
+               new PacketVersion5Encoder(writer).Write(packet);
                break;
             case MqttProtocolVersion.V31:
             case MqttProtocolVersion.V311:
-               new PacketVersion3Encoder(writer, _protocolVersion).WriteConnect(options);
+               new PacketVersion3Encoder(writer, _protocolVersion).Write(packet);
                break;
             default:
-               throw new InvalidOperationException("Unkown protocol version.");
+               throw new InvalidOperationException("Unknown protocol version.");
          }
 
          await writer.FlushAsync(ct);
       }
+   }
+
+   private async Task SendSlowAsync<TOptions>(
+      TOptions options,
+      ushort identifier,
+      ValueTask<LockReleaser> lockTask,
+      INetworkStream stream,
+      CancellationToken ct)
+      where TOptions : class, IHeapMqttOptions
+   {
+      using (await lockTask)
+      {
+         var writer = stream.Transport.Output;
+         switch (_protocolVersion)
+         {
+            case MqttProtocolVersion.V50:
+               new PacketVersion5Encoder(writer).Write(options, identifier);
+               break;
+            case MqttProtocolVersion.V31:
+            case MqttProtocolVersion.V311:
+               new PacketVersion3Encoder(writer, _protocolVersion).Write(options, identifier);
+               break;
+            default:
+               throw new InvalidOperationException("Unknown protocol version.");
+         }
+
+         await writer.FlushAsync(ct);
+      }
+   }
+
+   private Task SendConnect(INetworkStream stream, ConnectOptions options, CancellationToken ct = default)
+   {
+      return Send(options, stream, 0, ct);
    }
 }

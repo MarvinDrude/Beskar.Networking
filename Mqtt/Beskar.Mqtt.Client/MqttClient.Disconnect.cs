@@ -34,24 +34,7 @@ public sealed partial class MqttClient
          _gracefulDisconnect = true;
          _disconnectReason = new MqttClientDisconnectReason(true, (int)options.ReasonCode);
 
-         using (await stream.AcquireWriterLock(ct))
-         {
-            var writer = stream.Transport.Output;
-            switch (_protocolVersion)
-            {
-               case MqttProtocolVersion.V50:
-                  new PacketVersion5Encoder(writer).WriteDisconnect(options);
-                  break;
-               case MqttProtocolVersion.V31:
-               case MqttProtocolVersion.V311:
-                  new PacketVersion3Encoder(writer, _protocolVersion).WriteDisconnect(options);
-                  break;
-               default:
-                  throw new InvalidOperationException("Unkown protocol version.");
-            }
-
-            await writer.FlushAsync(ct);
-         }
+         await Send(options, stream, 0, ct);
       }
       finally
       {

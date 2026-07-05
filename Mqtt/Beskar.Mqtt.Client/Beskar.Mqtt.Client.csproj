@@ -10,8 +10,4 @@
      <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
    </ItemGroup>
 
-   <ItemGroup>
-     <Folder Include="Contexts\" />
-   </ItemGroup>
-
 </Project>

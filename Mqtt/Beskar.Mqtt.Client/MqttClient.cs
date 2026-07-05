@@ -8,6 +8,8 @@ using Beskar.Mqtt.Client.States;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Common.Handlers;
+using Beskar.Mqtt.Common.Handlers.Client;
+using Beskar.Mqtt.Common.Handlers.Contexts;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Common.Models;
 using Beskar.Mqtt.Protocol.Enums;
@@ -20,6 +22,7 @@ namespace Beskar.Mqtt.Client;
 public sealed partial class MqttClient : IMqttClient
 {
    public bool IsConnected => (MqttClientConnectionState)_state is MqttClientConnectionState.Connected;
+   public ClientEvents Events { get; } = new();
 
    private readonly INetworkClient _networkClient;
    private INetworkSession? _networkSession;
@@ -52,6 +55,12 @@ public sealed partial class MqttClient : IMqttClient
       _packetHandler = new ClientPacketHandler(this);
 
       _gracefulDisconnect = false;
+   }
+
+   public IDisposable AddMessageReceiveHandler(
+      Func<MessageReceiveContext, CancellationToken, ValueTask> messageReceiveHandler)
+   {
+      return Events.OnMessageReceive.Add(messageReceiveHandler);
    }
 
    public async Task<Result<ClientConnectResult, StringError>> ConnectAsync(
