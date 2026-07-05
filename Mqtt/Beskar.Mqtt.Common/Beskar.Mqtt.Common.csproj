@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
    </PropertyGroup>
@@ -10,6 +10,11 @@
 
    <ItemGroup>
      <PackageReference Include="Beskar.Memory" />
+   </ItemGroup>
+
+   <ItemGroup>
+     <InternalsVisibleTo Include="Beskar.Mqtt.Client" />
+     <InternalsVisibleTo Include="Beskar.Mqtt.Common.Tests" />
    </ItemGroup>
 
    <ItemGroup>

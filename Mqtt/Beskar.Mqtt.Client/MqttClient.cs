@@ -166,6 +166,9 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          using var connAckAwaiter = _signalBroker.AddAwaitable<ClientConnectResult>(0);
          using var authAwaiter = _signalBroker.AddAwaitable<AuthPacketResult>(0);
 
+         var connAckTask = connAckAwaiter.WaitOneAsync(combined.Token).AsTask();
+         var authTask = authAwaiter.WaitOneAsync(combined.Token).AsTask();
+
          if (first)
          {
             await SendConnect(_controlStream, _connectOptions, combined.Token);
@@ -180,6 +183,10 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                {
                   AuthPacket = authResult,
                   PacketSender = this,
+                  Broker = _signalBroker,
+                  ConnAckTask = connAckTask,
+                  ReceiveTask = _receiveTask,
+                  AuthTask = authTask,
                }, combined.Token);
             }
             else
@@ -187,9 +194,6 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                return new StringError("Received AUTH packet from server, but no handler is configured.");
             }
          }
-
-         var connAckTask = connAckAwaiter.WaitOneAsync(combined.Token).AsTask();
-         var authTask = authAwaiter.WaitOneAsync(combined.Token).AsTask();
 
          var completedTask = await Task.WhenAny(connAckTask, authTask, _receiveTask);
 

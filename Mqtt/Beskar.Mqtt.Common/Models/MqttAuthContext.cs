@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Text;
 using Beskar.Mqtt.Common.Builders.Common;
+using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
@@ -25,7 +26,10 @@ public sealed class MqttAuthContext
    /// </summary>
    public required IMqttPacketSender PacketSender { get; init; }
 
-
+   internal SignalBroker? Broker { get; init; }
+   internal Task<ClientConnectResult>? ConnAckTask { get; init; }
+   internal Task? ReceiveTask { get; init; }
+   internal Task<AuthPacketResult>? AuthTask { get; init; }
 
    /// <summary>
    /// Send this as response to the auth request from the server.
@@ -43,5 +47,39 @@ public sealed class MqttAuthContext
       };
 
       return PacketSender.SendAsync(authPacket, ct);
+   }
+
+   /// <summary>
+   /// Awaits the next authentication packet from the server.
+   /// </summary>
+   /// <param name="ct">The cancellation token.</param>
+   /// <returns>The next AuthPacketResult, or null if connection completed (CONNACK received) or failed.</returns>
+   public async Task<AuthPacketResult?> AwaitNextAuthPacketAsync(CancellationToken ct = default)
+   {
+      if (Broker is null || ConnAckTask is null || ReceiveTask is null || AuthTask is null)
+      {
+         throw new InvalidOperationException("Awaiting auth packets is not supported in this context.");
+      }
+
+      if (AuthTask.IsCompleted)
+      {
+         return await AuthTask;
+      }
+
+      using var authAwaiter = Broker.AddAwaitable<AuthPacketResult>(0);
+      var authTask = authAwaiter.WaitOneAsync(ct).AsTask();
+
+      if (AuthTask.IsCompleted)
+      {
+         return await AuthTask;
+      }
+
+      var completed = await Task.WhenAny(authTask, ConnAckTask, ReceiveTask);
+      if (completed == authTask)
+      {
+         return await authTask;
+      }
+
+      return null;
    }
 }
