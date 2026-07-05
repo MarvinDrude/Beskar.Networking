@@ -1,6 +1,7 @@
 using Beskar.Memory.Threading;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Handlers.Contexts;
+using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
@@ -95,7 +96,18 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
    public ValueTask ExecuteAsync(in PubRelPacket packet, CancellationToken ct = default)
    {
       _client.TryDispatch(in packet, packet.PacketIdentifier);
-      return ValueTask.CompletedTask;
+
+      return Awaited(packet);
+
+      async ValueTask Awaited(PubRelPacket packet)
+      {
+         var pubComp = new PubCompPacket
+         {
+            PacketIdentifier = packet.PacketIdentifier,
+            ReasonCode = PubCompReasonCode.Success
+         };
+         await _client.SendAsync(pubComp, ct);
+      }
    }
 
    public ValueTask ExecuteAsync(in SubAckPacket packet, CancellationToken ct = default)

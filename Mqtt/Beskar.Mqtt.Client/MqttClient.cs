@@ -15,6 +15,7 @@ using Beskar.Mqtt.Common.Models;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
+using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Client;
@@ -140,7 +141,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       _networkSession = connectRes.Success;
 
       // even under QUIC, first and foremost we have one main control stream
-      var streamRes = await _networkSession.AcceptStreamAsync(combined.Token);
+      var streamRes = await _networkSession.OpenStreamAsync(NetworkStreamDirection.Bidirectional, combined.Token);
       if (streamRes.Failed)
       {
          return new StringError(streamRes.Error.Message);
