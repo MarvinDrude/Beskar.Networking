@@ -2,6 +2,7 @@ using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Networking.Transports.Quic;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Ws;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client;
 
@@ -17,6 +18,8 @@ public static class MqttClientFactory
    /// <returns>A new <see cref="IMqttClient"/> instance configured with a TCP client transport.</returns>
    public static IMqttClient CreateTcp(TcpTransportOptions? options = null)
    {
+      TraceLogger.LogClientInfo("MqttClientFactory: Creating TCP MQTT client.");
+
       var underlying = new TcpNetworkClient(options ?? new TcpTransportOptions());
       return new MqttClient(underlying);
    }
@@ -28,6 +31,8 @@ public static class MqttClientFactory
    /// <returns>A new <see cref="IMqttClient"/> instance configured with a WebSocket client transport.</returns>
    public static IMqttClient CreateWs(WsTransportOptions? options = null)
    {
+      TraceLogger.LogClientInfo("MqttClientFactory: Creating WebSocket MQTT client.");
+
       var underlying = new WsNetworkClient(options ?? new WsTransportOptions());
       return new MqttClient(underlying);
    }
@@ -39,6 +44,8 @@ public static class MqttClientFactory
    /// <returns>A new <see cref="IMqttClient"/> instance configured with a QUIC client transport.</returns>
    public static IMqttClient CreateQuic(QuicTransportOptions? options = null)
    {
+      TraceLogger.LogClientInfo("MqttClientFactory: Creating QUIC MQTT client.");
+
       var underlying = new QuicNetworkClient(options ?? new QuicTransportOptions());
       return new MqttClient(underlying);
    }

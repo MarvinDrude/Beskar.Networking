@@ -17,6 +17,7 @@ using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client;
 
@@ -76,6 +77,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          return new StringError("ConnectAsync called while not being in disconnected state.");
       }
 
+      TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Connecting to {0} (ProtocolVersion: {1})", options.EndPoint, options.ProtocolVersion);
+
       try
       {
          _protocolVersion = options.ProtocolVersion;
@@ -106,6 +109,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
          if (result.Failed)
          {
+            TraceLogger.LogClientError("MqttClient.ConnectAsync: Connection attempt failed: {0}", result.Error.Detail);
             await DisconnectInternalAsync();
             return result;
          }
@@ -113,11 +117,13 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          var connectResult = result.Success;
          StartKeepAliveOnDemand(connectResult);
 
+         TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Successfully connected. Assigned KeepAlive: {0}s", connectResult.ServerKeepAlive > 0 ? connectResult.ServerKeepAlive : _connectOptions.KeepAlivePeriod);
          CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting);
          return result;
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.ConnectAsync: Unexpected error during connection: {0}", error.Message);
          _disconnectReason = new MqttClientDisconnectReason(false, (int)DisconnectReasonCode.UnspecifiedError);
          await DisconnectInternalAsync();
 
@@ -142,6 +148,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
 
       _networkSession = connectRes.Success;
+      TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Network client connected successfully.");
 
       // even under QUIC, first and foremost we have one main control stream
       var streamRes = await _networkSession.OpenStreamAsync(NetworkStreamDirection.Bidirectional, combined.Token);
@@ -151,6 +158,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
 
       _controlStream = streamRes.Success;
+      TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Opened bidirectional control stream (StreamId: {0}).", _controlStream.StreamId);
       _receiveTask = RunMessageReceive(_controlStream, _clientTokenSource.Token);
 
       if (_connectOptions.CredentialsProvider is { } credProvider)
@@ -175,6 +183,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
          if (first)
          {
+            TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Sending CONNECT packet (ClientId: {0})...", Encoding.UTF8.GetString(_connectOptions.ClientIdUtf8Bytes.Span));
             await SendConnect(_controlStream, _connectOptions, combined.Token);
             first = false;
          }
@@ -183,6 +192,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             if (_connectOptions.AuthenticationHandler is { } handler
                 && authResult is not null)
             {
+               TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Executing authentication handler for incoming AUTH packet...");
                await handler.ExecuteAsync(new MqttAuthContext()
                {
                   AuthPacket = authResult,
@@ -199,10 +209,12 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             }
          }
 
+         TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Awaiting handshakes (CONNACK or AUTH)...");
          var completedTask = await Task.WhenAny(connAckTask, authTask, _receiveTask);
 
          if (completedTask == _receiveTask)
          {
+            TraceLogger.LogClientError("MqttClient.ConnectInternalAsync: Receiver task exited unexpectedly during handshake.");
             await _receiveTask;
             return new StringError("Connection closed unexpectedly during handshake.");
          }
@@ -210,6 +222,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          if (completedTask == connAckTask)
          {
             var connAckResult = await connAckTask;
+            TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received CONNACK (Reason: {0}).", connAckResult.ReasonCode);
             if (connAckResult.ReasonCode != ConnectReasonCode.Success)
             {
                return new StringError($"Connection refused: {connAckResult.ReasonCode}");
@@ -219,6 +232,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          }
 
          authResult = await authTask;
+         TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received AUTH packet.");
          if (_connectOptions.AuthenticationMethodUtf8Bytes.IsEmpty)
          {
             return new StringError("Received AUTH packet from server, but no authentication method is configured.");
@@ -228,6 +242,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    internal ValueTask HandleDisconnect(DisconnectPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientWarning("MqttClient: Received DISCONNECT from server (ReasonCode: {0}).", packet.ReasonCode);
       _disconnectReason = new MqttClientDisconnectReason(false, (int)packet.ReasonCode);
       return DisconnectInternalAsync();
    }

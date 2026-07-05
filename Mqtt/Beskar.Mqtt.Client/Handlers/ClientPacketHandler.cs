@@ -2,9 +2,11 @@ using Beskar.Memory.Threading;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Handlers.Contexts;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client.Handlers;
 
@@ -14,6 +16,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in AuthPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received AUTH packet from server.");
       var result = AuthPacketResult.Create(in packet);
       _client.TryDispatch(in result, 0);
 
@@ -22,6 +25,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in ConnAckPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received CONNACK packet from server (ReasonCode: {0}).", packet.ReasonCode);
       var result = ClientConnectResult.Create(in packet);
       _client.TryDispatch(in result, 0);
 
@@ -35,6 +39,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in DisconnectPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientWarning("ClientPacketHandler: Received DISCONNECT packet from server (ReasonCode: {0}).", packet.ReasonCode);
       return Awaited(packet);
 
       async ValueTask Awaited(DisconnectPacket packet)
@@ -50,24 +55,29 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in PingRespPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received PINGRESP packet.");
       _client.TryDispatch(in packet, 0);
       return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PubAckPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBACK packet (PacketId: {0}, ReasonCode: {1}).", packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PubCompPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBCOMP packet (PacketId: {0}, ReasonCode: {1}).", packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PublishPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBLISH packet (PacketId: {0}, Topic: '{1}', QoS: {2}). Dispatching to receive handlers...", packet.PacketIdentifier, packet.TopicUtf8Bytes.GetUtf8String(), packet.QualityOfService);
+
       var converted = new MqttPublishMessage(packet);
       var context = new MessageReceiveContext()
       {
@@ -89,12 +99,14 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in PubRecPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBREC packet (PacketId: {0}, ReasonCode: {1}).", packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(in PubRelPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBREL packet (PacketId: {0}, ReasonCode: {1}). Replying with PUBCOMP...", packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
 
       return Awaited(packet);
@@ -112,6 +124,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in SubAckPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received SUBACK packet (PacketId: {0}).", packet.PacketIdentifier);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }
@@ -123,6 +136,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(in UnsubAckPacket packet, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received UNSUBACK packet (PacketId: {0}).", packet.PacketIdentifier);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }

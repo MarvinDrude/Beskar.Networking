@@ -3,6 +3,7 @@ using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client;
 
@@ -10,6 +11,7 @@ public sealed partial class MqttClient
 {
    private async Task RunMessageReceive(INetworkStream networkStream, CancellationToken ct = default)
    {
+      TraceLogger.LogClientInfo("MqttClient: Starting message receiver loop...");
       try
       {
          // duplex input for reading incoming messages
@@ -40,6 +42,7 @@ public sealed partial class MqttClient
                       or PacketDispatchResult.InvalidPacketType)
                {
                   // Protocol violation: exit the loop to drop the connection
+                  TraceLogger.LogClientError("MqttClient: Protocol violation or parser error (Result: {0}). Exiting receive loop.", parseResult.Failed ? parseResult.Error.Detail : parseResult.Success);
                   return;
                }
 
@@ -58,14 +61,15 @@ public sealed partial class MqttClient
       }
       catch (OperationCanceledException)
       {
-         // expected
+         TraceLogger.LogClientInfo("MqttClient: Message receiver loop cancelled.");
       }
-      catch (Exception)
+      catch (Exception ex)
       {
-         // expected on connection drop/reset
+         TraceLogger.LogClientError("MqttClient: Connection drop or reset in receiver loop: {0}", ex.Message);
       }
       finally
       {
+         TraceLogger.LogClientInfo("MqttClient: Message receiver loop finished.");
          await DisconnectInternalAsync();
       }
    }

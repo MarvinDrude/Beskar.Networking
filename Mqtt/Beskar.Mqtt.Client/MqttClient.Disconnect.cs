@@ -3,6 +3,7 @@ using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client;
 
@@ -14,6 +15,7 @@ public sealed partial class MqttClient
       if (validateResult.Failed) return;
 
       var beforeConnected = IsConnected;
+      TraceLogger.LogClientInfo("MqttClient.DisconnectAsync: Initiating disconnect (ReasonCode: {0}).", options.ReasonCode);
       if (DisconnectingAlreadyInProcessOrDone())
       {
          return;
@@ -55,15 +57,16 @@ public sealed partial class MqttClient
 
    private async ValueTask DisconnectRoutineAsync(bool beforeConnected)
    {
+      TraceLogger.LogClientInfo("MqttClient: Starting disconnect routine (BeforeConnected: {0}).", beforeConnected);
       await _clientTokenSource.CancelAsync();
 
       try
       {
          await _networkClient.DisconnectAsync();
       }
-      catch (Exception)
+      catch (Exception ex)
       {
-         // ignored
+         TraceLogger.LogClientError("MqttClient: Error disconnecting inner network client: {0}", ex.Message);
       }
 
       try
@@ -74,13 +77,14 @@ public sealed partial class MqttClient
             await task;
          }
       }
-      catch (Exception)
+      catch (Exception ex)
       {
-         // ignored
+         TraceLogger.LogClientError("MqttClient: Error waiting for keep-alive task to end: {0}", ex.Message);
       }
       finally
       {
          CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Disconnecting);
+         TraceLogger.LogClientInfo("MqttClient: Disconnected from transport layer. State transitioned to Disconnected.");
       }
    }
 
@@ -94,6 +98,7 @@ public sealed partial class MqttClient
          if (status is MqttClientConnectionState.Disconnected
              or MqttClientConnectionState.Disconnecting)
          {
+            TraceLogger.LogClientInfo("MqttClient: Disconnect already in progress or completed (Current state: {0}).", status);
             return true;
          }
 

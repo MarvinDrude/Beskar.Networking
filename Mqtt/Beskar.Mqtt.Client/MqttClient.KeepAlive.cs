@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client;
 
@@ -14,6 +15,7 @@ public sealed partial class MqttClient
    {
       try
       {
+         TraceLogger.LogClientInfo("MqttClient: Keep-alive task started (Interval: {0}ms).", keepAliveInterval.TotalMilliseconds);
          _lastKeepAliveTimestamp = DateTimeOffset.UtcNow;
 
          while (!ct.IsCancellationRequested)
@@ -28,19 +30,22 @@ public sealed partial class MqttClient
             using var combined = CancellationTokenSource.CreateLinkedTokenSource(ct);
             combined.CancelAfter(keepAliveInterval / 2);
 
+            TraceLogger.LogClientInfo("MqttClient: Sending keep-alive PINGREQ...");
             var pingResult = await PingAsync(combined.Token);
             if (pingResult.Failed)
             {
                throw new Exception($"Keep-alive ping failed: {pingResult.Error.Detail}");
             }
+            TraceLogger.LogClientInfo("MqttClient: Keep-alive PINGRESP received successfully.");
          }
       }
       catch (OperationCanceledException)
       {
-         // expected
+         TraceLogger.LogClientInfo("MqttClient: Keep-alive task stopped (cancelled).");
       }
-      catch (Exception)
+      catch (Exception ex)
       {
+         TraceLogger.LogClientError("MqttClient: Keep-alive task error: {0}", ex.Message);
          if (_gracefulDisconnect)
          {
             return;

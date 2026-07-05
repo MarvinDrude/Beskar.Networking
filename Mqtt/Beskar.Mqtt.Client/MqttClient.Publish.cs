@@ -1,3 +1,4 @@
+using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Builders.Publishing;
@@ -9,6 +10,7 @@ using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client;
 
@@ -25,6 +27,8 @@ public sealed partial class MqttClient
          return new StringError("Invalid control stream.");
       }
 
+      TraceLogger.LogClientInfo("MqttClient.PublishAsync: Publishing to topic '{0}' (QoS: {1}).", Encoding.UTF8.GetString(options.TopicUtf8Bytes.Span), options.QualityOfService);
+
       return options.QualityOfService switch
       {
          QualityOfServiceType.ExactlyOnce => await PublishExactlyOnceAsync(options, stream, ct),
@@ -39,6 +43,7 @@ public sealed partial class MqttClient
    {
       try
       {
+         TraceLogger.LogClientInfo("MqttClient.PublishAtMostOnceAsync: Sending QoS 0 publish packet to topic '{0}'...", Encoding.UTF8.GetString(options.TopicUtf8Bytes.Span));
          await Send(options, stream, 0, ct);
 
          return new PublishResult()
@@ -49,6 +54,7 @@ public sealed partial class MqttClient
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.PublishAtMostOnceAsync: QoS 0 publish failed: {0}", error.Message);
          return new StringError(error.ToString());
       }
    }
@@ -58,7 +64,9 @@ public sealed partial class MqttClient
    {
       try
       {
+         TraceLogger.LogClientInfo("MqttClient.PublishAtLeastOnceAsync: Sending QoS 1 publish packet to topic '{0}'...", Encoding.UTF8.GetString(options.TopicUtf8Bytes.Span));
          var pubAckPacket = await SendAndAck<PublishOptions, PubAckPacket>(options, stream, ct);
+         TraceLogger.LogClientInfo("MqttClient.PublishAtLeastOnceAsync: Received PUBACK (PacketId: {0}, ReasonCode: {1}).", pubAckPacket.PacketIdentifier, pubAckPacket.ReasonCode);
 
          return new PublishResult()
          {
@@ -70,6 +78,7 @@ public sealed partial class MqttClient
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.PublishAtLeastOnceAsync: QoS 1 publish failed: {0}", error.Message);
          return new StringError(error.ToString());
       }
    }
@@ -79,7 +88,9 @@ public sealed partial class MqttClient
    {
       try
       {
+         TraceLogger.LogClientInfo("MqttClient.PublishExactlyOnceAsync: Sending QoS 2 publish packet to topic '{0}'...", Encoding.UTF8.GetString(options.TopicUtf8Bytes.Span));
          var pubRecPacket = await SendAndAck<PublishOptions, PubRecPacket>(options, stream, ct);
+         TraceLogger.LogClientInfo("MqttClient.PublishExactlyOnceAsync: Received PUBREC (PacketId: {0}, ReasonCode: {1}). Sending PUBREL...", pubRecPacket.PacketIdentifier, pubRecPacket.ReasonCode);
 
          var pubRelPacket = new PubRelPacket()
          {
@@ -88,6 +99,8 @@ public sealed partial class MqttClient
          };
 
          var pubCompPacket = await SendAndAck<PubRelPacket, PubCompPacket>(pubRelPacket, stream, ct);
+         TraceLogger.LogClientInfo("MqttClient.PublishExactlyOnceAsync: Received PUBCOMP (PacketId: {0}, ReasonCode: {1}). QoS 2 publish complete.", pubCompPacket.PacketIdentifier, pubCompPacket.ReasonCode);
+         
          if (pubCompPacket.ReasonCode is PubCompReasonCode.PacketIdentifierNotFound)
          {
             return new PublishResult()
@@ -114,6 +127,7 @@ public sealed partial class MqttClient
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.PublishExactlyOnceAsync: QoS 2 publish failed: {0}", error.Message);
          return new StringError(error.ToString());
       }
    }

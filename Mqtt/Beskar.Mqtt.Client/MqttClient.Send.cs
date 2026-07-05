@@ -18,6 +18,7 @@ using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Threading;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client;
 
@@ -37,6 +38,8 @@ public sealed partial class MqttClient
          return new StringError("Invalid control stream.");
       }
 
+      TraceLogger.LogClientInfo("MqttClient.SubscribeAsync: Subscribing to topic filters...");
+
       try
       {
          SubAckPacket subAck;
@@ -49,6 +52,8 @@ public sealed partial class MqttClient
             using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
             subAck = await SendAndAck<SubscribeOptions, SubAckPacket>(options, stream, tokenSource.Token);
          }
+
+         TraceLogger.LogClientInfo("MqttClient.SubscribeAsync: Received SUBACK (PacketId: {0}).", subAck.PacketIdentifier);
 
          using var filterBuilder = new ArrayBuilder<MqttTopicFilter>(12);
          var filterEnumerator = options.TopicFilters.GetEnumerator();
@@ -98,6 +103,7 @@ public sealed partial class MqttClient
 
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.SubscribeAsync: Error subscribing: {0}", error.Message);
          return new StringError(error.ToString());
       }
    }
@@ -116,6 +122,8 @@ public sealed partial class MqttClient
          return new StringError("Invalid control stream.");
       }
 
+      TraceLogger.LogClientInfo("MqttClient.UnsubscribeAsync: Unsubscribing from topics...");
+
       try
       {
          UnsubAckPacket unsubAck;
@@ -128,6 +136,8 @@ public sealed partial class MqttClient
             using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
             unsubAck = await SendAndAck<UnsubscribeOptions, UnsubAckPacket>(options, stream, tokenSource.Token);
          }
+
+         TraceLogger.LogClientInfo("MqttClient.UnsubscribeAsync: Received UNSUBACK (PacketId: {0}).", unsubAck.PacketIdentifier);
 
          using var filterBuilder = new ArrayBuilder<string>(12);
          var filterEnumerator = options.TopicFilters.GetEnumerator();
@@ -176,6 +186,7 @@ public sealed partial class MqttClient
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.UnsubscribeAsync: Error unsubscribing: {0}", error.Message);
          return new StringError(error.ToString());
       }
    }
@@ -190,6 +201,8 @@ public sealed partial class MqttClient
          return new StringError("Invalid control stream.");
       }
 
+      TraceLogger.LogClientInfo("MqttClient.PingAsync: Sending PINGREQ...");
+
       try
       {
          if (ct.CanBeCanceled)
@@ -201,9 +214,11 @@ public sealed partial class MqttClient
             using var tokenSource = new CancellationTokenSource(_connectOptions.Timeout);
             await SendAndAck<PingReqPacket, PingRespPacket>(new PingReqPacket(), stream, tokenSource.Token);
          }
+         TraceLogger.LogClientInfo("MqttClient.PingAsync: PINGRESP received successfully.");
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.PingAsync: Ping failed: {0}", error.Message);
          return new StringError(error.ToString());
       }
 
@@ -218,6 +233,8 @@ public sealed partial class MqttClient
       {
          identifier = _identifierGenerator.GenerateNextIdentifier();
       }
+
+      TraceLogger.LogClientInfo("MqttClient.SendAndAck: Sending packet '{0}' (PacketId: {1}) expecting '{2}'...", typeof(TPacket).Name, identifier, typeof(TResponse).Name);
 
       var signalAwaiter = _signalBroker.AddAwaitable<TResponse>(identifier);
       try
@@ -256,6 +273,7 @@ public sealed partial class MqttClient
          }
          catch (Exception error)
          {
+            TraceLogger.LogClientError("MqttClient.SendAndAck: Error writing packet '{0}': {1}", typeof(TPacket).Name, error.Message);
             lockToken.Dispose();
             signalAwaiter.Fail(error);
 
@@ -264,6 +282,7 @@ public sealed partial class MqttClient
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.SendAndAck: Error acquiring writer lock for '{0}': {1}", typeof(TPacket).Name, error.Message);
          signalAwaiter.Fail(error);
          return signalAwaiter.WaitOneAsync(ct).AsTask();
       }
@@ -277,6 +296,8 @@ public sealed partial class MqttClient
       {
          identifier = _identifierGenerator.GenerateNextIdentifier();
       }
+
+      TraceLogger.LogClientInfo("MqttClient.SendAndAck: Sending options '{0}' (PacketId: {1}) expecting '{2}'...", typeof(TOptions).Name, identifier, typeof(TResponse).Name);
 
       var signalAwaiter = _signalBroker.AddAwaitable<TResponse>(identifier);
       try
@@ -315,6 +336,7 @@ public sealed partial class MqttClient
          }
          catch (Exception error)
          {
+            TraceLogger.LogClientError("MqttClient.SendAndAck: Error writing options '{0}': {1}", typeof(TOptions).Name, error.Message);
             lockToken.Dispose();
             signalAwaiter.Fail(error);
 
@@ -323,6 +345,7 @@ public sealed partial class MqttClient
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.SendAndAck: Error acquiring writer lock for options '{0}': {1}", typeof(TOptions).Name, error.Message);
          signalAwaiter.Fail(error);
          return signalAwaiter.WaitOneAsync(ct).AsTask();
       }
@@ -426,9 +449,10 @@ public sealed partial class MqttClient
 
       return await signalAwaiter.WaitOneAsync(ct);
    }
-   private Task Send<TPacket>(in TPacket packet, INetworkStream stream, CancellationToken ct = default)
+    private Task Send<TPacket>(in TPacket packet, INetworkStream stream, CancellationToken ct = default)
       where TPacket : IRawMqttPacket
    {
+      TraceLogger.LogClientInfo("MqttClient.Send: Sending packet '{0}'...", typeof(TPacket).Name);
       try
       {
          var lockTask = stream.AcquireWriterLock(ct);
@@ -465,12 +489,14 @@ public sealed partial class MqttClient
          }
          catch (Exception error)
          {
+            TraceLogger.LogClientError("MqttClient.Send: Error sending packet '{0}': {1}", typeof(TPacket).Name, error.Message);
             lockToken.Dispose();
             return Task.FromException(error);
          }
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.Send: Error acquiring lock for packet '{0}': {1}", typeof(TPacket).Name, error.Message);
          return Task.FromException(error);
       }
    }
@@ -478,6 +504,7 @@ public sealed partial class MqttClient
    private Task Send<TOptions>(TOptions options, INetworkStream stream, ushort identifier = 0, CancellationToken ct = default)
       where TOptions : class, IHeapMqttOptions
    {
+      TraceLogger.LogClientInfo("MqttClient.Send: Sending option packet '{0}' (PacketId: {1})...", typeof(TOptions).Name, identifier);
       try
       {
          var lockTask = stream.AcquireWriterLock(ct);
@@ -514,12 +541,14 @@ public sealed partial class MqttClient
          }
          catch (Exception error)
          {
+            TraceLogger.LogClientError("MqttClient.Send: Error sending option packet '{0}': {1}", typeof(TOptions).Name, error.Message);
             lockToken.Dispose();
             return Task.FromException(error);
          }
       }
       catch (Exception error)
       {
+         TraceLogger.LogClientError("MqttClient.Send: Error acquiring lock for option packet '{0}': {1}", typeof(TOptions).Name, error.Message);
          return Task.FromException(error);
       }
    }
@@ -597,7 +626,7 @@ public sealed partial class MqttClient
       return Send(options, stream, 0, ct);
    }
 
-   public Task SendAsync<TPacket>(in TPacket packet, CancellationToken ct = default)
+    public Task SendAsync<TPacket>(in TPacket packet, CancellationToken ct = default)
       where TPacket : struct, IRawMqttPacket
    {
       var clientResult = ValidateClient();
@@ -611,6 +640,7 @@ public sealed partial class MqttClient
          return Task.FromException(new InvalidOperationException("Invalid control stream."));
       }
 
+      TraceLogger.LogClientInfo("MqttClient.SendAsync: Asynchronously sending packet '{0}'...", typeof(TPacket).Name);
       return Send(in packet, stream, ct);
    }
 }
