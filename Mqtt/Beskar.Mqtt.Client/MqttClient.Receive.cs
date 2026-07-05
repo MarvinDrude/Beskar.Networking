@@ -60,5 +60,13 @@ public sealed partial class MqttClient
       {
          // expected
       }
+      catch (Exception)
+      {
+         // expected on connection drop/reset
+      }
+      finally
+      {
+         await DisconnectInternalAsync();
+      }
    }
 }

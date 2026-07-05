@@ -564,4 +564,34 @@ public class SignalBrokerTests
       var result = await task3;
       await Assert.That(result).IsNotNull();
    }
+
+   [Test]
+   public async Task TryDispatch_UnderCollisionWithNonHeadCompletedNode_ShouldFailAndLeaveSubsequentAwaitersStranded()
+   {
+      // Arrange
+      using var broker = new SignalBroker();
+
+      // We add A4 (PingResponse), then A3 (PingResponse), then B2 (PubAckResponse).
+      // Chain for ID 10: B2 (head, pending) -> A3 (pending) -> A4 (pending) -> null.
+      using var awaiterA4 = broker.AddAwaitable<PingResponse>(10);
+      using var awaiterA3 = broker.AddAwaitable<PingResponse>(10);
+      using var awaiterB2 = broker.AddAwaitable<PubAckResponse>(10);
+
+      var taskA4 = awaiterA4.WaitOneAsync(CancellationToken.None).AsTask();
+      var taskA3 = awaiterA3.WaitOneAsync(CancellationToken.None).AsTask();
+
+      // Act & Assert
+      // First dispatch should traverse from B2 (head), match and complete A3.
+      // Chain state remains: B2 (head, pending) -> A3 (completed) -> A4 (pending) -> null.
+      var dispatched1 = broker.TryDispatch(new PingResponse(), 10);
+      await Assert.That(dispatched1).IsTrue();
+      await taskA3;
+
+      // Second dispatch should traverse from B2, see A3 (completed), try to complete it,
+      // fail because it is already completed, and return false, leaving A4 stranded.
+      var dispatched2 = broker.TryDispatch(new PingResponse(), 10);
+      await Assert.That(dispatched2).IsTrue(); // Under current bug, this is FALSE and fails the test!
+
+      await taskA4;
+   }
 }

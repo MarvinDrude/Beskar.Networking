@@ -100,7 +100,10 @@ public sealed class SignalBroker : IDisposable
          {
             if (current.MessageType == msgType)
             {
-               return current.TryComplete(in message);
+               if (current.TryComplete(in message))
+               {
+                  return true;
+               }
             }
 
             current = current.Next;
