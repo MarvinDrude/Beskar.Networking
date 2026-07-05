@@ -11,24 +11,19 @@ namespace Beskar.Networking.Transports.Ws;
 /// <summary>
 /// A high-performance WebSocket client.
 /// </summary>
-public sealed class WsNetworkClient : INetworkClient
+public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
 {
-   private readonly WsTransportOptions _options;
-   private readonly TcpNetworkClient _tcpClient;
+   private readonly WsTransportOptions _options = options;
+   private readonly TcpNetworkClient _tcpClient = new(options.TcpOptions);
 
    private WsNetworkSession? _activeSession;
-
-   public WsNetworkClient(WsTransportOptions options)
-   {
-      _options = options;
-      _tcpClient = new TcpNetworkClient(options.TcpOptions);
-   }
 
    public async ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(
       EndPoint endPoint,
       CancellationToken ct = default)
    {
       TraceLogger.LogClientInfo("WS ConnectAsync: Initiating WebSocket connection over TCP to {0} (Path: {1})", endPoint, _options.Path);
+
       var connectResult = await _tcpClient.ConnectAsync(endPoint, ct);
       if (connectResult.Failed)
       {
@@ -38,13 +33,15 @@ public sealed class WsNetworkClient : INetworkClient
 
       var tcpSession = connectResult.Success;
       WsDuplexPipe? wsPipe = null;
+
       try
       {
          var tcpStreamResult = await tcpSession.AcceptStreamAsync(ct);
          if (tcpStreamResult.Failed)
          {
             TraceLogger.LogClientError("WS ConnectAsync: Failed to accept TCP stream for session {0}: {1}", tcpSession.Id, tcpStreamResult.Error.Message);
-            await ((IAsyncDisposable)tcpSession).DisposeAsync();
+            await tcpSession.DisposeAsync();
+
             return tcpStreamResult.Error;
          }
 
@@ -54,7 +51,7 @@ public sealed class WsNetworkClient : INetworkClient
          if (!handshakeSuccess)
          {
             TraceLogger.LogClientError("WS ConnectAsync: WebSocket handshake verification failed for session {0}.", tcpSession.Id);
-            await ((IAsyncDisposable)tcpSession).DisposeAsync();
+            await tcpSession.DisposeAsync();
             return new NetworkCodeError(-1, "WebSocket handshake verification failed.");
          }
 
@@ -77,7 +74,8 @@ public sealed class WsNetworkClient : INetworkClient
          {
             await wsPipe.DisposeAsync();
          }
-         await ((IAsyncDisposable)tcpSession).DisposeAsync();
+
+         await tcpSession.DisposeAsync();
          return new NetworkCodeError(-1, $"Handshake failed: {ex.Message}");
       }
    }

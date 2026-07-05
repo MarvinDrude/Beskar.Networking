@@ -70,7 +70,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
       var converted = new MqttPublishMessage(packet);
       var context = new MessageReceiveContext()
       {
-         Message = converted
+         Message = converted,
+         PacketSender = _client
       };
 
       // probably best here to defer actual handlers to run on new task?
@@ -78,8 +79,10 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
       {
          await _client.Events.OnMessageReceive.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
 
-
+         if (context.AutoAcknowledge)
+            await context.AcknowledgeAsync(ct);
       }, ct);
+
       return ValueTask.CompletedTask;
    }
 

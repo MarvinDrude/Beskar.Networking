@@ -135,7 +135,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   if (tcpStreamResult.Failed)
                   {
                      TraceLogger.LogServerError("WS Listener: Failed to accept TCP stream for handshake from {0}: {1}", tcpSession.RemoteAddress, tcpStreamResult.Error.Message);
-                     await ((IAsyncDisposable)tcpSession).DisposeAsync();
+                     await tcpSession.DisposeAsync();
                      return;
                   }
 
@@ -145,7 +145,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   if (acceptKey == null)
                   {
                      TraceLogger.LogServerError("WS Listener: WebSocket server handshake failed for client {0}.", tcpSession.RemoteAddress);
-                     await ((IAsyncDisposable)tcpSession).DisposeAsync();
+                     await tcpSession.DisposeAsync();
                      return;
                   }
 
@@ -164,7 +164,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   }
                   else
                   {
-                     await ((IAsyncDisposable)tcpSession).DisposeAsync();
+                     await tcpSession.DisposeAsync();
                   }
                }
             }, token);

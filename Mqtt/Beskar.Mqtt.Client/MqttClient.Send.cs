@@ -1,5 +1,6 @@
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
@@ -246,6 +247,9 @@ public sealed partial class MqttClient
             if (!flushTask.IsCompletedSuccessfully)
                return CompleteFlushAndAckAsync(flushTask, lockToken, signalAwaiter, ct);
 
+            // consume flush task
+            _ = flushTask.Result.IsCompleted;
+
             lockToken.Dispose();
             return signalAwaiter.WaitOneAsync(ct).AsTask();
          }
@@ -300,6 +304,9 @@ public sealed partial class MqttClient
             var flushTask = writer.FlushAsync(ct);
             if (!flushTask.IsCompletedSuccessfully)
                return CompleteFlushAndAckAsync(flushTask, lockToken, signalAwaiter, ct);
+
+            // consume flush task
+            _ = flushTask.Result.IsCompleted;
 
             lockToken.Dispose();
             return signalAwaiter.WaitOneAsync(ct).AsTask();
@@ -444,6 +451,9 @@ public sealed partial class MqttClient
             if (!flushTask.IsCompletedSuccessfully)
                return CompleteFlushAsync(flushTask, lockToken);
 
+            // consume flush task
+            _ = flushTask.Result.IsCompleted;
+
             lockToken.Dispose();
             return Task.CompletedTask;
          }
@@ -488,6 +498,9 @@ public sealed partial class MqttClient
             var flushTask = writer.FlushAsync(ct);
             if (!flushTask.IsCompletedSuccessfully)
                return CompleteFlushAsync(flushTask, lockToken);
+            
+            // consume flush task
+            _ = flushTask.Result.IsCompleted;
 
             lockToken.Dispose();
             return Task.CompletedTask;
@@ -572,5 +585,22 @@ public sealed partial class MqttClient
    private Task SendConnect(INetworkStream stream, ConnectOptions options, CancellationToken ct = default)
    {
       return Send(options, stream, 0, ct);
+   }
+
+   public Task SendAsync<TPacket>(in TPacket packet, CancellationToken ct = default)
+      where TPacket : struct, IRawMqttPacket
+   {
+      var clientResult = ValidateClient();
+      if (!clientResult.IsSuccess)
+      {
+         return Task.FromException(new InvalidOperationException(clientResult.Error.Detail));
+      }
+
+      if (_controlStream is not { } stream)
+      {
+         return Task.FromException(new InvalidOperationException("Invalid control stream."));
+      }
+
+      return Send(in packet, stream, ct);
    }
 }

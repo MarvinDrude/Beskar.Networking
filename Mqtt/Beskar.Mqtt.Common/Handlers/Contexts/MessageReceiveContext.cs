@@ -1,5 +1,6 @@
 using System.Text;
 using Beskar.Mqtt.Common.Builders.Common;
+using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Models;
@@ -28,6 +29,11 @@ public sealed class MessageReceiveContext
    /// Whether the acknowledgment packet is automatically sent after your handler.
    /// </summary>
    public bool AutoAcknowledge { get; init; } = true;
+
+   /// <summary>
+   /// The packet sender used to transmit packets like acknowledgments.
+   /// </summary>
+   public required IMqttPacketSender PacketSender { get; init; }
 
    /// <summary>
    /// The current client identifier (must be unique)
@@ -64,9 +70,17 @@ public sealed class MessageReceiveContext
                PropertiesBytes = ResponseUserProperties.WrittenSpan.ToArray()
             };
 
-            break;
+            return PacketSender.SendAsync(in pubAckPacket, ct);
          case QualityOfServiceType.ExactlyOnce:
-            break;
+            var pubRecPacket = new PubRecPacket()
+            {
+               PacketIdentifier =  Message.PacketIdentifier,
+               ReasonCode = (PubRecReasonCode)ReasonCode,
+               ReasonStringUtf8Bytes =  Encoding.UTF8.GetBytes(ReasonString),
+               PropertiesBytes = ResponseUserProperties.WrittenSpan.ToArray()
+            };
+
+            return PacketSender.SendAsync(in pubRecPacket, ct);
       }
 
       return Task.CompletedTask;

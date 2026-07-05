@@ -19,7 +19,7 @@ using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Client;
 
-public sealed partial class MqttClient : IMqttClient
+public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 {
    public bool IsConnected => (MqttClientConnectionState)_state is MqttClientConnectionState.Connected;
    public ClientEvents Events { get; } = new();
