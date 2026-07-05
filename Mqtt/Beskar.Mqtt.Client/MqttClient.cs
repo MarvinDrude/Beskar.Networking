@@ -178,7 +178,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             {
                await handler.ExecuteAsync(new MqttAuthContext()
                {
-                  AuthPacket = authResult
+                  AuthPacket = authResult,
+                  PacketSender = this,
                }, combined.Token);
             }
             else
