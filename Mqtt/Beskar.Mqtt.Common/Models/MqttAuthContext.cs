@@ -31,6 +31,8 @@ public sealed class MqttAuthContext
    internal Task? ReceiveTask { get; init; }
    internal Task<AuthPacketResult>? AuthTask { get; init; }
 
+   private bool _authTaskConsumed;
+
    /// <summary>
    /// Send this as response to the auth request from the server.
    /// </summary>
@@ -61,25 +63,30 @@ public sealed class MqttAuthContext
          throw new InvalidOperationException("Awaiting auth packets is not supported in this context.");
       }
 
-      if (AuthTask.IsCompleted)
+      if (!_authTaskConsumed)
       {
-         return await AuthTask;
+         _authTaskConsumed = true;
+
+         var completed = await Task.WhenAny(AuthTask, ConnAckTask, ReceiveTask).WaitAsync(ct);
+         if (completed == AuthTask)
+         {
+            return await AuthTask;
+         }
+
+         return null;
       }
-
-      using var authAwaiter = Broker.AddAwaitable<AuthPacketResult>(0);
-      var authTask = authAwaiter.WaitOneAsync(ct).AsTask();
-
-      if (AuthTask.IsCompleted)
+      else
       {
-         return await AuthTask;
-      }
+         using var authAwaiter = Broker.AddAwaitable<AuthPacketResult>(0);
+         var authTask = authAwaiter.WaitOneAsync(ct).AsTask();
 
-      var completed = await Task.WhenAny(authTask, ConnAckTask, ReceiveTask);
-      if (completed == authTask)
-      {
-         return await authTask;
-      }
+         var completed = await Task.WhenAny(authTask, ConnAckTask, ReceiveTask);
+         if (completed == authTask)
+         {
+            return await authTask;
+         }
 
-      return null;
+         return null;
+      }
    }
 }

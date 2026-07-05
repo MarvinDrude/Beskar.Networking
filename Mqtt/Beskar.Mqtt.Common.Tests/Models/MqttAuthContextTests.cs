@@ -31,13 +31,51 @@ public class MqttAuthContextTests
       var waitTask = context.AwaitNextAuthPacketAsync();
       
       var expectedAuth = AuthPacketResult.Create(new AuthPacket());
-      broker.TryDispatch(expectedAuth, 0);
+      authTcs.SetResult(expectedAuth);
 
       var result = await waitTask;
 
       // Assert
       await Assert.That(result).IsNotNull();
       await Assert.That(ReferenceEquals(result, expectedAuth)).IsTrue();
+   }
+
+   [Test]
+   public async Task AwaitNextAuthPacketAsync_ShouldAwaitBrokerDispatchedPacket_OnSubsequentCalls()
+   {
+      // Arrange
+      using var broker = new SignalBroker();
+      var connAckTcs = new TaskCompletionSource<ClientConnectResult>();
+      var receiveTcs = new TaskCompletionSource();
+      var authTcs = new TaskCompletionSource<AuthPacketResult>();
+
+      var context = new MqttAuthContext()
+      {
+         AuthPacket = AuthPacketResult.Create(new AuthPacket()),
+         PacketSender = null!, // not needed for this test
+         Broker = broker,
+         ConnAckTask = connAckTcs.Task,
+         ReceiveTask = receiveTcs.Task,
+         AuthTask = authTcs.Task
+      };
+
+      // Complete the first call via authTcs
+      var firstExpected = AuthPacketResult.Create(new AuthPacket());
+      authTcs.SetResult(firstExpected);
+      var firstResult = await context.AwaitNextAuthPacketAsync();
+      await Assert.That(ReferenceEquals(firstResult, firstExpected)).IsTrue();
+
+      // Complete the second call via broker.TryDispatch
+      var secondExpected = AuthPacketResult.Create(new AuthPacket());
+      var waitTask = context.AwaitNextAuthPacketAsync();
+      
+      broker.TryDispatch(secondExpected, 0);
+
+      var secondResult = await waitTask;
+
+      // Assert
+      await Assert.That(secondResult).IsNotNull();
+      await Assert.That(ReferenceEquals(secondResult, secondExpected)).IsTrue();
    }
 
    [Test]
