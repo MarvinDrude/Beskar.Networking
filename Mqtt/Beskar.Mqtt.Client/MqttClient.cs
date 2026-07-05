@@ -118,6 +118,9 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
       catch (Exception error)
       {
+         _disconnectReason = new MqttClientDisconnectReason(false, (int)DisconnectReasonCode.UnspecifiedError);
+         await DisconnectInternalAsync();
+
          return new StringError($"Unexpected error at ConnectAsync: {error}");
       }
    }
