@@ -27,7 +27,7 @@ public sealed class NetworkServer
       });
 
       await Task.WhenAll(bindTasks);
-      _listenTasks = _definitions.Select(d => Task.Run(() => AcceptLoopAsync(d, _cts.Token), ct)).ToList();
+      _listenTasks = [.. _definitions.Select(d => Task.Run(() => AcceptLoopAsync(d, _cts.Token), ct))];
    }
 
    private async Task AcceptLoopAsync(EndpointDefinition definition, CancellationToken token)
@@ -69,10 +69,6 @@ public sealed class NetworkServer
                   if (session is IAsyncDisposable asyncDisposable)
                   {
                      await asyncDisposable.DisposeAsync();
-                  }
-                  else if (session is IDisposable disposable)
-                  {
-                     disposable.Dispose();
                   }
                }
             }, token);
