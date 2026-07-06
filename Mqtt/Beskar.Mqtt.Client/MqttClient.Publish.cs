@@ -90,6 +90,19 @@ public sealed partial class MqttClient
       {
          TraceLogger.LogClientInfo("MqttClient.PublishExactlyOnceAsync: Sending QoS 2 publish packet to topic '{0}'...", Encoding.UTF8.GetString(options.TopicUtf8Bytes.Span));
          var pubRecPacket = await SendAndAck<PublishOptions, PubRecPacket>(options, stream, ct);
+
+         if (pubRecPacket.ReasonCode >= PubRecReasonCode.UnspecifiedError)
+         {
+            TraceLogger.LogClientWarning("MqttClient.PublishExactlyOnceAsync: Received PUBREC with failure ReasonCode: {0}. Releasing packet identifier.", pubRecPacket.ReasonCode);
+            return new PublishResult()
+            {
+               UserProperties = UserPropertyCollection.Create(pubRecPacket.PropertiesBytes),
+               ReasonCode = (PubAckReasonCode)pubRecPacket.ReasonCode,
+               PacketIdentifier = pubRecPacket.PacketIdentifier,
+               ReasonString = pubRecPacket.ReasonStringUtf8Bytes.GetUtf8String()
+            };
+         }
+
          TraceLogger.LogClientInfo("MqttClient.PublishExactlyOnceAsync: Received PUBREC (PacketId: {0}, ReasonCode: {1}). Sending PUBREL...", pubRecPacket.PacketIdentifier, pubRecPacket.ReasonCode);
 
          var pubRelPacket = new PubRelPacket()
