@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Text;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Encoders.Properties;
@@ -37,8 +38,14 @@ public readonly ref partial struct PacketVersion5Encoder
 
                   if (options.ReasonString is { } reasonString)
                   {
-                     var reasonStringBytes = System.Text.Encoding.UTF8.GetBytes(reasonString);
+                     var reasonStringBytes = Encoding.UTF8.GetBytes(reasonString);
                      propEncoder.WriteReasonString(reasonStringBytes);
+                  }
+
+                  if (options.ServerReference is { } serverReference)
+                  {
+                     var serverReferenceBytes = Encoding.UTF8.GetBytes(serverReference);
+                     propEncoder.WriteServerReference(serverReferenceBytes);
                   }
 
                   if (options.UserProperties.Count > 0)

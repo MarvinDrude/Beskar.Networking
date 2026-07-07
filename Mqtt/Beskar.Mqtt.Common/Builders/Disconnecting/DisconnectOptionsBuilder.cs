@@ -27,6 +27,16 @@ public sealed class DisconnectOptionsBuilder(DisconnectOptions? options = null)
    }
 
    /// <summary>
+   /// Server reference (only sent by the server)
+   /// <remarks>MQTT 5.0.0 and above required.</remarks>
+   /// </summary>
+   public DisconnectOptionsBuilder WithServerReference(string? serverReference)
+   {
+      _options.ServerReference = serverReference;
+      return this;
+   }
+
+   /// <summary>
    /// Sets the session expiry interval in seconds.
    /// <remarks>MQTT 5.0.0 and above required.</remarks>
    /// </summary>

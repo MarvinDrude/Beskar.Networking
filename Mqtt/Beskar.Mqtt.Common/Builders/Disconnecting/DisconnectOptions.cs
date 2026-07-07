@@ -22,6 +22,12 @@ public sealed class DisconnectOptions(int builderCapacity = -1)
    public string? ReasonString { get; set; }
 
    /// <summary>
+   /// Server reference (only sent by the server)
+   /// <remarks>MQTT 5.0.0 and above required.</remarks>
+   /// </summary>
+   public string? ServerReference { get; set; }
+
+   /// <summary>
    /// Session expiry interval
    /// <remarks>MQTT 5.0.0 and above required.</remarks>
    /// </summary>
@@ -36,6 +42,7 @@ public sealed class DisconnectOptions(int builderCapacity = -1)
 
       ReasonCode = DisconnectReasonCode.NormalDisconnection;
       ReasonString = null;
+      ServerReference = null;
       SessionExpiryInterval = 0;
    }
 
