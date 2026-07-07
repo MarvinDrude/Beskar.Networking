@@ -11,6 +11,11 @@ public sealed class MqttServerBuilder(MqttServerOptions? options = null)
    private readonly MqttServerOptions _options = options ?? new MqttServerOptions();
    private readonly List<INetworkListener> _listeners = [];
 
+   public MqttServer Build()
+   {
+      return new MqttServer([.. _listeners]);
+   }
+
    /// <summary>
    /// Configures the server to listen on the specified endpoint using TCP.
    /// </summary>

@@ -21,6 +21,8 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
    private CancellationTokenSource? _acceptCts;
    private Task? _acceptLoopTask;
 
+   private bool _disposed;
+
    private readonly Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
       Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(new UnboundedChannelOptions
       {
@@ -176,9 +178,19 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
          catch (Exception ex)
          {
             if (token.IsCancellationRequested) break;
+
             TraceLogger.LogServerError("WS Listener: Unexpected error in acceptance loop: {0}", ex.Message);
             _sessionChannel.Writer.TryWrite(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
          }
       }
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      if (_disposed) return;
+      _disposed = true;
+
+      await UnbindAsync();
+      await _tcpListener.DisposeAsync();
    }
 }

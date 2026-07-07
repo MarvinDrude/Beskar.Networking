@@ -27,6 +27,8 @@ public sealed class TcpNetworkListener(
    private Socket? _listenerSocket;
    private CancellationTokenSource? _acceptCts;
 
+   private bool _disposed;
+
    private readonly Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
       Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(new UnboundedChannelOptions
       {
@@ -76,6 +78,7 @@ public sealed class TcpNetworkListener(
 
          var socket = Interlocked.Exchange(ref _listenerSocket, null);
          socket?.Close();
+         socket?.Dispose();
 
          _sessionChannel.Writer.TryComplete();
 
@@ -262,5 +265,14 @@ public sealed class TcpNetworkListener(
    private void WriteToSessionChannel(Result<INetworkSession, NetworkCodeError> result)
    {
       _sessionChannel.Writer.TryWrite(result);
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      if (_disposed) return;
+      _disposed = true;
+
+      await UnbindAsync();
+      _listenerSocket?.Dispose();
    }
 }

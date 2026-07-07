@@ -7,7 +7,7 @@ namespace Beskar.Networking.Abstractions.Interfaces;
 /// <summary>
 /// Represents a network listener.
 /// </summary>
-public interface INetworkListener
+public interface INetworkListener : IAsyncDisposable
 {
    /// <summary>
    /// The local address of the listener.
