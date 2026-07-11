@@ -31,6 +31,8 @@ public sealed class TcpNetworkSession(
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
+   public NetworkStats Stats => _stream?.Stats ?? new NetworkStats();
+
    private readonly IDuplexPipe _connection = connection;
    private readonly CancellationTokenSource _cts = new();
 

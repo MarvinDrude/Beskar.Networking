@@ -21,6 +21,8 @@ public class DummyNetworkSession : INetworkSession
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
+   public NetworkStats Stats => default;
+
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
       throw new NotImplementedException();

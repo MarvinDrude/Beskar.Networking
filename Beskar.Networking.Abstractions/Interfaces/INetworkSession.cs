@@ -1,6 +1,7 @@
 using System.Net;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Memory.Results;
 
 namespace Beskar.Networking.Abstractions.Interfaces;
@@ -44,6 +45,11 @@ public interface INetworkSession : IAsyncDisposable
    /// The generic property store for the current session.
    /// </summary>
    public INetworkPropertyStore Properties { get; }
+
+   /// <summary>
+   /// The lightweight network statistics for this session.
+   /// </summary>
+   public NetworkStats Stats { get; }
 
    /// <summary>
    /// Accepts or gets the network stream of the current network session.

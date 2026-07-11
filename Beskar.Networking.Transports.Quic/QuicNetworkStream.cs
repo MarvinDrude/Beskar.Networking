@@ -2,6 +2,7 @@ using System.IO.Pipelines;
 using System.Net.Quic;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Threading;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
@@ -28,6 +29,8 @@ public sealed class QuicNetworkStream(
    public INetworkSession Session => _session;
 
    public IDuplexPipe Transport => _connection;
+
+   public NetworkStats Stats { get; set; }
 
    public NetworkStreamDirection Direction => _quicStream.Type == QuicStreamType.Bidirectional
       ? NetworkStreamDirection.Bidirectional

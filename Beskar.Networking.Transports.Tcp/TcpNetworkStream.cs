@@ -1,6 +1,7 @@
 using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Threading;
 using Beskar.Utilities.Tracing;
 
@@ -20,6 +21,8 @@ public sealed class TcpNetworkStream(
    public IDuplexPipe Transport { get; } = transport;
 
    public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;
+
+   public NetworkStats Stats { get; set; }
 
    private readonly AsyncLock _asyncLock = new();
 

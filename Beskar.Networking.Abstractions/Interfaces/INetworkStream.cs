@@ -1,5 +1,6 @@
-﻿using System.IO.Pipelines;
+using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Threading;
 
 namespace Beskar.Networking.Abstractions.Interfaces;
@@ -28,6 +29,11 @@ public interface INetworkStream : IAsyncDisposable
    /// The transport of the network stream.
    /// </summary>
    public IDuplexPipe Transport { get; }
+
+   /// <summary>
+   /// The lightweight network statistics for this stream.
+   /// </summary>
+   public NetworkStats Stats { get; set; }
 
    /// <summary>
    /// Acquires a lock to safely write to sending Transport.

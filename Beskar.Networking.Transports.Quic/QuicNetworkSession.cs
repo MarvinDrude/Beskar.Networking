@@ -32,6 +32,24 @@ public sealed class QuicNetworkSession(
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
+   public NetworkStats Stats
+   {
+      get
+      {
+         var received = Interlocked.Read(ref _accumulatedBytesReceived);
+         var sent = Interlocked.Read(ref _accumulatedBytesSent);
+
+         foreach (var stream in _activeStreams.Values)
+         {
+            var streamStats = stream.Stats;
+            received += streamStats.BytesReceived;
+            sent += streamStats.BytesSent;
+         }
+
+         return new NetworkStats { BytesReceived = received, BytesSent = sent };
+      }
+   }
+
    private readonly QuicConnection _connection = connection;
    private readonly QuicTransportOptions _options = options;
    private readonly QuicIoQueueRegistry _ioQueueRegistry = ioQueueRegistry;
@@ -40,6 +58,9 @@ public sealed class QuicNetworkSession(
    private readonly ConcurrentDictionary<long, QuicNetworkStream> _activeStreams = new();
 
    private int _disposed;
+
+   private long _accumulatedBytesReceived;
+   private long _accumulatedBytesSent;
 
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
@@ -124,6 +145,10 @@ public sealed class QuicNetworkSession(
    /// </summary>
    public async ValueTask ReturnConnectionAsync(QuicNetworkStream stream, StreamConnection connection)
    {
+      var stats = stream.Stats;
+      Interlocked.Add(ref _accumulatedBytesReceived, stats.BytesReceived);
+      Interlocked.Add(ref _accumulatedBytesSent, stats.BytesSent);
+
       _activeStreams.TryRemove(stream.StreamId, out _);
 
       TraceLogger.LogNeutralInfo("QUIC Session {0}: Returning stream connection to registry pool", Id);

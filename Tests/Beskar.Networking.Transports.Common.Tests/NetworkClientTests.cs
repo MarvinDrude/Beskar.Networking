@@ -292,6 +292,7 @@ public class FakeNetworkSession : INetworkSession, IAsyncDisposable
    public bool IsSupportingUnidirectional => false;
    public CancellationToken SessionClosedToken => _cts.Token;
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
+   public NetworkStats Stats => default;
 
    public bool Disposed { get; private set; }
 

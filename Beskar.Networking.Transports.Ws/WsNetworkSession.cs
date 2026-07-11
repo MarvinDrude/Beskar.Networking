@@ -26,6 +26,8 @@ public sealed class WsNetworkSession : INetworkSession
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
+   public NetworkStats Stats => _stream.Stats;
+
    private readonly INetworkSession _tcpSession;
    private readonly IDuplexPipe _wsPipe;
 
