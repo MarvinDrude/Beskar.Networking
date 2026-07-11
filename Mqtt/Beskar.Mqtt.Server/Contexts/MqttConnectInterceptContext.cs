@@ -34,6 +34,7 @@ public sealed class MqttConnectInterceptContext
       var bytes = new byte[length];
 
       Encoding.UTF8.GetBytes(assignedClientIdentifier, bytes);
+      AssignedClientIdentifierUtf8Bytes = bytes;
    }
 
    /// <summary>

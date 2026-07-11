@@ -45,7 +45,7 @@ public sealed class MqttAuthContext
          AuthenticationMethodUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(AuthPacket.AuthenticationMethod ?? string.Empty)),
          AuthenticationDataBytes =  new ReadOnlySequence<byte>(data),
          ReasonUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(reasonString)),
-         PropertiesBytes = new ReadOnlySequence<byte>([.. ResponseUserProperties.WrittenSpan])
+         PropertiesBytes = new ReadOnlySequence<byte>(ResponseUserProperties.WrittenMemory)
       };
 
       return PacketSender.SendAsync(authPacket, ct);

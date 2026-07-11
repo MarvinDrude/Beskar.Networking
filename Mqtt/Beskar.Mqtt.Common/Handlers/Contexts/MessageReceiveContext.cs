@@ -67,7 +67,7 @@ public sealed class MessageReceiveContext
                PacketIdentifier = Message.PacketIdentifier,
                ReasonCode = ReasonCode,
                ReasonStringUtf8Bytes = Encoding.UTF8.GetBytes(ReasonString),
-               PropertiesBytes = ResponseUserProperties.WrittenSpan.ToArray()
+               PropertiesBytes = ResponseUserProperties.WrittenMemory
             };
 
             return PacketSender.SendAsync(in pubAckPacket, ct);
@@ -77,7 +77,7 @@ public sealed class MessageReceiveContext
                PacketIdentifier =  Message.PacketIdentifier,
                ReasonCode = (PubRecReasonCode)ReasonCode,
                ReasonStringUtf8Bytes =  Encoding.UTF8.GetBytes(ReasonString),
-               PropertiesBytes = ResponseUserProperties.WrittenSpan.ToArray()
+               PropertiesBytes = ResponseUserProperties.WrittenMemory
             };
 
             return PacketSender.SendAsync(in pubRecPacket, ct);

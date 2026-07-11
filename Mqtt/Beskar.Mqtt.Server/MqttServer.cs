@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Threading;
@@ -12,6 +13,7 @@ using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Mqtt.Server.Contexts;
 using Beskar.Mqtt.Server.Enums;
+using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Handlers;
 using Beskar.Mqtt.Server.Internal;
 using Beskar.Mqtt.Server.Options;
@@ -227,7 +229,24 @@ public sealed partial class MqttServer : IAsyncDisposable
 
          var connAck = new ConnAckPacket()
          {
+            ResponseInfoUtf8Bytes = ReadOnlySequence<byte>.Empty,
+            ReceiveMaximum = 0,
+            MaximumPacketSize = 0,
+            MaximumQualityOfService = QualityOfServiceType.ExactlyOnce,
 
+            ReturnCode = context.ReasonCode.ToReturnCode,
+            ReasonCode = context.ReasonCode,
+            TopicAliasMaximum = ushort.MaxValue,
+            IsRetainAvailable = true,
+            IsSubscriptionIdentifierAvailable = true,
+            IsSharedSubscriptionAvailable = false,
+            IsWildcardSubscriptionAvailable = true,
+
+            PropertiesBytes = new ReadOnlySequence<byte>(context.ResponseUserProperties.WrittenMemory),
+            ServerReferenceUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(context.ServerReference)),
+            ReasonStringUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(context.ReasonString)),
+            AuthenticationMethodUtf8Bytes = new ReadOnlySequence<byte>(connectOptions.AuthenticationMethodUtf8Bytes),
+            AuthenticationDataBytes = new ReadOnlySequence<byte>(context.ResponseAuthenticationData)
          };
 
 

@@ -15,6 +15,10 @@ public sealed class UserPropertyListBuilder(IBufferWriter<byte> writer)
       ? buffer.WrittenSpan
       : throw new InvalidOperationException("Backing writer does not support written span.");
 
+   public ReadOnlyMemory<byte> WrittenMemory => _writer is ArrayBufferWriter<byte> buffer
+      ? buffer.WrittenMemory
+      : throw new InvalidOperationException("Backing writer does not support written span.");
+
    private readonly IBufferWriter<byte> _writer = writer;
 
    public UserPropertyListBuilder(int capacity)
