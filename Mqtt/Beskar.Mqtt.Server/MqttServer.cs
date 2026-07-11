@@ -1,10 +1,16 @@
+using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
+using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Mqtt.Server.Enums;
+using Beskar.Mqtt.Server.Handlers;
+using Beskar.Mqtt.Server.Internal;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Server;
 
@@ -34,9 +40,12 @@ public sealed partial class MqttServer : IAsyncDisposable
    private readonly INetworkListener[] _listeners;
    private CancellationTokenSource _cancellationTokenSource = new();
 
+   private ServerPacketHandler _packetHandler;
+
    internal MqttServer(INetworkListener[] listeners)
    {
       _listeners = listeners;
+      _packetHandler = new ServerPacketHandler(this);
    }
 
    public async Task<VoidResult<StringError>> StartAsync()
@@ -134,7 +143,84 @@ public sealed partial class MqttServer : IAsyncDisposable
       if (State is MqttServerState.Stopping or MqttServerState.Stopped) return;
       if (OpenToNewConnections) return;
 
+      var controlStream = await session.AcceptStreamAsync(ct);
+      if (controlStream.Failed)
+      {
+         await session.DisposeAsync();
+         return;
+      }
 
+      var mqttSession = new MqttSession(listener, session, controlStream.Success);
+      mqttSession.IsConnected = true;
+
+      await RunClientListenTask(listener, session, controlStream.Success, mqttSession.DisconnectAsync, ct);
+   }
+
+   private async Task RunClientListenTask(
+      INetworkListener listener, INetworkSession session, INetworkStream stream,
+      Func<CancellationToken, Task> disconnectHandler, CancellationToken ct)
+   {
+      try
+      {
+         // duplex input for reading incoming messages
+         var reader = stream.Transport.Input;
+
+         while (true)
+         {
+            var result = await reader.ReadAsync(ct);
+            var buffer = result.Buffer;
+
+            if (result.IsCanceled) break;
+            if (buffer.IsEmpty && result.IsCompleted) break;
+
+            var consumed = buffer.Start;
+            var examined = buffer.End;
+
+            while (!buffer.IsEmpty)
+            {
+               var sequenceReader = new SequenceReader<byte>(buffer);
+               var parser = new PacketParser(_packetHandler, _protocolVersion);
+               var valueTask = parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct);
+
+               var parseResult = valueTask.IsCompletedSuccessfully
+                  ? valueTask.Result
+                  : await valueTask.ConfigureAwait(false);
+
+               if (parseResult.Failed || parseResult.Success is PacketDispatchResult.ProtocolError
+                      or PacketDispatchResult.InvalidPacketType)
+               {
+                  // Protocol violation: exit the loop to drop the connection
+                  TraceLogger.LogClientError("MqttServer: Protocol violation or parser error (Result: {0}). Exiting receive loop.",
+                     parseResult.Failed ? parseResult.Error.Detail : parseResult.Success);
+                  return;
+               }
+
+               if (parseResult.Success is PacketDispatchResult.NotEnoughData)
+               {
+                  break;
+               }
+
+               consumed = buffer.GetPosition(parsedBytes);
+               buffer = buffer.Slice(consumed);
+            }
+
+            reader.AdvanceTo(consumed, examined);
+            if (result.IsCompleted && buffer.IsEmpty) break;
+         }
+      }
+      catch (OperationCanceledException)
+      {
+         TraceLogger.LogServerInfo("MqttServer: Message receiver loop cancelled.");
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogServerError("MqttServer: Connection drop or reset in receiver loop: {0}", ex.Message);
+      }
+      finally
+      {
+         TraceLogger.LogServerInfo("MqttServer: Message receiver loop finished.");
+         await disconnectHandler(ct);
+      }
    }
 
    public async ValueTask DisposeAsync()
