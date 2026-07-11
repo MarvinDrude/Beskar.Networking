@@ -55,6 +55,8 @@ public sealed class ServerPacketHandler
          protocolVersion = MqttProtocolVersion.V50;
       }
 
+      _client.ProtocolVersion = protocolVersion;
+
       var result = ConnectOptions.Create(in packet, protocolVersion, (IPEndPoint)stream.Session.RemoteAddress);
       _client.PushControlPacket(result);
 

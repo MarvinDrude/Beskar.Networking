@@ -1,12 +1,16 @@
 using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Memory.Threading;
 using Beskar.Memory.Writers;
+using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing.Results;
+using Beskar.Mqtt.Server.Contexts;
 using Beskar.Mqtt.Server.Enums;
 using Beskar.Mqtt.Server.Handlers;
 using Beskar.Mqtt.Server.Internal;
@@ -36,6 +40,11 @@ public sealed partial class MqttServer : IAsyncDisposable
    /// False = no new clients can connect.
    /// </summary>
    public bool OpenToNewConnections { get; set; } = true;
+
+   /// <summary>
+   /// Container for all server events that can be subscribed to.
+   /// </summary>
+   public ServerEvents Events { get; } = new();
 
    private volatile bool _disposed;
    private volatile int _state = (int)MqttServerState.Stopped;
@@ -167,7 +176,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          packetHandler.Initialize(this, client);
 
          _ = Task.Factory.StartNew(
-            () => RunClientListenTask(client, streamContext, packetHandler, (ct) => Task.CompletedTask, ct),
+            () => RunClientConnectionTask(client, streamContext, packetHandler, ct),
             TaskCreationOptions.PreferFairness);
 
          await RunClientListenTask(client, streamContext, packetHandler, (ct) => Task.CompletedTask, ct);
@@ -183,9 +192,50 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
    }
 
-   private async Task RunClientConnectionTask()
+   private async Task RunClientConnectionTask(
+      MqttServerClient client, NetworkServerStreamContext streamContext, IPacketHandler packetHandler,
+      CancellationToken ct)
    {
+      try
+      {
+         var options = await client.ReceiveControlPacketAsync("CONNECT", ct);
+         if (options is not ConnectOptions connectOptions)
+         {
+            await streamContext.Connection.Session.DisposeAsync();
+            return;
+         }
 
+         var context = new MqttConnectInterceptContext()
+         {
+            CancellationToken = ct,
+            ConnectOptions = connectOptions,
+            NetworkSession = streamContext.Connection.Session
+         };
+
+         await Events.OnConnectIntercept.ExecuteAsync(
+            context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+
+         if (connectOptions.ClientIdUtf8Bytes.IsEmpty && client.ProtocolVersion is MqttProtocolVersion.V50)
+         {
+            connectOptions.ClientIdUtf8Bytes = context.AssignedClientIdentifierUtf8Bytes;
+         }
+
+         if (connectOptions.ClientIdUtf8Bytes.IsEmpty)
+         {
+            context.ReasonCode = ConnectReasonCode.ClientIdentifierNotValid;
+         }
+
+         var connAck = new ConnAckPacket()
+         {
+
+         };
+
+
+      }
+      catch (Exception)
+      {
+         // ignored
+      }
    }
 
    private async Task RunClientListenTask(

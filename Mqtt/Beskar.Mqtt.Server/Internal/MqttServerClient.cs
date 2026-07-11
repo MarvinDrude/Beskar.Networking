@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -27,6 +28,8 @@ public sealed class MqttServerClient : IPooledObject
    public INetworkListener Listener => _listener ?? throw new InvalidOperationException("Listener has not been initialized.");
    public INetworkSession Session => _session ?? throw new InvalidOperationException("Session has not been initialized.");
    public INetworkStream Stream => _stream ?? throw new InvalidOperationException("Stream has not been initialized.");
+
+   internal MqttProtocolVersion ProtocolVersion { get; set; } = MqttProtocolVersion.V50;
 
    private INetworkListener? _listener;
    private INetworkSession? _session;
@@ -124,6 +127,7 @@ public sealed class MqttServerClient : IPooledObject
       _cancellationTokenSource = null;
 
       _topicAliases.Clear();
+      ProtocolVersion = MqttProtocolVersion.V50;
 
       if (_controlPacketChannel is not null)
       {

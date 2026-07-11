@@ -449,7 +449,8 @@ public sealed partial class MqttClient
 
       return await signalAwaiter.WaitOneAsync(ct);
    }
-    private Task Send<TPacket>(in TPacket packet, INetworkStream stream, CancellationToken ct = default)
+
+   private Task Send<TPacket>(in TPacket packet, INetworkStream stream, CancellationToken ct = default)
       where TPacket : IRawMqttPacket
    {
       TraceLogger.LogClientInfo("MqttClient.Send: Sending packet '{0}'...", typeof(TPacket).Name);
@@ -531,7 +532,7 @@ public sealed partial class MqttClient
             var flushTask = writer.FlushAsync(ct);
             if (!flushTask.IsCompletedSuccessfully)
                return CompleteFlushAsync(flushTask, lockToken);
-            
+
             // consume flush task
             _ = flushTask.Result.IsCompleted;
             ResetKeepAliveTimestamp();
