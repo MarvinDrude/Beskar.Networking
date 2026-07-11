@@ -41,6 +41,11 @@ public interface INetworkSession : IAsyncDisposable
    public CancellationToken SessionClosedToken { get; }
 
    /// <summary>
+   /// The generic property store for the current session.
+   /// </summary>
+   public INetworkPropertyStore Properties { get; }
+
+   /// <summary>
    /// Accepts or gets the network stream of the current network session.
    /// </summary>
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default);

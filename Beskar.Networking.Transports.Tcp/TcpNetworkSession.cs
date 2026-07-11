@@ -3,6 +3,7 @@ using System.Net;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 
@@ -27,6 +28,8 @@ public sealed class TcpNetworkSession(
    public bool IsSupportingUnidirectional => false;
 
    public CancellationToken SessionClosedToken => _cts.Token;
+
+   public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
    private readonly IDuplexPipe _connection = connection;
    private readonly CancellationTokenSource _cts = new();

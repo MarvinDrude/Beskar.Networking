@@ -7,6 +7,7 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Managed;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Managed.Events;
 using Beskar.Networking.Abstractions.Options;
 using Beskar.Networking.Abstractions.Backoffs;
@@ -290,6 +291,7 @@ public class FakeNetworkSession : INetworkSession, IAsyncDisposable
    public bool IsSupportingMultiplexing => false;
    public bool IsSupportingUnidirectional => false;
    public CancellationToken SessionClosedToken => _cts.Token;
+   public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
    public bool Disposed { get; private set; }
 

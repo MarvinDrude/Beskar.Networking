@@ -253,7 +253,7 @@ public class ConnectOptionsTests
       };
 
       // Act
-      var options = ConnectOptions.Create(in originalPacket, MqttProtocolVersion.V311);
+      var options = ConnectOptions.Create(in originalPacket, MqttProtocolVersion.V311, new IPEndPoint(IPAddress.Loopback, 1883));
 
       // Verify that options has the correct properties
       await Assert.That(options.ProtocolVersion).IsEqualTo(MqttProtocolVersion.V311);

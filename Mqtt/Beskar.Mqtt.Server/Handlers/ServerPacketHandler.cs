@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Handlers;
+using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Mqtt.Server.Internal;
@@ -48,7 +49,13 @@ public sealed class ServerPacketHandler
    {
       if (!IsValid) return ValueTask.CompletedTask;
 
-      var result = ConnectOptions.Create(in packet, (IPEndPoint)stream.Session.RemoteAddress);
+      stream.Session.Properties.TryGet("MqttProtocolVersion", out MqttProtocolVersion protocolVersion);
+      if (protocolVersion is MqttProtocolVersion.Unknown)
+      {
+         protocolVersion = MqttProtocolVersion.V50;
+      }
+
+      var result = ConnectOptions.Create(in packet, protocolVersion, (IPEndPoint)stream.Session.RemoteAddress);
       _client.PushControlPacket(result);
 
       return ValueTask.CompletedTask;

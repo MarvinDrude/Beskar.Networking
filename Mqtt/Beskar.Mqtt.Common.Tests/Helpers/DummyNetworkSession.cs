@@ -6,6 +6,7 @@ using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 
 namespace Beskar.Mqtt.Common.Tests.Helpers;
 
@@ -17,6 +18,8 @@ public class DummyNetworkSession : INetworkSession
    public bool IsSupportingMultiplexing => false;
    public bool IsSupportingUnidirectional => false;
    public CancellationToken SessionClosedToken => CancellationToken.None;
+
+   public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {

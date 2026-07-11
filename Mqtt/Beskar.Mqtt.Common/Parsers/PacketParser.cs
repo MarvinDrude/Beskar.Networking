@@ -66,6 +66,7 @@ public ref struct PacketParser(
             return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(protocolResult.Error);
 
          ProtocolVersion = protocolResult.Success;
+         _stream.Session.Properties.Set("MqttProtocolVersion", ProtocolVersion);
       }
 
       var innerConsumed = 0;

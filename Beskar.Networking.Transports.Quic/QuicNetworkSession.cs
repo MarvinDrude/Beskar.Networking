@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
@@ -28,6 +29,8 @@ public sealed class QuicNetworkSession(
    public bool IsSupportingUnidirectional => true;
 
    public CancellationToken SessionClosedToken => _cts.Token;
+
+   public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
    private readonly QuicConnection _connection = connection;
    private readonly QuicTransportOptions _options = options;
