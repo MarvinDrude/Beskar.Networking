@@ -2,6 +2,13 @@
 
    <PropertyGroup>
       <OutputType>Exe</OutputType>
+      <TargetFramework>net11.0</TargetFramework>
+      <LangVersion>preview</LangVersion>
+      <Features>$(Features);runtime-async=on</Features>
    </PropertyGroup>
+
+   <ItemGroup>
+     <PackageReference Include="BenchmarkDotNet" />
+   </ItemGroup>
 
 </Project>
