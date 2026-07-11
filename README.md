@@ -1,8 +1,32 @@
-# Beskar.Networking
+
+<h1>
+<p style="text-align: center;">
+   <img src="https://github.com/MarvinDrude/Beskar.Networking/Resources/banner.png" alt="Logo" width="128" />
+   <br />
+   Beskar.Networking
+</p>
+</h1>
+<p style="text-align: center;">
+   Fast, <code>.NET</code> native, high-performance, low-allocation networking library.<br/>
+   Built for modern <code>.NET</code> using <code>C#</code> includes TCP, WebSockets, QUIC, and MQTT.<br/>
+   No external runtime dependencies besides <b>Beskar</b>.<br/><br/>
+   <a href="#about">About</a>
+   ·
+   <a href="#">Documentation</a>
+   ·
+   <a href="#performance">Performance</a>
+   ·
+   <a href="#key-features">Key features</a>
+</p>
+
+---
+<br/>
 
 > **Work In Progress (WIP)**
 > This library is actively under development. Interfaces, implementations, and APIs are subject
 > to change before the first stable release.
+
+## About
 
 `Beskar.Networking` is a high-performance, low-allocation networking library built for modern **.NET 10** using C#.
 It provides a unified, pipe-based interface abstraction (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`)
