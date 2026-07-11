@@ -29,5 +29,8 @@ public sealed class MqttServerOptions
    /// </summary>
    public ushort MaxPendingMessagesPerConnection { get; set; } = 1024;
 
-
+   /// <summary>
+   /// Default timeout for packet awaits etc.
+   /// </summary>
+   public TimeSpan DefaultTimeout { get; set; } = TimeSpan.FromSeconds(120);
 }

@@ -3,6 +3,7 @@ using System.Net;
 using Beskar.Mqtt.Common.Builders.Common;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Packets;
 
 namespace Beskar.Mqtt.Common.Builders.Connecting;
 
@@ -227,4 +228,12 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    /// Creates a new ConnectOptionsBuilder.
    /// </summary>
    public static ConnectOptionsBuilder Create(IPEndPoint endPoint) => new(endPoint);
+
+   /// <summary>
+   /// Create a connect heap packet version of a stack instance
+   /// </summary>
+   public static ConnectOptions Create(in ConnectPacket packet)
+   {
+
+   }
 }

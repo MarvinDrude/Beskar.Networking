@@ -13,7 +13,7 @@ public sealed class MqttServerBuilder(MqttServerOptions? options = null)
 
    public MqttServer Build()
    {
-      return new MqttServer([.. _listeners]);
+      return new MqttServer([.. _listeners], _options);
    }
 
    /// <summary>

@@ -17,22 +17,12 @@ var mqttServer = MqttServerFactory.CreateBuilder()
    .UseQuic(8002)
    .Build();
 
+var result = await mqttServer.StartAsync();
+if (result.Failed) throw new InvalidOperationException(result.Error.Detail);
 
 
-var server = NetworkServerBuilder.Create()
-   .ConfigureServers(collection =>
-   {
-      collection.ListenAnyIP(9000, builder =>
-      {
-         builder.UseTcp(tcpBuilder =>
-         {
 
-         });
-         builder.OnSession(static session =>
-         {
-            return Task.CompletedTask;
-         });
-      });
-   })
-   .Build();
-
+while (true)
+{
+   await Task.Delay(TimeSpan.FromHours(24));
+}

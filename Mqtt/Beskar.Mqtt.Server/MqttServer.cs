@@ -3,13 +3,16 @@ using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
+using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Mqtt.Server.Enums;
 using Beskar.Mqtt.Server.Handlers;
 using Beskar.Mqtt.Server.Internal;
+using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Server;
@@ -37,15 +40,14 @@ public sealed partial class MqttServer : IAsyncDisposable
    private volatile bool _disposed;
    private volatile int _state = (int)MqttServerState.Stopped;
 
+   private readonly MqttServerOptions _options;
    private readonly INetworkListener[] _listeners;
    private CancellationTokenSource _cancellationTokenSource = new();
 
-   private ServerPacketHandler _packetHandler;
-
-   internal MqttServer(INetworkListener[] listeners)
+   internal MqttServer(INetworkListener[] listeners, MqttServerOptions options)
    {
       _listeners = listeners;
-      _packetHandler = new ServerPacketHandler(this);
+      _options = options;
    }
 
    public async Task<VoidResult<StringError>> StartAsync()
@@ -150,26 +152,50 @@ public sealed partial class MqttServer : IAsyncDisposable
          return;
       }
 
+      MqttServerClient? client = null;
+      ServerPacketHandler? packetHandler = null;
+
       try
       {
+         var connectionContext = new NetworkServerConnectionContext(listener, session);
+         var streamContext = new NetworkServerStreamContext(connectionContext, controlStream.Success);
 
+         client = _serverClientPool.Get(null);
+         client.Initialize(streamContext, _options);
 
-         await RunClientListenTask(listener, session, controlStream.Success, (ct) => { return Task.CompletedTask; }, ct);
+         packetHandler = _packetHandlerPool.Get(null);
+         packetHandler.Initialize(this, client);
+
+         _ = Task.Factory.StartNew(
+            () => RunClientListenTask(client, streamContext, packetHandler, (ct) => Task.CompletedTask, ct),
+            TaskCreationOptions.PreferFairness);
+
+         await RunClientListenTask(client, streamContext, packetHandler, (ct) => Task.CompletedTask, ct);
       }
       catch (Exception)
       {
          await session.DisposeAsync();
       }
+      finally
+      {
+         if (client is not null) _serverClientPool.Return(client);
+         if (packetHandler is not null) _packetHandlerPool.Return(packetHandler);
+      }
+   }
+
+   private async Task RunClientConnectionTask()
+   {
+
    }
 
    private async Task RunClientListenTask(
-      INetworkListener listener, INetworkSession session, INetworkStream stream,
+      MqttServerClient client, NetworkServerStreamContext streamContext, IPacketHandler packetHandler,
       Func<CancellationToken, Task> disconnectHandler, CancellationToken ct)
    {
       try
       {
          // duplex input for reading incoming messages
-         var reader = stream.Transport.Input;
+         var reader = streamContext.Stream.Transport.Input;
 
          while (true)
          {
@@ -185,7 +211,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             while (!buffer.IsEmpty)
             {
                var sequenceReader = new SequenceReader<byte>(buffer);
-               var parser = new PacketParser(stream, _packetHandler, MqttProtocolVersion.Unknown);
+               var parser = new PacketParser(streamContext.Stream, packetHandler, MqttProtocolVersion.Unknown);
                var valueTask = parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct);
 
                var parseResult = valueTask.IsCompletedSuccessfully

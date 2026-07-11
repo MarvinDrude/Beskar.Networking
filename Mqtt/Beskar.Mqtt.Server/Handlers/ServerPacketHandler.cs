@@ -1,13 +1,37 @@
+using System.Diagnostics.CodeAnalysis;
+using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Mqtt.Protocol.Results;
+using Beskar.Mqtt.Server.Internal;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Interfaces.Pools;
 
 namespace Beskar.Mqtt.Server.Handlers;
 
-public sealed class ServerPacketHandler(MqttServer server)
-   : IPacketHandler
+public sealed class ServerPacketHandler
+   : IPacketHandler, IPooledObject
 {
-   private readonly MqttServer _server = server;
+   [MemberNotNullWhen(true, nameof(_server), nameof(_client))]
+   public bool IsValid => _server is not null && _client is not null;
+
+   private MqttServer? _server;
+   private MqttServerClient? _client;
+
+   public void Initialize(
+      MqttServer server, MqttServerClient client)
+   {
+      _server = server;
+      _client = client;
+   }
+
+   public bool TryResetState()
+   {
+      _server = null;
+      _client = null;
+
+      return true;
+   }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in AuthPacket packet, CancellationToken ct = default)
    {
@@ -21,7 +45,9 @@ public sealed class ServerPacketHandler(MqttServer server)
 
    public ValueTask ExecuteAsync(INetworkStream stream, in ConnectPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      if (!IsValid) return ValueTask.CompletedTask;
+
+      var result = ConnectOptions.
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in DisconnectPacket packet, CancellationToken ct = default)
