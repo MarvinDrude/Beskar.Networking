@@ -43,6 +43,11 @@ public class ValueTaskBenchmarks
       }
 
       return GetValueOptimizedAsync();
+      async ValueTask<int> GetValueOptimizedAsync()
+      {
+         await Task.Yield();
+         return 42;
+      }
    }
 
    [MethodImpl(MethodImplOptions.NoInlining)]
@@ -53,13 +58,6 @@ public class ValueTaskBenchmarks
          return 42;
       }
 
-      await Task.Yield();
-      return 42;
-   }
-
-   [MethodImpl(MethodImplOptions.NoInlining)]
-   private async ValueTask<int> GetValueOptimizedAsync()
-   {
       await Task.Yield();
       return 42;
    }

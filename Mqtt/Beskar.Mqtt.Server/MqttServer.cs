@@ -55,6 +55,8 @@ public sealed partial class MqttServer : IAsyncDisposable
    private readonly INetworkListener[] _listeners;
    private CancellationTokenSource _cancellationTokenSource = new();
 
+   private readonly MqttClientSessions _clientSessions = new();
+
    internal MqttServer(INetworkListener[] listeners, MqttServerOptions options)
    {
       _listeners = listeners;
@@ -249,6 +251,12 @@ public sealed partial class MqttServer : IAsyncDisposable
             AuthenticationDataBytes = new ReadOnlySequence<byte>(context.ResponseAuthenticationData)
          };
 
+         if (context.ReasonCode is not ConnectReasonCode.Success)
+         {
+            await streamContext.Stream.Send(in connAck, client.ProtocolVersion, ct);
+            return;
+         }
+
 
       }
       catch (Exception)
@@ -256,6 +264,8 @@ public sealed partial class MqttServer : IAsyncDisposable
          // ignored
       }
    }
+
+
 
    private async Task RunClientListenTask(
       MqttServerClient client, NetworkServerStreamContext streamContext, IPacketHandler packetHandler,
