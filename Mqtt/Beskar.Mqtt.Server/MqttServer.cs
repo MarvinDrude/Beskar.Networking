@@ -150,10 +150,16 @@ public sealed partial class MqttServer : IAsyncDisposable
          return;
       }
 
-      var mqttSession = new MqttSession(listener, session, controlStream.Success);
-      mqttSession.IsConnected = true;
+      try
+      {
 
-      await RunClientListenTask(listener, session, controlStream.Success, mqttSession.DisconnectAsync, ct);
+
+         await RunClientListenTask(listener, session, controlStream.Success, (ct) => { return Task.CompletedTask; }, ct);
+      }
+      catch (Exception)
+      {
+         await session.DisposeAsync();
+      }
    }
 
    private async Task RunClientListenTask(

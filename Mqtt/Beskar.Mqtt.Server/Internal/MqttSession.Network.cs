@@ -6,25 +6,17 @@ namespace Beskar.Mqtt.Server.Internal;
 public sealed partial class MqttSession
 {
    [MemberNotNullWhen(true,
-      nameof(_listener),
-      nameof(_session),
-      nameof(_controlStream))]
+      nameof(_serverClient))]
    public bool IsConnected { get; internal set; }
 
-   private INetworkListener? _listener;
-   private INetworkSession? _session;
-   private INetworkStream? _controlStream;
-
+   private MqttServerClient? _serverClient;
    private volatile bool _disposed;
 
    internal MqttSession(
-      INetworkListener listener,
-      INetworkSession session,
-      INetworkStream controlStream)
+      MqttServerClient serverClient)
    {
-      _listener = listener;
-      _session = session;
-      _controlStream = controlStream;
+      _serverClient = serverClient;
+      IsConnected = true;
    }
 
    public async Task DisconnectAsync(CancellationToken ct = default)

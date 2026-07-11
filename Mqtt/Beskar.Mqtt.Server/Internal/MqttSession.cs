@@ -1,4 +1,3 @@
-using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Server.Internal;
 
