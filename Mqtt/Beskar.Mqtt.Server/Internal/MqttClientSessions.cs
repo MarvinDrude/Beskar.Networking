@@ -7,7 +7,7 @@ public sealed class MqttClientSessions
    private readonly AsyncLock _initiateLock = new();
    private readonly ReadWriteLock _modificationLock = new();
 
-
+   private readonly MqttSessionRegistry _sessions = new();
 
    public async Task<MqttSession> GetOrCreateSession(
       MqttServerClient serverClient,
@@ -22,5 +22,7 @@ public sealed class MqttClientSessions
 
          }
       }
+
+      return null!;
    }
 }
