@@ -1,12 +1,12 @@
 
 <h1>
-<p style="text-align: center;">
-   <img src="https://github.com/MarvinDrude/Beskar.Networking/Resources/banner.png" alt="Logo" width="128" />
+<p align="center">
+   <img src="https://github.com/MarvinDrude/Beskar.Networking/blob/master/Resources/banner.png" alt="Logo" width="128" />
    <br />
    Beskar.Networking
 </p>
 </h1>
-<p style="text-align: center;">
+<p align="center">
    Fast, <code>.NET</code> native, high-performance, low-allocation networking library.<br/>
    Built for modern <code>.NET</code> using <code>C#</code> includes TCP, WebSockets, QUIC, and MQTT.<br/>
    No external runtime dependencies besides <b>Beskar</b>.<br/><br/>
