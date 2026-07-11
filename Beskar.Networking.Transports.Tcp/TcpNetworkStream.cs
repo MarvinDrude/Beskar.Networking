@@ -10,19 +10,22 @@ namespace Beskar.Networking.Transports.Tcp;
 /// <summary>
 /// Represents a TCP network stream wrapper around an <see cref="IDuplexPipe"/>.
 /// </summary>
-public sealed class TcpNetworkStream(
-   INetworkSession session,
-   IDuplexPipe transport)
-   : INetworkStream
+public sealed class TcpNetworkStream : INetworkStream
 {
    public long StreamId => 0;
 
-   public INetworkSession Session { get; } = session;
-   public IDuplexPipe Transport { get; } = transport;
+   public INetworkSession Session { get; }
+   public IDuplexPipe Transport { get; }
 
    public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;
 
    public NetworkStats Stats { get; set; }
+
+   public TcpNetworkStream(INetworkSession session, IDuplexPipe transport)
+   {
+      Session = session;
+      Transport = new StatsTrackingDuplexPipe(transport, this);
+   }
 
    private readonly AsyncLock _asyncLock = new();
 

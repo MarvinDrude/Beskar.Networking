@@ -10,19 +10,22 @@ namespace Beskar.Networking.Transports.Ws;
 /// <summary>
 /// Represents a WebSocket network stream wrapping a <see cref="WsDuplexPipe"/>.
 /// </summary>
-public sealed class WsNetworkStream(
-   INetworkSession session,
-   IDuplexPipe transport)
-   : INetworkStream
+public sealed class WsNetworkStream : INetworkStream
 {
    public long StreamId => 0;
 
-   public INetworkSession Session { get; } = session;
-   public IDuplexPipe Transport { get; } = transport;
+   public INetworkSession Session { get; }
+   public IDuplexPipe Transport { get; }
 
    public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;
 
    public NetworkStats Stats { get; set; }
+
+   public WsNetworkStream(INetworkSession session, IDuplexPipe transport)
+   {
+      Session = session;
+      Transport = new StatsTrackingDuplexPipe(transport, this);
+   }
 
    private readonly AsyncLock _asyncLock = new();
 

@@ -12,15 +12,11 @@ namespace Beskar.Networking.Transports.Quic;
 /// <summary>
 /// Represents a single multiplexed QUIC network stream wrapping an underlying StreamConnection pipeline.
 /// </summary>
-public sealed class QuicNetworkStream(
-   QuicNetworkSession session,
-   QuicStream quicStream,
-   StreamConnection connection)
-   : INetworkStream
+public sealed class QuicNetworkStream : INetworkStream
 {
-   private readonly QuicNetworkSession _session = session;
-   private readonly QuicStream _quicStream = quicStream;
-   private readonly StreamConnection _connection = connection;
+   private readonly QuicNetworkSession _session;
+   private readonly QuicStream _quicStream;
+   private readonly StreamConnection _connection;
    private readonly AsyncLock _asyncLock = new();
 
    private int _disposed;
@@ -28,9 +24,18 @@ public sealed class QuicNetworkStream(
 
    public INetworkSession Session => _session;
 
-   public IDuplexPipe Transport => _connection;
+   public IDuplexPipe Transport { get; }
 
    public NetworkStats Stats { get; set; }
+
+   public QuicNetworkStream(QuicNetworkSession session, QuicStream quicStream, StreamConnection connection)
+   {
+      _session = session;
+      _quicStream = quicStream;
+      _connection = connection;
+
+      Transport = new StatsTrackingDuplexPipe(connection, this);
+   }
 
    public NetworkStreamDirection Direction => _quicStream.Type == QuicStreamType.Bidirectional
       ? NetworkStreamDirection.Bidirectional
