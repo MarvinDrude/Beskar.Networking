@@ -72,7 +72,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRec(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -122,7 +122,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubAck(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -227,7 +227,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePublish(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -313,7 +313,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteConnect(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.Unknown);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.Unknown);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -390,7 +390,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteConnAck(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -458,7 +458,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteDisconnect(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -530,7 +530,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteAuth(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -601,7 +601,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteSubscribe(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -663,7 +663,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteSubscribe(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -711,7 +711,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteSubscribe(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -761,7 +761,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteUnsubscribe(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -830,7 +830,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubAck(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -880,7 +880,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRec(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -950,7 +950,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRel(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -1000,7 +1000,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRel(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -1070,7 +1070,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubComp(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -1120,7 +1120,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubComp(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -1193,7 +1193,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteSubAck(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -1266,7 +1266,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteUnsubAck(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -1397,7 +1397,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePublish(options, expectedPacketId);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -1504,7 +1504,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteSubscribe(options, expectedPacketId);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -1590,7 +1590,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteUnsubscribe(options, expectedPacketId);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V50);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -1810,7 +1810,7 @@ public class Version5ParsingTests
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WriteConnect(options);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.Unknown);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.Unknown);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }

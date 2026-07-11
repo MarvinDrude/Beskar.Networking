@@ -2,6 +2,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Common.Tests.Helpers;
 
@@ -39,91 +40,91 @@ public class TestPacketHandler : IPacketHandler
     public DisconnectCallback? OnDisconnect;
     public AuthCallback? OnAuth;
 
-    public ValueTask ExecuteAsync(in PubRecPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in PubRecPacket packet, CancellationToken ct = default)
     {
         OnPubRec?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in PubAckPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in PubAckPacket packet, CancellationToken ct = default)
     {
         OnPubAck?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in PubCompPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in PubCompPacket packet, CancellationToken ct = default)
     {
         OnPubComp?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in PubRelPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in PubRelPacket packet, CancellationToken ct = default)
     {
         OnPubRel?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in PublishPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in PublishPacket packet, CancellationToken ct = default)
     {
         OnPublish?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in ConnectPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in ConnectPacket packet, CancellationToken ct = default)
     {
         OnConnect?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in ConnAckPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in ConnAckPacket packet, CancellationToken ct = default)
     {
         OnConnAck?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in SubAckPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in SubAckPacket packet, CancellationToken ct = default)
     {
         OnSubAck?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in SubscribePacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in SubscribePacket packet, CancellationToken ct = default)
     {
         OnSubscribe?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in UnsubAckPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in UnsubAckPacket packet, CancellationToken ct = default)
     {
         OnUnsubAck?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in UnsubscribePacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in UnsubscribePacket packet, CancellationToken ct = default)
     {
         OnUnsubscribe?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in PingReqPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in PingReqPacket packet, CancellationToken ct = default)
     {
         OnPingReq?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in PingRespPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in PingRespPacket packet, CancellationToken ct = default)
     {
         OnPingResp?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in DisconnectPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in DisconnectPacket packet, CancellationToken ct = default)
     {
         OnDisconnect?.Invoke(in packet);
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(in AuthPacket packet, CancellationToken ct = default)
+    public ValueTask ExecuteAsync(INetworkStream stream, in AuthPacket packet, CancellationToken ct = default)
     {
         OnAuth?.Invoke(in packet);
         return ValueTask.CompletedTask;

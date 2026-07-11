@@ -46,7 +46,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WritePubRec(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -90,7 +90,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WritePubAck(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -133,7 +133,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WritePubComp(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -176,7 +176,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WritePubRel(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -246,7 +246,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WritePublish(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -346,7 +346,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteConnect(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.Unknown);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.Unknown);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -404,7 +404,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteConnAck(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -456,7 +456,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteSubAck(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -509,7 +509,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteSubscribe(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -555,7 +555,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteSubscribe(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -596,7 +596,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteUnsubAck(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -648,7 +648,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteUnsubscribe(originalPacket);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -716,7 +716,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WritePublish(options, expectedPacketId);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -779,7 +779,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteSubscribe(options, expectedPacketId);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -836,7 +836,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteUnsubscribe(options, expectedPacketId);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.V311);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V311);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }
@@ -935,7 +935,7 @@ public class Version3ParsingTests
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
          encoder.WriteConnect(options);
 
-         var parser = new PacketParser(handler, MqttProtocolVersion.Unknown);
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.Unknown);
          var reader = new SequenceReader<byte>(buffer.WrittenSequence);
          dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
       }

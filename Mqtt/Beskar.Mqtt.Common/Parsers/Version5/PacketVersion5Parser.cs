@@ -5,12 +5,14 @@ using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Utilities.Tracing;
+using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Common.Parsers.Version5;
 
 [StructLayout(LayoutKind.Auto)]
-public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
+public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, IPacketHandler handler)
 {
+   private readonly INetworkStream _stream = stream;
    private readonly IPacketHandler _packetHandler = handler;
 
    public ValueTask<PacketDispatchResult> TryDispatch(
@@ -83,7 +85,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -101,7 +103,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -119,7 +121,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -137,7 +139,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -155,7 +157,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -173,7 +175,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -191,7 +193,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -209,7 +211,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -227,7 +229,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -238,7 +240,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
    {
       var packet = new PingReqPacket();
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -249,7 +251,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
    {
       var packet = new PingRespPacket();
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -267,7 +269,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -285,7 +287,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -303,7 +305,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -321,7 +323,7 @@ public readonly ref partial struct PacketVersion5Parser(IPacketHandler handler)
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);

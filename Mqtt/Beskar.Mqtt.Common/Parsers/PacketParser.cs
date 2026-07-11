@@ -9,17 +9,20 @@ using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Parsing;
 using Beskar.Mqtt.Protocol.Parsing.Results;
+using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Common.Parsers;
 
 [StructLayout(LayoutKind.Auto)]
 public ref struct PacketParser(
+   INetworkStream stream,
    IPacketHandler handler,
    MqttProtocolVersion protocolVersion)
 {
    public MqttProtocolVersion ProtocolVersion { get; private set; } = protocolVersion;
    public bool TryPrivate => _tryPrivate;
 
+   private readonly INetworkStream _stream = stream;
    private readonly IPacketHandler _packetHandler = handler;
    private bool _tryPrivate;
 
@@ -68,9 +71,9 @@ public ref struct PacketParser(
       var innerConsumed = 0;
       var dispatchTask = ProtocolVersion switch
       {
-         MqttProtocolVersion.V50 => new PacketVersion5Parser(_packetHandler)
+         MqttProtocolVersion.V50 => new PacketVersion5Parser(_stream, _packetHandler)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
-         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_packetHandler, ProtocolVersion)
+         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_stream, _packetHandler, ProtocolVersion)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
          _ => ValueTask.FromResult(PacketDispatchResult.ProtocolError)
       };

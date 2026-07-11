@@ -5,12 +5,15 @@ using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Utilities.Tracing;
+using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Common.Parsers.Version3;
 
 [StructLayout(LayoutKind.Auto)]
-public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, MqttProtocolVersion protocolVersion)
+public readonly ref partial struct PacketVersion3Parser(
+   INetworkStream stream, IPacketHandler handler, MqttProtocolVersion protocolVersion)
 {
+   private readonly INetworkStream _stream = stream;
    private readonly IPacketHandler _packetHandler = handler;
    private readonly MqttProtocolVersion _protocolVersion = protocolVersion;
 
@@ -82,7 +85,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -100,7 +103,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -118,7 +121,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -136,7 +139,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -154,7 +157,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -172,7 +175,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -190,7 +193,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -208,7 +211,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -226,7 +229,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -238,7 +241,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
       var packet = new PingReqPacket();
       // ping request needs no parsing in v3
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -250,7 +253,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
       var packet = new PingRespPacket();
       // ping response needs no parsing in v3
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -268,7 +271,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -286,7 +289,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
@@ -298,7 +301,7 @@ public readonly ref partial struct PacketVersion3Parser(IPacketHandler handler, 
       var packet = new DisconnectPacket();
       // disconnect needs no parsing in v3
 
-      var valueTask = _packetHandler.ExecuteAsync(in packet, cancellation);
+      var valueTask = _packetHandler.ExecuteAsync(_stream, in packet, cancellation);
       return valueTask.IsCompletedSuccessfully
          ? new ValueTask<PacketDispatchResult>(PacketDispatchResult.Success)
          : AwaitHandler(valueTask);
