@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Net;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Protocol.Packets;
@@ -47,7 +48,10 @@ public sealed class ServerPacketHandler
    {
       if (!IsValid) return ValueTask.CompletedTask;
 
-      var result = ConnectOptions.
+      var result = ConnectOptions.Create(in packet, (IPEndPoint)stream.Session.RemoteAddress);
+      _client.PushControlPacket(result);
+
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in DisconnectPacket packet, CancellationToken ct = default)

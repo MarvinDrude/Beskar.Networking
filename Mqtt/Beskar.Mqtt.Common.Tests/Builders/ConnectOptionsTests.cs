@@ -2,8 +2,12 @@ using System;
 using System.Buffers;
 using System.Net;
 using System.Text;
+using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Common.Encoders.Properties;
+using Beskar.Mqtt.Common.Tests.Helpers;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Packets;
 
 namespace Beskar.Mqtt.Common.Tests.Builders;
 
@@ -187,5 +191,166 @@ public class ConnectOptionsTests
 
       await Assert.That(options.UserProperties.Count).IsEqualTo(0);
       await Assert.That(options.WillUserProperties.Count).IsEqualTo(0);
+   }
+
+   [Test]
+   public async Task CreateFromConnectPacketDeepCopiesEverything()
+   {
+      // Arrange
+      var clientIdBytes = "client-id"u8.ToArray();
+      var usernameBytes = "username"u8.ToArray();
+      var passwordBytes = "password"u8.ToArray();
+      
+      var propBuffer = new MemoryBuffer();
+      using (var propWriter = new ByteWriter(propBuffer.GetSpan(256)))
+      {
+         var propEncoder = propWriter.AsConnectPropertyEncoder();
+         propEncoder.WriteSessionExpiryInterval(3600);
+         propEncoder.WriteTopicAliasMaximum(10);
+         propEncoder.WriteMaximumPacketSize(65536);
+         propEncoder.WriteRequestResponseInformation(true);
+         propEncoder.WriteRequestProblemInformation(false);
+         propEncoder.WriteAuthenticationMethod("oauth"u8);
+         propEncoder.WriteAuthenticationData([1, 2, 3, 4]);
+         propEncoder.WriteUserProperty("client-prop-key"u8, "client-prop-val"u8);
+         propBuffer.Advance(propEncoder.Encoder.Writer.Position);
+      }
+
+      var willTopicBytes = "will-topic"u8.ToArray();
+      var willPayloadBytes = new byte[] { 5, 6, 7 };
+      var willContentTypeBytes = "text/plain"u8.ToArray();
+      var willResponseTopicBytes = "will-response"u8.ToArray();
+      var willCorrelationDataBytes = new byte[] { 8, 9 };
+
+      var willPropBuffer = new MemoryBuffer();
+      using (var willPropWriter = new ByteWriter(willPropBuffer.GetSpan(256)))
+      {
+         var willPropEncoder = willPropWriter.AsWillPropertyEncoder();
+         willPropEncoder.WritePayloadFormatIndicator(PayloadFormat.CharacterData);
+         willPropEncoder.WriteMessageExpiryInterval(600);
+         willPropEncoder.WriteWillDelayInterval(120);
+         willPropEncoder.WriteContentType("text/plain"u8);
+         willPropEncoder.WriteResponseTopic("will-response"u8);
+         willPropEncoder.WriteCorrelationData([8, 9]);
+         willPropEncoder.WriteUserProperty("will-prop-key"u8, "will-prop-val"u8);
+         willPropBuffer.Advance(willPropEncoder.Encoder.Writer.Position);
+      }
+
+      var originalPacket = new ConnectPacket
+      {
+         IsCleanSession = false,
+         KeepAliveInterval = 30,
+         ClientIdUtf8Bytes = new ReadOnlySequence<byte>(clientIdBytes),
+         UsernameUtf8Bytes = new ReadOnlySequence<byte>(usernameBytes),
+         PasswordBytes = new ReadOnlySequence<byte>(passwordBytes),
+         PropertiesBytes = propBuffer.WrittenSequence,
+         HasWill = true,
+         WillTopicUtf8Bytes = new ReadOnlySequence<byte>(willTopicBytes),
+         WillMessageBytes = new ReadOnlySequence<byte>(willPayloadBytes),
+         WillQualityOfService = QualityOfServiceType.ExactlyOnce,
+         WillRetain = true,
+         WillPropertiesBytes = willPropBuffer.WrittenSequence
+      };
+
+      // Act
+      var options = ConnectOptions.Create(in originalPacket, MqttProtocolVersion.V311);
+
+      // Verify that options has the correct properties
+      await Assert.That(options.ProtocolVersion).IsEqualTo(MqttProtocolVersion.V311);
+      await Assert.That(options.CleanSession).IsFalse();
+      await Assert.That(options.KeepAlivePeriod).IsEqualTo((ushort)30);
+      
+      await Assert.That(Encoding.UTF8.GetString(options.ClientIdUtf8Bytes.Span)).IsEqualTo("client-id");
+      await Assert.That(Encoding.UTF8.GetString(options.UsernameUtf8Bytes.Span)).IsEqualTo("username");
+      await Assert.That(Encoding.UTF8.GetString(options.PasswordBytes.Span)).IsEqualTo("password");
+
+      // Verify properties
+      await Assert.That(options.SessionExpiryInterval).IsEqualTo((uint?)3600);
+      await Assert.That(options.TopicAliasMaximum).IsEqualTo((ushort?)10);
+      await Assert.That(options.MaximumPacketSize).IsEqualTo((uint?)65536);
+      await Assert.That(options.RequestResponseInformation).IsTrue();
+      await Assert.That(options.RequestProblemInformation).IsFalse();
+      await Assert.That(Encoding.UTF8.GetString(options.AuthenticationMethodUtf8Bytes.Span)).IsEqualTo("oauth");
+      await Assert.That(options.AuthenticationDataBytes.ToArray()).IsEquivalentTo(new byte[] { 1, 2, 3, 4 });
+
+      // Verify user properties
+      var hasClientProp = false;
+      var clientPropKey = "";
+      var clientPropVal = "";
+      var hasMoreClientProps = true;
+
+      {
+         var clientUserProps = options.UserProperties.GetEnumerator();
+         if (clientUserProps.MoveNext())
+         {
+            hasClientProp = true;
+            clientPropKey = Encoding.UTF8.GetString(clientUserProps.Current.KeyUtf8Bytes);
+            clientPropVal = Encoding.UTF8.GetString(clientUserProps.Current.ValueBytes);
+            hasMoreClientProps = clientUserProps.MoveNext();
+         }
+         else
+         {
+            hasMoreClientProps = false;
+         }
+      }
+
+      await Assert.That(hasClientProp).IsTrue();
+      await Assert.That(clientPropKey).IsEqualTo("client-prop-key");
+      await Assert.That(clientPropVal).IsEqualTo("client-prop-val");
+      await Assert.That(hasMoreClientProps).IsFalse();
+
+      // Verify Will
+      await Assert.That(options.HasWill).IsTrue();
+      await Assert.That(Encoding.UTF8.GetString(options.WillTopicUtf8Bytes.Span)).IsEqualTo("will-topic");
+      await Assert.That(options.WillPayload.ToArray()).IsEquivalentTo(new byte[] { 5, 6, 7 });
+      await Assert.That(options.WillQualityOfService).IsEqualTo(QualityOfServiceType.ExactlyOnce);
+      await Assert.That(options.WillRetain).IsTrue();
+      
+      await Assert.That(options.WillPayloadFormatIndicator).IsEqualTo(PayloadFormat.CharacterData);
+      await Assert.That(options.WillMessageExpiryInterval).IsEqualTo((uint?)600);
+      await Assert.That(options.WillDelayInterval).IsEqualTo((uint?)120);
+      await Assert.That(Encoding.UTF8.GetString(options.WillContentTypeUtf8Bytes.Span)).IsEqualTo("text/plain");
+      await Assert.That(Encoding.UTF8.GetString(options.WillResponseTopicUtf8Bytes.Span)).IsEqualTo("will-response");
+      await Assert.That(options.WillCorrelationDataBytes.ToArray()).IsEquivalentTo(new byte[] { 8, 9 });
+
+      // Verify Will user properties
+      var hasWillProp = false;
+      var willPropKey = "";
+      var willPropVal = "";
+      var hasMoreWillProps = true;
+
+      {
+         var willUserProps = options.WillUserProperties.GetEnumerator();
+         if (willUserProps.MoveNext())
+         {
+            hasWillProp = true;
+            willPropKey = Encoding.UTF8.GetString(willUserProps.Current.KeyUtf8Bytes);
+            willPropVal = Encoding.UTF8.GetString(willUserProps.Current.ValueBytes);
+            hasMoreWillProps = willUserProps.MoveNext();
+         }
+         else
+         {
+            hasMoreWillProps = false;
+         }
+      }
+
+      await Assert.That(hasWillProp).IsTrue();
+      await Assert.That(willPropKey).IsEqualTo("will-prop-key");
+      await Assert.That(willPropVal).IsEqualTo("will-prop-val");
+      await Assert.That(hasMoreWillProps).IsFalse();
+
+      // Corrupt original arrays to verify deep copy
+      Array.Clear(clientIdBytes);
+      Array.Clear(usernameBytes);
+      Array.Clear(passwordBytes);
+      Array.Clear(willTopicBytes);
+      Array.Clear(willPayloadBytes);
+
+      // Verify options are unaffected
+      await Assert.That(Encoding.UTF8.GetString(options.ClientIdUtf8Bytes.Span)).IsEqualTo("client-id");
+      await Assert.That(Encoding.UTF8.GetString(options.UsernameUtf8Bytes.Span)).IsEqualTo("username");
+      await Assert.That(Encoding.UTF8.GetString(options.PasswordBytes.Span)).IsEqualTo("password");
+      await Assert.That(Encoding.UTF8.GetString(options.WillTopicUtf8Bytes.Span)).IsEqualTo("will-topic");
+      await Assert.That(options.WillPayload.ToArray()).IsEquivalentTo(new byte[] { 5, 6, 7 });
    }
 }

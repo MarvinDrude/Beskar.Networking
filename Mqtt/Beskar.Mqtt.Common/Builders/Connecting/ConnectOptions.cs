@@ -3,6 +3,7 @@ using System.Net;
 using Beskar.Mqtt.Common.Builders.Common;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Packets;
 
 namespace Beskar.Mqtt.Common.Builders.Connecting;
@@ -229,11 +230,101 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    /// </summary>
    public static ConnectOptionsBuilder Create(IPEndPoint endPoint) => new(endPoint);
 
-   /// <summary>
-   /// Create a connect heap packet version of a stack instance
-   /// </summary>
-   public static ConnectOptions Create(in ConnectPacket packet)
-   {
+    /// <summary>
+    /// Create a connect heap packet version of a stack instance
+    /// </summary>
+    public static ConnectOptions Create(in ConnectPacket packet, MqttProtocolVersion protocolVersion,
+       IPEndPoint endPoint)
+    {
+       var options = new ConnectOptions
+       {
+          EndPoint = endPoint,
+          ProtocolVersion = protocolVersion,
+          CleanSession = packet.IsCleanSession,
+          KeepAlivePeriod = packet.KeepAliveInterval,
+          ClientIdUtf8Bytes = packet.ClientIdUtf8Bytes.ToArray(),
+          UsernameUtf8Bytes = packet.UsernameUtf8Bytes.ToArray(),
+          PasswordBytes = packet.PasswordBytes.ToArray()
+       };
 
-   }
+       if (!packet.PropertiesBytes.IsEmpty)
+       {
+          var propEnumerator = packet.GetProperties();
+          while (propEnumerator.MoveNext())
+          {
+             switch (propEnumerator.Current.Identifier)
+             {
+                case PropertyIdentifier.SessionExpiryInterval:
+                   options.SessionExpiryInterval = propEnumerator.Current.AsSessionExpiryInterval();
+                   break;
+                case PropertyIdentifier.TopicAliasMaximum:
+                   options.TopicAliasMaximum = propEnumerator.Current.AsTopicAliasMaximum();
+                   break;
+                case PropertyIdentifier.MaximumPacketSize:
+                   options.MaximumPacketSize = propEnumerator.Current.AsMaximumPacketSize();
+                   break;
+                case PropertyIdentifier.RequestResponseInformation:
+                   options.RequestResponseInformation = propEnumerator.Current.AsRequestResponseInfo();
+                   break;
+                case PropertyIdentifier.RequestProblemInformation:
+                   options.RequestProblemInformation = propEnumerator.Current.AsRequestProblemInfo();
+                   break;
+                case PropertyIdentifier.AuthenticationMethod:
+                   options.AuthenticationMethodUtf8Bytes = propEnumerator.Current.AsAuthenticationMethod().ToArray();
+                   break;
+                case PropertyIdentifier.AuthenticationData:
+                   options.AuthenticationDataBytes = propEnumerator.Current.AsAuthenticationData().ToArray();
+                   break;
+                case PropertyIdentifier.UserProperty:
+                   var pair = propEnumerator.Current.AsUserProperty();
+                   options.UserProperties.Add(pair.KeyBytes.ToArray(), pair.ValueBytes.ToArray());
+                   break;
+             }
+          }
+       }
+
+       if (packet.HasWill)
+       {
+          options.HasWill = true;
+          options.WillTopicUtf8Bytes = packet.WillTopicUtf8Bytes.ToArray();
+          options.WillPayload = new ReadOnlySequence<byte>(packet.WillMessageBytes.ToArray());
+          options.WillQualityOfService = packet.WillQualityOfService;
+          options.WillRetain = packet.WillRetain;
+
+          if (!packet.WillPropertiesBytes.IsEmpty)
+          {
+             var enumerator = packet.GetWillProperties();
+             while (enumerator.MoveNext())
+             {
+                switch (enumerator.Current.Identifier)
+                {
+                   case PropertyIdentifier.PayloadFormatIndicator:
+                      options.WillPayloadFormatIndicator = enumerator.Current.AsPayloadFormat();
+                      break;
+                   case PropertyIdentifier.MessageExpiryInterval:
+                      options.WillMessageExpiryInterval = enumerator.Current.AsMessageExpiryInterval();
+                      break;
+                   case PropertyIdentifier.WillDelayInterval:
+                      options.WillDelayInterval = enumerator.Current.AsWillDelayInterval();
+                      break;
+                   case PropertyIdentifier.ContentType:
+                      options.WillContentTypeUtf8Bytes = enumerator.Current.AsContentType().ToArray();
+                      break;
+                   case PropertyIdentifier.CorrelationData:
+                      options.WillCorrelationDataBytes = enumerator.Current.AsCorrelationData().ToArray();
+                      break;
+                   case PropertyIdentifier.ResponseTopic:
+                      options.WillResponseTopicUtf8Bytes = enumerator.Current.AsResponseTopic().ToArray();
+                      break;
+                   case PropertyIdentifier.UserProperty:
+                      var pair = enumerator.Current.AsUserProperty();
+                      options.WillUserProperties.Add(pair.KeyBytes.ToArray(), pair.ValueBytes.ToArray());
+                      break;
+                }
+             }
+          }
+       }
+
+       return options;
+    }
 }
