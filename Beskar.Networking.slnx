@@ -14,7 +14,11 @@
     <Project Path="Common/Beskar.Networking.Common/Beskar.Networking.Common.csproj" />
   </Folder>
   <Folder Name="/Examples/" />
-  <Folder Name="/Examples/Advanced/" />
+  <Folder Name="/Examples/Advanced/">
+    <Project Path="Examples/Advanced/Beskar.Adv.Chat.Client/Beskar.Adv.Chat.Client.csproj" />
+    <Project Path="Examples/Advanced/Beskar.Adv.Chat.Common/Beskar.Adv.Chat.Common.csproj" />
+    <Project Path="Examples/Advanced/Beskar.Adv.Chat.Server/Beskar.Adv.Chat.Server.csproj" />
+  </Folder>
   <Folder Name="/Examples/Simple/">
     <Project Path="Examples/Simple/Beskar.Bare.PingPongMessage/Beskar.Bare.PingPongMessage.csproj" />
   </Folder>
