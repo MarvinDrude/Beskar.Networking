@@ -12,9 +12,11 @@
    No external runtime dependencies besides <b>Beskar</b>.<br/><br/>
    <a href="#about">About</a>
    ·
+   <a href="#examples">Examples</a>
+   ·
    <a href="#">Documentation</a>
    ·
-   <a href="#performance">Performance</a>
+   <a href="#performance-benchmarks">Performance</a>
    ·
    <a href="#key-features">Key features</a>
 </p>
@@ -31,6 +33,20 @@
 `Beskar.Networking` is a high-performance, low-allocation networking library built for modern **.NET 10** using C#.
 It provides a unified, pipe-based interface abstraction (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`)
 for building extremely fast network applications across multiple transport protocols.
+
+---
+
+## Examples
+
+We provide both basic and advanced example projects demonstrating how to use `Beskar.Networking` across various transports:
+
+All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Experiments)
+
+- [**Simple Ping-Pong Message (Bare-metal)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Simple/Beskar.Bare.PingPongMessage): Demonstrates low-level server listener binding, client connection, and raw bidirectional message exchange using length-prefixed framing over `System.IO.Pipelines` using TCP.
+- [**Advanced Multi-Transport Chat Application**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Advanced): A complete chat application consisting of:
+  - [**Common**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Advanced/Beskar.Adv.Chat.Common): Reusable packet serialization and custom packet framing utilities.
+  - [**Server**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Advanced/Beskar.Adv.Chat.Server): Integrates a unified `ChatServerBuilder` to listen and accept chat sessions concurrently on TCP (9000), WebSockets (11000), and QUIC (12000).
+  - [**Client**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Advanced/Beskar.Adv.Chat.Client): An interactive console application allowing users to connect via their choice of protocol (TCP/WS/QUIC), receive recent chat history, and chat in real-time under a random username.
 
 ---
 
