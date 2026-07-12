@@ -55,12 +55,14 @@ public sealed partial class MqttServer : IAsyncDisposable
    private readonly INetworkListener[] _listeners;
    private CancellationTokenSource _cancellationTokenSource = new();
 
-   private readonly MqttClientSessions _clientSessions = new();
+   private readonly MqttClientSessions _clientSessions;
 
    internal MqttServer(INetworkListener[] listeners, MqttServerOptions options)
    {
       _listeners = listeners;
       _options = options;
+
+      _clientSessions = new MqttClientSessions(this);
    }
 
    public async Task<VoidResult<StringError>> StartAsync()
@@ -176,14 +178,18 @@ public sealed partial class MqttServer : IAsyncDisposable
          client = _serverClientPool.Get(null);
          client.Initialize(streamContext, _options);
 
+         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, client.CancellationToken);
+         var combinedToken = combinedCts.Token;
+
          packetHandler = _packetHandlerPool.Get(null);
          packetHandler.Initialize(this, client);
 
          _ = Task.Factory.StartNew(
-            () => RunClientConnectionTask(client, streamContext, packetHandler, ct),
+            () => RunClientConnectionTask(client, streamContext, packetHandler, combinedToken),
             TaskCreationOptions.PreferFairness);
 
-         await RunClientListenTask(client, streamContext, packetHandler, (ct) => Task.CompletedTask, ct);
+         await RunClientListenTask(client, streamContext, packetHandler,
+            async (_) => await session.DisposeAsync(), combinedToken);
       }
       catch (Exception)
       {
@@ -209,6 +215,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             return;
          }
 
+         client.SetConnectOptions(connectOptions);
          var context = new MqttConnectInterceptContext()
          {
             CancellationToken = ct,
@@ -265,8 +272,6 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
    }
 
-
-
    private async Task RunClientListenTask(
       MqttServerClient client, NetworkServerStreamContext streamContext, IPacketHandler packetHandler,
       Func<CancellationToken, Task> disconnectHandler, CancellationToken ct)
@@ -276,7 +281,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          // duplex input for reading incoming messages
          var reader = streamContext.Stream.Transport.Input;
 
-         while (true)
+         while (!ct.IsCancellationRequested)
          {
             var result = await reader.ReadAsync(ct);
             var buffer = result.Buffer;

@@ -6,4 +6,8 @@ namespace Beskar.Mqtt.Server;
 public sealed class ServerEvents
 {
    public readonly HandlerPipeline<MqttConnectInterceptContext> OnConnectIntercept = new();
+
+   public readonly HandlerPipeline<MqttNewSessionContext> OnNewSession = new();
+
+   public readonly HandlerPipeline<MqttDisconnectContext> OnDisconnect = new();
 }

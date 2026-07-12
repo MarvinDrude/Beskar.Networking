@@ -1,8 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
+using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
@@ -29,6 +31,10 @@ public sealed class MqttServerClient : IPooledObject
    public INetworkSession Session => _session ?? throw new InvalidOperationException("Session has not been initialized.");
    public INetworkStream Stream => _stream ?? throw new InvalidOperationException("Stream has not been initialized.");
 
+   public ReadOnlyMemory<byte> ClientIdUtf8Bytes => _connectOptions?.ClientIdUtf8Bytes ?? ReadOnlyMemory<byte>.Empty;
+
+   public CancellationToken CancellationToken => _cancellationTokenSource?.Token ?? CancellationToken.None;
+
    internal MqttProtocolVersion ProtocolVersion { get; set; } = MqttProtocolVersion.V50;
 
    private INetworkListener? _listener;
@@ -42,6 +48,7 @@ public sealed class MqttServerClient : IPooledObject
    private readonly Dictionary<ushort, string> _topicAliases = [with(16)];
 
    private Channel<IHeapMqttOptions>? _controlPacketChannel;
+   private bool _isDisconnecting;
 
    public void Initialize(
       NetworkServerStreamContext context,
@@ -60,6 +67,29 @@ public sealed class MqttServerClient : IPooledObject
          SingleReader = false,
       });
    }
+
+   internal async Task DisconnectAsync(DisconnectOptions? options = null)
+   {
+      if (_isDisconnecting || !IsConnected) return;
+      _isDisconnecting = true;
+
+      if (ProtocolVersion is MqttProtocolVersion.V50
+          && options is not null)
+      {
+         using (await _stream.AcquireWriterLock(CancellationToken))
+         {
+            await _stream.Send(options, ProtocolVersion, ct: CancellationToken);
+         }
+      }
+
+      if (_cancellationTokenSource is not null)
+      {
+         await _cancellationTokenSource.CancelAsync();
+      }
+   }
+
+   internal void SetConnectOptions(ConnectOptions options)
+      => _connectOptions = options;
 
    internal ValueTask<IHeapMqttOptions?> ReceiveControlPacketAsync(string hintName, CancellationToken ct = default)
    {
@@ -121,6 +151,7 @@ public sealed class MqttServerClient : IPooledObject
       _stream = null;
 
       _connectOptions = null;
+      _isDisconnecting = false;
 
       _cancellationTokenSource?.Cancel();
       _cancellationTokenSource?.Dispose();
