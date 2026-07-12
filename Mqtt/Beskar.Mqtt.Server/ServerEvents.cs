@@ -9,5 +9,7 @@ public sealed class ServerEvents
 
    public readonly HandlerPipeline<MqttNewSessionContext> OnNewSession = new();
 
+   public readonly HandlerPipeline<MqttConnectContext> OnConnect = new();
+
    public readonly HandlerPipeline<MqttDisconnectContext> OnDisconnect = new();
 }

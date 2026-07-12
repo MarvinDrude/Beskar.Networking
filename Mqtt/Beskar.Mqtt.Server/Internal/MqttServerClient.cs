@@ -25,7 +25,7 @@ public sealed class MqttServerClient : IPooledObject
       nameof(Session), nameof(_session),
       nameof(Stream), nameof(_stream),
       nameof(_serverOptions), nameof(_controlPacketChannel))]
-   public bool IsConnected => _connectOptions is not null;
+   public bool IsConnected => _connectOptions is not null && !_isDisconnecting;
 
    public INetworkListener Listener => _listener ?? throw new InvalidOperationException("Listener has not been initialized.");
    public INetworkSession Session => _session ?? throw new InvalidOperationException("Session has not been initialized.");
@@ -34,8 +34,9 @@ public sealed class MqttServerClient : IPooledObject
    public ReadOnlyMemory<byte> ClientIdUtf8Bytes => _connectOptions?.ClientIdUtf8Bytes ?? ReadOnlyMemory<byte>.Empty;
 
    public CancellationToken CancellationToken => _cancellationTokenSource?.Token ?? CancellationToken.None;
+   public MqttProtocolVersion ProtocolVersion { get; internal set; } = MqttProtocolVersion.Unknown;
 
-   internal MqttProtocolVersion ProtocolVersion { get; set; } = MqttProtocolVersion.V50;
+   public DisconnectOptions? DisconnectOptions { get; internal set; }
 
    private INetworkListener? _listener;
    private INetworkSession? _session;
@@ -150,6 +151,7 @@ public sealed class MqttServerClient : IPooledObject
       _session = null;
       _stream = null;
 
+      DisconnectOptions = null;
       _connectOptions = null;
       _isDisconnecting = false;
 
@@ -158,7 +160,7 @@ public sealed class MqttServerClient : IPooledObject
       _cancellationTokenSource = null;
 
       _topicAliases.Clear();
-      ProtocolVersion = MqttProtocolVersion.V50;
+      ProtocolVersion = MqttProtocolVersion.Unknown;
 
       if (_controlPacketChannel is not null)
       {

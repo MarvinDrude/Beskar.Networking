@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
@@ -15,7 +16,7 @@ public sealed class ServerPacketHandler
    : IPacketHandler, IPooledObject
 {
    [MemberNotNullWhen(true, nameof(_server), nameof(_client))]
-   public bool IsValid => _server is not null && _client is not null;
+   public bool IsValid => _server is not null && _client is not null && _client.IsConnected;
 
    private MqttServer? _server;
    private MqttServerClient? _client;
@@ -65,7 +66,10 @@ public sealed class ServerPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in DisconnectPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      if (!IsValid) return ValueTask.CompletedTask;
+
+      _client.DisconnectOptions = DisconnectOptions.Create(in packet);
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PingReqPacket packet, CancellationToken ct = default)

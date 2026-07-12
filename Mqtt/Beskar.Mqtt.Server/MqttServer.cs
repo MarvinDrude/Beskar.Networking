@@ -197,6 +197,32 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
       finally
       {
+         try
+         {
+            if (Events.OnDisconnect.Count > 0 && client is not null)
+            {
+               var disconnectOptions = client.DisconnectOptions;
+               var grace = ClientDisconnectKind.Ungraceful;
+
+               if (disconnectOptions is not null)
+               {
+                  grace = ClientDisconnectKind.Graceful;
+               }
+
+               var disconnectContext = new MqttDisconnectContext
+               {
+                  ServerClient = client,
+                  Reason = disconnectOptions?.ReasonCode ?? DisconnectReasonCode.NormalDisconnection,
+                  DisconnectKind = grace,
+                  IsSessionTakenOver = false
+               };
+
+               await Events.OnDisconnect.ExecuteAsync(
+                  disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+            }
+         }
+         catch (Exception) { /* ignored */ }
+
          if (client is not null) _serverClientPool.Return(client);
          if (packetHandler is not null) _packetHandlerPool.Return(packetHandler);
       }
@@ -264,7 +290,18 @@ public sealed partial class MqttServer : IAsyncDisposable
             return;
          }
 
+         var sessionResult = await _clientSessions.GetOrCreateSession(client, connectOptions, ct);
+         connAck.IsSessionPresent = sessionResult.IsSessionPresent;
 
+         await streamContext.Stream.Send(in connAck, client.ProtocolVersion, ct);
+
+         if (Events.OnConnect.Count > 0)
+         {
+            await Events.OnConnect.ExecuteAsync(new MqttConnectContext()
+            {
+               Client = client
+            }, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+         }
       }
       catch (Exception)
       {
@@ -295,7 +332,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             while (!buffer.IsEmpty)
             {
                var sequenceReader = new SequenceReader<byte>(buffer);
-               var parser = new PacketParser(streamContext.Stream, packetHandler, MqttProtocolVersion.Unknown);
+               var parser = new PacketParser(streamContext.Stream, packetHandler, client.ProtocolVersion);
                var valueTask = parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct);
 
                var parseResult = valueTask.IsCompletedSuccessfully

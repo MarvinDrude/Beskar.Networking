@@ -1,5 +1,7 @@
 using Beskar.Mqtt.Common.Builders.Common;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Extensions;
+using Beskar.Mqtt.Protocol.Packets;
 
 namespace Beskar.Mqtt.Common.Builders.Disconnecting;
 
@@ -47,4 +49,15 @@ public sealed class DisconnectOptions(int builderCapacity = -1)
    }
 
    public static DisconnectOptionsBuilder Create() => new();
+
+   public static DisconnectOptions Create(in DisconnectPacket packet)
+   {
+      return new DisconnectOptions()
+      {
+         ReasonCode = packet.ReasonCode,
+         ReasonString = packet.ReasonUtf8Bytes.GetUtf8String(),
+         ServerReference = packet.ServerReferenceUtf8Bytes.GetUtf8String(),
+         SessionExpiryInterval = packet.SessionExpiryInterval
+      };
+   }
 }

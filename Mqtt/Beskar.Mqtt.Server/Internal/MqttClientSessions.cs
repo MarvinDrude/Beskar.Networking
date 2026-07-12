@@ -3,6 +3,7 @@ using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Server.Contexts;
+using Beskar.Mqtt.Server.Enums;
 using Beskar.Mqtt.Server.Results;
 using Beskar.Networking.Abstractions.Comparers;
 using Beskar.Networking.Abstractions.Threading;
@@ -73,7 +74,13 @@ public sealed class MqttClientSessions(MqttServer server)
             }
          }
 
-
+         if (!isSessionPresent && _server.Events.OnNewSession.Count > 0)
+         {
+            await _server.Events.OnNewSession.ExecuteAsync(new MqttNewSessionContext()
+            {
+               Session = session
+            }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: ct);
+         }
 
          if (takenOverClient is not null)
          {
@@ -82,12 +89,16 @@ public sealed class MqttClientSessions(MqttServer server)
                ReasonCode = DisconnectReasonCode.SessionTakenOver,
             });
 
-            await _server.Events.OnDisconnect.ExecuteAsync(new MqttDisconnectContext()
+            if (_server.Events.OnDisconnect.Count > 0)
             {
-               Reason = DisconnectReasonCode.SessionTakenOver,
-               ServerClient = takenOverClient,
-               IsSessionTakenOver = true
-            }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: ct);
+               await _server.Events.OnDisconnect.ExecuteAsync(new MqttDisconnectContext()
+               {
+                  Reason = DisconnectReasonCode.SessionTakenOver,
+                  ServerClient = takenOverClient,
+                  DisconnectKind = ClientDisconnectKind.Graceful,
+                  IsSessionTakenOver = true
+               }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: ct);
+            }
          }
 
          if (previousSession is not null)
