@@ -1,13 +1,38 @@
 
 /*
- * The examples use the TraceLogger which only logs to the console in case of a DEBUG build.
- * -> If you want less noise in between, you can disable the TraceLogger.
- * In this example, we show a very simple server setup -> client connect -> ping pong -> gracefull shutdown.
+ * ====================================================================================
+ * Bare-Metal TCP Ping-Pong Message Example
+ * ====================================================================================
  *
- * We use TCP here but you can easily switch the underlying transport out without changing the code on top.
+ * Overview:
+ * This example demonstrates a low-level, bare-metal server and client network setup using
+ * the Beskar networking abstractions. It showcases:
+ *   1. Initializing and binding a TCP server listener.
+ *   2. Asynchronously accepting and dispatching incoming client sessions.
+ *   3. Initiating a TCP network client connection.
+ *   4. Safe, framed, bidirectional message exchange (Ping-Pong) over System.IO.Pipelines.
+ *   5. Graceful connection teardown and resource disposal.
  *
- * Important: this is a bare metal example where we need to spin up our listen tasks etc. all by ourselves
- * and manage the correct reading from the duplex pipes.
+ * Abstraction & Transport Agnosticism:
+ * Although this demo uses TCP as the underlying transport, all high-level client and server
+ * operations program against the core interfaces.
+ * This design enables developers to swap the underlying transport (e.g., to QUIC or WebSockets)
+ * without modifying the application code layer.
+ *
+ * Length-Prefixed Message Framing:
+ * Because TCP is a stream-oriented protocol, it does not preserve packet boundaries (data
+ * can be fragmented or consolidated during transmission). To guarantee that messages are parsed
+ * safely without reading partial messages or coalescing multiple messages, this example
+ * implements length-prefixed framing:
+ *   - Each message is prefixed with a 4-byte big-endian integer indicating the payload length.
+ *   - The receiver waits until the full payload has arrived before advancing the PipeReader
+ *     past the frame boundary.
+ *
+ * Diagnostics & Logging:
+ * This project utilizes `TraceLogger` for real-time console rendering of connection states
+ * and packet details.
+ *   - By default, `TraceLogger` only outputs logs in `DEBUG` builds to minimize runtime overhead.
+ *   - Toggle logger visibility using `TraceLogger.IsEnabled = true;`.
  */
 
 using System.Buffers;
