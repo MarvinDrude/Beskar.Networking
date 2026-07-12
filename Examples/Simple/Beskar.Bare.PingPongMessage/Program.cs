@@ -11,6 +11,7 @@
  */
 
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Net;
 using System.Text;
 using Beskar.Memory.Results;
@@ -116,7 +117,13 @@ internal sealed class Client : IAsyncDisposable
       if (_stream is null) return;
 
       var payload = Encoding.UTF8.GetBytes($"Ping {index}");
-      await _stream.Transport.Output.WriteAsync(payload, ct);
+      var length = payload.Length;
+
+      var memory = _stream.Transport.Output.GetMemory(4 + length);
+      BinaryPrimitives.WriteInt32BigEndian(memory.Span[..4], length);
+
+      payload.CopyTo(memory.Span[4..]);
+      _stream.Transport.Output.Advance(4 + length);
       await _stream.Transport.Output.FlushAsync(ct);
 
       Console.WriteLine($"[Client] Sent: Ping {index}");
@@ -126,19 +133,28 @@ internal sealed class Client : IAsyncDisposable
    {
       if (_stream is null) return null;
 
-      var readResult = await _stream.Transport.Input.ReadAsync(ct);
-      var buffer = readResult.Buffer;
-
-      if (buffer.IsEmpty && readResult.IsCompleted)
+      var reader = _stream.Transport.Input;
+      while (true)
       {
-         return null;
+         var result = await reader.ReadAsync(ct);
+         var buffer = result.Buffer;
+
+         if (FrameParser.TryParseFrame(ref buffer, out var payload, out var consumedPosition))
+         {
+            reader.AdvanceTo(consumedPosition, buffer.End);
+            var response = Encoding.UTF8.GetString(payload);
+
+            Console.WriteLine($"[Client] Received: {response}");
+            return response;
+         }
+
+         reader.AdvanceTo(buffer.Start, buffer.End);
+
+         if (result.IsCompleted)
+         {
+            return null;
+         }
       }
-
-      var response = Encoding.UTF8.GetString(buffer.ToArray());
-      _stream.Transport.Input.AdvanceTo(buffer.End);
-
-      Console.WriteLine($"[Client] Received: {response}");
-      return response;
    }
 
    public async Task DisconnectAsync(CancellationToken ct = default)
@@ -203,7 +219,6 @@ internal sealed class Server : IAsyncDisposable
    private async Task RunClientTask(INetworkSession session, CancellationToken ct)
    {
       Console.WriteLine($"[Server] Client connected: {session.RemoteAddress}");
-      TraceLogger.LogServerInfo($"Client connected: {session.RemoteAddress}");
 
       var streamResult = await session.AcceptStreamAsync(ct);
       if (streamResult.Failed)
@@ -213,33 +228,52 @@ internal sealed class Server : IAsyncDisposable
       }
 
       var stream = streamResult.Success;
+      var reader = stream.Transport.Input;
+      var writer = stream.Transport.Output;
 
       try
       {
          while (!ct.IsCancellationRequested)
          {
-            var readResult = await stream.Transport.Input.ReadAsync(ct);
+            var readResult = await reader.ReadAsync(ct);
             var buffer = readResult.Buffer;
 
-            if (buffer.IsEmpty && readResult.IsCompleted)
+            var consumed = buffer.Start;
+            var examined = buffer.End;
+
+            while (FrameParser.TryParseFrame(ref buffer, out var payload, out var consumedPosition))
             {
-               break;
+               consumed = consumedPosition;
+
+               var request = Encoding.UTF8.GetString(payload);
+               Console.WriteLine($"[Server] Received: {request}");
+
+               if (request.StartsWith("Ping"))
+               {
+                  var pongMessage = request.Replace("Ping", "Pong");
+                  var pongBytes = Encoding.UTF8.GetBytes(pongMessage);
+                  var length = pongBytes.Length;
+
+                  var memory = writer.GetMemory(4 + length);
+                  BinaryPrimitives.WriteInt32BigEndian(memory.Span[..4], length);
+
+                  pongBytes.CopyTo(memory.Span[4..]);
+                  writer.Advance(4 + length);
+
+                  await writer.FlushAsync(ct);
+
+                  Console.WriteLine($"[Server] Sent: {pongMessage}");
+               }
+
+               // Slice the buffer so the next iteration of TryParseFrame operates on the remainder
+               buffer = buffer.Slice(consumedPosition);
             }
 
-            var request = Encoding.UTF8.GetString(buffer.ToArray());
-            stream.Transport.Input.AdvanceTo(buffer.End);
+            reader.AdvanceTo(consumed, examined);
 
-            Console.WriteLine($"[Server] Received: {request}");
-
-            if (request.StartsWith("Ping"))
+            if (readResult.IsCompleted)
             {
-               var pongMessage = request.Replace("Ping", "Pong");
-               var payload = Encoding.UTF8.GetBytes(pongMessage);
-
-               await stream.Transport.Output.WriteAsync(payload, ct);
-               await stream.Transport.Output.FlushAsync(ct);
-
-               Console.WriteLine($"[Server] Sent: {pongMessage}");
+               break;
             }
          }
       }
@@ -263,5 +297,38 @@ internal sealed class Server : IAsyncDisposable
       _cts.Dispose();
 
       await _listener.DisposeAsync();
+   }
+}
+
+internal static class FrameParser
+{
+   public static bool TryParseFrame(ref ReadOnlySequence<byte> buffer, out byte[] payload, out SequencePosition consumedPosition)
+   {
+      payload = [];
+      consumedPosition = default;
+
+      if (buffer.Length < 4)
+      {
+         return false;
+      }
+
+      // Read length (4 bytes)
+      Span<byte> lengthBytes = stackalloc byte[4];
+      buffer.Slice(0, 4).CopyTo(lengthBytes);
+
+      var length = BinaryPrimitives.ReadInt32BigEndian(lengthBytes);
+
+      if (buffer.Length < 4 + length)
+      {
+         return false;
+      }
+
+      // Extract the payload bytes
+      var payloadSequence = buffer.Slice(4, length);
+      payload = payloadSequence.ToArray();
+
+      // The position to advance to is 4 + length from the start
+      consumedPosition = buffer.GetPosition(4 + length);
+      return true;
    }
 }
