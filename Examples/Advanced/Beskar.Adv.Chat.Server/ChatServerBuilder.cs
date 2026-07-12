@@ -17,6 +17,7 @@ public sealed class ChatServerBuilder
          NoDelay = true,
          UseSsl = false
       });
+
       _listeners.Add(listener);
       return this;
    }
@@ -31,6 +32,7 @@ public sealed class ChatServerBuilder
             UseSsl = false
          }
       });
+
       _listeners.Add(listener);
       return this;
    }
@@ -41,6 +43,7 @@ public sealed class ChatServerBuilder
       {
          AlpnProtocol = "beskar-chat"
       });
+
       _listeners.Add(listener);
       return this;
    }

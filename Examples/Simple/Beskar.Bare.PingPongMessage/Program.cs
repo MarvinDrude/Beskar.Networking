@@ -166,7 +166,7 @@ internal sealed class Client : IAsyncDisposable
 
          if (FrameParser.TryParseFrame(ref buffer, out var payload, out var consumedPosition))
          {
-            reader.AdvanceTo(consumedPosition, buffer.End);
+            reader.AdvanceTo(consumedPosition, consumedPosition);
             var response = Encoding.UTF8.GetString(payload);
 
             Console.WriteLine($"[Client] Received: {response}");

@@ -28,16 +28,10 @@ public sealed class WelcomePayload
    public List<ChatMessage> History { get; set; } = [];
 }
 
-public sealed class ChatPacket
+public sealed class ChatPacket(PacketType type, byte[] payload)
 {
-   public PacketType Type { get; }
-   public byte[] Payload { get; }
-
-   public ChatPacket(PacketType type, byte[] payload)
-   {
-      Type = type;
-      Payload = payload;
-   }
+   public PacketType Type { get; } = type;
+   public byte[] Payload { get; } = payload;
 
    public string AsString() => Encoding.UTF8.GetString(Payload);
 

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
+using System.Text;
 using Beskar.Adv.Chat.Common;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -124,8 +125,12 @@ if (welcome.History.Count > 0)
          Console.WriteLine($"[{time}] {msg.Sender}: {msg.Text}");
       }
    }
+
    Console.WriteLine("--------------------");
 }
+
+var consoleLock = new Lock();
+var inputBuilder = new StringBuilder();
 
 var receiveTask = Task.Run(async () =>
 {
@@ -136,67 +141,109 @@ var receiveTask = Task.Run(async () =>
          var packet = await channel.ReadPacketAsync(ct);
          if (packet is null)
          {
-            Console.WriteLine("\n[System] Disconnected from server.");
+            lock (consoleLock)
+            {
+               Console.WriteLine("\n[System] Disconnected from server.");
+            }
+
             break;
          }
 
-         if (packet.Type == PacketType.Message)
+         if (packet.Type is not PacketType.Message) continue;
+
+         var msg = packet.AsJson<ChatMessage>();
+         if (msg is null) continue;
+
+         var time = msg.Timestamp.ToString("HH:mm:ss");
+         lock (consoleLock)
          {
-            var msg = packet.AsJson<ChatMessage>();
-            if (msg is not null)
-            {
-               var time = msg.Timestamp.ToString("HH:mm:ss");
-               if (msg.Sender == "System")
-               {
-                  Console.WriteLine($"\n[System] {msg.Text}");
-               }
-               else
-               {
-                  Console.WriteLine($"\n[{time}] {msg.Sender}: {msg.Text}");
-               }
-               Console.Write("> ");
-            }
+            var currentInput = inputBuilder.ToString();
+            Console.Write("\r" + new string(' ', currentInput.Length + 2) + "\r");
+
+            Console.WriteLine(msg.Sender == "System"
+               ? $"[System] {msg.Text}"
+               : $"[{time}] {msg.Sender}: {msg.Text}");
+
+            Console.Write("> " + currentInput);
          }
       }
    }
    catch (Exception ex)
    {
-      Console.WriteLine($"\n[System] Error in receive: {ex.Message}");
+      lock (consoleLock)
+      {
+         Console.WriteLine($"\n[System] Error in receive: {ex.Message}");
+      }
    }
 });
 
 Console.WriteLine("Type your message and press Enter. Type '/exit' to quit.");
 Console.Write("> ");
 
-while (true)
+while (!ct.IsCancellationRequested)
 {
-   var input = Console.ReadLine();
-   if (input == "/exit")
+   if (Console.KeyAvailable)
    {
-      break;
-   }
+      var keyInfo = Console.ReadKey(intercept: true);
+      if (keyInfo.Key == ConsoleKey.Enter)
+      {
+         var input = string.Empty;
+         lock (consoleLock)
+         {
+            input = inputBuilder.ToString();
+            inputBuilder.Clear();
 
-   if (string.IsNullOrWhiteSpace(input))
-   {
-      Console.Write("> ");
-      continue;
-   }
+            Console.WriteLine();
+         }
 
-   var chatMsg = new ChatMessage
-   {
-      Text = input
-   };
+         if (input == "/exit")
+         {
+            break;
+         }
 
-   try
-   {
-      await channel.WritePacketAsync(ChatPacket.CreateJson(PacketType.Message, chatMsg), ct);
+         if (!string.IsNullOrWhiteSpace(input))
+         {
+            var chatMsg = new ChatMessage { Text = input };
+            try
+            {
+               await channel.WritePacketAsync(ChatPacket.CreateJson(PacketType.Message, chatMsg), ct);
+            }
+            catch (Exception ex)
+            {
+               Console.WriteLine($"[Client] Error sending message: {ex.Message}");
+               break;
+            }
+         }
+
+         lock (consoleLock)
+         {
+            Console.Write("> ");
+         }
+      }
+      else if (keyInfo.Key == ConsoleKey.Backspace)
+      {
+         lock (consoleLock)
+         {
+            if (inputBuilder.Length > 0)
+            {
+               inputBuilder.Length--;
+               Console.Write("\b \b");
+            }
+         }
+      }
+      else
+      {
+         lock (consoleLock)
+         {
+            inputBuilder.Append(keyInfo.KeyChar);
+            Console.Write(keyInfo.KeyChar);
+         }
+      }
    }
-   catch (Exception ex)
+   else
    {
-      Console.WriteLine($"[Client] Error sending message: {ex.Message}");
-      break;
+      await Task.Delay(50, ct);
    }
-   Console.Write("> ");
 }
 
 Console.WriteLine("[Client] Disconnecting...");

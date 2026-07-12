@@ -49,20 +49,16 @@ return;
 
 namespace Beskar.Adv.Chat.Server
 {
-   public sealed class ChatServer : IAsyncDisposable
+   public sealed class ChatServer(INetworkListener[] listeners) : IAsyncDisposable
    {
-      private readonly INetworkListener[] _listeners;
+      private readonly INetworkListener[] _listeners = listeners;
       private readonly ConcurrentDictionary<Guid, (string Username, MessageChannel Channel, INetworkSession Session)> _clients = new();
       private readonly List<ChatMessage> _history = [];
+
       private readonly Lock _historyLock = new();
       private readonly CancellationTokenSource _cts = new();
 
       private bool _disposed;
-
-      public ChatServer(INetworkListener[] listeners)
-      {
-         _listeners = listeners;
-      }
 
       public async Task StartAsync()
       {
@@ -120,7 +116,7 @@ namespace Beskar.Adv.Chat.Server
          {
             // 1. Handshake - Expect Join Packet
             var joinPacket = await channel.ReadPacketAsync(ct);
-            if (joinPacket is null || joinPacket.Type != PacketType.Join)
+            if (joinPacket?.Type is not PacketType.Join)
             {
                return;
             }
@@ -133,7 +129,6 @@ namespace Beskar.Adv.Chat.Server
 
             var username = joinPayload.Username;
             Console.WriteLine($"[Server] Client joined: {username} ({session.RemoteAddress})");
-            TraceLogger.LogServerInfo($"Client joined: {username} ({session.RemoteAddress})");
 
             // 2. Retrieve history and send Welcome Packet
             List<ChatMessage> historySnapshot;
@@ -209,7 +204,6 @@ namespace Beskar.Adv.Chat.Server
             if (_clients.TryRemove(session.Id, out var clientInfo))
             {
                Console.WriteLine($"[Server] Client left: {clientInfo.Username}");
-               TraceLogger.LogServerInfo($"Client left: {clientInfo.Username}");
 
                var leaveMsg = new ChatMessage
                {
@@ -217,6 +211,7 @@ namespace Beskar.Adv.Chat.Server
                   Text = $"{clientInfo.Username} left the chat.",
                   Timestamp = DateTime.Now
                };
+
                _ = Task.Run(async () =>
                {
                   try
@@ -227,7 +222,7 @@ namespace Beskar.Adv.Chat.Server
                   {
                      // Ignored
                   }
-               });
+               }, ct);
             }
 
             await session.DisposeAsync();

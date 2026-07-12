@@ -33,7 +33,7 @@ public sealed class MessageChannel(IDuplexPipe transport)
 
          if (FrameParser.TryParseFrame(ref buffer, out var packet, out var consumedPosition))
          {
-            _reader.AdvanceTo(consumedPosition, buffer.End);
+            _reader.AdvanceTo(consumedPosition, consumedPosition);
             return packet;
          }
 
