@@ -20,12 +20,11 @@ namespace Beskar.Mqtt.Server.Internal;
 public sealed class MqttServerClient : IPooledObject
 {
    [MemberNotNullWhen(true,
-      nameof(_connectOptions),
       nameof(Listener), nameof(_listener),
       nameof(Session), nameof(_session),
       nameof(Stream), nameof(_stream),
       nameof(_serverOptions), nameof(_controlPacketChannel))]
-   public bool IsConnected => _connectOptions is not null && !_isDisconnecting;
+   public bool IsConnected => _session is not null && !_isDisconnecting;
 
    public INetworkListener Listener => _listener ?? throw new InvalidOperationException("Listener has not been initialized.");
    public INetworkSession Session => _session ?? throw new InvalidOperationException("Session has not been initialized.");

@@ -158,7 +158,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    {
       if (ct.IsCancellationRequested) return;
       if (State is MqttServerState.Stopping or MqttServerState.Stopped) return;
-      if (OpenToNewConnections) return;
+      if (!OpenToNewConnections) return;
 
       var controlStream = await session.AcceptStreamAsync(ct);
       if (controlStream.Failed)
@@ -287,6 +287,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          if (context.ReasonCode is not ConnectReasonCode.Success)
          {
             await streamContext.Stream.Send(in connAck, client.ProtocolVersion, ct);
+            await streamContext.Connection.Session.DisposeAsync();
             return;
          }
 
@@ -305,7 +306,14 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
       catch (Exception)
       {
-         // ignored
+         try
+         {
+            await streamContext.Connection.Session.DisposeAsync();
+         }
+         catch
+         {
+            // ignored
+         }
       }
    }
 

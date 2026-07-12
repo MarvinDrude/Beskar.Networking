@@ -15,15 +15,14 @@ public sealed class MqttSessionRegistry : IAsyncDisposable
       var alternateLookup = _sessions.GetAlternateLookup<ReadOnlySpan<byte>>();
       if (!alternateLookup.TryGetValue(clientIdUtf8Bytes, out var session)) return null;
 
-      if (session.ExpiryInterval is <= 0 or uint.MaxValue
-          || session.DisconnectionTimestamp is not { } timestamp
-          || timestamp.AddSeconds(session.ExpiryInterval) <= DateTimeOffset.UtcNow)
+      if (session is { DisconnectionTimestamp: { } timestamp, ExpiryInterval: not uint.MaxValue }
+          && timestamp.AddSeconds(session.ExpiryInterval) <= DateTimeOffset.UtcNow)
       {
-         return session;
+         TryRemove(clientIdUtf8Bytes, out existingSession);
+         return null;
       }
 
-      TryRemove(clientIdUtf8Bytes, out existingSession);
-      return null;
+      return session;
    }
 
    public void Update(ReadOnlySpan<byte> clientIdUtf8Bytes, MqttSession session)
