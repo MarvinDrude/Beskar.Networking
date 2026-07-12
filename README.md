@@ -40,7 +40,7 @@ for building extremely fast network applications across multiple transport proto
 
 We provide both basic and advanced example projects demonstrating how to use `Beskar.Networking` across various transports:
 
-All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Experiments)
+All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples)
 
 - [**Simple Ping-Pong Message (Bare-metal)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Simple/Beskar.Bare.PingPongMessage): Demonstrates low-level server listener binding, client connection, and raw bidirectional message exchange using length-prefixed framing over `System.IO.Pipelines` using TCP.
 - [**Advanced Multi-Transport Chat Application**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Advanced): A complete chat application consisting of:
