@@ -2,12 +2,16 @@ using System.Text;
 using Beskar.Mqtt.Common.Builders.Common;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Interfaces;
+using Beskar.Mqtt.Server.Internal;
 using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Server.Contexts;
 
-public sealed class MqttConnectInterceptContext
+public sealed class MqttConnectInterceptContext(MqttServerClient client)
 {
+   public MqttServerClient Client { get; } = client;
+
    /// <summary>
    /// The CONNECT packet / options received from the client.
    /// </summary>
@@ -70,4 +74,12 @@ public sealed class MqttConnectInterceptContext
    /// Cancellation token to use when processing the context.
    /// </summary>
    public required CancellationToken CancellationToken { get; init; }
+
+   /// <summary>
+   /// Wait for the next control packet from the client. For example AUTH
+   /// </summary>
+   public async Task<IHeapMqttOptions?> ReceiveControlPacketAsync(CancellationToken ct = default)
+   {
+      return await Client.ReceiveControlPacketAsync("UNKNOWN", ct);
+   }
 }

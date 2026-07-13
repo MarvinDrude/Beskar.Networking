@@ -255,7 +255,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          }
 
          client.SetConnectOptions(connectOptions);
-         var context = new MqttConnectInterceptContext()
+         var context = new MqttConnectInterceptContext(client)
          {
             CancellationToken = ct,
             ConnectOptions = connectOptions,
