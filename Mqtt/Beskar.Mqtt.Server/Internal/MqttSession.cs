@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Beskar.Mqtt.Common.Generators;
+using Beskar.Mqtt.Server.Enums;
 using Beskar.Networking.Abstractions.Comparers;
 
 namespace Beskar.Mqtt.Server.Internal;
@@ -53,6 +54,16 @@ public sealed partial class MqttSession : IAsyncDisposable
    {
       lock (_offlineQueue)
       {
+         var max = Server.Options.MaxPendingMessagesPerConnection;
+         if (max > 0 && _offlineQueue.Count >= max)
+         {
+            // if behavior is DropNewest, we drop the incoming message
+            if (Server.Options.PendingMessageOverflowBehavior is not MessageOverflowBehavior.DropOldest)
+               return;
+
+            _offlineQueue.TryDequeue(out _);
+         }
+
          _offlineQueue.Enqueue(message);
       }
    }

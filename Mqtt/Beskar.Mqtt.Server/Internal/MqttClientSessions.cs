@@ -40,9 +40,11 @@ public sealed class MqttClientSessions(MqttServer server)
          using (_modificationLock.EnterWriteLock(ct))
          {
             existing = _sessions.Get(serverClient.ClientIdUtf8Bytes.Span, out previousSession);
+            var cleanSession = connectOptions.CleanSession || !_server.Options.SupportPersistentSessions;
+
             if (existing is not null)
             {
-               if (connectOptions.CleanSession)
+               if (cleanSession)
                {
                   session = InitializeNewSession(serverClient, connectOptions);
                }
@@ -129,7 +131,7 @@ public sealed class MqttClientSessions(MqttServer server)
    {
       return new MqttSession(_server, client)
       {
-         ExpiryInterval = connectOptions.SessionExpiryInterval ?? 0,
+         ExpiryInterval = _server.Options.SupportPersistentSessions ? (connectOptions.SessionExpiryInterval ?? 0) : 0,
       };
    }
 

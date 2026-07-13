@@ -10,7 +10,9 @@ using Beskar.Memory.Results;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Server;
+using Beskar.Mqtt.Server.Enums;
 using Beskar.Mqtt.Server.Handlers;
 using Beskar.Mqtt.Server.Internal;
 using Beskar.Mqtt.Server.Options;
@@ -379,5 +381,146 @@ public class PublishHandlerTests
 
       // Verify no message was queued since session is expired
       await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(0);
+   }
+
+   [Test]
+   public async Task Publish_OfflineQueueing_ShouldNotQueueWhenPersistentSessionsDisabled()
+   {
+      var options = new MqttServerOptions { SupportPersistentSessions = false };
+      var server = new MqttServer([], options);
+      var streamA = new MockNetworkStream();
+      var connContextA = new NetworkServerConnectionContext(new DummyNetworkListener(), streamA.Session);
+      var streamContextA = new NetworkServerStreamContext(connContextA, streamA);
+      var clientA = new MqttServerClient();
+      clientA.Initialize(streamContextA, options);
+      clientA.ProtocolVersion = MqttProtocolVersion.V50;
+      var sessionA = new MqttSession(server, clientA);
+      clientA.MqttSession = sessionA;
+      var handlerA = new ServerPacketHandler();
+      handlerA.Initialize(server, clientA);
+
+      // Create client B connecting with persistent options
+      var clientB = new MqttServerClient();
+      var connContextB = new NetworkServerConnectionContext(new DummyNetworkListener(), new DummyNetworkSession());
+      clientB.Initialize(new NetworkServerStreamContext(connContextB, new MockNetworkStream()), options);
+      clientB.ProtocolVersion = MqttProtocolVersion.V50;
+
+      var connectOptions = new ConnectOptions
+      {
+         CleanSession = false,
+         SessionExpiryInterval = 3600,
+         EndPoint = new IPEndPoint(IPAddress.Loopback, 1883)
+      };
+      var sessionResult = await server.ClientSessions.GetOrCreateSession(clientB, connectOptions, CancellationToken.None);
+      var sessionB = sessionResult.Session;
+
+      // Verify that ExpiryInterval was forced to 0
+      await Assert.That(sessionB.ExpiryInterval).IsEqualTo(0u);
+
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+
+      // Disconnect Client B
+      await server.ClientSessions.HandleClientDisconnectAsync(clientB);
+
+      // Client A publishes QoS 1 message
+      var pubPacket = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtLeastOnce,
+         Retain = false,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>("test/topic"u8.ToArray()),
+         Payload = new ReadOnlySequence<byte>("hello offline"u8.ToArray()),
+         PacketIdentifier = 103
+      };
+
+      await handlerA.ExecuteAsync(streamA, pubPacket);
+
+      // Wait a tiny bit since routing is async
+      await Task.Delay(10);
+
+      // Verify no message was queued since persistent sessions are disabled
+      await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(0);
+   }
+
+   [Test]
+   public async Task Publish_OfflineQueueing_RespectsMaxPendingMessages_DropOldest()
+   {
+      var (server, clientA, handlerA, streamA) = SetupEnvironment(MqttProtocolVersion.V50);
+      server.Options.MaxPendingMessagesPerConnection = 2;
+      server.Options.PendingMessageOverflowBehavior = MessageOverflowBehavior.DropOldest;
+
+      // Create Session B and subscribe to QoS 1, then disconnect
+      var clientB = new MqttServerClient();
+      var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 3600 };
+      clientB.MqttSession = sessionB;
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+      sessionB.Client = null;
+
+      // Publish 3 QoS 1 messages
+      for (var i = 1; i <= 3; i++)
+      {
+         var pubPacket = new PublishPacket
+         {
+            Dup = false,
+            QualityOfService = QualityOfServiceType.AtLeastOnce,
+            TopicUtf8Bytes = new ReadOnlySequence<byte>("test/topic"u8.ToArray()),
+            Payload = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes($"msg{i}")),
+            PacketIdentifier = (ushort)i
+         };
+         await handlerA.ExecuteAsync(streamA, pubPacket);
+      }
+
+      await Task.Delay(15);
+
+      // Verify size is capped at 2
+      await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(2);
+
+      // Verify oldest ("msg1") was dropped, so queue contains "msg2" and "msg3"
+      sessionB.TryDequeueOfflineMessage(out var msg2);
+      await Assert.That(Encoding.UTF8.GetString(msg2!.Message.Payload.Span)).IsEqualTo("msg2");
+
+      sessionB.TryDequeueOfflineMessage(out var msg3);
+      await Assert.That(Encoding.UTF8.GetString(msg3!.Message.Payload.Span)).IsEqualTo("msg3");
+   }
+
+   [Test]
+   public async Task Publish_OfflineQueueing_RespectsMaxPendingMessages_DropNewest()
+   {
+      var (server, clientA, handlerA, streamA) = SetupEnvironment(MqttProtocolVersion.V50);
+      server.Options.MaxPendingMessagesPerConnection = 2;
+      server.Options.PendingMessageOverflowBehavior = Beskar.Mqtt.Server.Enums.MessageOverflowBehavior.DropNewest;
+
+      // Create Session B and subscribe to QoS 1, then disconnect
+      var clientB = new MqttServerClient();
+      var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 3600 };
+      clientB.MqttSession = sessionB;
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+      sessionB.Client = null;
+
+      // Publish 3 QoS 1 messages
+      for (var i = 1; i <= 3; i++)
+      {
+         var pubPacket = new PublishPacket
+         {
+            Dup = false,
+            QualityOfService = QualityOfServiceType.AtLeastOnce,
+            TopicUtf8Bytes = new ReadOnlySequence<byte>("test/topic"u8.ToArray()),
+            Payload = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes($"msg{i}")),
+            PacketIdentifier = (ushort)i
+         };
+         await handlerA.ExecuteAsync(streamA, pubPacket);
+      }
+
+      await Task.Delay(15);
+
+      // Verify size is capped at 2
+      await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(2);
+
+      // Verify newest ("msg3") was dropped, so queue contains "msg1" and "msg2"
+      sessionB.TryDequeueOfflineMessage(out var msg1);
+      await Assert.That(Encoding.UTF8.GetString(msg1!.Message.Payload.Span)).IsEqualTo("msg1");
+
+      sessionB.TryDequeueOfflineMessage(out var msg2);
+      await Assert.That(Encoding.UTF8.GetString(msg2!.Message.Payload.Span)).IsEqualTo("msg2");
    }
 }

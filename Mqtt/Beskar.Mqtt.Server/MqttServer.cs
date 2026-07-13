@@ -55,16 +55,16 @@ public sealed partial class MqttServer : IAsyncDisposable
    private volatile bool _disposed;
    private volatile int _state = (int)MqttServerState.Stopped;
 
-   private readonly MqttServerOptions _options;
    private readonly INetworkListener[] _listeners;
    private CancellationTokenSource _cancellationTokenSource = new();
 
    internal MqttClientSessions ClientSessions { get; }
+   internal MqttServerOptions Options { get; }
 
    internal MqttServer(INetworkListener[] listeners, MqttServerOptions options)
    {
       _listeners = listeners;
-      _options = options;
+      Options = options;
 
       ClientSessions = new MqttClientSessions(this);
    }
@@ -180,7 +180,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          var streamContext = new NetworkServerStreamContext(connectionContext, controlStream.Success);
 
          client = _serverClientPool.Get(null);
-         client.Initialize(streamContext, _options);
+         client.Initialize(streamContext, Options);
 
          using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, client.CancellationToken);
          var combinedToken = combinedCts.Token;
