@@ -16,6 +16,7 @@ using Beskar.Mqtt.Server.Internal;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
 using Beskar.Memory.Writers;
+using Beskar.Mqtt.Server.Options;
 using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Server.Handlers;
@@ -46,12 +47,16 @@ public sealed partial class ServerPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in AuthPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      if (!IsValid) return ValueTask.CompletedTask;
+
+      _client.PushControlPacket(new AuthPacketOptions(packet));
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in ConnAckPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      // should not be sent by a client.
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in ConnectPacket packet, CancellationToken ct = default)
