@@ -27,6 +27,7 @@
     <Project Path="Experiments/Beskar.Tcp.Benchmark/Beskar.Tcp.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Ws.Benchmark/Beskar.Ws.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Quic.Benchmark/Beskar.Quic.Benchmark.csproj" />
+    <Project Path="Experiments/Beskar.Networking.Benchmarks.Common/Beskar.Networking.Benchmarks.Common.csproj" />
     <Project Path="Experiments/Beskar.Networking.Benchmarks/Beskar.Networking.Benchmarks.csproj" />
     <Project Path="Experiments/Beskar.Networking.Experiments/Beskar.Networking.Experiments.csproj" />
     <Project Path="Experiments/Beskar.Networking.Performance/Beskar.Networking.Performance.csproj" />
