@@ -102,22 +102,22 @@ public sealed class MqttServerClient : IPooledObject
    internal void SetConnectOptions(ConnectOptions options)
       => _connectOptions = options;
 
-   internal ValueTask<IHeapMqttOptions?> ReceiveControlPacketAsync(string hintName, CancellationToken ct = default)
+   internal async ValueTask<IHeapMqttOptions?> ReceiveControlPacketAsync(string hintName, CancellationToken ct = default)
    {
       if (!IsConnected)
-         return ValueTask.FromResult<IHeapMqttOptions?>(null);
+         return null;
 
       try
       {
          if (_controlPacketChannel.Reader.TryRead(out var packet))
          {
-            return ValueTask.FromResult<IHeapMqttOptions?>(packet);
+            return packet;
          }
 
          using var timeoutToken = new CancellationTokenSource(_serverOptions.DefaultTimeout);
          using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutToken.Token);
 
-         return Awaited(combinedCts.Token);
+         return await _controlPacketChannel.Reader.ReadAsync(combinedCts.Token);
       }
       catch (OperationCanceledException)
       {
@@ -129,25 +129,7 @@ public sealed class MqttServerClient : IPooledObject
       }
 
       TraceLogger.LogServerWarning("No control packet received for '{0}' but requested.", hintName);
-      return ValueTask.FromResult<IHeapMqttOptions?>(null);
-
-      async ValueTask<IHeapMqttOptions?> Awaited(CancellationToken innerCt)
-      {
-         try
-         {
-            return await _controlPacketChannel.Reader.ReadAsync(innerCt);
-         }
-         catch (OperationCanceledException)
-         {
-            TraceLogger.LogServerWarning("Timeout at control packet received for '{0}'.", hintName);
-         }
-         catch (Exception)
-         {
-            TraceLogger.LogServerWarning("Unexpected error at control packet received for '{0}'.", hintName);
-         }
-
-         return null;
-      }
+      return null;
    }
 
    internal bool PushControlPacket(IHeapMqttOptions packet)
