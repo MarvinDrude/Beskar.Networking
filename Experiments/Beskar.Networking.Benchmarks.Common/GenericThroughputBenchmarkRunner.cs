@@ -71,14 +71,14 @@ public static class GenericThroughputBenchmarkRunner
                {
                   try
                   {
-                     while (!token.IsCancellationRequested)
+                     if (!session.IsSupportingMultiplexing)
                      {
+                        // For non-multiplexed transports like TCP/WS, there's only one stream.
+                        // Run its read loop directly in the session task to keep the session alive.
                         var streamResult = await session.AcceptStreamAsync(token);
-                        if (streamResult.Failed) break;
-
-                        var stream = streamResult.Success!;
-                        _ = Task.Run(async () =>
+                        if (!streamResult.Failed)
                         {
+                           var stream = streamResult.Success!;
                            try
                            {
                               var input = stream.Transport.Input;
@@ -104,11 +104,48 @@ public static class GenericThroughputBenchmarkRunner
                            {
                               await stream.DisposeAsync();
                            }
-                        }, token);
+                        }
+                     }
+                     else
+                     {
+                        // For multiplexed transports (QUIC), accept multiple concurrent streams.
+                        var streamTasks = new List<Task>();
+                        while (!token.IsCancellationRequested)
+                        {
+                           var streamResult = await session.AcceptStreamAsync(token);
+                           if (streamResult.Failed) break;
 
-                        if (!session.IsSupportingMultiplexing)
-                           // For non-multiplexed transports like TCP/WS, there's only one stream per session
-                           break;
+                           var stream = streamResult.Success!;
+                           streamTasks.Add(Task.Run(async () =>
+                           {
+                              try
+                              {
+                                 var input = stream.Transport.Input;
+                                 while (!token.IsCancellationRequested)
+                                 {
+                                    var readResult = await input.ReadAsync(token);
+                                    if (readResult.IsCompleted || readResult.IsCanceled) break;
+
+                                    var buffer = readResult.Buffer;
+                                    var length = buffer.Length;
+
+                                    Interlocked.Add(ref totalReceivedBytes, length);
+                                    Interlocked.Increment(ref totalReceivedPackets);
+
+                                    input.AdvanceTo(buffer.End);
+                                 }
+                              }
+                              catch
+                              {
+                                 // ignore stream errors
+                              }
+                              finally
+                              {
+                                 await stream.DisposeAsync();
+                              }
+                           }, token));
+                        }
+                        await Task.WhenAll(streamTasks);
                      }
                   }
                   catch

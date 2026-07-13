@@ -220,7 +220,8 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
        if (Vector.IsHardwareAccelerated && len >= Vector<byte>.Count)
        {
           var vectorSize = Vector<byte>.Count;
-          var vectorMaskBytes = new byte[vectorSize];
+          Span<byte> vectorMaskBytes = stackalloc byte[vectorSize];
+
           for (var i = 0; i < vectorSize; i++)
           {
              vectorMaskBytes[i] = maskKey[(payloadIndex + i) % 4];
