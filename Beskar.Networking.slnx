@@ -23,6 +23,7 @@
     <Project Path="Examples/Simple/Beskar.Bare.PingPongMessage/Beskar.Bare.PingPongMessage.csproj" />
   </Folder>
   <Folder Name="/Experiments/">
+    <Project Path="Experiments/Beskar.Mqtt.Benchmark/Beskar.Mqtt.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Networking.Benchmarks/Beskar.Networking.Benchmarks.csproj" />
     <Project Path="Experiments/Beskar.Networking.Experiments/Beskar.Networking.Experiments.csproj" />
     <Project Path="Experiments/Beskar.Networking.Performance/Beskar.Networking.Performance.csproj" />
