@@ -132,4 +132,67 @@ public sealed class MqttClientSessions(MqttServer server)
          ExpiryInterval = connectOptions.SessionExpiryInterval ?? 0,
       };
    }
+
+   public async Task HandleClientDisconnectAsync(MqttServerClient client)
+   {
+      var session = client.MqttSession;
+      if (session is null) return;
+
+      using (await _initiateLock.LockAsync())
+      using (_modificationLock.EnterWriteLock())
+      {
+         using (await _clientLock.LockAsync())
+         {
+            var alternateLookup = _clients.GetAlternateLookup<ReadOnlySpan<byte>>();
+            alternateLookup.Remove(client.ClientIdUtf8Bytes.Span);
+         }
+
+         session.DisconnectionTimestamp = DateTimeOffset.UtcNow;
+         session.Client = null;
+
+         if (session.ExpiryInterval == 0)
+         {
+            _sessions.TryRemove(client.ClientIdUtf8Bytes.Span, out _);
+            _ = Task.Run(async () =>
+            {
+               try
+               {
+                  _server.SubscriptionRouter.UnsubscribeAll(session);
+                  await session.DisposeAsync();
+               }
+               catch (Exception)
+               {
+                  /* ignored */
+               }
+            });
+         }
+      }
+   }
+
+   public async Task RemoveSessionAsync(MqttSession session)
+   {
+      using (await _initiateLock.LockAsync())
+      using (_modificationLock.EnterWriteLock())
+      {
+         using (await _clientLock.LockAsync())
+         {
+            var alternateLookup = _clients.GetAlternateLookup<ReadOnlySpan<byte>>();
+            alternateLookup.Remove(session.ClientIdUtf8Bytes);
+         }
+
+         _sessions.TryRemove(session.ClientIdUtf8Bytes, out _);
+         _ = Task.Run(async () =>
+         {
+            try
+            {
+               _server.SubscriptionRouter.UnsubscribeAll(session);
+               await session.DisposeAsync();
+            }
+            catch (Exception)
+            {
+               /* ignored */
+            }
+         });
+      }
+   }
 }

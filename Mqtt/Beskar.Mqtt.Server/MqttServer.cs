@@ -59,14 +59,14 @@ public sealed partial class MqttServer : IAsyncDisposable
    private readonly INetworkListener[] _listeners;
    private CancellationTokenSource _cancellationTokenSource = new();
 
-   private readonly MqttClientSessions _clientSessions;
+   internal MqttClientSessions ClientSessions { get; }
 
    internal MqttServer(INetworkListener[] listeners, MqttServerOptions options)
    {
       _listeners = listeners;
       _options = options;
 
-      _clientSessions = new MqttClientSessions(this);
+      ClientSessions = new MqttClientSessions(this);
    }
 
    public async Task<VoidResult<StringError>> StartAsync()
@@ -230,8 +230,14 @@ public sealed partial class MqttServer : IAsyncDisposable
             /* ignored */
          }
 
-         if (client is not null) _serverClientPool.Return(client);
-         if (packetHandler is not null) _packetHandlerPool.Return(packetHandler);
+         if (client is not null)
+         {
+            await ClientSessions.HandleClientDisconnectAsync(client);
+            _serverClientPool.Return(client);
+         }
+
+         if (packetHandler is not null)
+            _packetHandlerPool.Return(packetHandler);
       }
    }
 
@@ -304,7 +310,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             return;
          }
 
-         var sessionResult = await _clientSessions.GetOrCreateSession(client, connectOptions, ct);
+         var sessionResult = await ClientSessions.GetOrCreateSession(client, connectOptions, ct);
          connAck.IsSessionPresent = sessionResult.IsSessionPresent;
 
          await streamContext.Stream.Send(in connAck, client.ProtocolVersion, ct);

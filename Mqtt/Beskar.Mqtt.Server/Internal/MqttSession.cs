@@ -1,4 +1,3 @@
-
 using System.Diagnostics.CodeAnalysis;
 using Beskar.Mqtt.Common.Generators;
 using Beskar.Networking.Abstractions.Comparers;
@@ -8,6 +7,12 @@ namespace Beskar.Mqtt.Server.Internal;
 public sealed partial class MqttSession : IAsyncDisposable
 {
    public DateTimeOffset? DisconnectionTimestamp { get; internal set; }
+
+   public bool IsExpired => DisconnectionTimestamp is { } timestamp
+       && ExpiryInterval != uint.MaxValue
+       && timestamp.AddSeconds(ExpiryInterval) <= DateTimeOffset.UtcNow;
+
+   internal MqttServer Server { get; }
 
    public Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; } = new(ByteArrayEqualityComparer.Instance);
 

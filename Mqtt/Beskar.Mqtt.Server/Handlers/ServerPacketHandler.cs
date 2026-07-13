@@ -390,7 +390,8 @@ public sealed class ServerPacketHandler
    }
 
    private readonly struct PublishMessageDispatcherVisitor(
-      MqttServerClient publisherClient, MqttPublishMessage message)
+      MqttServerClient publisherClient,
+      MqttPublishMessage message)
       : ISubscriptionVisitor
    {
       private readonly MqttServerClient _publisherClient = publisherClient;
@@ -470,10 +471,27 @@ public sealed class ServerPacketHandler
          }
          else if (targetQos > 0)
          {
-            var queuedMessage = new MqttQueuedMessage(_message, targetQos, subscription.RetainAsPublished,
-               subscription.SubscriptionIdentifier);
+            if (session.IsExpired)
+            {
+               _ = Task.Run(async () =>
+               {
+                  try
+                  {
+                     await session.Server.ClientSessions.RemoveSessionAsync(session);
+                  }
+                  catch (Exception)
+                  {
+                     /* ignored */
+                  }
+               });
+            }
+            else if (session.ExpiryInterval > 0)
+            {
+               var queuedMessage = new MqttQueuedMessage(_message, targetQos, subscription.RetainAsPublished,
+                  subscription.SubscriptionIdentifier);
 
-            session.EnqueueOfflineMessage(queuedMessage);
+               session.EnqueueOfflineMessage(queuedMessage);
+            }
          }
       }
    }

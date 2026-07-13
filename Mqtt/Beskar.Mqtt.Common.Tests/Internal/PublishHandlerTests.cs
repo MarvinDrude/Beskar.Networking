@@ -293,4 +293,91 @@ public class PublishHandlerTests
       await Assert.That(queuedMsg!.Message.Topic).IsEqualTo("test/topic");
       await Assert.That(Encoding.UTF8.GetString(queuedMsg.Message.Payload.Span)).IsEqualTo("hello offline");
    }
+
+   [Test]
+   public async Task Disconnect_ShouldSetDisconnectionTimestamp()
+   {
+      var (server, client, handler, stream) = SetupEnvironment(MqttProtocolVersion.V50);
+      var session = client.MqttSession;
+
+      await Assert.That(session!.DisconnectionTimestamp).IsNull();
+
+      // Trigger disconnect
+      await server.ClientSessions.HandleClientDisconnectAsync(client);
+
+      await Assert.That(session.DisconnectionTimestamp).IsNotNull();
+      await Assert.That(session.Client).IsNull();
+   }
+
+   [Test]
+   public async Task Publish_OfflineQueueing_ShouldNotQueueForCleanSession()
+   {
+      var (server, clientA, handlerA, streamA) = SetupEnvironment(MqttProtocolVersion.V50);
+
+      // Create Session B with ExpiryInterval = 0 (clean session / no persistence)
+      var clientB = new MqttServerClient();
+      var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 0 };
+      clientB.MqttSession = sessionB;
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+
+      // Disconnect Client B
+      await server.ClientSessions.HandleClientDisconnectAsync(clientB);
+
+      // Client A publishes QoS 1 message
+      var pubPacket = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtLeastOnce,
+         Retain = false,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>("test/topic"u8.ToArray()),
+         Payload = new ReadOnlySequence<byte>("hello offline clean"u8.ToArray()),
+         PacketIdentifier = 101
+      };
+
+      await handlerA.ExecuteAsync(streamA, pubPacket);
+
+      // Wait a tiny bit since routing is async
+      await Task.Delay(10);
+
+      // Verify session B was cleaned up immediately and does not receive the message
+      await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(0);
+   }
+
+   [Test]
+   public async Task Publish_OfflineQueueing_ShouldNotQueueForExpiredSession()
+   {
+      var (server, clientA, handlerA, streamA) = SetupEnvironment(MqttProtocolVersion.V50);
+
+      // Create Session B with ExpiryInterval = 1 second
+      var clientB = new MqttServerClient();
+      var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 1 };
+      clientB.MqttSession = sessionB;
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+
+      // Disconnect Client B
+      await server.ClientSessions.HandleClientDisconnectAsync(clientB);
+
+      // Artificially age the disconnection timestamp to expire it (e.g. set it to 2 seconds ago)
+      sessionB.DisconnectionTimestamp = DateTimeOffset.UtcNow.AddSeconds(-2);
+      await Assert.That(sessionB.IsExpired).IsTrue();
+
+      // Client A publishes QoS 1 message
+      var pubPacket = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtLeastOnce,
+         Retain = false,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>("test/topic"u8.ToArray()),
+         Payload = new ReadOnlySequence<byte>("hello offline expired"u8.ToArray()),
+         PacketIdentifier = 102
+      };
+
+      await handlerA.ExecuteAsync(streamA, pubPacket);
+
+      // Wait a tiny bit since routing is async
+      await Task.Delay(10);
+
+      // Verify no message was queued since session is expired
+      await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(0);
+   }
 }
