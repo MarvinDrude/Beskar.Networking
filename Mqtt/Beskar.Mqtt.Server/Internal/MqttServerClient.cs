@@ -47,7 +47,7 @@ public sealed class MqttServerClient : IPooledObject
    private MqttServerOptions? _serverOptions;
 
    private CancellationTokenSource? _cancellationTokenSource;
-   private readonly Dictionary<ushort, string> _topicAliases = [with(16)];
+   private readonly Dictionary<ushort, byte[]> _topicAliases = new(16);
 
    private Channel<IHeapMqttOptions>? _controlPacketChannel;
    private bool _isDisconnecting;
@@ -75,19 +75,28 @@ public sealed class MqttServerClient : IPooledObject
       if (_isDisconnecting || !IsConnected) return;
       _isDisconnecting = true;
 
+      DisconnectOptions = options;
+
       if (ProtocolVersion is MqttProtocolVersion.V50
           && options is not null)
       {
-         using (await _stream.AcquireWriterLock(CancellationToken))
-         {
-            await _stream.Send(options, ProtocolVersion, ct: CancellationToken);
-         }
+         await _stream.Send(options, ProtocolVersion, ct: CancellationToken);
       }
 
       if (_cancellationTokenSource is not null)
       {
          await _cancellationTokenSource.CancelAsync();
       }
+   }
+
+   internal bool TryGetTopicAlias(ushort alias, [NotNullWhen(true)] out byte[]? topic)
+   {
+      return _topicAliases.TryGetValue(alias, out topic);
+   }
+
+   internal void SetTopicAlias(ushort alias, byte[] topic)
+   {
+      _topicAliases[alias] = topic;
    }
 
    internal void SetConnectOptions(ConnectOptions options)

@@ -30,12 +30,31 @@ public sealed partial class MqttSession
       IsConnected = true;
    }
 
-   public async ValueTask DisposeAsync()
+   public ValueTask DisposeAsync()
    {
-      if (_disposed) return;
-      _disposed = true;
+      try
+      {
+         if (_disposed) return ValueTask.CompletedTask;
+         _disposed = true;
 
-      _server.SubscriptionRouter.UnsubscribeAll(this);
-      _serverClient = null;
+         _server.SubscriptionRouter.UnsubscribeAll(this);
+
+         lock (_incomingQos2Packets)
+         {
+            _incomingQos2Packets.Clear();
+         }
+         lock (_offlineQueue)
+         {
+            _offlineQueue.Clear();
+         }
+
+         _serverClient = null;
+
+         return ValueTask.CompletedTask;
+      }
+      catch (Exception exception)
+      {
+         return ValueTask.FromException(exception);
+      }
    }
 }

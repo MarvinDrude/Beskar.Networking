@@ -51,7 +51,7 @@ public readonly ref partial struct PacketVersion5Parser
       packet.MaximumQualityOfService = QualityOfServiceType.ExactlyOnce;
 
       packet.ReasonCode = (ConnectReasonCode)reasonCodeByte;
-      packet.ReturnCode = packet.ReasonCode.ToReturnCode();
+      packet.ReturnCode = packet.ReasonCode.ToV3ReturnCode();
 
       if (rawPacket.BodyLength > 2)
       {

@@ -9,7 +9,6 @@ using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Protocol.Enums;
-using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Mqtt.Server.Contexts;
@@ -20,7 +19,9 @@ using Beskar.Mqtt.Server.Internal;
 using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Mqtt.Common.Encoders.Properties;
 using Beskar.Utilities.Tracing;
+using Beskar.Mqtt.Protocol.Extensions;
 
 namespace Beskar.Mqtt.Server;
 
@@ -315,6 +316,11 @@ public sealed partial class MqttServer : IAsyncDisposable
                Client = client
             }, HandlerExecutionStrategy.SequentialContinueOnError, ct);
          }
+
+         if (sessionResult is { IsSessionPresent: true, Session.OfflineQueueCount: > 0 })
+         {
+            _ = Task.Run(() => DeliverOfflineMessagesAsync(client, sessionResult.Session, ct), ct);
+         }
       }
       catch (Exception)
       {
@@ -394,6 +400,71 @@ public sealed partial class MqttServer : IAsyncDisposable
       {
          TraceLogger.LogServerInfo("MqttServer: Message receiver loop finished.");
          await disconnectHandler(ct);
+      }
+   }
+
+   private static async Task DeliverOfflineMessagesAsync(MqttServerClient client, MqttSession session,
+      CancellationToken ct)
+   {
+      try
+      {
+         while (client.IsConnected && !ct.IsCancellationRequested)
+         {
+            if (!session.TryDequeueOfflineMessage(out var queuedMessage))
+            {
+               break;
+            }
+
+            var message = queuedMessage.Message;
+            var targetQos = queuedMessage.QualityOfService;
+
+            var topicBytes = Encoding.UTF8.GetBytes(message.Topic);
+            var responseTopicBytes = string.IsNullOrEmpty(message.ResponseTopic)
+               ? ReadOnlyMemory<byte>.Empty
+               : Encoding.UTF8.GetBytes(message.ResponseTopic);
+
+            var contentTypeBytes = string.IsNullOrEmpty(message.ContentType)
+               ? ReadOnlyMemory<byte>.Empty
+               : Encoding.UTF8.GetBytes(message.ContentType);
+
+            var publishPacket = new PublishPacket
+            {
+               Dup = false,
+               QualityOfService = targetQos,
+               Retain = queuedMessage.RetainAsPublished && message.Retain,
+               TopicUtf8Bytes = new ReadOnlySequence<byte>(topicBytes),
+               Payload = new ReadOnlySequence<byte>(message.Payload),
+               PacketIdentifier = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0,
+               PayloadFormat = message.PayloadFormat,
+               MessageExpiryInterval = message.MessageExpiryInterval,
+               TopicAlias = 0,
+               ResponseTopicUtf8Bytes = new ReadOnlySequence<byte>(responseTopicBytes),
+               CorrelationDataBytes = message.CorrelationData.HasValue
+                  ? new ReadOnlySequence<byte>(message.CorrelationData.Value)
+                  : ReadOnlySequence<byte>.Empty,
+               ContentTypeUtf8Bytes = new ReadOnlySequence<byte>(contentTypeBytes),
+               PropertiesBytes = ReadOnlySequence<byte>.Empty
+            };
+
+            if (queuedMessage.SubscriptionIdentifier > 0 && client.ProtocolVersion is MqttProtocolVersion.V50)
+            {
+               var buffer = new byte[16];
+               var writer = new ByteWriter(buffer);
+               var propEncoder = writer.AsPublishPropertyEncoder();
+
+               propEncoder.WriteSubscriptionIdentifier(queuedMessage.SubscriptionIdentifier);
+
+               var written = propEncoder.Encoder.Writer.Position;
+               publishPacket.PropertiesBytes = new ReadOnlySequence<byte>(buffer.AsMemory(0, written));
+            }
+
+            await client.Stream.Send(in publishPacket, client.ProtocolVersion, ct);
+         }
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogServerError("MqttServer: Error delivering offline messages to client '{0}': {1}",
+            client.ClientIdUtf8Bytes.GetUtf8String(), ex.Message);
       }
    }
 

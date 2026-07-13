@@ -9,7 +9,7 @@ public static class ConnectReasonCodeExtensions
       /// <summary>
       /// V5 -> V3
       /// </summary>
-      public ConnectReturnCode ToReturnCode()
+      public ConnectReturnCode ToV3ReturnCode()
       {
          return value switch
          {
