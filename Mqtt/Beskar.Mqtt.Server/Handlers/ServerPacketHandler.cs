@@ -1,11 +1,14 @@
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
+using Beskar.Memory.Owners;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
+using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Internal;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
@@ -74,12 +77,20 @@ public sealed class ServerPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PingReqPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      if (!IsValid) return ValueTask.CompletedTask;
+      return Awaited(_client.ProtocolVersion);
+
+      async ValueTask Awaited(MqttProtocolVersion protocolVersion)
+      {
+         var pingResp = new PingRespPacket();
+         await stream.Send(in pingResp, protocolVersion, ct);
+      }
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PingRespPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      // ping responses should not come from the client
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PubAckPacket packet, CancellationToken ct = default)
@@ -109,21 +120,110 @@ public sealed class ServerPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in SubAckPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      // should not be handled on the server
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in SubscribePacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      if (!IsValid) return ValueTask.CompletedTask;
+
+      var session = _client.MqttSession;
+      if (session is null) return ValueTask.CompletedTask;
+
+      return Awaited(_server, _client, stream, packet, session, ct);
+
+      static async ValueTask Awaited(MqttServer server, MqttServerClient client, INetworkStream stream,
+         SubscribePacket packet, MqttSession session, CancellationToken ct)
+      {
+         var filtersEnumerator = packet.GetFilters();
+         var countEnumerator = filtersEnumerator;
+         var filterCount = 0;
+
+         while (countEnumerator.MoveNext())
+         {
+            filterCount++;
+         }
+
+         if (filterCount == 0) return;
+
+         using var memoryOwner = new MemoryOwner<byte>(filterCount);
+         var returnCodes = memoryOwner.Memory;
+         var returnCodesSpan = returnCodes.Span;
+
+         var index = 0;
+         while (filtersEnumerator.MoveNext())
+         {
+            var filter = filtersEnumerator.Current;
+            var reasonCode = server.Subscribe(session, in filter, packet.SubscriptionIdentifier);
+
+            returnCodesSpan[index++] = (byte)reasonCode;
+         }
+
+         var subAck = new SubAckPacket
+         {
+            PacketIdentifier = packet.PacketIdentifier,
+            ReturnCodesBytes = returnCodes,
+            ReasonStringUtf8Bytes = ReadOnlyMemory<byte>.Empty,
+            PropertiesBytes = ReadOnlyMemory<byte>.Empty
+         };
+
+         await stream.Send(in subAck, client.ProtocolVersion, ct);
+      }
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in UnsubAckPacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      // should not be handled on the server
+      return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in UnsubscribePacket packet, CancellationToken ct = default)
    {
-      throw new NotImplementedException();
+      if (!IsValid) return ValueTask.CompletedTask;
+
+      var session = _client.MqttSession;
+      if (session is null) return ValueTask.CompletedTask;
+
+      return Awaited(_server, _client, stream, packet, session, ct);
+
+      static async ValueTask Awaited(MqttServer server, MqttServerClient client, INetworkStream stream,
+         UnsubscribePacket packet, MqttSession session, CancellationToken ct)
+      {
+         var filtersEnumerator = packet.GetFilters();
+         var countEnumerator = filtersEnumerator;
+         var filterCount = 0;
+
+         while (countEnumerator.MoveNext())
+         {
+            filterCount++;
+         }
+
+         if (filterCount == 0) return;
+
+         using var memoryOwner = new MemoryOwner<byte>(filterCount);
+         var reasonCodes = memoryOwner.Memory;
+         var reasonCodeSpan = reasonCodes.Span;
+
+         var index = 0;
+         while (filtersEnumerator.MoveNext())
+         {
+            var filterSequence = filtersEnumerator.Current;
+            var filterBytes = filterSequence.ToArray();
+            var reasonCode = server.Unsubscribe(session, filterBytes);
+
+            reasonCodeSpan[index++] = (byte)reasonCode;
+         }
+
+         var unsubAck = new UnsubAckPacket
+         {
+            PacketIdentifier = packet.PacketIdentifier,
+            ReasonCodesBytes = reasonCodes,
+            ReasonStringUtf8Bytes = ReadOnlyMemory<byte>.Empty,
+            PropertiesBytes = ReadOnlyMemory<byte>.Empty
+         };
+
+         await stream.Send(in unsubAck, client.ProtocolVersion, ct);
+      }
    }
 }

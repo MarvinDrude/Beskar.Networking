@@ -37,6 +37,8 @@ public sealed class MqttServerClient : IPooledObject
 
    public DisconnectOptions? DisconnectOptions { get; internal set; }
 
+   public MqttSession? MqttSession { get; internal set; }
+
    private INetworkListener? _listener;
    private INetworkSession? _session;
    private INetworkStream? _stream;
@@ -151,6 +153,7 @@ public sealed class MqttServerClient : IPooledObject
       _stream = null;
 
       DisconnectOptions = null;
+      MqttSession = null;
       _connectOptions = null;
       _isDisconnecting = false;
 

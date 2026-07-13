@@ -9,6 +9,7 @@ using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing.Results;
 using Beskar.Mqtt.Server.Contexts;
@@ -47,6 +48,8 @@ public sealed partial class MqttServer : IAsyncDisposable
    /// Container for all server events that can be subscribed to.
    /// </summary>
    public ServerEvents Events { get; } = new();
+
+   internal MqttTrieSubscriptionRouter SubscriptionRouter { get; } = new();
 
    private volatile bool _disposed;
    private volatile int _state = (int)MqttServerState.Stopped;
@@ -221,7 +224,10 @@ public sealed partial class MqttServer : IAsyncDisposable
                   disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
             }
          }
-         catch (Exception) { /* ignored */ }
+         catch (Exception)
+         {
+            /* ignored */
+         }
 
          if (client is not null) _serverClientPool.Return(client);
          if (packetHandler is not null) _packetHandlerPool.Return(packetHandler);
@@ -351,7 +357,8 @@ public sealed partial class MqttServer : IAsyncDisposable
                       or PacketDispatchResult.InvalidPacketType)
                {
                   // Protocol violation: exit the loop to drop the connection
-                  TraceLogger.LogClientError("MqttServer: Protocol violation or parser error (Result: {0}). Exiting receive loop.",
+                  TraceLogger.LogClientError(
+                     "MqttServer: Protocol violation or parser error (Result: {0}). Exiting receive loop.",
                      parseResult.Failed ? parseResult.Error.Detail : parseResult.Success);
                   return;
                }
@@ -384,6 +391,7 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
    }
 
+
    public async ValueTask DisposeAsync()
    {
       if (_disposed) return;
@@ -395,5 +403,7 @@ public sealed partial class MqttServer : IAsyncDisposable
       {
          await listener.DisposeAsync();
       }
+
+      SubscriptionRouter.Dispose();
    }
 }

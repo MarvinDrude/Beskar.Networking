@@ -12,16 +12,22 @@ public sealed partial class MqttSession
    private MqttServerClient? _serverClient;
    private volatile bool _disposed;
 
-   internal MqttSession(
-      MqttServerClient serverClient)
+   private readonly MqttServer _server;
+
+   public MqttServerClient? Client
    {
-      _serverClient = serverClient;
-      IsConnected = true;
+      get => _serverClient;
+      internal set => _serverClient = value;
    }
 
-   public async Task DisconnectAsync(CancellationToken ct = default)
+   internal MqttSession(
+      MqttServer server,
+      MqttServerClient serverClient)
    {
+      _server = server;
+      _serverClient = serverClient;
 
+      IsConnected = true;
    }
 
    public async ValueTask DisposeAsync()
@@ -29,6 +35,7 @@ public sealed partial class MqttSession
       if (_disposed) return;
       _disposed = true;
 
-      // nothing to do yet
+      _server.SubscriptionRouter.UnsubscribeAll(this);
+      _serverClient = null;
    }
 }

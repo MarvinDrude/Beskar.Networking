@@ -8,5 +8,9 @@
      <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
      <ProjectReference Include="..\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
    </ItemGroup>
+   
+   <ItemGroup>
+      <InternalsVisibleTo Include="Beskar.Mqtt.Common.Tests" />
+   </ItemGroup>
 
 </Project>

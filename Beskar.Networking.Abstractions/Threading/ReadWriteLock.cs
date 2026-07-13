@@ -1,8 +1,10 @@
 namespace Beskar.Networking.Abstractions.Threading;
 
-public sealed class ReadWriteLock
+public sealed class ReadWriteLock(
+   LockRecursionPolicy recursionPolicy = LockRecursionPolicy.SupportsRecursion)
+   : IDisposable
 {
-   private readonly ReaderWriterLockSlim _lock = new();
+   private readonly ReaderWriterLockSlim _lock = new(recursionPolicy);
 
    public IDisposable EnterWriteLock(CancellationToken ct = default)
    {
@@ -14,6 +16,11 @@ public sealed class ReadWriteLock
    {
       _lock.EnterReadLock();
       return new ReadDisposer(_lock);
+   }
+
+   public void Dispose()
+   {
+      _lock.Dispose();
    }
 
    private readonly struct WriteDisposer(ReaderWriterLockSlim lockSlim) : IDisposable

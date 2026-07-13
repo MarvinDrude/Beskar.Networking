@@ -62,6 +62,9 @@ public sealed class MqttClientSessions(MqttServer server)
             }
 
             _sessions.Update(serverClient.ClientIdUtf8Bytes.Span, session);
+            serverClient.MqttSession = session;
+            session.Client = serverClient;
+
             using (await _clientLock.LockAsync(ct))
             {
                var alternateLookup = _clients.GetAlternateLookup<ReadOnlySpan<byte>>();
@@ -124,7 +127,7 @@ public sealed class MqttClientSessions(MqttServer server)
 
    private MqttSession InitializeNewSession(MqttServerClient client, ConnectOptions connectOptions)
    {
-      return new MqttSession(client)
+      return new MqttSession(_server, client)
       {
          ExpiryInterval = connectOptions.SessionExpiryInterval ?? 0,
       };

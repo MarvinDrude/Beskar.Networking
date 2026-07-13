@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
       <OutputType>Exe</OutputType>
@@ -10,6 +10,7 @@
 
    <ItemGroup>
      <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
+     <ProjectReference Include="..\Beskar.Mqtt.Server\Beskar.Mqtt.Server.csproj" />
    </ItemGroup>
 
 </Project>
