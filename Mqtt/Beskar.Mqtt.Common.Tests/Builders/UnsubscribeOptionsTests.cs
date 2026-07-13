@@ -1,5 +1,4 @@
-using System.Buffers;
-using System.Threading.Tasks;
+using System.Text;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
 
 namespace Beskar.Mqtt.Common.Tests.Builders;
@@ -32,12 +31,12 @@ public class UnsubscribeOptionsTests
          if (enumerator.MoveNext())
          {
             hasFilter1 = true;
-            filter1Name = System.Text.Encoding.UTF8.GetString(enumerator.Current);
+            filter1Name = Encoding.UTF8.GetString(enumerator.Current);
 
             if (enumerator.MoveNext())
             {
                hasFilter2 = true;
-               filter2Name = System.Text.Encoding.UTF8.GetString(enumerator.Current);
+               filter2Name = Encoding.UTF8.GetString(enumerator.Current);
 
                hasMoreFilters = enumerator.MoveNext();
             }
@@ -55,8 +54,8 @@ public class UnsubscribeOptionsTests
          {
             hasUserProp = true;
             var userProp = userPropEnum.Current;
-            userPropKey = System.Text.Encoding.UTF8.GetString(userProp.KeyUtf8Bytes);
-            userPropVal = System.Text.Encoding.UTF8.GetString(userProp.ValueBytes);
+            userPropKey = Encoding.UTF8.GetString(userProp.KeyUtf8Bytes);
+            userPropVal = Encoding.UTF8.GetString(userProp.ValueBytes);
             hasMoreUserProps = userPropEnum.MoveNext();
          }
       }
@@ -118,6 +117,7 @@ public class UnsubscribeOptionsTests
          .Build();
       var invalidResult2 = UnsubscribeOptionsValidator.Validate(invalidOptions2);
       await Assert.That(invalidResult2.IsSuccess).IsFalse();
-      await Assert.That(invalidResult2.Error.Detail).IsEqualTo("The character '#' is only allowed at the end of the topic.");
+      await Assert.That(invalidResult2.Error.Detail)
+         .IsEqualTo("The character '#' is only allowed at the end of the topic.");
    }
 }

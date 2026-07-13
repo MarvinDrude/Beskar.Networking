@@ -1,16 +1,11 @@
-using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.IO.Pipelines;
 using System.Net;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Beskar.Memory.Results;
-using Beskar.Mqtt.Protocol.Enums;
-using Beskar.Mqtt.Protocol.Models;
-using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server;
 using Beskar.Mqtt.Server.Enums;
 using Beskar.Mqtt.Server.Handlers;
@@ -26,64 +21,8 @@ namespace Beskar.Mqtt.Common.Tests.Internal;
 
 public class PublishHandlerTests
 {
-   private class DummyNetworkListener : INetworkListener
-   {
-      public EndPoint LocalAddress => new IPEndPoint(IPAddress.Loopback, 0);
-      public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default) => ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
-      public ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default) => ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
-      public ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default) => throw new NotImplementedException();
-      public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-   }
-
-   private class DummyNetworkSession : INetworkSession
-   {
-      public Guid Id { get; } = Guid.NewGuid();
-      public EndPoint RemoteAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
-      public EndPoint LocalAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
-      public bool IsSupportingMultiplexing => false;
-      public bool IsSupportingUnidirectional => false;
-      public CancellationToken SessionClosedToken => CancellationToken.None;
-      public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
-      public NetworkStats Stats => default;
-      public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default) => throw new NotImplementedException();
-      public ValueTask<Result<INetworkStream, NetworkCodeError>> OpenStreamAsync(NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional, CancellationToken ct = default) => throw new NotImplementedException();
-      public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-   }
-
-   private class MockDuplexPipe : IDuplexPipe
-   {
-      public PipeReader Input { get; }
-      public PipeWriter Output { get; }
-
-      public MockDuplexPipe(PipeReader reader, PipeWriter writer)
-      {
-         Input = reader;
-         Output = writer;
-      }
-   }
-
-   private class MockNetworkStream : INetworkStream
-   {
-      private readonly AsyncLock _lock = new();
-      private readonly Pipe _pipe = new();
-      public long StreamId => 1;
-      public INetworkSession Session { get; } = new DummyNetworkSession();
-      public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;
-      public IDuplexPipe Transport => new MockDuplexPipe(_pipe.Reader, _pipe.Writer);
-      public NetworkStats Stats { get; set; }
-
-      public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default)
-      {
-         return _lock.LockAsync(cancellationToken);
-      }
-
-      public ValueTask DisposeAsync()
-      {
-         return ValueTask.CompletedTask;
-      }
-   }
-
-   private static (MqttServer, MqttServerClient, ServerPacketHandler, MockNetworkStream) SetupEnvironment(MqttProtocolVersion version)
+   private static (MqttServer, MqttServerClient, ServerPacketHandler, MockNetworkStream) SetupEnvironment(
+      MqttProtocolVersion version)
    {
       var options = new MqttServerOptions();
       var server = new MqttServer([], options);
@@ -140,7 +79,8 @@ public class PublishHandlerTests
 
       // Set up a subscriber session to verify routing works with the resolved alias
       var subscriberSession = new MqttSession(server, null!);
-      server.SubscriptionRouter.Subscribe(subscriberSession, "test/alias"u8.ToArray(), QualityOfServiceType.AtMostOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+      server.SubscriptionRouter.Subscribe(subscriberSession, "test/alias"u8.ToArray(), QualityOfServiceType.AtMostOnce,
+         false, false, RetainHandlingType.SendAtSubscription, 0);
 
       await handler.ExecuteAsync(stream, usePacket);
 
@@ -237,7 +177,8 @@ public class PublishHandlerTests
       var session = client.MqttSession;
 
       // Subscribe publisher's own session with NoLocal = true
-      server.SubscriptionRouter.Subscribe(session!, "test/topic"u8.ToArray(), QualityOfServiceType.AtMostOnce, true, false, RetainHandlingType.SendAtSubscription, 0);
+      server.SubscriptionRouter.Subscribe(session!, "test/topic"u8.ToArray(), QualityOfServiceType.AtMostOnce, true,
+         false, RetainHandlingType.SendAtSubscription, 0);
 
       var pubPacket = new PublishPacket
       {
@@ -266,7 +207,8 @@ public class PublishHandlerTests
       var clientB = new MqttServerClient();
       var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 3600 };
       clientB.MqttSession = sessionB;
-      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false,
+         false, RetainHandlingType.SendAtSubscription, 0);
 
       // Disconnect Client B (simulating offline state)
       sessionB.Client = null;
@@ -320,7 +262,8 @@ public class PublishHandlerTests
       var clientB = new MqttServerClient();
       var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 0 };
       clientB.MqttSession = sessionB;
-      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false,
+         false, RetainHandlingType.SendAtSubscription, 0);
 
       // Disconnect Client B
       await server.ClientSessions.HandleClientDisconnectAsync(clientB);
@@ -354,7 +297,8 @@ public class PublishHandlerTests
       var clientB = new MqttServerClient();
       var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 1 };
       clientB.MqttSession = sessionB;
-      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false,
+         false, RetainHandlingType.SendAtSubscription, 0);
 
       // Disconnect Client B
       await server.ClientSessions.HandleClientDisconnectAsync(clientB);
@@ -411,13 +355,15 @@ public class PublishHandlerTests
          SessionExpiryInterval = 3600,
          EndPoint = new IPEndPoint(IPAddress.Loopback, 1883)
       };
-      var sessionResult = await server.ClientSessions.GetOrCreateSession(clientB, connectOptions, CancellationToken.None);
+      var sessionResult =
+         await server.ClientSessions.GetOrCreateSession(clientB, connectOptions, CancellationToken.None);
       var sessionB = sessionResult.Session;
 
       // Verify that ExpiryInterval was forced to 0
       await Assert.That(sessionB.ExpiryInterval).IsEqualTo(0u);
 
-      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false,
+         false, RetainHandlingType.SendAtSubscription, 0);
 
       // Disconnect Client B
       await server.ClientSessions.HandleClientDisconnectAsync(clientB);
@@ -453,7 +399,8 @@ public class PublishHandlerTests
       var clientB = new MqttServerClient();
       var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 3600 };
       clientB.MqttSession = sessionB;
-      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false,
+         false, RetainHandlingType.SendAtSubscription, 0);
       sessionB.Client = null;
 
       // Publish 3 QoS 1 messages
@@ -488,13 +435,14 @@ public class PublishHandlerTests
    {
       var (server, clientA, handlerA, streamA) = SetupEnvironment(MqttProtocolVersion.V50);
       server.Options.MaxPendingMessagesPerConnection = 2;
-      server.Options.PendingMessageOverflowBehavior = Beskar.Mqtt.Server.Enums.MessageOverflowBehavior.DropNewest;
+      server.Options.PendingMessageOverflowBehavior = MessageOverflowBehavior.DropNewest;
 
       // Create Session B and subscribe to QoS 1, then disconnect
       var clientB = new MqttServerClient();
       var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 3600 };
       clientB.MqttSession = sessionB;
-      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false, RetainHandlingType.SendAtSubscription, 0);
+      server.SubscriptionRouter.Subscribe(sessionB, "test/topic"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false,
+         false, RetainHandlingType.SendAtSubscription, 0);
       sessionB.Client = null;
 
       // Publish 3 QoS 1 messages
@@ -522,5 +470,91 @@ public class PublishHandlerTests
 
       sessionB.TryDequeueOfflineMessage(out var msg2);
       await Assert.That(Encoding.UTF8.GetString(msg2!.Message.Payload.Span)).IsEqualTo("msg2");
+   }
+
+   private class DummyNetworkListener : INetworkListener
+   {
+      public EndPoint LocalAddress => new IPEndPoint(IPAddress.Loopback, 0);
+
+      public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
+      {
+         return ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
+      }
+
+      public ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default)
+      {
+         return ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
+      }
+
+      public ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
+      {
+         throw new NotImplementedException();
+      }
+
+      public ValueTask DisposeAsync()
+      {
+         return ValueTask.CompletedTask;
+      }
+   }
+
+   private class DummyNetworkSession : INetworkSession
+   {
+      public Guid Id { get; } = Guid.NewGuid();
+      public EndPoint RemoteAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
+      public EndPoint LocalAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
+      public bool IsSupportingMultiplexing => false;
+      public bool IsSupportingUnidirectional => false;
+      public CancellationToken SessionClosedToken => CancellationToken.None;
+      public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
+      public NetworkStats Stats => default;
+
+      public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
+      {
+         throw new NotImplementedException();
+      }
+
+      public ValueTask<Result<INetworkStream, NetworkCodeError>> OpenStreamAsync(
+         NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional, CancellationToken ct = default)
+      {
+         throw new NotImplementedException();
+      }
+
+      public ValueTask DisposeAsync()
+      {
+         return ValueTask.CompletedTask;
+      }
+   }
+
+   private class MockDuplexPipe : IDuplexPipe
+   {
+      public MockDuplexPipe(PipeReader reader, PipeWriter writer)
+      {
+         Input = reader;
+         Output = writer;
+      }
+
+      public PipeReader Input { get; }
+      public PipeWriter Output { get; }
+   }
+
+   private class MockNetworkStream : INetworkStream
+   {
+      private readonly AsyncLock _lock = new();
+      private readonly Pipe _pipe = new();
+      public long StreamId => 1;
+      public INetworkSession Session { get; } = new DummyNetworkSession();
+      public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;
+      public IDuplexPipe Transport => new MockDuplexPipe(_pipe.Reader, _pipe.Writer);
+      public NetworkStats Stats { get; set; }
+
+      public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default)
+      {
+         return _lock.LockAsync(cancellationToken);
+      }
+
+      public ValueTask DisposeAsync()
+      {
+         return ValueTask.CompletedTask;
+      }
    }
 }

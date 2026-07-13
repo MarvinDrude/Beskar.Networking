@@ -5,12 +5,12 @@
    </PropertyGroup>
 
    <ItemGroup>
-      <PackageReference Include="TUnit" />
+      <PackageReference Include="TUnit"/>
    </ItemGroup>
 
    <ItemGroup>
-     <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
-     <ProjectReference Include="..\Beskar.Mqtt.Server\Beskar.Mqtt.Server.csproj" />
+      <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj"/>
+      <ProjectReference Include="..\Beskar.Mqtt.Server\Beskar.Mqtt.Server.csproj"/>
    </ItemGroup>
 
 </Project>

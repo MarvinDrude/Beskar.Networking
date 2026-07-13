@@ -1,13 +1,15 @@
 using System.Buffers;
+using System.Net;
+using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Writers;
+using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
-using Beskar.Mqtt.Common.Builders.Connecting;
-using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Encoders.Properties;
+using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Common.Tests.Helpers;
 using Beskar.Mqtt.Protocol.Enums;
@@ -41,7 +43,7 @@ public class Version5ParsingTests
 
             var reasonBytes = new byte[p.ReasonStringUtf8Bytes.Length];
             p.ReasonStringUtf8Bytes.CopyTo(reasonBytes);
-            parsedReasonString = System.Text.Encoding.UTF8.GetString(reasonBytes);
+            parsedReasonString = Encoding.UTF8.GetString(reasonBytes);
          }
       };
 
@@ -54,7 +56,7 @@ public class Version5ParsingTests
          try
          {
             var propEncoder = propWriter.AsPubAckPropertyEncoder();
-            propEncoder.WriteReasonString(System.Text.Encoding.UTF8.GetBytes(expectedReasonString));
+            propEncoder.WriteReasonString(Encoding.UTF8.GetBytes(expectedReasonString));
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
          finally
@@ -177,18 +179,18 @@ public class Version5ParsingTests
 
             var topicBytes = new byte[p.TopicUtf8Bytes.Length];
             p.TopicUtf8Bytes.CopyTo(topicBytes);
-            parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+            parsedTopic = Encoding.UTF8.GetString(topicBytes);
 
             parsedPayload = new byte[p.Payload.Length];
             p.Payload.CopyTo(parsedPayload);
 
             var contentTypeBytes = new byte[p.ContentTypeUtf8Bytes.Length];
             p.ContentTypeUtf8Bytes.CopyTo(contentTypeBytes);
-            parsedContentType = System.Text.Encoding.UTF8.GetString(contentTypeBytes);
+            parsedContentType = Encoding.UTF8.GetString(contentTypeBytes);
 
             var respTopicBytes = new byte[p.ResponseTopicUtf8Bytes.Length];
             p.ResponseTopicUtf8Bytes.CopyTo(respTopicBytes);
-            parsedResponseTopic = System.Text.Encoding.UTF8.GetString(respTopicBytes);
+            parsedResponseTopic = Encoding.UTF8.GetString(respTopicBytes);
 
             parsedSubId = p.SubscriptionIdentifier;
          }
@@ -203,8 +205,8 @@ public class Version5ParsingTests
          try
          {
             var propEncoder = propWriter.AsPublishPropertyEncoder();
-            propEncoder.WriteContentType(System.Text.Encoding.UTF8.GetBytes(expectedContentType));
-            propEncoder.WriteResponseTopic(System.Text.Encoding.UTF8.GetBytes(expectedResponseTopic));
+            propEncoder.WriteContentType(Encoding.UTF8.GetBytes(expectedContentType));
+            propEncoder.WriteResponseTopic(Encoding.UTF8.GetBytes(expectedResponseTopic));
             propEncoder.WriteSubscriptionIdentifier(expectedSubId);
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
@@ -219,7 +221,7 @@ public class Version5ParsingTests
             QualityOfService = expectedQos,
             Retain = expectedRetain,
             PacketIdentifier = expectedPacketId,
-            TopicUtf8Bytes = new ReadOnlySequence<byte>(System.Text.Encoding.UTF8.GetBytes(expectedTopic)),
+            TopicUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(expectedTopic)),
             Payload = new ReadOnlySequence<byte>(expectedPayload),
             PropertiesBytes = propBuffer.WrittenSequence
          };
@@ -277,7 +279,7 @@ public class Version5ParsingTests
 
             var clientBytes = new byte[p.ClientIdUtf8Bytes.Length];
             p.ClientIdUtf8Bytes.CopyTo(clientBytes);
-            parsedClientId = System.Text.Encoding.UTF8.GetString(clientBytes);
+            parsedClientId = Encoding.UTF8.GetString(clientBytes);
 
             parsedSessionExpiry = p.SessionExpiryInterval;
             parsedMaxPacketSize = p.MaximumPacketSize;
@@ -306,7 +308,7 @@ public class Version5ParsingTests
          {
             IsCleanSession = expectedCleanSession,
             KeepAliveInterval = expectedKeepAlive,
-            ClientIdUtf8Bytes = new ReadOnlySequence<byte>(System.Text.Encoding.UTF8.GetBytes(expectedClientId)),
+            ClientIdUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(expectedClientId)),
             PropertiesBytes = propBuffer.WrittenSequence
          };
 
@@ -358,7 +360,7 @@ public class Version5ParsingTests
 
             var assignedBytes = new byte[p.AssignedClientIdentifierUtf8Bytes.Length];
             p.AssignedClientIdentifierUtf8Bytes.CopyTo(assignedBytes);
-            parsedAssignedClientId = System.Text.Encoding.UTF8.GetString(assignedBytes);
+            parsedAssignedClientId = Encoding.UTF8.GetString(assignedBytes);
          }
       };
 
@@ -372,7 +374,7 @@ public class Version5ParsingTests
          {
             var propEncoder = propWriter.AsConnAckPropertyEncoder();
             propEncoder.WriteMaximumQoS(expectedMaxQos);
-            propEncoder.WriteAssignedClientIdentifier(System.Text.Encoding.UTF8.GetBytes(expectedAssignedClientId));
+            propEncoder.WriteAssignedClientIdentifier(Encoding.UTF8.GetBytes(expectedAssignedClientId));
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
          finally
@@ -428,7 +430,7 @@ public class Version5ParsingTests
 
             var serverRefBytes = new byte[p.ServerReferenceUtf8Bytes.Length];
             p.ServerReferenceUtf8Bytes.CopyTo(serverRefBytes);
-            parsedServerRef = System.Text.Encoding.UTF8.GetString(serverRefBytes);
+            parsedServerRef = Encoding.UTF8.GetString(serverRefBytes);
          }
       };
 
@@ -441,7 +443,7 @@ public class Version5ParsingTests
          try
          {
             var propEncoder = propWriter.AsDisconnectPropertyEncoder();
-            propEncoder.WriteServerReference(System.Text.Encoding.UTF8.GetBytes(expectedServerRef));
+            propEncoder.WriteServerReference(Encoding.UTF8.GetBytes(expectedServerRef));
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
          finally
@@ -496,7 +498,7 @@ public class Version5ParsingTests
 
             var methodBytes = new byte[p.AuthenticationMethodUtf8Bytes.Length];
             p.AuthenticationMethodUtf8Bytes.CopyTo(methodBytes);
-            parsedMethod = System.Text.Encoding.UTF8.GetString(methodBytes);
+            parsedMethod = Encoding.UTF8.GetString(methodBytes);
 
             parsedData = new byte[p.AuthenticationDataBytes.Length];
             p.AuthenticationDataBytes.CopyTo(parsedData);
@@ -512,7 +514,7 @@ public class Version5ParsingTests
          try
          {
             var propEncoder = propWriter.AsAuthPropertyEncoder();
-            propEncoder.WriteAuthenticationMethod(System.Text.Encoding.UTF8.GetBytes(expectedMethod));
+            propEncoder.WriteAuthenticationMethod(Encoding.UTF8.GetBytes(expectedMethod));
             propEncoder.WriteAuthenticationData(expectedData);
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
@@ -627,10 +629,10 @@ public class Version5ParsingTests
       // SUBSCRIBE payload: topic "test" (length 4) + option byte: Max QoS = 1, NL = 1, RAP = 1, Retain Handling = 2 -> 0x2D
       var expectedFiltersBytes = new byte[] { 0x00, 0x04, (byte)'t', (byte)'e', (byte)'s', (byte)'t', 0x2D };
 
-      QualityOfServiceType parsedQos = QualityOfServiceType.AtMostOnce;
-      bool parsedNoLocal = false;
-      bool parsedRetainAsPublished = false;
-      RetainHandlingType parsedRetainHandling = RetainHandlingType.SendAtSubscription;
+      var parsedQos = QualityOfServiceType.AtMostOnce;
+      var parsedNoLocal = false;
+      var parsedRetainAsPublished = false;
+      var parsedRetainHandling = RetainHandlingType.SendAtSubscription;
 
       var handler = new TestPacketHandler
       {
@@ -691,10 +693,7 @@ public class Version5ParsingTests
 
       var handler = new TestPacketHandler
       {
-         OnSubscribe = (in p) =>
-         {
-            wasInvoked = true;
-         }
+         OnSubscribe = (in p) => { wasInvoked = true; }
       };
 
       ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
@@ -799,7 +798,7 @@ public class Version5ParsingTests
 
             var reasonBytes = new byte[p.ReasonStringUtf8Bytes.Length];
             p.ReasonStringUtf8Bytes.CopyTo(reasonBytes);
-            parsedReasonString = System.Text.Encoding.UTF8.GetString(reasonBytes);
+            parsedReasonString = Encoding.UTF8.GetString(reasonBytes);
          }
       };
 
@@ -812,7 +811,7 @@ public class Version5ParsingTests
          try
          {
             var propEncoder = propWriter.AsPubAckPropertyEncoder();
-            propEncoder.WriteReasonString(System.Text.Encoding.UTF8.GetBytes(expectedReasonString));
+            propEncoder.WriteReasonString(Encoding.UTF8.GetBytes(expectedReasonString));
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
          finally
@@ -820,12 +819,12 @@ public class Version5ParsingTests
             propWriter.Dispose();
          }
 
-          var originalPacket = new PubAckPacket
-          {
-             PacketIdentifier = originalPacketId,
-             ReasonCode = expectedReasonCode,
-             PropertiesBytes = propBuffer.WrittenSequence.ToArray()
-          };
+         var originalPacket = new PubAckPacket
+         {
+            PacketIdentifier = originalPacketId,
+            ReasonCode = expectedReasonCode,
+            PropertiesBytes = propBuffer.WrittenSequence.ToArray()
+         };
 
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubAck(originalPacket);
@@ -870,12 +869,12 @@ public class Version5ParsingTests
       int bytesConsumed;
 
       {
-          var originalPacket = new PubRecPacket
-          {
-             PacketIdentifier = originalPacketId,
-             ReasonCode = PubRecReasonCode.Success,
-             PropertiesBytes = ReadOnlyMemory<byte>.Empty
-          };
+         var originalPacket = new PubRecPacket
+         {
+            PacketIdentifier = originalPacketId,
+            ReasonCode = PubRecReasonCode.Success,
+            PropertiesBytes = ReadOnlyMemory<byte>.Empty
+         };
 
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRec(originalPacket);
@@ -919,7 +918,7 @@ public class Version5ParsingTests
 
             var reasonBytes = new byte[p.ReasonStringUtf8Bytes.Length];
             p.ReasonStringUtf8Bytes.CopyTo(reasonBytes);
-            parsedReasonString = System.Text.Encoding.UTF8.GetString(reasonBytes);
+            parsedReasonString = Encoding.UTF8.GetString(reasonBytes);
          }
       };
 
@@ -932,7 +931,7 @@ public class Version5ParsingTests
          try
          {
             var propEncoder = propWriter.AsPubAckPropertyEncoder();
-            propEncoder.WriteReasonString(System.Text.Encoding.UTF8.GetBytes(expectedReasonString));
+            propEncoder.WriteReasonString(Encoding.UTF8.GetBytes(expectedReasonString));
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
          finally
@@ -940,12 +939,12 @@ public class Version5ParsingTests
             propWriter.Dispose();
          }
 
-          var originalPacket = new PubRelPacket
-          {
-             PacketIdentifier = originalPacketId,
-             ReasonCode = expectedReasonCode,
-             PropertiesBytes = propBuffer.WrittenSequence.ToArray()
-          };
+         var originalPacket = new PubRelPacket
+         {
+            PacketIdentifier = originalPacketId,
+            ReasonCode = expectedReasonCode,
+            PropertiesBytes = propBuffer.WrittenSequence.ToArray()
+         };
 
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRel(originalPacket);
@@ -990,12 +989,12 @@ public class Version5ParsingTests
       int bytesConsumed;
 
       {
-          var originalPacket = new PubRelPacket
-          {
-             PacketIdentifier = originalPacketId,
-             ReasonCode = PubRelReasonCode.Success,
-             PropertiesBytes = ReadOnlyMemory<byte>.Empty
-          };
+         var originalPacket = new PubRelPacket
+         {
+            PacketIdentifier = originalPacketId,
+            ReasonCode = PubRelReasonCode.Success,
+            PropertiesBytes = ReadOnlyMemory<byte>.Empty
+         };
 
          var encoder = new PacketVersion5Encoder(buffer);
          encoder.WritePubRel(originalPacket);
@@ -1039,7 +1038,7 @@ public class Version5ParsingTests
 
             var reasonBytes = new byte[p.ReasonStringUtf8Bytes.Length];
             p.ReasonStringUtf8Bytes.CopyTo(reasonBytes);
-            parsedReasonString = System.Text.Encoding.UTF8.GetString(reasonBytes);
+            parsedReasonString = Encoding.UTF8.GetString(reasonBytes);
          }
       };
 
@@ -1052,7 +1051,7 @@ public class Version5ParsingTests
          try
          {
             var propEncoder = propWriter.AsPubAckPropertyEncoder();
-            propEncoder.WriteReasonString(System.Text.Encoding.UTF8.GetBytes(expectedReasonString));
+            propEncoder.WriteReasonString(Encoding.UTF8.GetBytes(expectedReasonString));
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
          finally
@@ -1162,7 +1161,7 @@ public class Version5ParsingTests
 
             var reasonBytes = new byte[p.ReasonStringUtf8Bytes.Length];
             p.ReasonStringUtf8Bytes.CopyTo(reasonBytes);
-            parsedReasonString = System.Text.Encoding.UTF8.GetString(reasonBytes);
+            parsedReasonString = Encoding.UTF8.GetString(reasonBytes);
          }
       };
 
@@ -1175,7 +1174,7 @@ public class Version5ParsingTests
          try
          {
             var propEncoder = propWriter.AsSubAckPropertyEncoder();
-            propEncoder.WriteReasonString(System.Text.Encoding.UTF8.GetBytes(expectedReasonString));
+            propEncoder.WriteReasonString(Encoding.UTF8.GetBytes(expectedReasonString));
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
          finally
@@ -1235,7 +1234,7 @@ public class Version5ParsingTests
 
             var reasonBytes = new byte[p.ReasonStringUtf8Bytes.Length];
             p.ReasonStringUtf8Bytes.CopyTo(reasonBytes);
-            parsedReasonString = System.Text.Encoding.UTF8.GetString(reasonBytes);
+            parsedReasonString = Encoding.UTF8.GetString(reasonBytes);
          }
       };
 
@@ -1248,7 +1247,7 @@ public class Version5ParsingTests
          try
          {
             var propEncoder = propWriter.AsUnsubAckPropertyEncoder();
-            propEncoder.WriteReasonString(System.Text.Encoding.UTF8.GetBytes(expectedReasonString));
+            propEncoder.WriteReasonString(Encoding.UTF8.GetBytes(expectedReasonString));
             propBuffer.Advance(propEncoder.Encoder.Writer.Position);
          }
          finally
@@ -1309,7 +1308,7 @@ public class Version5ParsingTests
       byte[]? parsedPayload = null;
       string? parsedContentType = null;
       string? parsedResponseTopic = null;
-      PayloadFormat parsedPayloadFormat = PayloadFormat.Unspecified;
+      var parsedPayloadFormat = PayloadFormat.Unspecified;
       uint parsedMessageExpiry = 0;
       ushort parsedTopicAlias = 0;
       var hasUserProp = false;
@@ -1327,28 +1326,25 @@ public class Version5ParsingTests
 
             var topicBytes = new byte[p.TopicUtf8Bytes.Length];
             p.TopicUtf8Bytes.CopyTo(topicBytes);
-            parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+            parsedTopic = Encoding.UTF8.GetString(topicBytes);
 
             parsedPayload = new byte[p.Payload.Length];
             p.Payload.CopyTo(parsedPayload);
 
             var contentTypeBytes = new byte[p.ContentTypeUtf8Bytes.Length];
             p.ContentTypeUtf8Bytes.CopyTo(contentTypeBytes);
-            parsedContentType = System.Text.Encoding.UTF8.GetString(contentTypeBytes);
+            parsedContentType = Encoding.UTF8.GetString(contentTypeBytes);
 
             var respTopicBytes = new byte[p.ResponseTopicUtf8Bytes.Length];
             p.ResponseTopicUtf8Bytes.CopyTo(respTopicBytes);
-            parsedResponseTopic = System.Text.Encoding.UTF8.GetString(respTopicBytes);
+            parsedResponseTopic = Encoding.UTF8.GetString(respTopicBytes);
 
             parsedPayloadFormat = p.PayloadFormat;
             parsedMessageExpiry = p.MessageExpiryInterval;
             parsedTopicAlias = p.TopicAlias;
 
             var subIdEnumerator = p.GetSubscriptionIdentifiers();
-            while (subIdEnumerator.MoveNext())
-            {
-               parsedSubIds.Add(subIdEnumerator.Current);
-            }
+            while (subIdEnumerator.MoveNext()) parsedSubIds.Add(subIdEnumerator.Current);
 
             var propertiesEnumerator = p.GetProperties();
             while (propertiesEnumerator.MoveNext())
@@ -1359,16 +1355,13 @@ public class Version5ParsingTests
                   var pair = prop.AsUserProperty();
                   var keyBytes = new byte[pair.KeyBytes.Length];
                   pair.KeyBytes.CopyTo(keyBytes);
-                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+                  var key = Encoding.UTF8.GetString(keyBytes);
 
                   var valBytes = new byte[pair.ValueBytes.Length];
                   pair.ValueBytes.CopyTo(valBytes);
-                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+                  var val = Encoding.UTF8.GetString(valBytes);
 
-                  if (key == "user-key" && val == "user-val")
-                  {
-                     hasUserProp = true;
-                  }
+                  if (key == "user-key" && val == "user-val") hasUserProp = true;
                }
             }
          }
@@ -1460,7 +1453,7 @@ public class Version5ParsingTests
                var filter = enumerator.Current;
                var topicBytes = new byte[filter.TopicUtf8Bytes.Length];
                filter.TopicUtf8Bytes.CopyTo(topicBytes);
-               parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+               parsedTopic = Encoding.UTF8.GetString(topicBytes);
 
                parsedQos = filter.QualityOfService;
                parsedNoLocal = filter.NoLocal;
@@ -1477,16 +1470,13 @@ public class Version5ParsingTests
                   var pair = prop.AsUserProperty();
                   var keyBytes = new byte[pair.KeyBytes.Length];
                   pair.KeyBytes.CopyTo(keyBytes);
-                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+                  var key = Encoding.UTF8.GetString(keyBytes);
 
                   var valBytes = new byte[pair.ValueBytes.Length];
                   pair.ValueBytes.CopyTo(valBytes);
-                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+                  var val = Encoding.UTF8.GetString(valBytes);
 
-                  if (key == "sub-key" && val == "sub-val")
-                  {
-                     hasUserProp = true;
-                  }
+                  if (key == "sub-key" && val == "sub-val") hasUserProp = true;
                }
             }
          }
@@ -1498,7 +1488,8 @@ public class Version5ParsingTests
       {
          var options = new SubscribeOptions();
          options.SubscriptionIdentifier = expectedSubId;
-         options.TopicFilters.Add(expectedTopic, expectedQos, expectedNoLocal, expectedRetainAsPublished, expectedRetainHandling);
+         options.TopicFilters.Add(expectedTopic, expectedQos, expectedNoLocal, expectedRetainAsPublished,
+            expectedRetainHandling);
          options.UserProperties.Add("sub-key", "sub-val");
 
          var encoder = new PacketVersion5Encoder(buffer);
@@ -1537,7 +1528,7 @@ public class Version5ParsingTests
       var hasUserProp = false;
 
       ushort parsedPacketId = 0;
-      var parsedFilters = new System.Collections.Generic.List<string>();
+      var parsedFilters = new List<string>();
 
       var handler = new TestPacketHandler
       {
@@ -1551,7 +1542,7 @@ public class Version5ParsingTests
             {
                var filterBytes = new byte[enumerator.Current.Length];
                enumerator.Current.CopyTo(filterBytes);
-               parsedFilters.Add(System.Text.Encoding.UTF8.GetString(filterBytes));
+               parsedFilters.Add(Encoding.UTF8.GetString(filterBytes));
             }
 
             var propertiesEnumerator = p.GetProperties();
@@ -1563,16 +1554,13 @@ public class Version5ParsingTests
                   var pair = prop.AsUserProperty();
                   var keyBytes = new byte[pair.KeyBytes.Length];
                   pair.KeyBytes.CopyTo(keyBytes);
-                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+                  var key = Encoding.UTF8.GetString(keyBytes);
 
                   var valBytes = new byte[pair.ValueBytes.Length];
                   pair.ValueBytes.CopyTo(valBytes);
-                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+                  var val = Encoding.UTF8.GetString(valBytes);
 
-                  if (key == "unsub-key" && val == "unsub-val")
-                  {
-                     hasUserProp = true;
-                  }
+                  if (key == "unsub-key" && val == "unsub-val") hasUserProp = true;
                }
             }
          }
@@ -1679,7 +1667,7 @@ public class Version5ParsingTests
 
             var clientBytes = new byte[p.ClientIdUtf8Bytes.Length];
             p.ClientIdUtf8Bytes.CopyTo(clientBytes);
-            parsedClientId = System.Text.Encoding.UTF8.GetString(clientBytes);
+            parsedClientId = Encoding.UTF8.GetString(clientBytes);
 
             parsedHasWill = p.HasWill;
             parsedWillQos = p.WillQualityOfService;
@@ -1687,14 +1675,14 @@ public class Version5ParsingTests
 
             var willTopicBytes = new byte[p.WillTopicUtf8Bytes.Length];
             p.WillTopicUtf8Bytes.CopyTo(willTopicBytes);
-            parsedWillTopic = System.Text.Encoding.UTF8.GetString(willTopicBytes);
+            parsedWillTopic = Encoding.UTF8.GetString(willTopicBytes);
 
             parsedWillMessage = new byte[p.WillMessageBytes.Length];
             p.WillMessageBytes.CopyTo(parsedWillMessage);
 
             var userBytes = new byte[p.UsernameUtf8Bytes.Length];
             p.UsernameUtf8Bytes.CopyTo(userBytes);
-            parsedUsername = System.Text.Encoding.UTF8.GetString(userBytes);
+            parsedUsername = Encoding.UTF8.GetString(userBytes);
 
             parsedPassword = new byte[p.PasswordBytes.Length];
             p.PasswordBytes.CopyTo(parsedPassword);
@@ -1707,7 +1695,7 @@ public class Version5ParsingTests
 
             var authMethodBytes = new byte[p.AuthenticationMethodUtf8Bytes.Length];
             p.AuthenticationMethodUtf8Bytes.CopyTo(authMethodBytes);
-            parsedAuthMethod = System.Text.Encoding.UTF8.GetString(authMethodBytes);
+            parsedAuthMethod = Encoding.UTF8.GetString(authMethodBytes);
 
             parsedAuthData = new byte[p.AuthenticationDataBytes.Length];
             p.AuthenticationDataBytes.CopyTo(parsedAuthData);
@@ -1718,11 +1706,11 @@ public class Version5ParsingTests
 
             var contentTypeBytes = new byte[p.WillContentTypeUtf8Bytes.Length];
             p.WillContentTypeUtf8Bytes.CopyTo(contentTypeBytes);
-            parsedWillContentType = System.Text.Encoding.UTF8.GetString(contentTypeBytes);
+            parsedWillContentType = Encoding.UTF8.GetString(contentTypeBytes);
 
             var respTopicBytes = new byte[p.WillResponseTopicUtf8Bytes.Length];
             p.WillResponseTopicUtf8Bytes.CopyTo(respTopicBytes);
-            parsedWillRespTopic = System.Text.Encoding.UTF8.GetString(respTopicBytes);
+            parsedWillRespTopic = Encoding.UTF8.GetString(respTopicBytes);
 
             parsedWillCorrData = new byte[p.WillCorrelationDataBytes.Length];
             p.WillCorrelationDataBytes.CopyTo(parsedWillCorrData);
@@ -1736,16 +1724,13 @@ public class Version5ParsingTests
                   var pair = prop.AsUserProperty();
                   var keyBytes = new byte[pair.KeyBytes.Length];
                   pair.KeyBytes.CopyTo(keyBytes);
-                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+                  var key = Encoding.UTF8.GetString(keyBytes);
 
                   var valBytes = new byte[pair.ValueBytes.Length];
                   pair.ValueBytes.CopyTo(valBytes);
-                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+                  var val = Encoding.UTF8.GetString(valBytes);
 
-                  if (key == "conn-key" && val == "conn-val")
-                  {
-                     hasUserProp = true;
-                  }
+                  if (key == "conn-key" && val == "conn-val") hasUserProp = true;
                }
             }
 
@@ -1758,16 +1743,13 @@ public class Version5ParsingTests
                   var pair = prop.AsUserProperty();
                   var keyBytes = new byte[pair.KeyBytes.Length];
                   pair.KeyBytes.CopyTo(keyBytes);
-                  var key = System.Text.Encoding.UTF8.GetString(keyBytes);
+                  var key = Encoding.UTF8.GetString(keyBytes);
 
                   var valBytes = new byte[pair.ValueBytes.Length];
                   pair.ValueBytes.CopyTo(valBytes);
-                  var val = System.Text.Encoding.UTF8.GetString(valBytes);
+                  var val = Encoding.UTF8.GetString(valBytes);
 
-                  if (key == "will-key" && val == "will-val")
-                  {
-                     hasWillUserProp = true;
-                  }
+                  if (key == "will-key" && val == "will-val") hasWillUserProp = true;
                }
             }
          }
@@ -1779,29 +1761,29 @@ public class Version5ParsingTests
       {
          var options = new ConnectOptions
          {
-            EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 1883),
+            EndPoint = new IPEndPoint(IPAddress.Loopback, 1883),
             CleanSession = expectedCleanSession,
             KeepAlivePeriod = expectedKeepAlive,
-            ClientIdUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedClientId),
-            UsernameUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedUsername),
+            ClientIdUtf8Bytes = Encoding.UTF8.GetBytes(expectedClientId),
+            UsernameUtf8Bytes = Encoding.UTF8.GetBytes(expectedUsername),
             PasswordBytes = expectedPassword,
             SessionExpiryInterval = expectedSessionExpiry,
             TopicAliasMaximum = expectedTopicAliasMax,
             MaximumPacketSize = expectedMaxPacketSize,
             RequestResponseInformation = expectedRequestResponseInfo,
             RequestProblemInformation = expectedRequestProblemInfo,
-            AuthenticationMethodUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedAuthMethod),
+            AuthenticationMethodUtf8Bytes = Encoding.UTF8.GetBytes(expectedAuthMethod),
             AuthenticationDataBytes = expectedAuthData,
             HasWill = expectedHasWill,
             WillQualityOfService = expectedWillQos,
             WillRetain = expectedWillRetain,
-            WillTopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedWillTopic),
+            WillTopicUtf8Bytes = Encoding.UTF8.GetBytes(expectedWillTopic),
             WillPayload = new ReadOnlySequence<byte>(expectedWillMessage),
             WillDelayInterval = expectedWillDelay,
             WillPayloadFormatIndicator = expectedWillPayloadFormat,
             WillMessageExpiryInterval = expectedWillExpiry,
-            WillContentTypeUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedWillContentType),
-            WillResponseTopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedWillRespTopic),
+            WillContentTypeUtf8Bytes = Encoding.UTF8.GetBytes(expectedWillContentType),
+            WillResponseTopicUtf8Bytes = Encoding.UTF8.GetBytes(expectedWillRespTopic),
             WillCorrelationDataBytes = expectedWillCorrData
          };
          options.UserProperties.Add("conn-key", "conn-val");

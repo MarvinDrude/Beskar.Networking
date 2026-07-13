@@ -1,7 +1,7 @@
 using System.Buffers;
+using System.Text;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Protocol.Enums;
-using Beskar.Mqtt.Protocol.Models;
 
 namespace Beskar.Mqtt.Common.Tests.Builders;
 
@@ -13,8 +13,9 @@ public class SubscribeOptionsTests
       // Arrange
       var builder = new SubscribeOptionsBuilder()
          .WithSubscriptionIdentifier(42)
-         .WithTopicFilter("sports/tennis", QualityOfServiceType.AtLeastOnce, noLocal: true, retainAsPublished: false, RetainHandlingType.SendOnNewSubscriptionOnly)
-         .WithTopicFilter("sports/golf", QualityOfServiceType.ExactlyOnce, noLocal: false, retainAsPublished: true, RetainHandlingType.DoNotSend)
+         .WithTopicFilter("sports/tennis", QualityOfServiceType.AtLeastOnce, true, false,
+            RetainHandlingType.SendOnNewSubscriptionOnly)
+         .WithTopicFilter("sports/golf", QualityOfServiceType.ExactlyOnce, false, true, RetainHandlingType.DoNotSend)
          .WithUserProperty("custom-key", "custom-value");
 
       // Act
@@ -47,7 +48,7 @@ public class SubscribeOptionsTests
             var filter1 = enumerator.Current;
             var bytes1 = new byte[filter1.TopicUtf8Bytes.Length];
             filter1.TopicUtf8Bytes.CopyTo(bytes1);
-            filter1Name = System.Text.Encoding.UTF8.GetString(bytes1);
+            filter1Name = Encoding.UTF8.GetString(bytes1);
             filter1Qos = filter1.QualityOfService;
             filter1NoLocal = filter1.NoLocal;
             filter1RetainAsPublished = filter1.RetainAsPublished;
@@ -59,7 +60,7 @@ public class SubscribeOptionsTests
                var filter2 = enumerator.Current;
                var bytes2 = new byte[filter2.TopicUtf8Bytes.Length];
                filter2.TopicUtf8Bytes.CopyTo(bytes2);
-               filter2Name = System.Text.Encoding.UTF8.GetString(bytes2);
+               filter2Name = Encoding.UTF8.GetString(bytes2);
                filter2Qos = filter2.QualityOfService;
                filter2NoLocal = filter2.NoLocal;
                filter2RetainAsPublished = filter2.RetainAsPublished;
@@ -81,8 +82,8 @@ public class SubscribeOptionsTests
          {
             hasUserProp = true;
             var userProp = userPropEnum.Current;
-            userPropKey = System.Text.Encoding.UTF8.GetString(userProp.KeyUtf8Bytes);
-            userPropVal = System.Text.Encoding.UTF8.GetString(userProp.ValueBytes);
+            userPropKey = Encoding.UTF8.GetString(userProp.KeyUtf8Bytes);
+            userPropVal = Encoding.UTF8.GetString(userProp.ValueBytes);
             hasMoreUserProps = userPropEnum.MoveNext();
          }
       }

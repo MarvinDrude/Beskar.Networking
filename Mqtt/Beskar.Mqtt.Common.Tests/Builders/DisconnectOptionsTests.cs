@@ -1,8 +1,8 @@
 using System.Buffers;
-using System.Threading.Tasks;
+using System.Text;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
-using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Encoders.Version3;
+using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Protocol.Enums;
 
 namespace Beskar.Mqtt.Common.Tests.Builders;
@@ -38,8 +38,8 @@ public class DisconnectOptionsTests
          {
             hasUserProp = true;
             var userProp = userPropEnum.Current;
-            userPropKey = System.Text.Encoding.UTF8.GetString(userProp.KeyUtf8Bytes);
-            userPropVal = System.Text.Encoding.UTF8.GetString(userProp.ValueBytes);
+            userPropKey = Encoding.UTF8.GetString(userProp.KeyUtf8Bytes);
+            userPropVal = Encoding.UTF8.GetString(userProp.ValueBytes);
             hasMoreUserProps = userPropEnum.MoveNext();
          }
       }

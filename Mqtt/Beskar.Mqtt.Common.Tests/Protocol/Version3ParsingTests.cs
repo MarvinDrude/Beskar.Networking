@@ -1,10 +1,12 @@
 using System.Buffers;
+using System.Net;
+using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
-using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Parsers;
 using Beskar.Mqtt.Common.Tests.Helpers;
@@ -222,7 +224,7 @@ public class Version3ParsingTests
 
             var topicBytes = new byte[p.TopicUtf8Bytes.Length];
             p.TopicUtf8Bytes.CopyTo(topicBytes);
-            parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+            parsedTopic = Encoding.UTF8.GetString(topicBytes);
 
             parsedPayload = new byte[p.Payload.Length];
             p.Payload.CopyTo(parsedPayload);
@@ -239,7 +241,7 @@ public class Version3ParsingTests
             QualityOfService = expectedQos,
             Retain = expectedRetain,
             PacketIdentifier = expectedPacketId,
-            TopicUtf8Bytes = new ReadOnlySequence<byte>(System.Text.Encoding.UTF8.GetBytes(expectedTopic)),
+            TopicUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(expectedTopic)),
             Payload = new ReadOnlySequence<byte>(expectedPayload)
          };
 
@@ -303,7 +305,7 @@ public class Version3ParsingTests
 
             var clientBytes = new byte[p.ClientIdUtf8Bytes.Length];
             p.ClientIdUtf8Bytes.CopyTo(clientBytes);
-            parsedClientId = System.Text.Encoding.UTF8.GetString(clientBytes);
+            parsedClientId = Encoding.UTF8.GetString(clientBytes);
 
             parsedHasWill = p.HasWill;
             parsedWillQos = p.WillQualityOfService;
@@ -311,14 +313,14 @@ public class Version3ParsingTests
 
             var willTopicBytes = new byte[p.WillTopicUtf8Bytes.Length];
             p.WillTopicUtf8Bytes.CopyTo(willTopicBytes);
-            parsedWillTopic = System.Text.Encoding.UTF8.GetString(willTopicBytes);
+            parsedWillTopic = Encoding.UTF8.GetString(willTopicBytes);
 
             parsedWillMessage = new byte[p.WillMessageBytes.Length];
             p.WillMessageBytes.CopyTo(parsedWillMessage);
 
             var userBytes = new byte[p.UsernameUtf8Bytes.Length];
             p.UsernameUtf8Bytes.CopyTo(userBytes);
-            parsedUsername = System.Text.Encoding.UTF8.GetString(userBytes);
+            parsedUsername = Encoding.UTF8.GetString(userBytes);
 
             parsedPassword = new byte[p.PasswordBytes.Length];
             p.PasswordBytes.CopyTo(parsedPassword);
@@ -333,13 +335,13 @@ public class Version3ParsingTests
          {
             IsCleanSession = expectedCleanSession,
             KeepAliveInterval = expectedKeepAlive,
-            ClientIdUtf8Bytes = new ReadOnlySequence<byte>(System.Text.Encoding.UTF8.GetBytes(expectedClientId)),
+            ClientIdUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(expectedClientId)),
             HasWill = expectedHasWill,
             WillQualityOfService = expectedWillQos,
             WillRetain = expectedWillRetain,
-            WillTopicUtf8Bytes = new ReadOnlySequence<byte>(System.Text.Encoding.UTF8.GetBytes(expectedWillTopic)),
+            WillTopicUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(expectedWillTopic)),
             WillMessageBytes = new ReadOnlySequence<byte>(expectedWillMessage),
-            UsernameUtf8Bytes = new ReadOnlySequence<byte>(System.Text.Encoding.UTF8.GetBytes(expectedUsername)),
+            UsernameUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(expectedUsername)),
             PasswordBytes = new ReadOnlySequence<byte>(expectedPassword)
          };
 
@@ -536,10 +538,7 @@ public class Version3ParsingTests
 
       var handler = new TestPacketHandler
       {
-         OnSubscribe = (in p) =>
-         {
-            wasInvoked = true;
-         }
+         OnSubscribe = (in p) => { wasInvoked = true; }
       };
 
       ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
@@ -695,7 +694,7 @@ public class Version3ParsingTests
 
             var topicBytes = new byte[p.TopicUtf8Bytes.Length];
             p.TopicUtf8Bytes.CopyTo(topicBytes);
-            parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+            parsedTopic = Encoding.UTF8.GetString(topicBytes);
 
             parsedPayload = new byte[p.Payload.Length];
             p.Payload.CopyTo(parsedPayload);
@@ -710,7 +709,7 @@ public class Version3ParsingTests
          options.Dup = expectedDup;
          options.QualityOfService = expectedQos;
          options.Retain = expectedRetain;
-         options.TopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedTopic);
+         options.TopicUtf8Bytes = Encoding.UTF8.GetBytes(expectedTopic);
          options.Payload = new ReadOnlySequence<byte>(expectedPayload);
 
          var encoder = new PacketVersion3Encoder(buffer, MqttProtocolVersion.V311);
@@ -762,7 +761,7 @@ public class Version3ParsingTests
                var filter = enumerator.Current;
                var topicBytes = new byte[filter.TopicUtf8Bytes.Length];
                filter.TopicUtf8Bytes.CopyTo(topicBytes);
-               parsedTopic = System.Text.Encoding.UTF8.GetString(topicBytes);
+               parsedTopic = Encoding.UTF8.GetString(topicBytes);
 
                parsedQos = filter.QualityOfService;
             }
@@ -820,7 +819,7 @@ public class Version3ParsingTests
             {
                var filterBytes = new byte[enumerator.Current.Length];
                enumerator.Current.CopyTo(filterBytes);
-               parsedFilters.Add(System.Text.Encoding.UTF8.GetString(filterBytes));
+               parsedFilters.Add(Encoding.UTF8.GetString(filterBytes));
             }
          }
       };
@@ -891,7 +890,7 @@ public class Version3ParsingTests
 
             var clientBytes = new byte[p.ClientIdUtf8Bytes.Length];
             p.ClientIdUtf8Bytes.CopyTo(clientBytes);
-            parsedClientId = System.Text.Encoding.UTF8.GetString(clientBytes);
+            parsedClientId = Encoding.UTF8.GetString(clientBytes);
 
             parsedHasWill = p.HasWill;
             parsedWillQos = p.WillQualityOfService;
@@ -899,14 +898,14 @@ public class Version3ParsingTests
 
             var willTopicBytes = new byte[p.WillTopicUtf8Bytes.Length];
             p.WillTopicUtf8Bytes.CopyTo(willTopicBytes);
-            parsedWillTopic = System.Text.Encoding.UTF8.GetString(willTopicBytes);
+            parsedWillTopic = Encoding.UTF8.GetString(willTopicBytes);
 
             parsedWillMessage = new byte[p.WillMessageBytes.Length];
             p.WillMessageBytes.CopyTo(parsedWillMessage);
 
             var userBytes = new byte[p.UsernameUtf8Bytes.Length];
             p.UsernameUtf8Bytes.CopyTo(userBytes);
-            parsedUsername = System.Text.Encoding.UTF8.GetString(userBytes);
+            parsedUsername = Encoding.UTF8.GetString(userBytes);
 
             parsedPassword = new byte[p.PasswordBytes.Length];
             p.PasswordBytes.CopyTo(parsedPassword);
@@ -919,16 +918,16 @@ public class Version3ParsingTests
       {
          var options = new ConnectOptions
          {
-            EndPoint = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 1883),
+            EndPoint = new IPEndPoint(IPAddress.Loopback, 1883),
             CleanSession = expectedCleanSession,
             KeepAlivePeriod = expectedKeepAlive,
-            ClientIdUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedClientId),
-            UsernameUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedUsername),
+            ClientIdUtf8Bytes = Encoding.UTF8.GetBytes(expectedClientId),
+            UsernameUtf8Bytes = Encoding.UTF8.GetBytes(expectedUsername),
             PasswordBytes = expectedPassword,
             HasWill = expectedHasWill,
             WillQualityOfService = expectedWillQos,
             WillRetain = expectedWillRetain,
-            WillTopicUtf8Bytes = System.Text.Encoding.UTF8.GetBytes(expectedWillTopic),
+            WillTopicUtf8Bytes = Encoding.UTF8.GetBytes(expectedWillTopic),
             WillPayload = new ReadOnlySequence<byte>(expectedWillMessage)
          };
 

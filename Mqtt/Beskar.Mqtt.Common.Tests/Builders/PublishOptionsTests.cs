@@ -1,8 +1,8 @@
 using System.Buffers;
+using System.Text;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Protocol.Enumerators;
 using Beskar.Mqtt.Protocol.Enums;
-using Beskar.Mqtt.Protocol.Models;
 
 namespace Beskar.Mqtt.Common.Tests.Builders;
 
@@ -13,9 +13,9 @@ public class PublishOptionsTests
    {
       // Arrange
       var builder = new PublishOptionsBuilder()
-         .WithDup(true)
+         .WithDup()
          .WithQualityOfService(QualityOfServiceType.ExactlyOnce)
-         .WithRetain(true)
+         .WithRetain()
          .WithTopic("sensor/temp"u8)
          .WithPayload("hello-world")
          .WithPayloadFormat(PayloadFormat.CharacterData)
@@ -35,10 +35,10 @@ public class PublishOptionsTests
       var retain = options.Retain;
 
       var topicBytes = options.TopicUtf8Bytes.ToArray();
-      var topicStr = System.Text.Encoding.UTF8.GetString(topicBytes);
+      var topicStr = Encoding.UTF8.GetString(topicBytes);
 
       var payloadBytes = options.Payload.ToArray();
-      var payloadStr = System.Text.Encoding.UTF8.GetString(payloadBytes);
+      var payloadStr = Encoding.UTF8.GetString(payloadBytes);
 
       // Verify serialized properties (ref struct scope block)
       var hasPayloadFormat = false;
@@ -87,7 +87,7 @@ public class PublishOptionsTests
                case PropertyIdentifier.ResponseTopic:
                   hasResponseTopic = true;
                   var respBytes = prop.AsResponseTopic().ToArray();
-                  responseTopicVal = System.Text.Encoding.UTF8.GetString(respBytes);
+                  responseTopicVal = Encoding.UTF8.GetString(respBytes);
                   break;
                case PropertyIdentifier.CorrelationData:
                   hasCorrelation = true;
@@ -96,15 +96,15 @@ public class PublishOptionsTests
                case PropertyIdentifier.ContentType:
                   hasContentType = true;
                   var ctBytes = prop.AsContentType().ToArray();
-                  contentTypeVal = System.Text.Encoding.UTF8.GetString(ctBytes);
+                  contentTypeVal = Encoding.UTF8.GetString(ctBytes);
                   break;
                case PropertyIdentifier.UserProperty:
                   hasUserProp = true;
                   var userProp = prop.AsUserProperty();
                   var keyBytes = userProp.KeyBytes.ToArray();
                   var valBytes = userProp.ValueBytes.ToArray();
-                  userPropKey = System.Text.Encoding.UTF8.GetString(keyBytes);
-                  userPropVal = System.Text.Encoding.UTF8.GetString(valBytes);
+                  userPropKey = Encoding.UTF8.GetString(keyBytes);
+                  userPropVal = Encoding.UTF8.GetString(valBytes);
                   break;
             }
          }
@@ -179,10 +179,7 @@ public class PublishOptionsTests
 
       var ids = new List<uint>();
       var enumerator = options.SubscriptionIdentifiers.GetEnumerator();
-      while (enumerator.MoveNext())
-      {
-         ids.Add(enumerator.Current);
-      }
+      while (enumerator.MoveNext()) ids.Add(enumerator.Current);
       await Assert.That(ids).IsEquivalentTo(new uint[] { 10, 20 });
 
       // Verify properties serialization
@@ -198,6 +195,7 @@ public class PublishOptionsTests
             serializedIds.Add(res.Success);
          }
       }
+
       await Assert.That(serializedIds).IsEquivalentTo(new uint[] { 10, 20 });
    }
 
@@ -206,9 +204,9 @@ public class PublishOptionsTests
    {
       // Arrange
       var builder = new PublishOptionsBuilder()
-         .WithDup(true)
+         .WithDup()
          .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
-         .WithRetain(true)
+         .WithRetain()
          .WithTopic("topic")
          .WithPayload("payload")
          .WithMessageExpiryInterval(60)

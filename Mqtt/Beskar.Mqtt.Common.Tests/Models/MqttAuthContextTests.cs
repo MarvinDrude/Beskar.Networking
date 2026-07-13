@@ -1,8 +1,7 @@
 using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Common.Models;
-using Beskar.Mqtt.Protocol.Results;
 using Beskar.Mqtt.Protocol.Packets;
-using System.Buffers;
+using Beskar.Mqtt.Protocol.Results;
 
 namespace Beskar.Mqtt.Common.Tests.Models;
 
@@ -17,7 +16,7 @@ public class MqttAuthContextTests
       var receiveTcs = new TaskCompletionSource();
       var authTcs = new TaskCompletionSource<AuthPacketResult>();
 
-      var context = new MqttAuthContext()
+      var context = new MqttAuthContext
       {
          AuthPacket = AuthPacketResult.Create(new AuthPacket()),
          PacketSender = null!, // not needed for this test
@@ -29,7 +28,7 @@ public class MqttAuthContextTests
 
       // Act
       var waitTask = context.AwaitNextAuthPacketAsync();
-      
+
       var expectedAuth = AuthPacketResult.Create(new AuthPacket());
       authTcs.SetResult(expectedAuth);
 
@@ -49,7 +48,7 @@ public class MqttAuthContextTests
       var receiveTcs = new TaskCompletionSource();
       var authTcs = new TaskCompletionSource<AuthPacketResult>();
 
-      var context = new MqttAuthContext()
+      var context = new MqttAuthContext
       {
          AuthPacket = AuthPacketResult.Create(new AuthPacket()),
          PacketSender = null!, // not needed for this test
@@ -68,7 +67,7 @@ public class MqttAuthContextTests
       // Complete the second call via broker.TryDispatch
       var secondExpected = AuthPacketResult.Create(new AuthPacket());
       var waitTask = context.AwaitNextAuthPacketAsync();
-      
+
       broker.TryDispatch(secondExpected, 0);
 
       var secondResult = await waitTask;
@@ -87,7 +86,7 @@ public class MqttAuthContextTests
       var receiveTcs = new TaskCompletionSource();
       var authTcs = new TaskCompletionSource<AuthPacketResult>();
 
-      var context = new MqttAuthContext()
+      var context = new MqttAuthContext
       {
          AuthPacket = AuthPacketResult.Create(new AuthPacket()),
          PacketSender = null!, // not needed for this test
@@ -118,7 +117,7 @@ public class MqttAuthContextTests
       var receiveTcs = new TaskCompletionSource();
       var authTcs = new TaskCompletionSource<AuthPacketResult>();
 
-      var context = new MqttAuthContext()
+      var context = new MqttAuthContext
       {
          AuthPacket = AuthPacketResult.Create(new AuthPacket()),
          PacketSender = null!, // not needed for this test
@@ -152,7 +151,7 @@ public class MqttAuthContextTests
       var expectedAuth = AuthPacketResult.Create(new AuthPacket());
       authTcs.SetResult(expectedAuth);
 
-      var context = new MqttAuthContext()
+      var context = new MqttAuthContext
       {
          AuthPacket = AuthPacketResult.Create(new AuthPacket()),
          PacketSender = null!, // not needed for this test

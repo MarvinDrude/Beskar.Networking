@@ -1,4 +1,3 @@
-using System;
 using System.Buffers;
 using System.Net;
 using System.Text;
@@ -28,12 +27,12 @@ public class ConnectOptionsTests
          .WithSessionExpiryInterval(3600)
          .WithTopicAliasMaximum(10)
          .WithMaximumPacketSize(65536)
-         .WithRequestResponseInformation(true)
+         .WithRequestResponseInformation()
          .WithRequestProblemInformation(false)
          .WithAuthenticationMethod("oauth")
          .WithAuthenticationData([1, 2, 3, 4])
-         .WithTryPrivate(true)
-         .WithWill("will-topic", [5, 6, 7], QualityOfServiceType.ExactlyOnce, retain: true)
+         .WithTryPrivate()
+         .WithWill("will-topic", [5, 6, 7], QualityOfServiceType.ExactlyOnce, true)
          .WithWillDelayInterval(120)
          .WithWillPayloadFormat(PayloadFormat.CharacterData)
          .WithWillMessageExpiryInterval(600)
@@ -200,7 +199,7 @@ public class ConnectOptionsTests
       var clientIdBytes = "client-id"u8.ToArray();
       var usernameBytes = "username"u8.ToArray();
       var passwordBytes = "password"u8.ToArray();
-      
+
       var propBuffer = new MemoryBuffer();
       using (var propWriter = new ByteWriter(propBuffer.GetSpan(256)))
       {
@@ -253,13 +252,14 @@ public class ConnectOptionsTests
       };
 
       // Act
-      var options = ConnectOptions.Create(in originalPacket, MqttProtocolVersion.V311, new IPEndPoint(IPAddress.Loopback, 1883));
+      var options = ConnectOptions.Create(in originalPacket, MqttProtocolVersion.V311,
+         new IPEndPoint(IPAddress.Loopback, 1883));
 
       // Verify that options has the correct properties
       await Assert.That(options.ProtocolVersion).IsEqualTo(MqttProtocolVersion.V311);
       await Assert.That(options.CleanSession).IsFalse();
       await Assert.That(options.KeepAlivePeriod).IsEqualTo((ushort)30);
-      
+
       await Assert.That(Encoding.UTF8.GetString(options.ClientIdUtf8Bytes.Span)).IsEqualTo("client-id");
       await Assert.That(Encoding.UTF8.GetString(options.UsernameUtf8Bytes.Span)).IsEqualTo("username");
       await Assert.That(Encoding.UTF8.GetString(options.PasswordBytes.Span)).IsEqualTo("password");
@@ -305,7 +305,7 @@ public class ConnectOptionsTests
       await Assert.That(options.WillPayload.ToArray()).IsEquivalentTo(new byte[] { 5, 6, 7 });
       await Assert.That(options.WillQualityOfService).IsEqualTo(QualityOfServiceType.ExactlyOnce);
       await Assert.That(options.WillRetain).IsTrue();
-      
+
       await Assert.That(options.WillPayloadFormatIndicator).IsEqualTo(PayloadFormat.CharacterData);
       await Assert.That(options.WillMessageExpiryInterval).IsEqualTo((uint?)600);
       await Assert.That(options.WillDelayInterval).IsEqualTo((uint?)120);

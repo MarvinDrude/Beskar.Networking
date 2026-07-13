@@ -5,18 +5,6 @@ namespace Beskar.Mqtt.Common.Tests.Generators;
 [NotInParallel(nameof(SignalBrokerTests))]
 public class SignalBrokerTests
 {
-   private class PingResponse
-   {
-   }
-
-   private class PubAckResponse
-   {
-   }
-
-   private class SubAckResponse
-   {
-   }
-
    [Test]
    public async Task SingleRequestResponse_ShouldCompleteSuccessfully()
    {
@@ -300,31 +288,23 @@ public class SignalBrokerTests
       }
 
       var recycledAwaiters = new SignalAwaiter<PingResponse>[50];
-      for (var i = 0; i < 50; i++)
-      {
-         recycledAwaiters[i] = SignalAwaiterPool<PingResponse>.Get((ushort)i, broker);
-      }
+      for (var i = 0; i < 50; i++) recycledAwaiters[i] = SignalAwaiterPool<PingResponse>.Get((ushort)i, broker);
 
       for (var i = 0; i < 50; i++)
       {
          var found = false;
          for (var j = 0; j < 50; j++)
-         {
             if (ReferenceEquals(originalInstances[j], recycledAwaiters[i]))
             {
                found = true;
                break;
             }
-         }
 
          await Assert.That(found).IsTrue();
       }
 
       // Clean up
-      for (var i = 0; i < 50; i++)
-      {
-         recycledAwaiters[i].Dispose();
-      }
+      for (var i = 0; i < 50; i++) recycledAwaiters[i].Dispose();
    }
 
    [Test]
@@ -359,16 +339,12 @@ public class SignalBrokerTests
       var tasks = new List<Task>();
 
       for (var t = 0; t < taskCount; t++)
-      {
          tasks.Add(Task.Run(async () =>
          {
             var random = new Random();
             for (var i = 0; i < iterationsPerTask; i++)
             {
-               if (cts.Token.IsCancellationRequested)
-               {
-                  break;
-               }
+               if (cts.Token.IsCancellationRequested) break;
 
                var id = (ushort)random.Next(0, 5); // Low range to force collisions
                var action = random.Next(0, 3);
@@ -391,10 +367,7 @@ public class SignalBrokerTests
                else if (action == 1)
                {
                   var awaiter = broker.AddAwaitable<PubAckResponse>(id);
-                  _ = Task.Run(() =>
-                  {
-                     broker.TryDispatch(new PubAckResponse(), id);
-                  }, cts.Token);
+                  _ = Task.Run(() => { broker.TryDispatch(new PubAckResponse(), id); }, cts.Token);
 
                   try
                   {
@@ -417,7 +390,6 @@ public class SignalBrokerTests
                }
             }
          }, cts.Token));
-      }
 
       // Act & Assert
       try
@@ -537,6 +509,7 @@ public class SignalBrokerTests
       {
          exception1Thrown = true;
       }
+
       await Assert.That(exception1Thrown).IsTrue();
 
       var exception2Thrown = false;
@@ -548,6 +521,7 @@ public class SignalBrokerTests
       {
          exception2Thrown = true;
       }
+
       await Assert.That(exception2Thrown).IsTrue();
 
       // Assert - Awaiters can be disposed safely to return to pool
@@ -593,5 +567,17 @@ public class SignalBrokerTests
       await Assert.That(dispatched2).IsTrue(); // Under current bug, this is FALSE and fails the test!
 
       await taskA4;
+   }
+
+   private class PingResponse
+   {
+   }
+
+   private class PubAckResponse
+   {
+   }
+
+   private class SubAckResponse
+   {
    }
 }

@@ -1,4 +1,4 @@
-using Beskar.Mqtt.Protocol.Collections;
+using System.Buffers;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Results;
@@ -12,10 +12,10 @@ public class SubscribeResultTests
    {
       // Arrange
       var topicFilter = new MqttTopicFilter(new TopicFilter(
-         new System.Buffers.ReadOnlySequence<byte>([.. "test/topic"u8]),
+         new ReadOnlySequence<byte>([.. "test/topic"u8]),
          QualityOfServiceType.AtLeastOnce,
-         noLocal: true,
-         retainAsPublished: false,
+         true,
+         false,
          RetainHandlingType.SendOnNewSubscriptionOnly
       ));
 
@@ -41,7 +41,8 @@ public class SubscribeResultTests
       await Assert.That(result.ReasonString).IsEqualTo("Success");
       await Assert.That(result.Subscriptions).Count().IsEqualTo(1);
       await Assert.That(result.Subscriptions[0].TopicFilter.Topic).IsEqualTo("test/topic");
-      await Assert.That(result.Subscriptions[0].TopicFilter.QualityOfService).IsEqualTo(QualityOfServiceType.AtLeastOnce);
+      await Assert.That(result.Subscriptions[0].TopicFilter.QualityOfService)
+         .IsEqualTo(QualityOfServiceType.AtLeastOnce);
       await Assert.That(result.Subscriptions[0].TopicFilter.NoLocal).IsTrue();
       await Assert.That(result.Subscriptions[0].ReasonCode).IsEqualTo(SubscribeReasonCode.GrantedQos1);
    }
