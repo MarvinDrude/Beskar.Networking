@@ -258,9 +258,14 @@ public sealed partial class MqttServer : IAsyncDisposable
          await Events.OnConnectIntercept.ExecuteAsync(
             context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
 
-         if (connectOptions.ClientIdUtf8Bytes.IsEmpty && client.ProtocolVersion is MqttProtocolVersion.V50)
+         var assignedClientIdUtf8Bytes = ReadOnlyMemory<byte>.Empty;
+         if (connectOptions.ClientIdUtf8Bytes.IsEmpty)
          {
             connectOptions.ClientIdUtf8Bytes = context.AssignedClientIdentifierUtf8Bytes;
+            if (client.ProtocolVersion is MqttProtocolVersion.V50)
+            {
+               assignedClientIdUtf8Bytes = context.AssignedClientIdentifierUtf8Bytes;
+            }
          }
 
          if (connectOptions.ClientIdUtf8Bytes.IsEmpty)
@@ -282,6 +287,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             IsSubscriptionIdentifierAvailable = true,
             IsSharedSubscriptionAvailable = false,
             IsWildcardSubscriptionAvailable = true,
+            AssignedClientIdentifierUtf8Bytes = new ReadOnlySequence<byte>(assignedClientIdUtf8Bytes),
 
             PropertiesBytes = new ReadOnlySequence<byte>(context.ResponseUserProperties.WrittenMemory),
             ServerReferenceUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(context.ServerReference)),
