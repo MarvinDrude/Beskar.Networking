@@ -231,7 +231,14 @@ public sealed partial class MqttClient
       ushort identifier = 0;
       if (packet is not PingReqPacket)
       {
-         identifier = _identifierGenerator.GenerateNextIdentifier();
+         if (packet is PubRelPacket pubRel)
+         {
+            identifier = pubRel.PacketIdentifier;
+         }
+         else
+         {
+            identifier = _identifierGenerator.GenerateNextIdentifier();
+         }
       }
 
       TraceLogger.LogClientInfo("MqttClient.SendAndAck: Sending packet '{0}' (PacketId: {1}) expecting '{2}'...", typeof(TPacket).Name, identifier, typeof(TResponse).Name);

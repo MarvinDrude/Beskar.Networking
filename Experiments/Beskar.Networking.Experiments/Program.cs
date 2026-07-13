@@ -31,6 +31,7 @@ await mqttClient.PingAsync();
 
 mqttClient.AddMessageReceiveHandler((ctx, ct) =>
 {
+   ctx.ResponseUserProperties.Add("test1", "test"); // isnt sent?
    Console.WriteLine(Encoding.UTF8.GetString(ctx.Message.Payload.Span));
    return ValueTask.CompletedTask;
 });
@@ -38,18 +39,20 @@ mqttClient.AddMessageReceiveHandler((ctx, ct) =>
 var sub = new SubscribeOptionsBuilder()
    .WithTopicFilter("test/2"u8, QualityOfServiceType.AtMostOnce)
    .WithTopicFilter("test/+/b"u8, QualityOfServiceType.AtMostOnce)
-   //.WithTopicFilter("test/#"u8, QualityOfServiceType.ExactlyOnce)
+   .WithTopicFilter("test/#"u8, QualityOfServiceType.ExactlyOnce)
+   .WithTopicFilter("tessadsat"u8, QualityOfServiceType.ExactlyOnce)
    .WithUserProperty("test", "test")
    .Build();
 
 var subAck = await mqttClient.SubscribeAsync(sub);
 
 var pub = new PublishOptionsBuilder()
-   .WithTopic("test/2"u8)
+   .WithTopic("tessadsat"u8)
+   .WithQualityOfService(QualityOfServiceType.ExactlyOnce)
    .WithPayload("Test")
    .Build();
 
-await mqttClient.PublishAsync(pub);
+var pubRes = await mqttClient.PublishAsync(pub);
 
 while (true)
 {
