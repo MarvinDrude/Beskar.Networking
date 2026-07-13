@@ -1,4 +1,5 @@
 using System.Buffers;
+using Beskar.Memory.Owners;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Server.Enumerators;
@@ -43,7 +44,13 @@ public sealed partial class MqttServer
 
    public UnsubscribeReasonCode Unsubscribe(MqttSession session, byte[] topicFilter)
    {
-      if (!session.Subscriptions.ContainsKey(topicFilter))
+      return Unsubscribe(session, new ReadOnlySpan<byte>(topicFilter));
+   }
+
+   public UnsubscribeReasonCode Unsubscribe(MqttSession session, ReadOnlySpan<byte> topicFilter)
+   {
+      var alternateLookup = session.Subscriptions.GetAlternateLookup<ReadOnlySpan<byte>>();
+      if (!alternateLookup.ContainsKey(topicFilter))
       {
          return UnsubscribeReasonCode.NoSubscriptionExisted;
       }
@@ -52,7 +59,23 @@ public sealed partial class MqttServer
       return UnsubscribeReasonCode.Success;
    }
 
-   private static bool ValidateTopicFilter(byte[] topicFilter)
+   public UnsubscribeReasonCode Unsubscribe(MqttSession session, ReadOnlySequence<byte> topicFilter)
+   {
+      if (topicFilter.IsSingleSegment)
+      {
+         return Unsubscribe(session, topicFilter.FirstSpan);
+      }
+
+      var length = (int)topicFilter.Length;
+
+      using var spanOwner = new SpanOwner<byte>(length);
+      var span = spanOwner.Span;
+
+      topicFilter.CopyTo(span);
+      return Unsubscribe(session, span);
+   }
+
+   private static bool ValidateTopicFilter(ReadOnlySpan<byte> topicFilter)
    {
       var enumerator = new TopicLevelEnumerator(topicFilter);
       var hasHash = false;

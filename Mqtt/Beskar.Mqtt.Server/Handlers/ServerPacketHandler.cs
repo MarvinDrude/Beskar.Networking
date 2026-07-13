@@ -209,8 +209,7 @@ public sealed class ServerPacketHandler
          while (filtersEnumerator.MoveNext())
          {
             var filterSequence = filtersEnumerator.Current;
-            var filterBytes = filterSequence.ToArray();
-            var reasonCode = server.Unsubscribe(session, filterBytes);
+            var reasonCode = server.Unsubscribe(session, filterSequence);
 
             reasonCodeSpan[index++] = (byte)reasonCode;
          }

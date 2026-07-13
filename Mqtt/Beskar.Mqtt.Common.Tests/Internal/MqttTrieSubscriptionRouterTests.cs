@@ -1,5 +1,6 @@
 using System.Text;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Server;
 using Beskar.Mqtt.Server.Enumerators;
 using Beskar.Mqtt.Server.Internal;
@@ -185,6 +186,41 @@ public class MqttTrieSubscriptionRouterTests
       var visitor4 = new TestVisitor();
       router.Route("x/foo/y"u8, ref visitor4);
       await Assert.That(visitor4.Matches).IsEmpty();
+   }
+
+   [Test]
+   public async Task Server_UnsubscribeSpanAndSequence_ShouldWorkAndBeAllocationFree()
+   {
+      await using var server = new MqttServer([], new MqttServerOptions());
+      var session1 = new MqttSession(server, null!);
+
+      var filter = "a/b/c"u8.ToArray();
+      server.Subscribe(session1, new TopicFilter(new System.Buffers.ReadOnlySequence<byte>(filter), QualityOfServiceType.AtLeastOnce));
+
+      // 1. Unsubscribe using ReadOnlySpan<byte>
+      var filterSpan = new ReadOnlySpan<byte>(filter);
+
+      // Warmup/Resolve TUnit lazy initialization if any
+      server.Unsubscribe(session1, filterSpan);
+      server.Subscribe(session1, new TopicFilter(new System.Buffers.ReadOnlySequence<byte>(filter), QualityOfServiceType.AtLeastOnce));
+
+      server.Unsubscribe(session1, filterSpan);
+
+      // Verify unsubscribed
+      var visitor1 = new TestVisitor();
+      server.SubscriptionRouter.Route("a/b/c"u8, ref visitor1);
+      await Assert.That(visitor1.Matches).IsEmpty();
+
+      // 2. Unsubscribe using ReadOnlySequence<byte>
+      server.Subscribe(session1, new TopicFilter(new System.Buffers.ReadOnlySequence<byte>(filter), QualityOfServiceType.AtLeastOnce));
+      var filterSeq = new System.Buffers.ReadOnlySequence<byte>(filter);
+
+      server.Unsubscribe(session1, filterSeq);
+
+      // Verify unsubscribed
+      var visitor2 = new TestVisitor();
+      server.SubscriptionRouter.Route("a/b/c"u8, ref visitor2);
+      await Assert.That(visitor2.Matches).IsEmpty();
    }
 
    private struct EmptyVisitor : ISubscriptionVisitor

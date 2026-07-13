@@ -6,13 +6,13 @@ public sealed class ReadWriteLock(
 {
    private readonly ReaderWriterLockSlim _lock = new(recursionPolicy);
 
-   public IDisposable EnterWriteLock(CancellationToken ct = default)
+   public WriteDisposer EnterWriteLock(CancellationToken ct = default)
    {
       _lock.EnterWriteLock();
       return new WriteDisposer(_lock);
    }
 
-   public IDisposable EnterReadLock(CancellationToken ct = default)
+   public ReadDisposer EnterReadLock(CancellationToken ct = default)
    {
       _lock.EnterReadLock();
       return new ReadDisposer(_lock);
@@ -23,7 +23,7 @@ public sealed class ReadWriteLock(
       _lock.Dispose();
    }
 
-   private readonly struct WriteDisposer(ReaderWriterLockSlim lockSlim) : IDisposable
+   public readonly struct WriteDisposer(ReaderWriterLockSlim lockSlim) : IDisposable
    {
       public void Dispose()
       {
@@ -31,7 +31,7 @@ public sealed class ReadWriteLock(
       }
    }
 
-   private readonly struct ReadDisposer(ReaderWriterLockSlim lockSlim) : IDisposable
+   public readonly struct ReadDisposer(ReaderWriterLockSlim lockSlim) : IDisposable
    {
       public void Dispose()
       {
