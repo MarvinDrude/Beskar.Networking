@@ -1,4 +1,5 @@
 using System.Buffers;
+using Beskar.Memory.Owners;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Encoders.Properties;
@@ -214,15 +215,27 @@ public sealed partial class ServerPacketHandler
                      PropertiesBytes = ReadOnlySequence<byte>.Empty
                   };
 
-                  if (localSubId > 0 && localClient.ProtocolVersion is MqttProtocolVersion.V50)
                   {
-                     var buffer = new byte[16];
+                     Span<byte> buffer = stackalloc byte[16];
                      var writer = new ByteWriter(buffer);
-                     var propEncoder = writer.AsPublishPropertyEncoder();
-                     propEncoder.WriteSubscriptionIdentifier(localSubId);
 
-                     var written = propEncoder.Encoder.Writer.Position;
-                     publishPacket.PropertiesBytes = new ReadOnlySequence<byte>(buffer.AsMemory(0, written));
+                     var propEncoder = writer.AsPublishPropertyEncoder();
+                     if (localSubId > 0 && localClient.ProtocolVersion is MqttProtocolVersion.V50)
+                     {
+                        propEncoder.WriteSubscriptionIdentifier(localSubId);
+                     }
+
+                     var enumerator = localMsg.UserProperties.GetDirectEnumerator();
+                     while (enumerator.MoveNext())
+                     {
+                        if (enumerator.Current.Identifier is not PropertyIdentifier.UserProperty)
+                           continue;
+
+                        var userProperty = enumerator.Current.AsUserProperty();
+                        propEncoder.WriteUserProperty(userProperty.KeyBytes, userProperty.ValueBytes);
+                     }
+
+                     publishPacket.PropertiesBytes = new ReadOnlySequence<byte>([.. writer.WrittenSpan]);
                   }
 
                   await localClient.Stream.Send(in publishPacket, localClient.ProtocolVersion);

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Runtime.InteropServices;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Protocol.Enums;
@@ -76,6 +77,7 @@ public ref struct PublishPropertyEncoder(PacketPropertyEncoder encoder)
    public void WriteSubscriptionIdentifier(uint value) => Encoder.WriteSubscriptionIdentifier(value);
    public void WriteTopicAlias(ushort value) => Encoder.WriteTopicAlias(value);
    public void WriteUserProperty(ReadOnlySpan<byte> nameUtf8, ReadOnlySpan<byte> value) => Encoder.WriteUserProperty(nameUtf8, value);
+   public void WriteUserProperty(ReadOnlySequence<byte> nameUtf8, ReadOnlySequence<byte> value) => Encoder.WriteUserProperty(nameUtf8, value);
 }
 
 [StructLayout(LayoutKind.Auto)]

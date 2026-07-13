@@ -1,3 +1,4 @@
+using System.Buffers;
 using Beskar.Mqtt.Protocol.Enums;
 
 namespace Beskar.Mqtt.Common.Encoders;
@@ -27,6 +28,13 @@ public ref partial struct PacketPropertyEncoder
       Writer.WriteByte((byte)PropertyIdentifier.UserProperty);
       Write(nameUtf8);
       Write(value);
+   }
+
+   public void WriteUserProperty(ReadOnlySequence<byte> nameUtf8, ReadOnlySequence<byte> value)
+   {
+      Writer.WriteByte((byte)PropertyIdentifier.UserProperty);
+      PacketEncoder.WriteSequence(ref Writer, nameUtf8);
+      PacketEncoder.WriteSequence(ref Writer, value);
    }
 
    public void WriteTopicAliasMaximum(ushort value)
