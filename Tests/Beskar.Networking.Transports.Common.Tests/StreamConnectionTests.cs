@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.IO.Pipelines;
 using Beskar.Networking.Transports.Common.Streams;
-using TUnit.Assertions;
 
 namespace Beskar.Networking.Transports.Common.Tests;
 
@@ -11,7 +10,7 @@ public class StreamConnectionTests
    public async Task Initialize_WithNullStream_ThrowsArgumentNullException()
    {
       var connection = new StreamConnection(PipeOptions.Default, PipeOptions.Default);
-      
+
       await Assert.That(() => connection.Initialize(null!))
          .Throws<ArgumentNullException>();
    }
@@ -20,7 +19,7 @@ public class StreamConnectionTests
    public async Task Start_WithoutInitialize_ThrowsInvalidOperationException()
    {
       var connection = new StreamConnection(PipeOptions.Default, PipeOptions.Default);
-      
+
       await Assert.That(() => connection.Start())
          .Throws<InvalidOperationException>();
    }
@@ -35,9 +34,9 @@ public class StreamConnectionTests
 
       connection.Initialize(duplexStream);
       connection.Start();
-      
+
       await connection.StopAsync();
-      
+
       await Assert.That(connection.TryResetState()).IsTrue();
    }
 
@@ -45,12 +44,12 @@ public class StreamConnectionTests
    public async Task ReadWriteData_ThroughConnection_Succeeds()
    {
       var connection = new StreamConnection(PipeOptions.Default, PipeOptions.Default);
-      
+
       // We will simulate a stream we write to, which acts as input for the StreamConnection.
       // And a stream that the StreamConnection writes to, which we read from.
       var incomingData = new MemoryStream();
       var outgoingData = new MemoryStream();
-      
+
       var testPayload = "Hello from Beskar transport!"u8.ToArray();
       incomingData.Write(testPayload);
       incomingData.Position = 0; // Reset position so StreamConnection can read it
@@ -95,23 +94,72 @@ public sealed class DuplexStream : Stream
    public override bool CanSeek => false;
    public override bool CanWrite => _writeStream.CanWrite;
    public override long Length => throw new NotSupportedException();
-   public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
 
-   public override void Flush() => _writeStream.Flush();
-   public override Task FlushAsync(CancellationToken cancellationToken) => _writeStream.FlushAsync(cancellationToken);
+   public override long Position
+   {
+      get => throw new NotSupportedException();
+      set => throw new NotSupportedException();
+   }
 
-   public override int Read(byte[] buffer, int offset, int count) => _readStream.Read(buffer, offset, count);
-   public override int Read(Span<byte> buffer) => _readStream.Read(buffer);
-   public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => _readStream.ReadAsync(buffer, cancellationToken);
-   public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) => _readStream.ReadAsync(buffer, offset, count, cancellationToken);
+   public override void Flush()
+   {
+      _writeStream.Flush();
+   }
 
-   public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-   public override void SetLength(long value) => throw new NotSupportedException();
+   public override Task FlushAsync(CancellationToken cancellationToken)
+   {
+      return _writeStream.FlushAsync(cancellationToken);
+   }
 
-   public override void Write(byte[] buffer, int offset, int count) => _writeStream.Write(buffer, offset, count);
-   public override void Write(ReadOnlySpan<byte> buffer) => _writeStream.Write(buffer);
-   public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) => _writeStream.WriteAsync(buffer, cancellationToken);
-   public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) => _writeStream.WriteAsync(buffer, offset, count, cancellationToken);
+   public override int Read(byte[] buffer, int offset, int count)
+   {
+      return _readStream.Read(buffer, offset, count);
+   }
+
+   public override int Read(Span<byte> buffer)
+   {
+      return _readStream.Read(buffer);
+   }
+
+   public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+   {
+      return _readStream.ReadAsync(buffer, cancellationToken);
+   }
+
+   public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+   {
+      return _readStream.ReadAsync(buffer, offset, count, cancellationToken);
+   }
+
+   public override long Seek(long offset, SeekOrigin origin)
+   {
+      throw new NotSupportedException();
+   }
+
+   public override void SetLength(long value)
+   {
+      throw new NotSupportedException();
+   }
+
+   public override void Write(byte[] buffer, int offset, int count)
+   {
+      _writeStream.Write(buffer, offset, count);
+   }
+
+   public override void Write(ReadOnlySpan<byte> buffer)
+   {
+      _writeStream.Write(buffer);
+   }
+
+   public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+   {
+      return _writeStream.WriteAsync(buffer, cancellationToken);
+   }
+
+   public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+   {
+      return _writeStream.WriteAsync(buffer, offset, count, cancellationToken);
+   }
 
    protected override void Dispose(bool disposing)
    {
@@ -120,6 +168,7 @@ public sealed class DuplexStream : Stream
          _readStream.Dispose();
          _writeStream.Dispose();
       }
+
       base.Dispose(disposing);
    }
 

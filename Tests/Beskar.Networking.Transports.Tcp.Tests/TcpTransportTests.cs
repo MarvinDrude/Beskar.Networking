@@ -2,11 +2,7 @@ using System.Buffers;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
-using Beskar.Networking.Abstractions.Interfaces;
-using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Transports.Quic;
-using Beskar.Networking.Transports.Tcp;
-using TUnit.Assertions;
 
 namespace Beskar.Networking.Transports.Tcp.Tests;
 
@@ -80,8 +76,8 @@ public class TcpTransportTests
       await Assert.That(clientReadBytes).IsEquivalentTo(serverPayload);
 
       // Cleanup
-      await ((IAsyncDisposable)clientSession).DisposeAsync();
-      await ((IAsyncDisposable)serverSession).DisposeAsync();
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
 
@@ -145,8 +141,8 @@ public class TcpTransportTests
 
       await Assert.That(readBytes).IsEquivalentTo(payload);
 
-      await ((IAsyncDisposable)clientSession).DisposeAsync();
-      await ((IAsyncDisposable)serverSession).DisposeAsync();
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
 
@@ -261,8 +257,8 @@ public class TcpTransportTests
       await Assert.That(clientSession.Stats.BytesReceived).IsEqualTo(serverPayload.Length);
 
       // Cleanup
-      await (clientSession).DisposeAsync();
-      await (serverSession).DisposeAsync();
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
 }

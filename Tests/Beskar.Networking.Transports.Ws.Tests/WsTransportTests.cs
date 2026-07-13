@@ -1,9 +1,6 @@
 using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
-using Beskar.Networking.Abstractions.Interfaces;
-using Beskar.Networking.Transports.Ws;
-using TUnit.Assertions;
 
 namespace Beskar.Networking.Transports.Ws.Tests;
 
@@ -87,8 +84,8 @@ public class WsTransportTests
       await Assert.That(clientReadBytes).IsEquivalentTo(responsePayload);
 
       // Cleanup
-      await ((IAsyncDisposable)clientSession).DisposeAsync();
-      await ((IAsyncDisposable)serverSession).DisposeAsync();
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
 }

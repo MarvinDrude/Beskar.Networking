@@ -1,17 +1,12 @@
-using System;
 using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
 using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Backoffs;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Managed;
 using Beskar.Networking.Abstractions.Models;
-using Beskar.Networking.Abstractions.Managed.Events;
 using Beskar.Networking.Abstractions.Options;
-using Beskar.Networking.Abstractions.Backoffs;
-using TUnit.Assertions;
 using ConnectionState = Beskar.Networking.Abstractions.Managed.ConnectionState;
 
 namespace Beskar.Networking.Transports.Common.Tests;
@@ -105,9 +100,8 @@ public class NetworkClientTests
          {
             attemptCount++;
             if (attemptCount <= 2)
-            {
-               return ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(new NetworkCodeError(-1, "Failed to connect")));
-            }
+               return ValueTask.FromResult(
+                  new Result<INetworkSession, NetworkCodeError>(new NetworkCodeError(-1, "Failed to connect")));
             return ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(fakeSession));
          }
       };
@@ -156,7 +150,8 @@ public class NetworkClientTests
       // Arrange
       var fakeInnerClient = new FakeNetworkClient
       {
-         OnConnectAsync = (ep, ct) => ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(new NetworkCodeError(-1, "Always fail")))
+         OnConnectAsync = (ep, ct) =>
+            ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(new NetworkCodeError(-1, "Always fail")))
       };
 
       var options = new AutoReconnectOptions
@@ -198,7 +193,8 @@ public class NetworkClientTests
          OnConnectAsync = (ep, ct) =>
          {
             attemptCount++;
-            return ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(attemptCount == 1 ? fakeSession : fakeSession2));
+            return ValueTask.FromResult(
+               new Result<INetworkSession, NetworkCodeError>(attemptCount == 1 ? fakeSession : fakeSession2));
          }
       };
 
@@ -241,7 +237,8 @@ public class NetworkClientTests
       // Arrange
       var fakeInnerClient = new FakeNetworkClient
       {
-         OnConnectAsync = (ep, ct) => ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(new NetworkCodeError(-1, "Always fail")))
+         OnConnectAsync = (ep, ct) =>
+            ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(new NetworkCodeError(-1, "Always fail")))
       };
 
       var options = new AutoReconnectOptions
@@ -285,6 +282,8 @@ public class FakeNetworkSession : INetworkSession, IAsyncDisposable
 {
    private readonly CancellationTokenSource _cts = new();
 
+   public bool Disposed { get; private set; }
+
    public Guid Id { get; } = Guid.NewGuid();
    public EndPoint RemoteAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
    public EndPoint LocalAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
@@ -293,13 +292,6 @@ public class FakeNetworkSession : INetworkSession, IAsyncDisposable
    public CancellationToken SessionClosedToken => _cts.Token;
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
    public NetworkStats Stats => default;
-
-   public bool Disposed { get; private set; }
-
-   public void Close()
-   {
-      _cts.Cancel();
-   }
 
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
@@ -318,26 +310,34 @@ public class FakeNetworkSession : INetworkSession, IAsyncDisposable
       _cts.Dispose();
       return ValueTask.CompletedTask;
    }
+
+   public void Close()
+   {
+      _cts.Cancel();
+   }
 }
 
 public class FakeNetworkClient : INetworkClient
 {
    private int _connectCount;
-   public int ConnectCount => Volatile.Read(ref _connectCount);
 
    private int _disconnectCount;
+   public int ConnectCount => Volatile.Read(ref _connectCount);
    public int DisconnectCount => Volatile.Read(ref _disconnectCount);
 
-   public Func<EndPoint, CancellationToken, ValueTask<Result<INetworkSession, NetworkCodeError>>>? OnConnectAsync { get; set; }
+   public Func<EndPoint, CancellationToken, ValueTask<Result<INetworkSession, NetworkCodeError>>>? OnConnectAsync
+   {
+      get;
+      set;
+   }
+
    public Func<CancellationToken, ValueTask>? OnDisconnectAsync { get; set; }
 
-   public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint, CancellationToken ct = default)
+   public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
+      CancellationToken ct = default)
    {
       Interlocked.Increment(ref _connectCount);
-      if (OnConnectAsync is not null)
-      {
-         return OnConnectAsync(endPoint, ct);
-      }
+      if (OnConnectAsync is not null) return OnConnectAsync(endPoint, ct);
       return ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(
          new NetworkCodeError(-1, "Not configured")));
    }
@@ -345,10 +345,7 @@ public class FakeNetworkClient : INetworkClient
    public ValueTask DisconnectAsync(CancellationToken ct = default)
    {
       Interlocked.Increment(ref _disconnectCount);
-      if (OnDisconnectAsync is not null)
-      {
-         return OnDisconnectAsync(ct);
-      }
+      if (OnDisconnectAsync is not null) return OnDisconnectAsync(ct);
       return ValueTask.CompletedTask;
    }
 

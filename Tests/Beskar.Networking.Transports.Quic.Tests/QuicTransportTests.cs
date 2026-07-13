@@ -3,10 +3,6 @@ using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
 using System.Net.Sockets;
-using Beskar.Networking.Abstractions.Enums;
-using Beskar.Networking.Abstractions.Interfaces;
-using Beskar.Networking.Transports.Quic;
-using TUnit.Assertions;
 
 namespace Beskar.Networking.Transports.Quic.Tests;
 
@@ -23,10 +19,8 @@ public class QuicTransportTests
    public async Task QuicClientServer_BidirectionalStream_DataExchangedSuccessfully()
    {
       if (!QuicConnection.IsSupported)
-      {
          // Skip the test if QUIC is not supported on the host platform
          return;
-      }
 
       var port = GetFreePort();
       var endPoint = new IPEndPoint(IPAddress.Loopback, port);
@@ -57,7 +51,7 @@ public class QuicTransportTests
       var serverSession = acceptResult.Success!;
 
       // Client opens a bidirectional stream
-      var clientStreamResult = await clientSession.OpenStreamAsync(NetworkStreamDirection.Bidirectional);
+      var clientStreamResult = await clientSession.OpenStreamAsync();
       await Assert.That(clientStreamResult.Failed).IsFalse();
       var clientStream = clientStreamResult.Success!;
 
@@ -91,8 +85,8 @@ public class QuicTransportTests
       await Assert.That(clientReadBytes).IsEquivalentTo(responsePayload);
 
       // Cleanup
-      await ((IAsyncDisposable)clientSession).DisposeAsync();
-      await ((IAsyncDisposable)serverSession).DisposeAsync();
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
 
@@ -100,10 +94,8 @@ public class QuicTransportTests
    public async Task QuicClientServer_MultipleStreamsOverOneConnection_DataExchangedSuccessfully()
    {
       if (!QuicConnection.IsSupported)
-      {
          // Skip the test if QUIC is not supported on the host platform
          return;
-      }
 
       var port = GetFreePort();
       var endPoint = new IPEndPoint(IPAddress.Loopback, port);
@@ -134,12 +126,12 @@ public class QuicTransportTests
       var serverSession = acceptResult.Success!;
 
       // 1. Open first bidirectional stream
-      var clientStreamResult1 = await clientSession.OpenStreamAsync(NetworkStreamDirection.Bidirectional);
+      var clientStreamResult1 = await clientSession.OpenStreamAsync();
       await Assert.That(clientStreamResult1.Failed).IsFalse();
       var clientStream1 = clientStreamResult1.Success!;
 
       // 2. Open second bidirectional stream
-      var clientStreamResult2 = await clientSession.OpenStreamAsync(NetworkStreamDirection.Bidirectional);
+      var clientStreamResult2 = await clientSession.OpenStreamAsync();
       await Assert.That(clientStreamResult2.Failed).IsFalse();
       var clientStream2 = clientStreamResult2.Success!;
 
@@ -193,8 +185,8 @@ public class QuicTransportTests
       await Assert.That(clientReadBytes2).IsEquivalentTo(serverPayload2);
 
       // Cleanup
-      await ((IAsyncDisposable)clientSession).DisposeAsync();
-      await ((IAsyncDisposable)serverSession).DisposeAsync();
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
 }

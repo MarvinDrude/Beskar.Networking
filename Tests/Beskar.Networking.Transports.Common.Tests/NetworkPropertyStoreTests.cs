@@ -1,8 +1,4 @@
-using System;
-using System.Threading.Tasks;
-using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
-using TUnit.Assertions;
 
 namespace Beskar.Networking.Transports.Common.Tests;
 
@@ -129,12 +125,8 @@ public class NetworkPropertyStoreTests
                var key = $"key-{taskId}-{j}";
                store.Set(key, j);
                if (store.TryGet<int>(key, out var val))
-               {
                   if (val != j)
-                  {
                      throw new Exception("Data corruption detected!");
-                  }
-               }
             }
          });
       }

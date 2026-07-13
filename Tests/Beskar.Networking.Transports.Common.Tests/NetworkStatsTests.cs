@@ -1,26 +1,13 @@
-using System;
-using System.Buffers;
 using System.IO.Pipelines;
 using System.Net;
-using System.Threading.Tasks;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Ws;
-using TUnit.Assertions;
 
 namespace Beskar.Networking.Transports.Common.Tests;
 
 public class NetworkStatsTests
 {
-   private sealed class TestDuplexPipe : IDuplexPipe
-   {
-      public Pipe ReadPipe { get; } = new();
-      public Pipe WritePipe { get; } = new();
-
-      public PipeReader Input => ReadPipe.Reader;
-      public PipeWriter Output => WritePipe.Writer;
-   }
-
    [Test]
    public async Task NetworkStats_StructProperties_AreModifiable()
    {
@@ -139,5 +126,14 @@ public class NetworkStatsTests
 
       await Assert.That(stream.Stats.BytesReceived).IsEqualTo(5);
       await Assert.That(session.Stats.BytesReceived).IsEqualTo(5);
+   }
+
+   private sealed class TestDuplexPipe : IDuplexPipe
+   {
+      public Pipe ReadPipe { get; } = new();
+      public Pipe WritePipe { get; } = new();
+
+      public PipeReader Input => ReadPipe.Reader;
+      public PipeWriter Output => WritePipe.Writer;
    }
 }
