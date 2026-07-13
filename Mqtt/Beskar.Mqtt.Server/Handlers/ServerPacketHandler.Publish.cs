@@ -215,29 +215,64 @@ public sealed partial class ServerPacketHandler
                      PropertiesBytes = ReadOnlySequence<byte>.Empty
                   };
 
+                  if (localClient.ProtocolVersion is MqttProtocolVersion.V50)
                   {
-                     Span<byte> buffer = stackalloc byte[16];
+                     Span<byte> buffer = stackalloc byte[32];
                      var writer = new ByteWriter(buffer);
 
                      try
                      {
                         var propEncoder = writer.AsPublishPropertyEncoder();
-                        if (localSubId > 0 && localClient.ProtocolVersion is MqttProtocolVersion.V50)
+                        try
                         {
-                           propEncoder.WriteSubscriptionIdentifier(localSubId);
+                           if (localSubId > 0)
+                           {
+                              propEncoder.WriteSubscriptionIdentifier(localSubId);
+                           }
+
+                           if (localMsg.PayloadFormat is not PayloadFormat.Unspecified)
+                           {
+                              propEncoder.WritePayloadFormatIndicator(localMsg.PayloadFormat);
+                           }
+
+                           if (localMsg.MessageExpiryInterval > 0)
+                           {
+                              propEncoder.WriteMessageExpiryInterval(localMsg.MessageExpiryInterval);
+                           }
+
+                           if (!responseTopicBytes.IsEmpty)
+                           {
+                              propEncoder.WriteResponseTopic(responseTopicBytes.Span);
+                           }
+
+                           if (localMsg.CorrelationData.HasValue)
+                           {
+                              propEncoder.WriteCorrelationData(localMsg.CorrelationData.Value.Span);
+                           }
+
+                           if (!contentTypeBytes.IsEmpty)
+                           {
+                              propEncoder.WriteContentType(contentTypeBytes.Span);
+                           }
+
+                           if (localMsg.UserProperties.Count > 0)
+                           {
+                              var enumerator = localMsg.UserProperties.GetDirectEnumerator();
+                              while (enumerator.MoveNext())
+                              {
+                                 if (enumerator.Current.Identifier is not PropertyIdentifier.UserProperty)
+                                    continue;
+
+                                 var userProperty = enumerator.Current.AsUserProperty();
+                                 propEncoder.WriteUserProperty(userProperty.KeyBytes, userProperty.ValueBytes);
+                              }
+                           }
+                        }
+                        finally
+                        {
+                           writer = propEncoder.Encoder.Writer;
                         }
 
-                        var enumerator = localMsg.UserProperties.GetDirectEnumerator();
-                        while (enumerator.MoveNext())
-                        {
-                           if (enumerator.Current.Identifier is not PropertyIdentifier.UserProperty)
-                              continue;
-
-                           var userProperty = enumerator.Current.AsUserProperty();
-                           propEncoder.WriteUserProperty(userProperty.KeyBytes, userProperty.ValueBytes);
-                        }
-
-                        writer = propEncoder.Encoder.Writer;
                         publishPacket.PropertiesBytes = new ReadOnlySequence<byte>([.. writer.WrittenSpan]);
                      }
                      finally

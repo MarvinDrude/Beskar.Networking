@@ -31,34 +31,39 @@ public readonly ref partial struct PacketVersion5Encoder
                {
                   var propEncoder = writer.AsDisconnectPropertyEncoder();
 
-                  if (options.SessionExpiryInterval != 0)
+                  try
                   {
-                     propEncoder.WriteSessionExpiryInterval(options.SessionExpiryInterval);
-                  }
-
-                  if (options.ReasonString is { } reasonString)
-                  {
-                     var reasonStringBytes = Encoding.UTF8.GetBytes(reasonString);
-                     propEncoder.WriteReasonString(reasonStringBytes);
-                  }
-
-                  if (options.ServerReference is { } serverReference)
-                  {
-                     var serverReferenceBytes = Encoding.UTF8.GetBytes(serverReference);
-                     propEncoder.WriteServerReference(serverReferenceBytes);
-                  }
-
-                  if (options.UserProperties.Count > 0)
-                  {
-                     var enumerator = options.UserProperties.GetEnumerator();
-                     while (enumerator.MoveNext())
+                     if (options.SessionExpiryInterval != 0)
                      {
-                        var prop = enumerator.Current;
-                        propEncoder.WriteUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+                        propEncoder.WriteSessionExpiryInterval(options.SessionExpiryInterval);
+                     }
+
+                     if (options.ReasonString is { } reasonString)
+                     {
+                        var reasonStringBytes = Encoding.UTF8.GetBytes(reasonString);
+                        propEncoder.WriteReasonString(reasonStringBytes);
+                     }
+
+                     if (options.ServerReference is { } serverReference)
+                     {
+                        var serverReferenceBytes = Encoding.UTF8.GetBytes(serverReference);
+                        propEncoder.WriteServerReference(serverReferenceBytes);
+                     }
+
+                     if (options.UserProperties.Count > 0)
+                     {
+                        var enumerator = options.UserProperties.GetEnumerator();
+                        while (enumerator.MoveNext())
+                        {
+                           var prop = enumerator.Current;
+                           propEncoder.WriteUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+                        }
                      }
                   }
-
-                  writer = propEncoder.Encoder.Writer;
+                  finally
+                  {
+                     writer = propEncoder.Encoder.Writer;
+                  }
                }
             }
          }

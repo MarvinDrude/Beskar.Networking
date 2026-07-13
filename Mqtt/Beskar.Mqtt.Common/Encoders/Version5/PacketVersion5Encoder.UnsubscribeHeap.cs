@@ -26,17 +26,22 @@ public readonly ref partial struct PacketVersion5Encoder
          {
             var propEncoder = writer.AsUnsubscribePropertyEncoder();
 
-            if (options.UserProperties.Count > 0)
+            try
             {
-               var enumerator = options.UserProperties.GetEnumerator();
-               while (enumerator.MoveNext())
+               if (options.UserProperties.Count > 0)
                {
-                  var prop = enumerator.Current;
-                  propEncoder.WriteUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+                  var enumerator = options.UserProperties.GetEnumerator();
+                  while (enumerator.MoveNext())
+                  {
+                     var prop = enumerator.Current;
+                     propEncoder.WriteUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+                  }
                }
             }
-
-            writer = propEncoder.Encoder.Writer;
+            finally
+            {
+               writer = propEncoder.Encoder.Writer;
+            }
          }
 
          var enumeratorFilters = options.TopicFilters.GetEnumerator();

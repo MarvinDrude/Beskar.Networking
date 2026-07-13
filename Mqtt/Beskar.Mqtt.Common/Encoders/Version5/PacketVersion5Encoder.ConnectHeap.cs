@@ -61,52 +61,57 @@ public readonly ref partial struct PacketVersion5Encoder
          {
             var propEncoder = writer.AsConnectPropertyEncoder();
 
-            if (options.SessionExpiryInterval.HasValue && options.SessionExpiryInterval.Value != 0)
+            try
             {
-               propEncoder.WriteSessionExpiryInterval(options.SessionExpiryInterval.Value);
-            }
-
-            if (options.TopicAliasMaximum.HasValue && options.TopicAliasMaximum.Value != 0)
-            {
-               propEncoder.WriteTopicAliasMaximum(options.TopicAliasMaximum.Value);
-            }
-
-            if (options.MaximumPacketSize.HasValue && options.MaximumPacketSize.Value != 0)
-            {
-               propEncoder.WriteMaximumPacketSize(options.MaximumPacketSize.Value);
-            }
-
-            if (options.RequestResponseInformation)
-            {
-               propEncoder.WriteRequestResponseInformation(options.RequestResponseInformation);
-            }
-
-            if (!options.RequestProblemInformation)
-            {
-               propEncoder.WriteRequestProblemInformation(options.RequestProblemInformation);
-            }
-
-            if (!options.AuthenticationMethodUtf8Bytes.IsEmpty)
-            {
-               propEncoder.WriteAuthenticationMethod(options.AuthenticationMethodUtf8Bytes.Span);
-            }
-
-            if (!options.AuthenticationDataBytes.IsEmpty)
-            {
-               propEncoder.WriteAuthenticationData(options.AuthenticationDataBytes.Span);
-            }
-
-            if (options.UserProperties.Count > 0)
-            {
-               var enumerator = options.UserProperties.GetEnumerator();
-               while (enumerator.MoveNext())
+               if (options.SessionExpiryInterval.HasValue && options.SessionExpiryInterval.Value != 0)
                {
-                  var prop = enumerator.Current;
-                  propEncoder.WriteUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+                  propEncoder.WriteSessionExpiryInterval(options.SessionExpiryInterval.Value);
+               }
+
+               if (options.TopicAliasMaximum.HasValue && options.TopicAliasMaximum.Value != 0)
+               {
+                  propEncoder.WriteTopicAliasMaximum(options.TopicAliasMaximum.Value);
+               }
+
+               if (options.MaximumPacketSize.HasValue && options.MaximumPacketSize.Value != 0)
+               {
+                  propEncoder.WriteMaximumPacketSize(options.MaximumPacketSize.Value);
+               }
+
+               if (options.RequestResponseInformation)
+               {
+                  propEncoder.WriteRequestResponseInformation(options.RequestResponseInformation);
+               }
+
+               if (!options.RequestProblemInformation)
+               {
+                  propEncoder.WriteRequestProblemInformation(options.RequestProblemInformation);
+               }
+
+               if (!options.AuthenticationMethodUtf8Bytes.IsEmpty)
+               {
+                  propEncoder.WriteAuthenticationMethod(options.AuthenticationMethodUtf8Bytes.Span);
+               }
+
+               if (!options.AuthenticationDataBytes.IsEmpty)
+               {
+                  propEncoder.WriteAuthenticationData(options.AuthenticationDataBytes.Span);
+               }
+
+               if (options.UserProperties.Count > 0)
+               {
+                  var enumerator = options.UserProperties.GetEnumerator();
+                  while (enumerator.MoveNext())
+                  {
+                     var prop = enumerator.Current;
+                     propEncoder.WriteUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+                  }
                }
             }
-
-            writer = propEncoder.Encoder.Writer;
+            finally
+            {
+               writer = propEncoder.Encoder.Writer;
+            }
          }
 
          writer.WriteBigEndian((ushort)options.ClientIdUtf8Bytes.Length);
@@ -124,47 +129,52 @@ public readonly ref partial struct PacketVersion5Encoder
             {
                var propEncoder = writer.AsWillPropertyEncoder();
 
-               if (options.WillDelayInterval.HasValue && options.WillDelayInterval.Value != 0)
+               try
                {
-                  propEncoder.WriteWillDelayInterval(options.WillDelayInterval.Value);
-               }
-
-               if (options.WillPayloadFormatIndicator is not PayloadFormat.Unspecified)
-               {
-                  propEncoder.WritePayloadFormatIndicator(options.WillPayloadFormatIndicator);
-               }
-
-               if (options.WillMessageExpiryInterval.HasValue && options.WillMessageExpiryInterval.Value != 0)
-               {
-                  propEncoder.WriteMessageExpiryInterval(options.WillMessageExpiryInterval.Value);
-               }
-
-               if (!options.WillContentTypeUtf8Bytes.IsEmpty)
-               {
-                  propEncoder.WriteContentType(options.WillContentTypeUtf8Bytes.Span);
-               }
-
-               if (!options.WillResponseTopicUtf8Bytes.IsEmpty)
-               {
-                  propEncoder.WriteResponseTopic(options.WillResponseTopicUtf8Bytes.Span);
-               }
-
-               if (!options.WillCorrelationDataBytes.IsEmpty)
-               {
-                  propEncoder.WriteCorrelationData(options.WillCorrelationDataBytes.Span);
-               }
-
-               if (options.WillUserProperties.Count > 0)
-               {
-                  var enumerator = options.WillUserProperties.GetEnumerator();
-                  while (enumerator.MoveNext())
+                  if (options.WillDelayInterval.HasValue && options.WillDelayInterval.Value != 0)
                   {
-                     var prop = enumerator.Current;
-                     propEncoder.WriteUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+                     propEncoder.WriteWillDelayInterval(options.WillDelayInterval.Value);
+                  }
+
+                  if (options.WillPayloadFormatIndicator is not PayloadFormat.Unspecified)
+                  {
+                     propEncoder.WritePayloadFormatIndicator(options.WillPayloadFormatIndicator);
+                  }
+
+                  if (options.WillMessageExpiryInterval.HasValue && options.WillMessageExpiryInterval.Value != 0)
+                  {
+                     propEncoder.WriteMessageExpiryInterval(options.WillMessageExpiryInterval.Value);
+                  }
+
+                  if (!options.WillContentTypeUtf8Bytes.IsEmpty)
+                  {
+                     propEncoder.WriteContentType(options.WillContentTypeUtf8Bytes.Span);
+                  }
+
+                  if (!options.WillResponseTopicUtf8Bytes.IsEmpty)
+                  {
+                     propEncoder.WriteResponseTopic(options.WillResponseTopicUtf8Bytes.Span);
+                  }
+
+                  if (!options.WillCorrelationDataBytes.IsEmpty)
+                  {
+                     propEncoder.WriteCorrelationData(options.WillCorrelationDataBytes.Span);
+                  }
+
+                  if (options.WillUserProperties.Count > 0)
+                  {
+                     var enumerator = options.WillUserProperties.GetEnumerator();
+                     while (enumerator.MoveNext())
+                     {
+                        var prop = enumerator.Current;
+                        propEncoder.WriteUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+                     }
                   }
                }
-
-               writer = propEncoder.Encoder.Writer;
+               finally
+               {
+                  writer = propEncoder.Encoder.Writer;
+               }
             }
 
             writer.WriteBigEndian((ushort)options.WillTopicUtf8Bytes.Length);
