@@ -82,6 +82,8 @@ public static class GenericThroughputBenchmarkRunner
                            try
                            {
                               var input = stream.Transport.Input;
+                              var leftoverBytes = 0;
+
                               while (!token.IsCancellationRequested)
                               {
                                  var readResult = await input.ReadAsync(token);
@@ -91,7 +93,15 @@ public static class GenericThroughputBenchmarkRunner
                                  var length = buffer.Length;
 
                                  Interlocked.Add(ref totalReceivedBytes, length);
-                                 Interlocked.Increment(ref totalReceivedPackets);
+
+                                 var totalBytesToProcess = length + leftoverBytes;
+                                 var packets = (int)(totalBytesToProcess / config.PayloadSize);
+                                 leftoverBytes = (int)(totalBytesToProcess % config.PayloadSize);
+
+                                 if (packets > 0)
+                                 {
+                                    Interlocked.Add(ref totalReceivedPackets, packets);
+                                 }
 
                                  input.AdvanceTo(buffer.End);
                               }
@@ -121,6 +131,7 @@ public static class GenericThroughputBenchmarkRunner
                               try
                               {
                                  var input = stream.Transport.Input;
+                                 var leftoverBytes = 0;
                                  while (!token.IsCancellationRequested)
                                  {
                                     var readResult = await input.ReadAsync(token);
@@ -130,7 +141,15 @@ public static class GenericThroughputBenchmarkRunner
                                     var length = buffer.Length;
 
                                     Interlocked.Add(ref totalReceivedBytes, length);
-                                    Interlocked.Increment(ref totalReceivedPackets);
+
+                                    var totalBytesToProcess = length + leftoverBytes;
+                                    var packets = (int)(totalBytesToProcess / config.PayloadSize);
+                                    leftoverBytes = (int)(totalBytesToProcess % config.PayloadSize);
+
+                                    if (packets > 0)
+                                    {
+                                       Interlocked.Add(ref totalReceivedPackets, packets);
+                                    }
 
                                     input.AdvanceTo(buffer.End);
                                  }
@@ -145,6 +164,7 @@ public static class GenericThroughputBenchmarkRunner
                               }
                            }, token));
                         }
+
                         await Task.WhenAll(streamTasks);
                      }
                   }

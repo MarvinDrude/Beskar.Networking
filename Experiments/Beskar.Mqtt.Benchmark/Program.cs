@@ -20,7 +20,7 @@ public static class Program
       // DEFAULT BENCHMARK CONFIGURATION
       // ==========================================
       var clientCount = 20; // Total number of MQTT clients
-      var payloadSize = 256; // Size of the publish payload in bytes
+      var payloadSize = 512; // Size of the publish payload in bytes
       var durationSeconds = 10; // Duration of the benchmark test in seconds
       var publishConcurrency = 3; // Number of concurrent publishing loops per client
       var serverPort = 1883; // Local port for the MQTT server to listen on

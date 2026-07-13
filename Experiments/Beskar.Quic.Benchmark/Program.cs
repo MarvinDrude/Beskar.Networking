@@ -23,7 +23,7 @@ public static class Program
       // DEFAULT BENCHMARK CONFIGURATION
       // ==========================================
       var clientCount = 10;
-      var payloadSize = 1024;
+      var payloadSize = 512;
       var durationSeconds = 10;
       var serverPort = 9003;
       // ==========================================
