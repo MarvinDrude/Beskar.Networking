@@ -219,23 +219,31 @@ public sealed partial class ServerPacketHandler
                      Span<byte> buffer = stackalloc byte[16];
                      var writer = new ByteWriter(buffer);
 
-                     var propEncoder = writer.AsPublishPropertyEncoder();
-                     if (localSubId > 0 && localClient.ProtocolVersion is MqttProtocolVersion.V50)
+                     try
                      {
-                        propEncoder.WriteSubscriptionIdentifier(localSubId);
-                     }
+                        var propEncoder = writer.AsPublishPropertyEncoder();
+                        if (localSubId > 0 && localClient.ProtocolVersion is MqttProtocolVersion.V50)
+                        {
+                           propEncoder.WriteSubscriptionIdentifier(localSubId);
+                        }
 
-                     var enumerator = localMsg.UserProperties.GetDirectEnumerator();
-                     while (enumerator.MoveNext())
+                        var enumerator = localMsg.UserProperties.GetDirectEnumerator();
+                        while (enumerator.MoveNext())
+                        {
+                           if (enumerator.Current.Identifier is not PropertyIdentifier.UserProperty)
+                              continue;
+
+                           var userProperty = enumerator.Current.AsUserProperty();
+                           propEncoder.WriteUserProperty(userProperty.KeyBytes, userProperty.ValueBytes);
+                        }
+
+                        writer = propEncoder.Encoder.Writer;
+                        publishPacket.PropertiesBytes = new ReadOnlySequence<byte>([.. writer.WrittenSpan]);
+                     }
+                     finally
                      {
-                        if (enumerator.Current.Identifier is not PropertyIdentifier.UserProperty)
-                           continue;
-
-                        var userProperty = enumerator.Current.AsUserProperty();
-                        propEncoder.WriteUserProperty(userProperty.KeyBytes, userProperty.ValueBytes);
+                        writer.Dispose();
                      }
-
-                     publishPacket.PropertiesBytes = new ReadOnlySequence<byte>([.. writer.WrittenSpan]);
                   }
 
                   await localClient.Stream.Send(in publishPacket, localClient.ProtocolVersion);

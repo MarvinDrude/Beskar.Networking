@@ -414,6 +414,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    {
       try
       {
+         var buffer = new byte[32];
          while (client.IsConnected && !ct.IsCancellationRequested)
          {
             if (!session.TryDequeueOfflineMessage(out var queuedMessage))
@@ -454,7 +455,6 @@ public sealed partial class MqttServer : IAsyncDisposable
 
             if (queuedMessage.SubscriptionIdentifier > 0 && client.ProtocolVersion is MqttProtocolVersion.V50)
             {
-               var buffer = new byte[16];
                var writer = new ByteWriter(buffer);
                var propEncoder = writer.AsPublishPropertyEncoder();
 
