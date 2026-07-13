@@ -22,7 +22,7 @@ var result = await mqttServer.StartAsync();
 if (result.Failed) throw new InvalidOperationException(result.Error.Detail);
 
 var mqttClient = MqttClientFactory.CreateTcp();
-var cresult = await mqttClient.ConnectAsync(new ConnectOptions()
+var cresult = await mqttClient.ConnectAsync(new ConnectOptions
 {
    EndPoint = new IPEndPoint(IPAddress.Loopback, 8000)
 });
@@ -55,7 +55,4 @@ var pub = new PublishOptionsBuilder()
 
 var pubRes = await mqttClient.PublishAsync(pub);
 
-while (true)
-{
-   await Task.Delay(TimeSpan.FromHours(24));
-}
+while (true) await Task.Delay(TimeSpan.FromHours(24));

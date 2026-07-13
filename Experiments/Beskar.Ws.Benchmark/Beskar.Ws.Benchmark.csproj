@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>Exe</OutputType>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj"/>
+   </ItemGroup>
+
+</Project>

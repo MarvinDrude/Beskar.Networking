@@ -5,12 +5,12 @@
    </PropertyGroup>
 
    <ItemGroup>
-     <ProjectReference Include="..\..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj" />
-     <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj" />
-     <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj" />
-     <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj" />
-     <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Server\Beskar.Mqtt.Server.csproj" />
-     <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Console\Beskar.Utilities.Console.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj"/>
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Server\Beskar.Mqtt.Server.csproj"/>
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Console\Beskar.Utilities.Console.csproj"/>
    </ItemGroup>
 
 </Project>

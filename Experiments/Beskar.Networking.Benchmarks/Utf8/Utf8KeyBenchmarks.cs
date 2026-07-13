@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
@@ -13,24 +10,14 @@ namespace Beskar.Networking.Benchmarks.Utf8;
 [MemoryDiagnoser]
 public class Utf8KeyBenchmarks
 {
-   private class Config : ManualConfig
-   {
-      public Config()
-      {
-         AddJob(Job.Default
-            .WithToolchain(new InProcessEmitToolchain(new InProcessEmitSettings()))
-            .WithLaunchCount(1)
-            .WithWarmupCount(2));
-      }
-   }
+   private Dictionary<byte[], int> _byteArrayDict = null!;
+   private byte[] _combinedBuffer = null!;
+   private (int Offset, int Length)[] _keyRanges = null!;
 
    private Dictionary<string, int> _stringDict = null!;
-   private Dictionary<byte[], int> _byteArrayDict = null!;
 
    private string[] _stringKeys = null!;
    private byte[][] _utf8Keys = null!;
-   private byte[] _combinedBuffer = null!;
-   private (int Offset, int Length)[] _keyRanges = null!;
 
    [Params(10, 100)] public int KeyCount { get; set; }
 
@@ -49,10 +36,7 @@ public class Utf8KeyBenchmarks
          var length = random.Next(10, 41);
          var sb = new StringBuilder(length);
 
-         for (var j = 0; j < length; j++)
-         {
-            sb.Append((char)random.Next('a', 'z' + 1));
-         }
+         for (var j = 0; j < length; j++) sb.Append((char)random.Next('a', 'z' + 1));
 
          _stringKeys[i] = sb.ToString();
          _utf8Keys[i] = Encoding.UTF8.GetBytes(_stringKeys[i]);
@@ -80,6 +64,17 @@ public class Utf8KeyBenchmarks
       }
    }
 
+   private class Config : ManualConfig
+   {
+      public Config()
+      {
+         AddJob(Job.Default
+            .WithToolchain(new InProcessEmitToolchain(new InProcessEmitSettings()))
+            .WithLaunchCount(1)
+            .WithWarmupCount(2));
+      }
+   }
+
    #region Lookups
 
    [Benchmark(Baseline = true)]
@@ -94,10 +89,7 @@ public class Utf8KeyBenchmarks
          var bytesSpan = buffer.Slice(range.Offset, range.Length);
 
          var key = Encoding.UTF8.GetString(bytesSpan);
-         if (_stringDict.TryGetValue(key, out var val))
-         {
-            sum += val;
-         }
+         if (_stringDict.TryGetValue(key, out var val)) sum += val;
       }
 
       return sum;
@@ -120,10 +112,7 @@ public class Utf8KeyBenchmarks
          var charCount = Encoding.UTF8.GetChars(bytesSpan, charBuffer);
          var charSpan = charBuffer.Slice(0, charCount);
 
-         if (alternateLookup.TryGetValue(charSpan, out int val))
-         {
-            sum += val;
-         }
+         if (alternateLookup.TryGetValue(charSpan, out var val)) sum += val;
       }
 
       return sum;
@@ -141,10 +130,7 @@ public class Utf8KeyBenchmarks
          var bytesSpan = buffer.Slice(range.Offset, range.Length);
 
          var key = bytesSpan.ToArray();
-         if (_byteArrayDict.TryGetValue(key, out var val))
-         {
-            sum += val;
-         }
+         if (_byteArrayDict.TryGetValue(key, out var val)) sum += val;
       }
 
       return sum;
@@ -162,10 +148,7 @@ public class Utf8KeyBenchmarks
          var range = _keyRanges[i];
          var bytesSpan = buffer.Slice(range.Offset, range.Length);
 
-         if (alternateLookup.TryGetValue(bytesSpan, out var val))
-         {
-            sum += val;
-         }
+         if (alternateLookup.TryGetValue(bytesSpan, out var val)) sum += val;
       }
 
       return sum;
@@ -260,18 +243,6 @@ public sealed class ByteArrayEqualityComparer : IEqualityComparer<byte[]>,
 {
    public static readonly ByteArrayEqualityComparer Instance = new();
 
-   public bool Equals(byte[]? x, byte[]? y)
-   {
-      if (ReferenceEquals(x, y)) return true;
-      if (x is null || y is null) return false;
-      return x.AsSpan().SequenceEqual(y);
-   }
-
-   public int GetHashCode(byte[] obj)
-   {
-      return GetHashCode(obj.AsSpan());
-   }
-
    public bool Equals(ReadOnlySpan<byte> alternate, byte[] other)
    {
       return alternate.SequenceEqual(other);
@@ -287,5 +258,17 @@ public sealed class ByteArrayEqualityComparer : IEqualityComparer<byte[]>,
    public byte[] Create(ReadOnlySpan<byte> alternate)
    {
       return [.. alternate];
+   }
+
+   public bool Equals(byte[]? x, byte[]? y)
+   {
+      if (ReferenceEquals(x, y)) return true;
+      if (x is null || y is null) return false;
+      return x.AsSpan().SequenceEqual(y);
+   }
+
+   public int GetHashCode(byte[] obj)
+   {
+      return GetHashCode(obj.AsSpan());
    }
 }

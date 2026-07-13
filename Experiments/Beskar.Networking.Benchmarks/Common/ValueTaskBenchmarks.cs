@@ -4,7 +4,7 @@ using BenchmarkDotNet.Jobs;
 
 namespace Beskar.Networking.Benchmarks.Common;
 
-[SimpleJob(RuntimeMoniker.HostProcess, launchCount: 1, warmupCount: 2)]
+[SimpleJob(RuntimeMoniker.HostProcess, 1, 2)]
 [MemoryDiagnoser]
 public class ValueTaskBenchmarks
 {
@@ -12,17 +12,13 @@ public class ValueTaskBenchmarks
    private bool[] _cacheHitPattern = null!;
    private int _index;
 
-   [Params(0, 25, 50, 75, 100)]
-   public int SyncPercentage { get; set; }
+   [Params(0, 25, 50, 75, 100)] public int SyncPercentage { get; set; }
 
    [GlobalSetup]
    public void Setup()
    {
       _cacheHitPattern = new bool[1024];
-      for (var i = 0; i < 1024; i++)
-      {
-         _cacheHitPattern[i] = (i % 100) < SyncPercentage;
-      }
+      for (var i = 0; i < 1024; i++) _cacheHitPattern[i] = i % 100 < SyncPercentage;
    }
 
    [Benchmark]
@@ -37,12 +33,10 @@ public class ValueTaskBenchmarks
    {
       var isHit = _cacheHitPattern[_index++ & Mask];
 
-      if (isHit)
-      {
-         return ValueTask.FromResult(42);
-      }
+      if (isHit) return ValueTask.FromResult(42);
 
       return GetValueOptimizedAsync();
+
       async ValueTask<int> GetValueOptimizedAsync()
       {
          await Task.Yield();
@@ -53,10 +47,7 @@ public class ValueTaskBenchmarks
    [MethodImpl(MethodImplOptions.NoInlining)]
    private async ValueTask<int> GetValueStandardAsync(bool isHit)
    {
-      if (isHit)
-      {
-         return 42;
-      }
+      if (isHit) return 42;
 
       await Task.Yield();
       return 42;
