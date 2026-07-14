@@ -11,6 +11,7 @@
    <ItemGroup>
       <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj"/>
       <ProjectReference Include="..\Beskar.Mqtt.Server\Beskar.Mqtt.Server.csproj"/>
+      <ProjectReference Include="..\Beskar.Mqtt.Client\Beskar.Mqtt.Client.csproj"/>
    </ItemGroup>
 
 </Project>

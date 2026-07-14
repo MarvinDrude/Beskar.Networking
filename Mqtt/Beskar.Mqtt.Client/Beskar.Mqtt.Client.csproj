@@ -10,4 +10,8 @@
      <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
    </ItemGroup>
 
+   <ItemGroup>
+      <InternalsVisibleTo Include="Beskar.Mqtt.Common.Tests" />
+   </ItemGroup>
+
 </Project>

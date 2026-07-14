@@ -8,6 +8,9 @@ using Beskar.Mqtt.Protocol.Packets;
 
 namespace Beskar.Mqtt.Common.Handlers.Contexts;
 
+/// <summary>
+/// Event context for when the MQTT client receives a new publish message.
+/// </summary>
 public sealed class MessageReceiveContext
 {
    /// <summary>

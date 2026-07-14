@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Memory.Threading;
 using Beskar.Mqtt.Client.Handlers;
 using Beskar.Mqtt.Client.States;
 using Beskar.Mqtt.Common.Builders.Connecting;
@@ -22,9 +23,19 @@ using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client;
 
+/// <summary>
+/// Full MQTT client implementation.
+/// </summary>
 public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 {
+   /// <summary>
+   /// Whether the client is connected to the server currently.
+   /// </summary>
    public bool IsConnected => (MqttClientConnectionState)_state is MqttClientConnectionState.Connected;
+
+   /// <summary>
+   /// Event dispatcher container for client events.
+   /// </summary>
    public ClientEvents Events { get; } = new();
 
    private readonly INetworkClient _networkClient;
@@ -69,6 +80,24 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       return Events.OnMessageReceive.Add(messageReceiveHandler);
    }
 
+   public IDisposable AddConnectingHandler(
+      Func<ClientConnectingContext, CancellationToken, ValueTask> handler)
+   {
+      return Events.OnClientConnecting.Add(handler);
+   }
+
+   public IDisposable AddConnectedHandler(
+      Func<ClientConnectedContext, CancellationToken, ValueTask> handler)
+   {
+      return Events.OnClientConnected.Add(handler);
+   }
+
+   public IDisposable AddDisconnectedHandler(
+      Func<ClientDisconnectedContext, CancellationToken, ValueTask> handler)
+   {
+      return Events.OnClientDisconnected.Add(handler);
+   }
+
    public async Task<Result<ClientConnectResult, StringError>> ConnectAsync(
       ConnectOptions options, CancellationToken ct = default)
    {
@@ -85,7 +114,19 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
       try
       {
+         _connectOptions = options;
          _protocolVersion = options.ProtocolVersion;
+
+         if (Events.OnClientConnecting.Count > 0)
+         {
+            var ctx = new ClientConnectingContext()
+            {
+               ConnectOptions = options
+            };
+
+            await Events.OnClientConnecting.ExecuteAsync(
+               ctx, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+         }
 
          if (!_firstConnect)
          {
@@ -102,7 +143,6 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          _disconnectUserProperties = null;
          _disconnectReasonString = null;
 
-         _connectOptions = options;
          _firstConnect = false;
 
          Result<ClientConnectResult, StringError> result;

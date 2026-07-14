@@ -61,10 +61,46 @@ public interface IMqttClient : IAsyncDisposable
    public Task<VoidResult<StringError>> PingAsync(CancellationToken ct = default);
 
    /// <summary>
-   /// Adds a message receive handler that is called for all incoming published messages
+   /// Adds a message receive handler called for all incoming published messages
    /// that match the ones that you subscribed to.
    /// </summary>
    /// <returns>Returns a disposable that when disposed, removes the message receive handler.</returns>
    public IDisposable AddMessageReceiveHandler(
       Func<MessageReceiveContext, CancellationToken, ValueTask> messageReceiveHandler);
+
+   /// <summary>
+   /// Registers a handler to be invoked when the MQTT client begins the connection process.
+   /// This event is triggered before establishing an actual connection with the server.
+   /// </summary>
+   /// <param name="handler">
+   /// A function that receives a <see cref="ClientConnectingContext"/> and a <see cref="CancellationToken"/>.
+   /// The handler is awaited and can perform any necessary logic before the connection is established.
+   /// </param>
+   /// <returns>
+   /// A disposable object that, when disposed, removes the registered connecting handler.
+   /// </returns>
+   public IDisposable AddConnectingHandler(
+      Func<ClientConnectingContext, CancellationToken, ValueTask> handler);
+
+   /// <summary>
+   /// Adds a handler invoked when the client has successfully connected to the MQTT server.
+   /// This allows users to define custom actions that should occur after a successful connection.
+   /// </summary>
+   /// <param name="handler">A function to handle events related to the client being successfully connected.
+   /// The function takes a <see cref="ClientConnectedContext"/> and a <see cref="CancellationToken"/> as parameters
+   /// and returns a <see cref="ValueTask"/>.</param>
+   /// <returns>An <see cref="IDisposable"/> instance that can be used to remove the added handler.</returns>
+   public IDisposable AddConnectedHandler(
+      Func<ClientConnectedContext, CancellationToken, ValueTask> handler);
+
+   /// <summary>
+   /// Adds a handler invoked when the MQTT client disconnects.
+   /// </summary>
+   /// <param name="handler">
+   /// A delegate representing the handler to be invoked. The handler takes a <see cref="ClientDisconnectedContext"/>
+   /// that provides information about the disconnection event and a <see cref="CancellationToken"/> to handle asynchronous operations.
+   /// </param>
+   /// <returns>An <see cref="IDisposable"/> token that can be used to remove the handler.</returns>
+   public IDisposable AddDisconnectedHandler(
+      Func<ClientDisconnectedContext, CancellationToken, ValueTask> handler);
 }
