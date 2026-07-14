@@ -77,6 +77,7 @@ Under development.
 ## Performance Benchmarks
 
 Engineered from the ground up for maximum throughput and minimum allocation overhead.
+> [!NOTE]\
 > **Computer Specs:**<br/>
 > CPU: AMD Ryzen 9 7950X3D,
 > Memory: 64 GB DDR5
@@ -90,8 +91,8 @@ Engineered from the ground up for maximum throughput and minimum allocation over
 | **TCP** (No TLS) | 20 | 512 bytes | 7,355,303 packets/s | 3,591.46 MB/s |
 | **WebSockets (WS)** (No TLS) | 20 | 128 bytes | 10,784,817 packets/s | 1,316.51 MB/s |
 | **WebSockets (WS)** (No TLS) | 20 | 512 bytes | 6,968,596 packets/s | 3,402.63 MB/s |
-| **QUIC** (No TLS) | 20 | 128 bytes | 3,503,372 packets/s | 427.66 MB/s |
-| **QUIC** (No TLS) | 20 | 512 bytes | 954,711 packets/s | 466.17 MB/s |
+| **QUIC** | 20 | 128 bytes | 3,503,372 packets/s | 427.66 MB/s |
+| **QUIC** | 20 | 512 bytes | 954,711 packets/s | 466.17 MB/s |
 | **MQTT** (TCP - No TLS) | 20 | 128 bytes | 918,794.17 msg/s | 112.16 MB/s |
 | **MQTT** (TCP - No TLS) | 20 | 512 bytes | 674,086.45 msg/s | 329.14 MB/s |
 
