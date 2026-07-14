@@ -52,14 +52,14 @@ public sealed class MqttKeepAliveService(
 
          while (await timer.WaitForNextTickAsync(ct))
          {
-            var clients = await _server.ClientSessions.GetClients();
+            using var clients = await _server.ClientSessions.GetClients();
             var now = DateTimeOffset.UtcNow;
 
-            foreach (var client in clients)
+            foreach (var client in clients.WrittenSpan)
             {
                try
                {
-                  await RunClientAsync(client, now, ct);
+                  RunClient(client, now, ct);
                }
                catch (Exception err)
                {
@@ -83,7 +83,7 @@ public sealed class MqttKeepAliveService(
       }
    }
 
-   private async Task RunClientAsync(MqttServerClient client, DateTimeOffset now, CancellationToken ct)
+   private static void RunClient(MqttServerClient client, DateTimeOffset now, CancellationToken ct)
    {
       if (!client.IsConnected) return;
 
@@ -106,7 +106,17 @@ public sealed class MqttKeepAliveService(
          return;
       }
 
-      await client.DisconnectAsync(_disconnectOptions);
+      _ = Task.Run(async () =>
+      {
+         try
+         {
+            await client.DisconnectAsync(_disconnectOptions);
+         }
+         catch (Exception err)
+         {
+            TraceLogger.LogServerInfo("Error disconnecting timed-out client: {0}", err.ToString());
+         }
+      }, ct);
    }
 
    private static readonly DisconnectOptions _disconnectOptions = new()

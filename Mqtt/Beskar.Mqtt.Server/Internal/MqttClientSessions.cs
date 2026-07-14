@@ -22,11 +22,17 @@ public sealed class MqttClientSessions(MqttServer server)
    private readonly Dictionary<byte[], MqttServerClient> _clients = new(2048, ByteArrayEqualityComparer.Instance);
    private readonly MqttSessionRegistry _sessions = new();
 
-   public async Task<MqttServerClient[]> GetClients()
+   public async Task<ArrayBuilderResult<MqttServerClient>> GetClients()
    {
       using (await _clientLock.LockAsync())
       {
-         return [.. _clients.Values];
+         var clients = new ArrayBuilder<MqttServerClient>(_clients.Count);
+         foreach (var client in _clients.Values)
+         {
+            clients.Add(client);
+         }
+
+         return clients;
       }
    }
 
