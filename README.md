@@ -48,7 +48,13 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 
 ## NuGet packages overview
 
-Under development.
+| Package / Project | Description                                                                                         | NuGet Link |
+| :--- |:----------------------------------------------------------------------------------------------------| :--- |
+| **Beskar.Mqtt.Server** | High-performance, low-allocation MQTT broker/server support for v3.1.1 and v5.0 over any transport. | *Under development* |
+| **Beskar.Mqtt.Client** | Lightweight and efficient MQTT client supporting v3.1.1 and v5.0 over any transport.                | *Under development* |
+| **Beskar.Networking.Transports.Tcp** | High-performance, native TCP transport implementation supporting TLS.                               | *Under development* |
+| **Beskar.Networking.Transports.Ws** | WebSocket (WS/WSS) transport adapter wrapping custom framed duplex pipelines.                       | *Under development* |
+| **Beskar.Networking.Transports.Quic** | Multiplexed and secure QUIC transport implementation built on native .NET libraries.                | *Under development* |
 
 ## Examples
 
