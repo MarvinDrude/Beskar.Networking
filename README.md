@@ -1,7 +1,7 @@
 
 <h1>
 <p align="center">
-   <img src="https://github.com/MarvinDrude/Beskar.Networking/blob/master/Resources/banner.png" alt="Logo" width="128" />
+   <img src="https://github.com/MarvinDrude/Beskar.Networking/blob/master/Resources/banner.png" alt="Logo" width="256" />
    <br />
    Beskar.Networking
 </p>
@@ -14,27 +14,41 @@
    ·
    <a href="#examples">Examples</a>
    ·
-   <a href="#">Documentation</a>
+   <a href="#documenation">Documentation</a>
    ·
    <a href="#performance-benchmarks">Performance</a>
    ·
-   <a href="#key-features">Key features</a>
+   <a href="#key-aspects">Key Aspects</a>
 </p>
+<br/>
 
 ---
 <br/>
 
-> **Work In Progress (WIP)**
-> This library is actively under development. Interfaces, implementations, and APIs are subject
-> to change before the first stable release.
+![Code Poetry](https://img.shields.io/badge/code-is_poetry-orange)
+![Issues](https://img.shields.io/github/issues/MarvinDrude/Beskar.Networking)
+![Repo Size](https://img.shields.io/github/repo-size/MarvinDrude/Beskar.Networking.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://raw.githubusercontent.com/MarvinDrude/Beskar.Networking/master/LICENSE.md)
 
 ## About
 
-`Beskar.Networking` is a high-performance, low-allocation networking library built for modern **.NET 10** using C#.
-It provides a unified, pipe-based interface abstraction (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`)
-for building extremely fast network applications across multiple transport protocols.
+Main reasons for why you should consider using `Beskar.Networking` for your next **Networking** or **MQTT** use case:
+
+- Made with passion and love for the craft.
+- Built for modern `.NET` using `C#` and designed to be highly performant, low-allocation, and easy to use.
+- Purposefully designed to be lightweight and flexible.
+- Performance-first approach with **100.000** - **1.200.000** messages per second. (Depending on various factors)
+- Many simple or more advanced example projects demonstrating how to use `Beskar.Networking` across various transports.
+- Various Unit Tests to verify functionality and performance.
+- Active development and steady progress towards a full feature set.
+- MQTT V3 and V5 support. (Server and Client) – Over any transport supported by Beskar.
+- No external runtime dependencies besides .NET and Beskar.
 
 ---
+
+## NuGet packages overview
+
+Under development.
 
 ## Examples
 
@@ -50,10 +64,16 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
 
 ---
 
+## Documenation
+
+Under development.
+
 ## Performance Benchmarks
 
 Engineered from the ground up for maximum throughput and minimum allocation overhead.
-Below are benchmark measurements showing messages processed per second (over loopback on current development CPU):
+> **Computer Specs:**<br/>
+> CPU: AMD Ryzen 9 7950X3D,
+> Memory: 64 GB DDR5
 
 | Transport | Throughput (msg/s) | Status                   |
 | :--- | :--- |:-------------------------|
@@ -64,31 +84,13 @@ Below are benchmark measurements showing messages processed per second (over loo
 
 ---
 
-## Key Features
+## Key Aspects
 
-- **Unified Abstractions**: Write your network layer once and swap between TCP, WebSockets, or QUIC dynamically.
+- **Unified Abstractions**: Write your network layer once and swap between TCP, WebSockets, or QUIC etc. dynamically.
 - **Modern .NET 10 Stack**: Heavily leverages `System.IO.Pipelines` (decoupling IO thread queues from application processing), `Span<T>`, `ReadOnlySpan<T>`, and direct memory pooling to achieve zero/near-zero allocations.
 - **TLS/SSL Encryption**: Full native SSL/TLS wrapping for TCP and WebSocket transports out of the box.
 - **Non-blocking IO Queueing**: Highly-optimized custom IO queues (like `TcpIoQueueRegistry` / `TcpIoQueue`) to handle asynchronous reading and writing concurrently.
+- **Full MQTT**:
+- **Other Features**: Additional features and capabilities that make this library unique and valuable.
 
 ---
-
-## Architecture & Core Interfaces
-
-The API is fully decoupled, exposing four core interfaces:
-
-1. **`INetworkListener`**: Responsible for binding to local endpoints and accepting sessions.
-2. **`INetworkClient`**: Responsible for establishing outbound sessions.
-3. **`INetworkSession`**: Represents a connection session (multiplexed or single-channel).
-4. **`INetworkStream`**: High-performance pipeline-based stream containing the `IDuplexPipe` for binary I/O.
-
----
-
-## 🗺️ Roadmap & Active Work
-
-- [x] High-performance **TCP** client/listener with SSL/TLS support
-- [x] High-performance **WebSocket** wrapper utilizing Pipelines
-- [x] Zero-allocation **QUIC** transport integration
-- [ ] **MQTT** Server & Client protocol implementation (Current focus - heavily WIP)
-- [ ] Comprehensive performance profiling & benchmark suites
-- [ ] Comprehensive examples and docs
