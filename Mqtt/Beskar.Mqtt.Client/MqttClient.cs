@@ -168,6 +168,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
          TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Successfully connected. Assigned KeepAlive: {0}s", connectResult.ServerKeepAlive > 0 ? connectResult.ServerKeepAlive : _connectOptions.KeepAlivePeriod);
          CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting);
+
+         await DispatchConnectedAsync(connectResult);
          return result;
       }
       catch (Exception error)
@@ -182,10 +184,22 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
    }
 
-
    internal bool TryDispatch<T>(in T packet, ushort identifier)
    {
       return _signalBroker.TryDispatch(in packet, identifier);
+   }
+
+   private async Task DispatchConnectedAsync(ClientConnectResult connectResult)
+   {
+      if (Events.OnClientConnected.Count == 0)
+         return;
+
+      var ctx = new ClientConnectedContext()
+      {
+         ConnectResult = connectResult
+      };
+
+      await Events.OnClientConnected.ExecuteAsync(ctx, HandlerExecutionStrategy.SequentialContinueOnError);
    }
 
    private async Task<Result<ClientConnectResult, StringError>> ConnectInternalAsync(CancellationToken ct = default)
