@@ -12,6 +12,7 @@ using Beskar.Mqtt.Common.Handlers.Client;
 using Beskar.Mqtt.Common.Handlers.Contexts;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Common.Models;
+using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
@@ -40,6 +41,9 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    private volatile bool _gracefulDisconnect;
    private MqttClientDisconnectReason? _disconnectReason;
+   private volatile Exception? _disconnectException;
+   private UserPropertyCollection? _disconnectUserProperties;
+   private string? _disconnectReasonString;
 
    private MqttProtocolVersion _protocolVersion = MqttProtocolVersion.Unknown;
 
@@ -93,6 +97,11 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          _clientTokenSource.Dispose();
          _clientTokenSource = new CancellationTokenSource();
 
+         _disconnectReason = null;
+         _disconnectException = null;
+         _disconnectUserProperties = null;
+         _disconnectReasonString = null;
+
          _connectOptions = options;
          _firstConnect = false;
 
@@ -125,6 +134,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       {
          TraceLogger.LogClientError("MqttClient.ConnectAsync: Unexpected error during connection: {0}", error.Message);
          _disconnectReason = new MqttClientDisconnectReason(false, (int)DisconnectReasonCode.UnspecifiedError);
+         _disconnectException = error;
+
          await DisconnectInternalAsync();
 
          return new StringError($"Unexpected error at ConnectAsync: {error}");

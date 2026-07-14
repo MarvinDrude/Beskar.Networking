@@ -1,8 +1,13 @@
+using Beskar.Memory.Threading;
 using Beskar.Mqtt.Client.States;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Encoders.Version5;
+using Beskar.Mqtt.Common.Handlers.Contexts;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Extensions;
+using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Client;
@@ -42,6 +47,17 @@ public sealed partial class MqttClient
       {
          await DisconnectRoutineAsync(beforeConnected);
          _gracefulDisconnect = false;
+      }
+   }
+
+   internal void UpdateDisconnectPacket(in DisconnectPacket packet)
+   {
+      _disconnectReason = new MqttClientDisconnectReason(true, (int)packet.ReasonCode);
+      _disconnectUserProperties = UserPropertyCollection.Create(packet.PropertiesBytes);
+
+      if (!packet.ReasonUtf8Bytes.IsEmpty)
+      {
+         _disconnectReasonString = packet.ReasonUtf8Bytes.GetUtf8String();
       }
    }
 
@@ -85,6 +101,22 @@ public sealed partial class MqttClient
       {
          CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Disconnecting);
          TraceLogger.LogClientInfo("MqttClient: Disconnected from transport layer. State transitioned to Disconnected.");
+
+         if (Events.OnClientDisconnected.Count > 0)
+         {
+            var clientDisconnectedContext = new ClientDisconnectedContext()
+            {
+               BeforeConnected = beforeConnected,
+               ReasonCode = _disconnectReason.HasValue
+                  ? (DisconnectReasonCode)_disconnectReason.Value.ReasonCode : DisconnectReasonCode.NormalDisconnection,
+               Exception = _disconnectException,
+               UserProperties = _disconnectUserProperties,
+               ReasonString = _disconnectReasonString,
+            };
+
+            _ = Task.Run(() => Events.OnClientDisconnected.ExecuteAsync(
+               clientDisconnectedContext, HandlerExecutionStrategy.SequentialContinueOnError));
+         }
       }
    }
 

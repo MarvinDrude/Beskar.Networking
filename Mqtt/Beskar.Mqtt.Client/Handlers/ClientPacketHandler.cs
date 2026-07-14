@@ -41,6 +41,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
    public ValueTask ExecuteAsync(INetworkStream stream, in DisconnectPacket packet, CancellationToken ct = default)
    {
       TraceLogger.LogClientWarning("ClientPacketHandler: Received DISCONNECT packet from server (ReasonCode: {0}).", packet.ReasonCode);
+
+      _client.UpdateDisconnectPacket(packet);
       return Awaited(packet);
 
       async ValueTask Awaited(DisconnectPacket packet)
