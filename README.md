@@ -37,7 +37,7 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 - Made with passion and love for the craft.
 - Built for modern `.NET` using `C#` and designed to be highly performant, low-allocation, and easy to use.
 - Purposefully designed to be lightweight and flexible.
-- Performance-first approach with **100.000** - **1.200.000** messages per second. (Depending on various factors)
+- Performance-first approach with **100,000** - **10,800,000** messages/packets per second. (Depending on various factors)
 - Many simple or more advanced example projects demonstrating how to use `Beskar.Networking` across various transports.
 - Various Unit Tests to verify functionality and performance.
 - Active development and steady progress towards a full feature set.
@@ -80,17 +80,28 @@ Engineered from the ground up for maximum throughput and minimum allocation over
 > **Computer Specs:**<br/>
 > CPU: AMD Ryzen 9 7950X3D,
 > Memory: 64 GB DDR5
+>
+> **Method**: Payload does not include protocol, Local Loopback Benchmark<br />
+> **Note:** Benchmarks are subject to change as the library evolves.
 
-| Transport | Throughput (msg/s) | Status                   |
-| :--- | :--- |:-------------------------|
-| **TCP** (No TLS) | **688,000** | Ready                    |
-| **WebSockets (WS)** (No TLS) | **630,000** | Ready |
-| **QUIC** (TLS) | **260,000** | Ready |
-| **MQTT** | *Under Development* | Active Focus / Heavy WIP |
+| Transport / Protocol | Clients | Payload Size | Throughput | Bandwidth |
+| :--- | :---: | :---: | :--- | :--- |
+| **TCP** (No TLS) | 20 | 128 bytes | 10,805,651 packets/s | 1,319.05 MB/s |
+| **TCP** (No TLS) | 20 | 512 bytes | 7,355,303 packets/s | 3,591.46 MB/s |
+| **WebSockets (WS)** (No TLS) | 20 | 128 bytes | 10,784,817 packets/s | 1,316.51 MB/s |
+| **WebSockets (WS)** (No TLS) | 20 | 512 bytes | 6,968,596 packets/s | 3,402.63 MB/s |
+| **QUIC** (No TLS) | 20 | 128 bytes | 3,503,372 packets/s | 427.66 MB/s |
+| **QUIC** (No TLS) | 20 | 512 bytes | 954,711 packets/s | 466.17 MB/s |
+| **MQTT** (TCP - No TLS) | 20 | 128 bytes | 918,794.17 msg/s | 112.16 MB/s |
+| **MQTT** (TCP - No TLS) | 20 | 512 bytes | 674,086.45 msg/s | 329.14 MB/s |
 
 ---
 
 ## Key Aspects
+
+`Beskar.Networking` is a high-performance, low-allocation networking library built for modern **.NET 10** using C#.
+It provides a unified, pipe-based interface abstraction (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`)
+for building extremely fast network applications across multiple transport protocols.
 
 - **Unified Abstractions**: Write your network layer once and swap between TCP, WebSockets, or QUIC etc. dynamically.
 - **Modern .NET 10 Stack**: Heavily leverages `System.IO.Pipelines` (decoupling IO thread queues from application processing), `Span<T>`, `ReadOnlySpan<T>`, and direct memory pooling to achieve zero/near-zero allocations.
