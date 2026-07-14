@@ -39,14 +39,40 @@ public sealed class QuicNetworkSession(
          var received = Interlocked.Read(ref _accumulatedBytesReceived);
          var sent = Interlocked.Read(ref _accumulatedBytesSent);
 
+         DateTimeOffset? lastReceived;
+         DateTimeOffset? lastSent;
+
+         lock (_statsLock)
+         {
+            lastReceived = _accumulatedLastReceivedTimestamp;
+            lastSent = _accumulatedLastSentTimestamp;
+         }
+
          foreach (var stream in _activeStreams.Values)
          {
             var streamStats = stream.Stats;
             received += streamStats.BytesReceived;
             sent += streamStats.BytesSent;
+
+            if (streamStats.LastReceivedTimestamp > lastReceived
+                || (lastReceived is null && streamStats.LastReceivedTimestamp is not null))
+            {
+               lastReceived = streamStats.LastReceivedTimestamp;
+            }
+            if (streamStats.LastSentTimestamp > lastSent
+                || (lastSent is null && streamStats.LastSentTimestamp is not null))
+            {
+               lastSent = streamStats.LastSentTimestamp;
+            }
          }
 
-         return new NetworkStats { BytesReceived = received, BytesSent = sent };
+         return new NetworkStats
+         {
+            BytesReceived = received,
+            BytesSent = sent,
+            LastReceivedTimestamp = lastReceived,
+            LastSentTimestamp = lastSent
+         };
       }
    }
 
@@ -61,6 +87,10 @@ public sealed class QuicNetworkSession(
 
    private long _accumulatedBytesReceived;
    private long _accumulatedBytesSent;
+
+   private readonly Lock _statsLock = new();
+   private DateTimeOffset? _accumulatedLastReceivedTimestamp;
+   private DateTimeOffset? _accumulatedLastSentTimestamp;
 
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
@@ -148,6 +178,20 @@ public sealed class QuicNetworkSession(
       var stats = stream.Stats;
       Interlocked.Add(ref _accumulatedBytesReceived, stats.BytesReceived);
       Interlocked.Add(ref _accumulatedBytesSent, stats.BytesSent);
+
+      lock (_statsLock)
+      {
+         if (stats.LastReceivedTimestamp > _accumulatedLastReceivedTimestamp
+             || (_accumulatedLastReceivedTimestamp is null && stats.LastReceivedTimestamp is not null))
+         {
+            _accumulatedLastReceivedTimestamp = stats.LastReceivedTimestamp;
+         }
+         if (stats.LastSentTimestamp > _accumulatedLastSentTimestamp
+             || (_accumulatedLastSentTimestamp is null && stats.LastSentTimestamp is not null))
+         {
+            _accumulatedLastSentTimestamp = stats.LastSentTimestamp;
+         }
+      }
 
       _activeStreams.TryRemove(stream.StreamId, out _);
 

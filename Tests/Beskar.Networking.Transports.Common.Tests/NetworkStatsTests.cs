@@ -13,14 +13,19 @@ public class NetworkStatsTests
    {
       // Arrange
       var stats = new NetworkStats();
+      var now = DateTimeOffset.UtcNow;
 
       // Act
       stats.BytesReceived = 1234;
       stats.BytesSent = 5678;
+      stats.LastReceivedTimestamp = now;
+      stats.LastSentTimestamp = now;
 
       // Assert
       await Assert.That(stats.BytesReceived).IsEqualTo(1234);
       await Assert.That(stats.BytesSent).IsEqualTo(5678);
+      await Assert.That(stats.LastReceivedTimestamp).IsEqualTo(now);
+      await Assert.That(stats.LastSentTimestamp).IsEqualTo(now);
    }
 
    [Test]
@@ -102,6 +107,8 @@ public class NetworkStatsTests
       // Initial stats
       await Assert.That(stream.Stats.BytesReceived).IsEqualTo(0);
       await Assert.That(stream.Stats.BytesSent).IsEqualTo(0);
+      await Assert.That(stream.Stats.LastReceivedTimestamp).IsNull();
+      await Assert.That(stream.Stats.LastSentTimestamp).IsNull();
 
       // 1. Verify automatic BytesSent tracking
       var writeMemory = stream.Transport.Output.GetMemory(10);
@@ -111,6 +118,9 @@ public class NetworkStatsTests
 
       await Assert.That(stream.Stats.BytesSent).IsEqualTo(10);
       await Assert.That(session.Stats.BytesSent).IsEqualTo(10);
+      await Assert.That(stream.Stats.LastSentTimestamp).IsNotNull();
+      await Assert.That(session.Stats.LastSentTimestamp).IsNotNull();
+      await Assert.That((DateTimeOffset.UtcNow - stream.Stats.LastSentTimestamp!.Value).Duration().TotalSeconds < 5).IsTrue();
 
       // 2. Verify automatic BytesReceived tracking
       // Push some bytes to the input side of the pipe
@@ -126,6 +136,8 @@ public class NetworkStatsTests
 
       await Assert.That(stream.Stats.BytesReceived).IsEqualTo(5);
       await Assert.That(session.Stats.BytesReceived).IsEqualTo(5);
+      await Assert.That(stream.Stats.LastReceivedTimestamp).IsNotNull();
+      await Assert.That((DateTimeOffset.UtcNow - stream.Stats.LastReceivedTimestamp!.Value).Duration().TotalSeconds < 5).IsTrue();
    }
 
    private sealed class TestDuplexPipe : IDuplexPipe

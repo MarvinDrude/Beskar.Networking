@@ -44,6 +44,7 @@ public sealed class StatsTrackingDuplexPipe : IDuplexPipe
             {
                var stats = _stream.Stats;
                stats.BytesReceived += bytesConsumed;
+               stats.LastReceivedTimestamp = DateTimeOffset.UtcNow;
 
                _stream.Stats = stats;
                _lastBuffer = _lastBuffer.Slice(consumed);
@@ -88,6 +89,7 @@ public sealed class StatsTrackingDuplexPipe : IDuplexPipe
       {
          var stats = _stream.Stats;
          stats.BytesSent += bytes;
+         stats.LastSentTimestamp = DateTimeOffset.UtcNow;
          _stream.Stats = stats;
 
          _inner.Advance(bytes);

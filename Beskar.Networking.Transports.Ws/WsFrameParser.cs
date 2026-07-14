@@ -2,6 +2,7 @@ using System.Buffers;
 using System.IO.Pipelines;
 using System.Numerics;
 using System.Security.Cryptography;
+using Beskar.Networking.Abstractions.Threading;
 using Beskar.Networking.Transports.Ws.Enums;
 
 namespace Beskar.Networking.Transports.Ws;
@@ -22,6 +23,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
    private readonly Task _readTask;
    private readonly Task _writeTask;
+   private readonly AsyncLock _writeLock = new();
    private int _disposed;
 
    public PipeReader Input => _inputPipe.Reader;
@@ -69,7 +71,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                }
                else if (opcode == (byte)WebSocketOpcode.Ping)
                {
-                  await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Pong, payload, _maskOutgoing, _cts.Token);
+                  using (await _writeLock.LockAsync(_cts.Token))
+                  {
+                     await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Pong, payload, _maskOutgoing, _cts.Token);
+                  }
                }
                else if (opcode == (byte)WebSocketOpcode.Close)
                {
@@ -118,13 +123,16 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                const int maxFrameSize = 65536;
                var remaining = buffer;
 
-               while (!remaining.IsEmpty)
+               using (await _writeLock.LockAsync(_cts.Token))
                {
-                  var chunkSize = Math.Min(remaining.Length, maxFrameSize);
-                  var chunk = remaining.Slice(0, chunkSize);
+                  while (!remaining.IsEmpty)
+                  {
+                     var chunkSize = Math.Min(remaining.Length, maxFrameSize);
+                     var chunk = remaining.Slice(0, chunkSize);
 
-                  await WriteFrameAsync(writer, WebSocketOpcode.Binary, chunk, _maskOutgoing, _cts.Token);
-                  remaining = remaining.Slice(chunkSize);
+                     await WriteFrameAsync(writer, WebSocketOpcode.Binary, chunk, _maskOutgoing, _cts.Token);
+                     remaining = remaining.Slice(chunkSize);
+                  }
                }
 
                reader.AdvanceTo(buffer.End);

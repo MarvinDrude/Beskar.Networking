@@ -51,6 +51,8 @@ public sealed partial class MqttServer : IAsyncDisposable
    public ServerEvents Events { get; } = new();
 
    internal MqttTrieSubscriptionRouter SubscriptionRouter { get; } = new();
+   internal MqttClientSessions ClientSessions { get; }
+   internal MqttServerOptions Options { get; }
 
    private volatile bool _disposed;
    private volatile int _state = (int)MqttServerState.Stopped;
@@ -58,8 +60,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    private readonly INetworkListener[] _listeners;
    private CancellationTokenSource _cancellationTokenSource = new();
 
-   internal MqttClientSessions ClientSessions { get; }
-   internal MqttServerOptions Options { get; }
+   private MqttKeepAliveService _keepAliveService;
 
    internal MqttServer(INetworkListener[] listeners, MqttServerOptions options)
    {
@@ -67,6 +68,7 @@ public sealed partial class MqttServer : IAsyncDisposable
       Options = options;
 
       ClientSessions = new MqttClientSessions(this);
+      _keepAliveService = new MqttKeepAliveService(this);
    }
 
    public async Task<VoidResult<StringError>> StartAsync()
@@ -98,6 +100,8 @@ public sealed partial class MqttServer : IAsyncDisposable
          return new StringError($"Failed to start one of the listener: {startResult.Error.Message}");
       }
 
+      _keepAliveService.Start();
+
       State = MqttServerState.Running;
       return true;
 
@@ -124,6 +128,15 @@ public sealed partial class MqttServer : IAsyncDisposable
       {
          ReasonCode = DisconnectReasonCode.ServerShuttingDown
       };
+
+      try
+      {
+         await _keepAliveService.StopAsync();
+      }
+      catch (Exception)
+      {
+         // ignored
+      }
 
       await _cancellationTokenSource.CancelAsync();
       _cancellationTokenSource.Dispose();

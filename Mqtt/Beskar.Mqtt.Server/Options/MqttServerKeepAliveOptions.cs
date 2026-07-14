@@ -8,5 +8,5 @@ public sealed class MqttServerKeepAliveOptions
    /// <summary>
    /// The interval at which the server will check the keep alive states of all connected clients.
    /// </summary>
-   public TimeSpan Interval { get; set; }
+   public TimeSpan Interval { get; set; } = TimeSpan.FromMilliseconds(1_000);
 }

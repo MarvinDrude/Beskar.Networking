@@ -30,7 +30,7 @@ public sealed class MqttServerClient : IPooledObject
    public INetworkSession Session => _session ?? throw new InvalidOperationException("Session has not been initialized.");
    public INetworkStream Stream => _stream ?? throw new InvalidOperationException("Stream has not been initialized.");
 
-   public ReadOnlyMemory<byte> ClientIdUtf8Bytes => _connectOptions?.ClientIdUtf8Bytes ?? ReadOnlyMemory<byte>.Empty;
+   public ReadOnlyMemory<byte> ClientIdUtf8Bytes => ConnectOptions?.ClientIdUtf8Bytes ?? ReadOnlyMemory<byte>.Empty;
 
    public CancellationToken CancellationToken => _cancellationTokenSource?.Token ?? CancellationToken.None;
    public MqttProtocolVersion ProtocolVersion { get; internal set; } = MqttProtocolVersion.Unknown;
@@ -39,11 +39,12 @@ public sealed class MqttServerClient : IPooledObject
 
    public MqttSession? MqttSession { get; internal set; }
 
+   internal ConnectOptions? ConnectOptions { get; set; }
+
    private INetworkListener? _listener;
    private INetworkSession? _session;
    private INetworkStream? _stream;
 
-   private ConnectOptions? _connectOptions;
    private MqttServerOptions? _serverOptions;
 
    private CancellationTokenSource? _cancellationTokenSource;
@@ -100,7 +101,7 @@ public sealed class MqttServerClient : IPooledObject
    }
 
    internal void SetConnectOptions(ConnectOptions options)
-      => _connectOptions = options;
+      => ConnectOptions = options;
 
    internal async ValueTask<IHeapMqttOptions?> ReceiveControlPacketAsync(string hintName, CancellationToken ct = default)
    {
@@ -145,7 +146,7 @@ public sealed class MqttServerClient : IPooledObject
 
       DisconnectOptions = null;
       MqttSession = null;
-      _connectOptions = null;
+      ConnectOptions = null;
       _isDisconnecting = false;
 
       _cancellationTokenSource?.Cancel();
