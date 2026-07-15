@@ -103,6 +103,12 @@ public sealed partial class MqttServer : IAsyncDisposable
       _keepAliveService.Start();
 
       State = MqttServerState.Running;
+      if (Events.OnStart.Count > 0)
+      {
+         await Events.OnStart.ExecuteAsync(new MqttServerStartContext() { Server = this },
+            HandlerExecutionStrategy.SequentialContinueOnError, ct);
+      }
+
       return true;
 
       static async Task CleanupCode(ArrayBuilder<INetworkListener> builder, CancellationToken ct)
@@ -149,6 +155,12 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
 
       State = MqttServerState.Stopped;
+      if (Events.OnStop.Count > 0)
+      {
+         await Events.OnStop.ExecuteAsync(new MqttServerStopContext() { Server = this },
+            HandlerExecutionStrategy.SequentialContinueOnError);
+      }
+
       return true;
    }
 

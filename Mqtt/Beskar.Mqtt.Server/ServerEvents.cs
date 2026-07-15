@@ -12,4 +12,8 @@ public sealed class ServerEvents
    public readonly HandlerPipeline<MqttConnectContext> OnConnect = new();
 
    public readonly HandlerPipeline<MqttDisconnectContext> OnDisconnect = new();
+
+   public readonly HandlerPipeline<MqttServerStartContext> OnStart = new();
+
+   public readonly HandlerPipeline<MqttServerStopContext> OnStop = new();
 }
