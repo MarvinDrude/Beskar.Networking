@@ -21,6 +21,8 @@ public sealed class WsNetworkStream : INetworkStream
 
    public NetworkStats Stats { get; set; }
 
+   public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+
    public WsNetworkStream(INetworkSession session, IDuplexPipe transport)
    {
       Session = session;

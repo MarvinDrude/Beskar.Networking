@@ -32,6 +32,8 @@ public sealed class QuicNetworkSession(
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
+   public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+
    public NetworkStats Stats
    {
       get

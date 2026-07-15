@@ -36,6 +36,11 @@ public interface INetworkStream : IAsyncDisposable
    public NetworkStats Stats { get; set; }
 
    /// <summary>
+   /// When the stream was created first.
+   /// </summary>
+   public DateTimeOffset CreatedAt { get; }
+
+   /// <summary>
    /// Acquires a lock to safely write to sending Transport.
    /// <remarks>MUST be disposed after done.</remarks>
    /// </summary>

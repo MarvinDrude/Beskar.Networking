@@ -28,6 +28,8 @@ public sealed class QuicNetworkStream : INetworkStream
 
    public NetworkStats Stats { get; set; }
 
+   public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+
    public QuicNetworkStream(QuicNetworkSession session, QuicStream quicStream, StreamConnection connection)
    {
       _session = session;

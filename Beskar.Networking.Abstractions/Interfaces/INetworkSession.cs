@@ -52,6 +52,11 @@ public interface INetworkSession : IAsyncDisposable
    public NetworkStats Stats { get; }
 
    /// <summary>
+   /// When the session was created first.
+   /// </summary>
+   public DateTimeOffset CreatedAt { get; }
+
+   /// <summary>
    /// Accepts or gets the network stream of the current network session.
    /// </summary>
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default);

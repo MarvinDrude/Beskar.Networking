@@ -28,6 +28,8 @@ public sealed class WsNetworkSession : INetworkSession
 
    public NetworkStats Stats => _stream.Stats;
 
+   public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+
    private readonly INetworkSession _tcpSession;
    private readonly IDuplexPipe _wsPipe;
 
