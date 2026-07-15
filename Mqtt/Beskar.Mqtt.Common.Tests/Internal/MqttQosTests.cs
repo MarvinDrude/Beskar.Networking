@@ -811,7 +811,8 @@ public class MqttQosTests
 
       var tcs1 = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
       var tcs2 = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-      int receiveCount = 0;
+      var receiveCount = 0;
+
       subscriber.AddMessageReceiveHandler((ctx, ct) =>
       {
          var topic = ctx.Message.Topic;
@@ -842,6 +843,9 @@ public class MqttQosTests
          .WithQualityOfService(QualityOfServiceType.AtMostOnce)
          .WithPayload("FirstPayload")
          .Build());
+
+      // Allow server enough time to process and enqueue the first message before sending the second
+      await Task.Delay(100);
 
       // Second publish uses alias 1 without topic name
       await publisher.PublishAsync(new PublishOptionsBuilder()
