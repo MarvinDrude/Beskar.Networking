@@ -51,6 +51,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    /// </summary>
    public ServerEvents Events { get; } = new();
 
+   public MqttRetainedMessages RetainedMessages { get; } = new();
    internal MqttTrieSubscriptionRouter SubscriptionRouter { get; } = new();
    internal MqttClientSessions ClientSessions { get; }
    internal MqttServerOptions Options { get; }
@@ -61,7 +62,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    private readonly INetworkListener[] _listeners;
    private CancellationTokenSource _cancellationTokenSource = new();
 
-   private MqttKeepAliveService _keepAliveService;
+   private readonly MqttKeepAliveService _keepAliveService;
 
    internal MqttServer(INetworkListener[] listeners, MqttServerOptions options)
    {
@@ -628,5 +629,6 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
 
       SubscriptionRouter.Dispose();
+      RetainedMessages.Dispose();
    }
 }

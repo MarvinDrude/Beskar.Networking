@@ -92,11 +92,21 @@ public sealed partial class ServerPacketHandler
          {
             case QualityOfServiceType.AtMostOnce: // QoS 0
             {
+               if (packet.Retain)
+               {
+                  UpdateRetainedMessage(server, client, in packet, resolvedTopicBytes);
+               }
+
                DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
                break;
             }
             case QualityOfServiceType.AtLeastOnce: // QoS 1
             {
+               if (packet.Retain)
+               {
+                  UpdateRetainedMessage(server, client, in packet, resolvedTopicBytes);
+               }
+
                DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
 
                var pubAck = new PubAckPacket
@@ -120,6 +130,11 @@ public sealed partial class ServerPacketHandler
                var isNew = session.TryAddQos2Packet(packet.PacketIdentifier);
                if (isNew)
                {
+                  if (packet.Retain)
+                  {
+                     UpdateRetainedMessage(server, client, in packet, resolvedTopicBytes);
+                  }
+
                   DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
                }
 
@@ -149,49 +164,77 @@ public sealed partial class ServerPacketHandler
          byte[] resolvedTopicBytes,
          CancellationToken ct)
       {
-         var topicSequence = new ReadOnlySequence<byte>(resolvedTopicBytes);
-         var publishMessage = new MqttPublishMessage(new PublishPacket
-         {
-            Dup = packet.Dup,
-            QualityOfService = packet.QualityOfService,
-            Retain = packet.Retain,
-            TopicUtf8Bytes = topicSequence,
-            Payload = packet.Payload,
-            PacketIdentifier = packet.PacketIdentifier,
-            PayloadFormat = packet.PayloadFormat,
-            MessageExpiryInterval = packet.MessageExpiryInterval,
-            TopicAlias = packet.TopicAlias,
-            ResponseTopicUtf8Bytes = packet.ResponseTopicUtf8Bytes,
-            CorrelationDataBytes = packet.CorrelationDataBytes,
-            ContentTypeUtf8Bytes = packet.ContentTypeUtf8Bytes,
-            PropertiesBytes = packet.PropertiesBytes
-         });
+         var publishMessage = CreatePublishMessage(in packet, resolvedTopicBytes);
 
          var visitor = new PublishMessageDispatcherVisitor(publisherClient, publishMessage);
          server.SubscriptionRouter.Route(resolvedTopicBytes, ref visitor);
 
-         if (visitor.MatchCount == 0 && publisherClient.MqttSession is not null)
-         {
-            var session = publisherClient.MqttSession;
+         if (visitor.MatchCount != 0 || publisherClient.MqttSession is null) return;
+         var session = publisherClient.MqttSession;
 
-            if (server.Events.OnNoSubscriberMessage.Count > 0)
+         if (server.Events.OnNoSubscriberMessage.Count <= 0) return;
+         var publishMessageContext = new MqttPublishMessage(packet);
+
+         _ = Task.Run(async () =>
+         {
+            try
             {
-               var publishMessageContext = new MqttPublishMessage(packet);
-               _ = Task.Run(async () =>
-               {
-                  try
-                  {
-                     await server.Events.OnNoSubscriberMessage.ExecuteAsync(
-                        new MqttNoSubscriberMessageContext() { Session = session, PublishMessage = publishMessageContext },
-                        HandlerExecutionStrategy.SequentialContinueOnError, ct);
-                  }
-                  catch (Exception)
-                  {
-                     // ignored
-                  }
-               }, ct);
+               await server.Events.OnNoSubscriberMessage.ExecuteAsync(
+                  new MqttNoSubscriberMessageContext() { Session = session, PublishMessage = publishMessageContext },
+                  HandlerExecutionStrategy.SequentialContinueOnError, ct);
             }
-         }
+            catch (Exception)
+            {
+               // ignored
+            }
+         }, ct);
+      }
+   }
+
+   private static MqttPublishMessage CreatePublishMessage(in PublishPacket packet, byte[] resolvedTopicBytes)
+   {
+      var topicSequence = new System.Buffers.ReadOnlySequence<byte>(resolvedTopicBytes);
+      return new MqttPublishMessage(new PublishPacket
+      {
+         Dup = packet.Dup,
+         QualityOfService = packet.QualityOfService,
+         Retain = packet.Retain,
+         TopicUtf8Bytes = topicSequence,
+         Payload = packet.Payload,
+         PacketIdentifier = packet.PacketIdentifier,
+         PayloadFormat = packet.PayloadFormat,
+         MessageExpiryInterval = packet.MessageExpiryInterval,
+         TopicAlias = packet.TopicAlias,
+         ResponseTopicUtf8Bytes = packet.ResponseTopicUtf8Bytes,
+         CorrelationDataBytes = packet.CorrelationDataBytes,
+         ContentTypeUtf8Bytes = packet.ContentTypeUtf8Bytes,
+         PropertiesBytes = packet.PropertiesBytes
+      });
+   }
+
+   private static void UpdateRetainedMessage(MqttServer server, MqttServerClient client, in PublishPacket packet, byte[] resolvedTopicBytes)
+   {
+      var msg = CreatePublishMessage(in packet, resolvedTopicBytes);
+      var clientIdStr = System.Text.Encoding.UTF8.GetString(client.ClientIdUtf8Bytes.Span);
+      var changed = server.RetainedMessages.UpdateMessage(clientIdStr, msg);
+
+      if (changed && server.Events.OnRetainedMessageChanged.Count > 0)
+      {
+         _ = Task.Run(async () =>
+         {
+            try
+            {
+               await server.Events.OnRetainedMessageChanged.ExecuteAsync(new MqttRetainedMessageChangedContext
+               {
+                  ClientId = clientIdStr,
+                  Message = msg.Payload.IsEmpty ? null : msg
+               }, HandlerExecutionStrategy.SequentialContinueOnError);
+            }
+            catch (Exception)
+            {
+               // ignored
+            }
+         });
       }
    }
 

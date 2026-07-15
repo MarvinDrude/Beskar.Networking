@@ -26,6 +26,8 @@ public sealed partial class MqttServer
       }
 
       var qos = filter.QualityOfService;
+      var alternateLookup = session.Subscriptions.GetAlternateLookup<ReadOnlySpan<byte>>();
+      var subscriptionExisted = alternateLookup.ContainsKey(topicFilterBytes);
 
       SubscriptionRouter.Subscribe(
          session,
@@ -63,6 +65,67 @@ public sealed partial class MqttServer
                // ignored
             }
          });
+      }
+
+      if (filter.RetainHandling != RetainHandlingType.DoNotSend)
+      {
+         if (filter.RetainHandling == RetainHandlingType.SendAtSubscription ||
+             (filter.RetainHandling == RetainHandlingType.SendOnNewSubscriptionOnly && !subscriptionExisted))
+         {
+            var matched = new List<MqttPublishMessage>();
+            RetainedMessages.GetMatchingMessages(topicFilterBytes, matched);
+
+            if (matched.Count > 0 && session.Client is { } client && client.IsConnected)
+            {
+               var subId = subscriptionIdentifier;
+               var localRetainAsPublished = filter.RetainAsPublished;
+               _ = Task.Run(async () =>
+               {
+                  try
+                  {
+                     var propertiesBuffer = new byte[128];
+                     foreach (var message in matched)
+                     {
+                        if (!client.IsConnected) break;
+
+                        var targetQos = (QualityOfServiceType)Math.Min((int)qos, (int)message.QualityOfService);
+                        var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
+
+                        if (targetQos > 0)
+                        {
+                           session.AddUnacknowledgedPublish(new MqttPendingPublish
+                           {
+                              PacketIdentifier = packetId,
+                              Message = message,
+                              QualityOfService = targetQos,
+                              RetainAsPublished = localRetainAsPublished,
+                              SubscriptionIdentifier = subId
+                           });
+                        }
+
+                        var retainAsPublished = client.ProtocolVersion is MqttProtocolVersion.V50
+                           ? localRetainAsPublished
+                           : true;
+
+                        await SendPublishMessageAsync(
+                           client,
+                           message,
+                           targetQos,
+                           retainAsPublished,
+                           subId,
+                           packetId,
+                           dup: false,
+                           propertiesBuffer,
+                           CancellationToken.None);
+                     }
+                  }
+                  catch (Exception)
+                  {
+                     // ignored
+                  }
+               });
+            }
+         }
       }
 
       return qos switch
