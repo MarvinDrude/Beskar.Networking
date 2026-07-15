@@ -13,6 +13,7 @@ using Beskar.Mqtt.Common.Handlers.Contexts;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server;
+using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 
@@ -224,6 +225,7 @@ public class MqttClientEventTests
 
    private class MockNetworkClient : INetworkClient
    {
+      public TransportKind Transport => TransportKind.Unknown;
       public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
          CancellationToken ct = default)
       {

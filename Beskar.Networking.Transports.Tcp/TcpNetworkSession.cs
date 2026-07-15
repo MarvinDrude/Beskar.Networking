@@ -34,6 +34,7 @@ public sealed class TcpNetworkSession(
    public NetworkStats Stats => _stream?.Stats ?? new NetworkStats();
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+   public TransportKind Transport => TransportKind.Tcp;
 
    private readonly IDuplexPipe _connection = connection;
    private readonly CancellationTokenSource _cts = new();

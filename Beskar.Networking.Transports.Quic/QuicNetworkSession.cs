@@ -33,6 +33,7 @@ public sealed class QuicNetworkSession(
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+   public TransportKind Transport => TransportKind.Quic;
 
    public NetworkStats Stats
    {

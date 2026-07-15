@@ -1,6 +1,7 @@
 using System.Net;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Enums;
 
 namespace Beskar.Networking.Abstractions.Interfaces;
 
@@ -9,6 +10,11 @@ namespace Beskar.Networking.Abstractions.Interfaces;
 /// </summary>
 public interface INetworkClient : IAsyncDisposable
 {
+   /// <summary>
+   /// The transport kind of the current session.
+   /// </summary>
+   public TransportKind Transport { get; }
+
    /// <summary>
    /// Tries to connect to a remote endpoint.
    /// </summary>

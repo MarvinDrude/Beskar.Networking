@@ -7,6 +7,7 @@ using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Enums;
 
 namespace Beskar.Networking.Transports.Tcp;
 
@@ -20,6 +21,7 @@ public sealed class TcpNetworkListener(
    : INetworkListener
 {
    public EndPoint LocalAddress { get; } = localAddress;
+   public TransportKind Transport => TransportKind.Tcp;
 
    private readonly TcpTransportOptions _options = options;
    private readonly TcpIoQueueRegistry _ioQueueRegistry = new(options);

@@ -10,6 +10,8 @@ public class DummyNetworkStream : INetworkStream
 {
    private readonly AsyncLock _lock = new();
 
+   public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+
    public long StreamId => 0;
    public INetworkSession Session { get; } = new DummyNetworkSession();
    public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;

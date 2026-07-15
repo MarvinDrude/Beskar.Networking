@@ -57,6 +57,11 @@ public interface INetworkSession : IAsyncDisposable
    public DateTimeOffset CreatedAt { get; }
 
    /// <summary>
+   /// The transport kind of the current session.
+   /// </summary>
+   public TransportKind Transport { get; }
+
+   /// <summary>
    /// Accepts or gets the network stream of the current network session.
    /// </summary>
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default);

@@ -29,6 +29,7 @@ public sealed class WsNetworkSession : INetworkSession
    public NetworkStats Stats => _stream.Stats;
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+   public TransportKind Transport => TransportKind.WebSocket;
 
    private readonly INetworkSession _tcpSession;
    private readonly IDuplexPipe _wsPipe;

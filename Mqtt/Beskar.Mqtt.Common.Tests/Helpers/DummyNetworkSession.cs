@@ -15,6 +15,8 @@ public class DummyNetworkSession : INetworkSession
    public bool IsSupportingMultiplexing => false;
    public bool IsSupportingUnidirectional => false;
    public CancellationToken SessionClosedToken => CancellationToken.None;
+   public TransportKind Transport => TransportKind.Unknown;
+   public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 

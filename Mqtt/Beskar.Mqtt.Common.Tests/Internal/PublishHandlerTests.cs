@@ -555,24 +555,24 @@ public class PublishHandlerTests
       // Now read from streamB2 (reconnected stream). We should ONLY receive msg2, and its MessageExpiryInterval should be decremented.
       var receivedPacket = await ReadPublishPacketAsync(streamB2);
       await Assert.That(receivedPacket).IsNotNull();
-      
+
       await Assert.That(receivedPacket!.Topic).IsEqualTo("test/expiry");
       await Assert.That(receivedPacket.Payload).IsEqualTo("msg2");
- 
+
       // MessageExpiryInterval should be decremented by around 3 seconds (remaining should be around 7 seconds)
       await Assert.That(receivedPacket.MessageExpiryInterval).IsGreaterThan(0u);
       await Assert.That(receivedPacket.MessageExpiryInterval).IsLessThanOrEqualTo(8u);
- 
+
       // There should be no other packets (since msg1 expired)
       var hasMore = streamB2.Transport.Input.TryRead(out var readResult) && readResult.Buffer.Length > 0;
       await Assert.That(hasMore).IsFalse();
    }
- 
+
    [Test]
    public async Task Publish_UnacknowledgedMessageExpiry_DiscardedUponReconnect()
    {
       var (server, clientA, handlerA, streamA) = SetupEnvironment(MqttProtocolVersion.V50);
- 
+
       // Create client B and connect
       var clientB = new MqttServerClient();
       var streamB = new MockNetworkStream();
@@ -580,12 +580,12 @@ public class PublishHandlerTests
       var streamContextB = new NetworkServerStreamContext(connContextB, streamB);
       clientB.Initialize(streamContextB, server.Options);
       clientB.ProtocolVersion = MqttProtocolVersion.V50;
- 
+
       var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 3600 };
       clientB.MqttSession = sessionB;
       server.SubscriptionRouter.Subscribe(sessionB, "test/unack-expiry"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false,
          false, RetainHandlingType.SendAtSubscription, 0);
- 
+
       // Connect client B on server
       var connectOptions = new ConnectOptions
       {
@@ -595,7 +595,7 @@ public class PublishHandlerTests
          EndPoint = new IPEndPoint(IPAddress.Loopback, 1883)
       };
       await server.ClientSessions.GetOrCreateSession(clientB, connectOptions, CancellationToken.None);
- 
+
       // Client A publishes a QoS 1 message with Expiry = 2 seconds
       var pubPacket1 = new PublishPacket
       {
@@ -608,20 +608,20 @@ public class PublishHandlerTests
          MessageExpiryInterval = 2
       };
       await handlerA.ExecuteAsync(streamA, pubPacket1);
- 
+
       // Wait a moment, B receives the publish packet but does NOT send PUBACK
       await Task.Delay(100);
- 
+
       // Read B's stream to clear it
       var receivedPacket = await ReadPublishPacketAsync(streamB);
       await Assert.That(receivedPacket).IsNotNull();
- 
+
       // Disconnect Client B (the message is now unacknowledged and pending in the session)
       await server.ClientSessions.HandleClientDisconnectAsync(clientB);
- 
+
       // Wait 3 seconds so the unacknowledged message expires
       await Task.Delay(3000);
- 
+
       // Reconnect client B
       var clientB2 = new MqttServerClient();
       var streamB2 = new MockNetworkStream();
@@ -629,35 +629,35 @@ public class PublishHandlerTests
       var streamContextB2 = new NetworkServerStreamContext(connContextB2, streamB2);
       clientB2.Initialize(streamContextB2, server.Options);
       clientB2.ProtocolVersion = MqttProtocolVersion.V50;
- 
+
       await server.ClientSessions.GetOrCreateSession(clientB2, connectOptions, CancellationToken.None);
- 
+
       // Manually trigger DeliverOfflineMessagesAsync using reflection
       var method = typeof(MqttServer).GetMethod("DeliverOfflineMessagesAsync",
          System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
       await (Task)method!.Invoke(null, new object[] { clientB2, sessionB, CancellationToken.None })!;
- 
+
       // Since the unacknowledged message has expired, it should be discarded and not redelivered
       var hasMore = streamB2.Transport.Input.TryRead(out var readResult) && readResult.Buffer.Length > 0;
       await Assert.That(hasMore).IsFalse();
       await Assert.That(sessionB.HasUnacknowledgedPublishes).IsFalse();
    }
- 
+
    public class ParsedPublishMsg
    {
       public string Topic { get; set; } = string.Empty;
       public string Payload { get; set; } = string.Empty;
       public uint MessageExpiryInterval { get; set; }
    }
- 
+
    private static async Task<ParsedPublishMsg?> ReadPublishPacketAsync(MockNetworkStream stream)
    {
       var reader = stream.Transport.Input;
       var result = await reader.ReadAsync();
       var buffer = result.Buffer;
- 
+
       if (buffer.IsEmpty) return null;
- 
+
       ParsedPublishMsg? parsedMsg = null;
       var handler = new TestPacketHandler
       {
@@ -667,7 +667,7 @@ public class PublishHandlerTests
             p.TopicUtf8Bytes.CopyTo(topicBytes);
             var payloadBytes = new byte[p.Payload.Length];
             p.Payload.CopyTo(payloadBytes);
- 
+
             parsedMsg = new ParsedPublishMsg
             {
                Topic = Encoding.UTF8.GetString(topicBytes),
@@ -676,16 +676,16 @@ public class PublishHandlerTests
             };
          }
       };
- 
+
       var sequenceReader = new SequenceReader<byte>(buffer);
       var parser = new PacketParser(stream, handler, MqttProtocolVersion.V50);
       var parseResult = await parser.TryDispatch(ref sequenceReader, out var parsedBytes);
-      
+
       if (parseResult.Failed || parseResult.Success != PacketDispatchResult.Success)
       {
          return null;
       }
- 
+
       reader.AdvanceTo(buffer.GetPosition(parsedBytes));
       return parsedMsg;
    }
@@ -693,6 +693,7 @@ public class PublishHandlerTests
    private class DummyNetworkListener : INetworkListener
    {
       public EndPoint LocalAddress => new IPEndPoint(IPAddress.Loopback, 0);
+      public TransportKind Transport => TransportKind.Unknown;
 
       public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
       {
@@ -725,6 +726,8 @@ public class PublishHandlerTests
       public CancellationToken SessionClosedToken => CancellationToken.None;
       public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
       public NetworkStats Stats => default;
+      public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+      public TransportKind Transport => TransportKind.Unknown;
 
       public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
       {
@@ -764,6 +767,8 @@ public class PublishHandlerTests
       public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;
       public IDuplexPipe Transport => new MockDuplexPipe(_pipe.Reader, _pipe.Writer);
       public NetworkStats Stats { get; set; }
+
+      public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
 
       public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default)
       {

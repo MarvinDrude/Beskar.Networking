@@ -31,6 +31,8 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
    private CancellationTokenRegistration _sessionClosedRegistration;
    private Task? _reconnectTask;
 
+   public TransportKind Transport => _innerClient.Transport;
+
    /// <summary>
    /// Occurs when the client successfully connects or reconnects to the endpoint.
    /// </summary>
@@ -165,23 +167,23 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
              StateChanged?.Invoke((ConnectionState)currentState, ConnectionState.Disconnected);
              break;
           }
- 
+
           currentState = oldState;
        }
- 
+
        var cts = Interlocked.Exchange(ref _clientLifetimeCts, null);
        if (cts is not null)
        {
           await cts.CancelAsync();
           cts.Dispose();
        }
- 
+
        var session = Interlocked.Exchange(ref _currentSession, null);
        if (session is not null)
        {
           await DisposeSession(session);
        }
- 
+
        try
        {
           await _innerClient.DisconnectAsync(ct);
@@ -190,9 +192,9 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
        {
           TraceLogger.LogClientError("ManagedClient: Error disconnecting inner client: {0}", ex.Message);
        }
- 
+
        await _sessionClosedRegistration.DisposeAsync();
- 
+
        var task = Interlocked.Exchange(ref _reconnectTask, null);
        if (task is not null)
        {
@@ -205,7 +207,7 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
              // Ignore background reconnection task cancellation exceptions
           }
        }
- 
+
        TraceLogger.LogClientInfo("ManagedClient DisconnectAsync: Client disconnected.");
        // ReSharper disable once MethodSupportsCancellation
        await Disconnected.ExecuteAsync(new DisconnectEvent(this));

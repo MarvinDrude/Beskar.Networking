@@ -5,6 +5,7 @@ using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Enums;
 
 namespace Beskar.Networking.Transports.Ws;
 
@@ -13,6 +14,8 @@ namespace Beskar.Networking.Transports.Ws;
 /// </summary>
 public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
 {
+   public TransportKind Transport => TransportKind.WebSocket;
+
    private readonly WsTransportOptions _options = options;
    private readonly TcpNetworkClient _tcpClient = new(options.TcpOptions);
 

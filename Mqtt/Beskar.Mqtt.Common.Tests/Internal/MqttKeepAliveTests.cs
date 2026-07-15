@@ -71,6 +71,8 @@ public class MqttKeepAliveTests
    private class KeepAliveMockNetworkSession : INetworkSession
    {
       public Guid Id { get; } = Guid.NewGuid();
+      public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+      public TransportKind Transport => TransportKind.Unknown;
       public EndPoint RemoteAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
       public EndPoint LocalAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
       public bool IsSupportingMultiplexing => false;
@@ -86,6 +88,7 @@ public class MqttKeepAliveTests
 
    private class DummyNetworkListener : INetworkListener
    {
+      public TransportKind Transport => TransportKind.Unknown;
       public EndPoint LocalAddress => new IPEndPoint(IPAddress.Loopback, 0);
       public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default) => ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
       public ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default) => ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
@@ -113,6 +116,7 @@ public class MqttKeepAliveTests
       public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;
       public IDuplexPipe Transport => new MockDuplexPipe(_pipe.Reader, _pipe.Writer);
       public NetworkStats Stats { get; set; }
+      public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
       public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default) => _lock.LockAsync(cancellationToken);
       public ValueTask DisposeAsync() => ValueTask.CompletedTask;
    }

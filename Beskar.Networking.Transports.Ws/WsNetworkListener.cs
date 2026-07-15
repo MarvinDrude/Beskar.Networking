@@ -5,6 +5,7 @@ using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Enums;
 
 namespace Beskar.Networking.Transports.Ws;
 
@@ -14,6 +15,7 @@ namespace Beskar.Networking.Transports.Ws;
 public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions options) : INetworkListener
 {
    public EndPoint LocalAddress { get; } = localAddress;
+   public TransportKind Transport => TransportKind.WebSocket;
 
    private readonly WsTransportOptions _options = options;
    private readonly TcpNetworkListener _tcpListener = new(localAddress, options.TcpOptions);

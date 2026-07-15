@@ -6,6 +6,7 @@ using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Enums;
 
 namespace Beskar.Networking.Transports.Quic;
 
@@ -18,6 +19,7 @@ public sealed class QuicNetworkListener(
    : INetworkListener
 {
    public EndPoint LocalAddress { get; } = localAddress;
+   public TransportKind Transport => TransportKind.Quic;
 
    private readonly QuicTransportOptions _options = options;
    private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);

@@ -283,6 +283,8 @@ public class FakeNetworkSession : INetworkSession, IAsyncDisposable
    private readonly CancellationTokenSource _cts = new();
 
    public bool Disposed { get; private set; }
+   public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+   public TransportKind Transport => TransportKind.Unknown;
 
    public Guid Id { get; } = Guid.NewGuid();
    public EndPoint RemoteAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
@@ -332,6 +334,8 @@ public class FakeNetworkClient : INetworkClient
    }
 
    public Func<CancellationToken, ValueTask>? OnDisconnectAsync { get; set; }
+
+   public TransportKind Transport => TransportKind.Unknown;
 
    public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
       CancellationToken ct = default)

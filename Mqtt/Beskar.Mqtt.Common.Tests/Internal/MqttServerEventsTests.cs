@@ -450,6 +450,7 @@ public class MqttServerEventsTests
    private class DummyNetworkListener : INetworkListener
    {
       public EndPoint LocalAddress => new IPEndPoint(IPAddress.Loopback, 0);
+      public TransportKind Transport => TransportKind.Unknown;
 
       public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
       {
@@ -482,6 +483,8 @@ public class MqttServerEventsTests
       public CancellationToken SessionClosedToken => CancellationToken.None;
       public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
       public NetworkStats Stats => default;
+      public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+      public TransportKind Transport => TransportKind.Unknown;
 
       public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
       {
@@ -521,6 +524,8 @@ public class MqttServerEventsTests
       public NetworkStreamDirection Direction => NetworkStreamDirection.Bidirectional;
       public IDuplexPipe Transport => new MockDuplexPipe(_pipe.Reader, _pipe.Writer);
       public NetworkStats Stats { get; set; }
+
+      public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
 
       public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default)
       {

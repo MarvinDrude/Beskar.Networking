@@ -5,6 +5,7 @@ using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Enums;
 
 namespace Beskar.Networking.Transports.Quic;
 
@@ -14,6 +15,8 @@ namespace Beskar.Networking.Transports.Quic;
 public sealed class QuicNetworkClient(QuicTransportOptions options)
    : INetworkClient
 {
+   public TransportKind Transport => TransportKind.Quic;
+
    private readonly QuicTransportOptions _options = options;
    private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);
 
