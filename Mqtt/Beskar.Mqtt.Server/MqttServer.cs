@@ -523,6 +523,17 @@ public sealed partial class MqttServer : IAsyncDisposable
       byte[] propertiesBuffer,
       CancellationToken ct)
    {
+      var remainingExpiry = message.MessageExpiryInterval;
+      if (message.MessageExpiryInterval > 0)
+      {
+         var timeSpent = (uint)(DateTimeOffset.UtcNow - message.CreatedAt).TotalSeconds;
+         if (timeSpent >= message.MessageExpiryInterval)
+         {
+            return; // Message expired, do not deliver
+         }
+         remainingExpiry = message.MessageExpiryInterval - timeSpent;
+      }
+
       var topicBytes = Encoding.UTF8.GetBytes(message.Topic);
       var responseTopicBytes = string.IsNullOrEmpty(message.ResponseTopic)
          ? ReadOnlyMemory<byte>.Empty
@@ -541,7 +552,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          Payload = new ReadOnlySequence<byte>(message.Payload),
          PacketIdentifier = packetIdentifier,
          PayloadFormat = message.PayloadFormat,
-         MessageExpiryInterval = message.MessageExpiryInterval,
+         MessageExpiryInterval = remainingExpiry,
          TopicAlias = 0,
          ResponseTopicUtf8Bytes = new ReadOnlySequence<byte>(responseTopicBytes),
          CorrelationDataBytes = message.CorrelationData.HasValue
@@ -569,9 +580,9 @@ public sealed partial class MqttServer : IAsyncDisposable
                   propEncoder.WritePayloadFormatIndicator(message.PayloadFormat);
                }
 
-               if (message.MessageExpiryInterval > 0)
+               if (remainingExpiry > 0)
                {
-                  propEncoder.WriteMessageExpiryInterval(message.MessageExpiryInterval);
+                  propEncoder.WriteMessageExpiryInterval(remainingExpiry);
                }
 
                if (!responseTopicBytes.IsEmpty)
@@ -638,6 +649,16 @@ public sealed partial class MqttServer : IAsyncDisposable
                break;
             }
 
+            if (pending.Message.MessageExpiryInterval > 0)
+            {
+               var timeSpent = (uint)(DateTimeOffset.UtcNow - pending.Message.CreatedAt).TotalSeconds;
+               if (timeSpent >= pending.Message.MessageExpiryInterval)
+               {
+                  session.AcknowledgePublish(pending.PacketIdentifier);
+                  continue;
+               }
+            }
+
             await SendPublishMessageAsync(
                client,
                pending.Message,
@@ -655,6 +676,15 @@ public sealed partial class MqttServer : IAsyncDisposable
             if (!session.TryDequeueOfflineMessage(out var queuedMessage))
             {
                break;
+            }
+
+            if (queuedMessage.Message.MessageExpiryInterval > 0)
+            {
+               var timeSpent = (uint)(DateTimeOffset.UtcNow - queuedMessage.Message.CreatedAt).TotalSeconds;
+               if (timeSpent >= queuedMessage.Message.MessageExpiryInterval)
+               {
+                  continue; // Message expired, discard and skip
+               }
             }
 
             var targetQos = queuedMessage.QualityOfService;

@@ -88,6 +88,15 @@ public sealed partial class MqttServer
                      {
                         if (!client.IsConnected) break;
 
+                        if (message.MessageExpiryInterval > 0)
+                        {
+                           var timeSpent = (uint)(DateTimeOffset.UtcNow - message.CreatedAt).TotalSeconds;
+                           if (timeSpent >= message.MessageExpiryInterval)
+                           {
+                              continue;
+                           }
+                        }
+
                         var targetQos = (QualityOfServiceType)Math.Min((int)qos, (int)message.QualityOfService);
                         var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
 

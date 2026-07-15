@@ -110,6 +110,15 @@ public sealed class MqttRetainedMessages : IDisposable
       {
          if (node.Message is not null)
          {
+            if (node.Message.MessageExpiryInterval > 0)
+            {
+               var timeSpent = (uint)(DateTimeOffset.UtcNow - node.Message.CreatedAt).TotalSeconds;
+               if (timeSpent >= node.Message.MessageExpiryInterval)
+               {
+                  node.Message = null;
+                  return;
+               }
+            }
             matched.Add(node.Message);
          }
          return;
@@ -147,7 +156,22 @@ public sealed class MqttRetainedMessages : IDisposable
    {
       if (node.Message is not null)
       {
-         matched.Add(node.Message);
+         if (node.Message.MessageExpiryInterval > 0)
+         {
+            var timeSpent = (uint)(DateTimeOffset.UtcNow - node.Message.CreatedAt).TotalSeconds;
+            if (timeSpent >= node.Message.MessageExpiryInterval)
+            {
+               node.Message = null;
+            }
+            else
+            {
+               matched.Add(node.Message);
+            }
+         }
+         else
+         {
+            matched.Add(node.Message);
+         }
       }
 
       foreach (var child in node.Children.Values)

@@ -49,6 +49,11 @@ public sealed class MqttPublishMessage
    public uint MessageExpiryInterval { get; }
 
    /// <summary>
+   /// Gets the timestamp when this message was created or received.
+   /// </summary>
+   public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+
+   /// <summary>
    /// Gets the Topic Alias identifier.
    /// <remarks>MQTT 5.0.0 and above required.</remarks>
    /// </summary>

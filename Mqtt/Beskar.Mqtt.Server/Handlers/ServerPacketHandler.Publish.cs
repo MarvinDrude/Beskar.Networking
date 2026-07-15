@@ -277,6 +277,17 @@ public sealed partial class ServerPacketHandler
             {
                try
                {
+                  var remainingExpiry = localMsg.MessageExpiryInterval;
+                  if (localMsg.MessageExpiryInterval > 0)
+                  {
+                     var timeSpent = (uint)(DateTimeOffset.UtcNow - localMsg.CreatedAt).TotalSeconds;
+                     if (timeSpent >= localMsg.MessageExpiryInterval)
+                     {
+                        return; // Expired, do not deliver
+                     }
+                     remainingExpiry = localMsg.MessageExpiryInterval - timeSpent;
+                  }
+
                   var topicBytes = System.Text.Encoding.UTF8.GetBytes(localMsg.Topic);
                   var responseTopicBytes = string.IsNullOrEmpty(localMsg.ResponseTopic)
                      ? ReadOnlyMemory<byte>.Empty
@@ -294,7 +305,7 @@ public sealed partial class ServerPacketHandler
                      Payload = new ReadOnlySequence<byte>(localMsg.Payload),
                      PacketIdentifier = localQos > 0 ? localSession.GenerateNextPacketIdentifier() : (ushort)0,
                      PayloadFormat = localMsg.PayloadFormat,
-                     MessageExpiryInterval = localMsg.MessageExpiryInterval,
+                     MessageExpiryInterval = remainingExpiry,
                      TopicAlias = 0,
                      ResponseTopicUtf8Bytes = new ReadOnlySequence<byte>(responseTopicBytes),
                      CorrelationDataBytes = localMsg.CorrelationData.HasValue
@@ -336,9 +347,9 @@ public sealed partial class ServerPacketHandler
                               propEncoder.WritePayloadFormatIndicator(localMsg.PayloadFormat);
                            }
 
-                           if (localMsg.MessageExpiryInterval > 0)
+                           if (remainingExpiry > 0)
                            {
-                              propEncoder.WriteMessageExpiryInterval(localMsg.MessageExpiryInterval);
+                              propEncoder.WriteMessageExpiryInterval(remainingExpiry);
                            }
 
                            if (!responseTopicBytes.IsEmpty)

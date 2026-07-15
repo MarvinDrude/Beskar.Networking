@@ -16,6 +16,9 @@ using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Threading;
+using Beskar.Mqtt.Common.Tests.Helpers;
+using Beskar.Mqtt.Common.Parsers;
+using Beskar.Mqtt.Protocol.Parsing.Results;
 
 namespace Beskar.Mqtt.Common.Tests.Internal;
 
@@ -471,9 +474,220 @@ public class PublishHandlerTests
       // Verify newest ("msg3") was dropped, so queue contains "msg1" and "msg2"
       sessionB.TryDequeueOfflineMessage(out var msg1);
       await Assert.That(Encoding.UTF8.GetString(msg1!.Message.Payload.Span)).IsEqualTo("msg1");
-
-      sessionB.TryDequeueOfflineMessage(out var msg2);
+         sessionB.TryDequeueOfflineMessage(out var msg2);
       await Assert.That(Encoding.UTF8.GetString(msg2!.Message.Payload.Span)).IsEqualTo("msg2");
+   }
+
+   [Test]
+   public async Task Publish_WithMessageExpiryInterval_DecrementsForOfflineQueueAndExpiredDiscarded()
+   {
+      var (server, clientA, handlerA, streamA) = SetupEnvironment(MqttProtocolVersion.V50);
+
+      // Create Session B and subscribe to "test/expiry" with QoS 1, then disconnect
+      var clientB = new MqttServerClient();
+      var streamB = new MockNetworkStream();
+      var connContextB = new NetworkServerConnectionContext(new DummyNetworkListener(), streamB.Session);
+      var streamContextB = new NetworkServerStreamContext(connContextB, streamB);
+      clientB.Initialize(streamContextB, server.Options);
+      clientB.ProtocolVersion = MqttProtocolVersion.V50;
+
+      var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 3600 };
+      clientB.MqttSession = sessionB;
+      server.SubscriptionRouter.Subscribe(sessionB, "test/expiry"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false,
+         false, RetainHandlingType.SendAtSubscription, 0);
+
+      // Disconnect Client B (simulating offline state)
+      sessionB.Client = null;
+      clientB.MqttSession = null;
+
+      // Client A publishes message 1 (will expire in 2 seconds)
+      var pubPacket1 = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtLeastOnce,
+         Retain = false,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>("test/expiry"u8.ToArray()),
+         Payload = new ReadOnlySequence<byte>("msg1"u8.ToArray()),
+         PacketIdentifier = 1,
+         MessageExpiryInterval = 2
+      };
+      await handlerA.ExecuteAsync(streamA, pubPacket1);
+
+      // Client A publishes message 2 (will expire in 10 seconds)
+      var pubPacket2 = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtLeastOnce,
+         Retain = false,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>("test/expiry"u8.ToArray()),
+         Payload = new ReadOnlySequence<byte>("msg2"u8.ToArray()),
+         PacketIdentifier = 2,
+         MessageExpiryInterval = 10
+      };
+      await handlerA.ExecuteAsync(streamA, pubPacket2);
+
+      // Wait 3 seconds so message 1 expires, and message 2 ages by 3 seconds
+      await Task.Delay(3000);
+
+      // Reconnect client B
+      var clientB2 = new MqttServerClient();
+      var streamB2 = new MockNetworkStream();
+      var connContextB2 = new NetworkServerConnectionContext(new DummyNetworkListener(), streamB2.Session);
+      var streamContextB2 = new NetworkServerStreamContext(connContextB2, streamB2);
+      clientB2.Initialize(streamContextB2, server.Options);
+      clientB2.ProtocolVersion = MqttProtocolVersion.V50;
+
+      var connectOptions = new ConnectOptions
+      {
+         CleanSession = false,
+         SessionExpiryInterval = 3600,
+         ClientIdUtf8Bytes = clientB.ClientIdUtf8Bytes,
+         EndPoint = new IPEndPoint(IPAddress.Loopback, 1883)
+      };
+
+      await server.ClientSessions.GetOrCreateSession(clientB2, connectOptions, CancellationToken.None);
+
+      // Manually trigger DeliverOfflineMessagesAsync using reflection
+      var method = typeof(MqttServer).GetMethod("DeliverOfflineMessagesAsync",
+         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+      await (Task)method!.Invoke(null, new object[] { clientB2, sessionB, CancellationToken.None })!;
+
+      // Now read from streamB2 (reconnected stream). We should ONLY receive msg2, and its MessageExpiryInterval should be decremented.
+      var receivedPacket = await ReadPublishPacketAsync(streamB2);
+      await Assert.That(receivedPacket).IsNotNull();
+      
+      await Assert.That(receivedPacket!.Topic).IsEqualTo("test/expiry");
+      await Assert.That(receivedPacket.Payload).IsEqualTo("msg2");
+ 
+      // MessageExpiryInterval should be decremented by around 3 seconds (remaining should be around 7 seconds)
+      await Assert.That(receivedPacket.MessageExpiryInterval).IsGreaterThan(0u);
+      await Assert.That(receivedPacket.MessageExpiryInterval).IsLessThanOrEqualTo(8u);
+ 
+      // There should be no other packets (since msg1 expired)
+      var hasMore = streamB2.Transport.Input.TryRead(out var readResult) && readResult.Buffer.Length > 0;
+      await Assert.That(hasMore).IsFalse();
+   }
+ 
+   [Test]
+   public async Task Publish_UnacknowledgedMessageExpiry_DiscardedUponReconnect()
+   {
+      var (server, clientA, handlerA, streamA) = SetupEnvironment(MqttProtocolVersion.V50);
+ 
+      // Create client B and connect
+      var clientB = new MqttServerClient();
+      var streamB = new MockNetworkStream();
+      var connContextB = new NetworkServerConnectionContext(new DummyNetworkListener(), streamB.Session);
+      var streamContextB = new NetworkServerStreamContext(connContextB, streamB);
+      clientB.Initialize(streamContextB, server.Options);
+      clientB.ProtocolVersion = MqttProtocolVersion.V50;
+ 
+      var sessionB = new MqttSession(server, clientB) { ExpiryInterval = 3600 };
+      clientB.MqttSession = sessionB;
+      server.SubscriptionRouter.Subscribe(sessionB, "test/unack-expiry"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false,
+         false, RetainHandlingType.SendAtSubscription, 0);
+ 
+      // Connect client B on server
+      var connectOptions = new ConnectOptions
+      {
+         CleanSession = false,
+         SessionExpiryInterval = 3600,
+         ClientIdUtf8Bytes = clientB.ClientIdUtf8Bytes,
+         EndPoint = new IPEndPoint(IPAddress.Loopback, 1883)
+      };
+      await server.ClientSessions.GetOrCreateSession(clientB, connectOptions, CancellationToken.None);
+ 
+      // Client A publishes a QoS 1 message with Expiry = 2 seconds
+      var pubPacket1 = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtLeastOnce,
+         Retain = false,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>("test/unack-expiry"u8.ToArray()),
+         Payload = new ReadOnlySequence<byte>("unack_msg"u8.ToArray()),
+         PacketIdentifier = 1,
+         MessageExpiryInterval = 2
+      };
+      await handlerA.ExecuteAsync(streamA, pubPacket1);
+ 
+      // Wait a moment, B receives the publish packet but does NOT send PUBACK
+      await Task.Delay(100);
+ 
+      // Read B's stream to clear it
+      var receivedPacket = await ReadPublishPacketAsync(streamB);
+      await Assert.That(receivedPacket).IsNotNull();
+ 
+      // Disconnect Client B (the message is now unacknowledged and pending in the session)
+      await server.ClientSessions.HandleClientDisconnectAsync(clientB);
+ 
+      // Wait 3 seconds so the unacknowledged message expires
+      await Task.Delay(3000);
+ 
+      // Reconnect client B
+      var clientB2 = new MqttServerClient();
+      var streamB2 = new MockNetworkStream();
+      var connContextB2 = new NetworkServerConnectionContext(new DummyNetworkListener(), streamB2.Session);
+      var streamContextB2 = new NetworkServerStreamContext(connContextB2, streamB2);
+      clientB2.Initialize(streamContextB2, server.Options);
+      clientB2.ProtocolVersion = MqttProtocolVersion.V50;
+ 
+      await server.ClientSessions.GetOrCreateSession(clientB2, connectOptions, CancellationToken.None);
+ 
+      // Manually trigger DeliverOfflineMessagesAsync using reflection
+      var method = typeof(MqttServer).GetMethod("DeliverOfflineMessagesAsync",
+         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+      await (Task)method!.Invoke(null, new object[] { clientB2, sessionB, CancellationToken.None })!;
+ 
+      // Since the unacknowledged message has expired, it should be discarded and not redelivered
+      var hasMore = streamB2.Transport.Input.TryRead(out var readResult) && readResult.Buffer.Length > 0;
+      await Assert.That(hasMore).IsFalse();
+      await Assert.That(sessionB.HasUnacknowledgedPublishes).IsFalse();
+   }
+ 
+   public class ParsedPublishMsg
+   {
+      public string Topic { get; set; } = string.Empty;
+      public string Payload { get; set; } = string.Empty;
+      public uint MessageExpiryInterval { get; set; }
+   }
+ 
+   private static async Task<ParsedPublishMsg?> ReadPublishPacketAsync(MockNetworkStream stream)
+   {
+      var reader = stream.Transport.Input;
+      var result = await reader.ReadAsync();
+      var buffer = result.Buffer;
+ 
+      if (buffer.IsEmpty) return null;
+ 
+      ParsedPublishMsg? parsedMsg = null;
+      var handler = new TestPacketHandler
+      {
+         OnPublish = (in PublishPacket p) =>
+         {
+            var topicBytes = new byte[p.TopicUtf8Bytes.Length];
+            p.TopicUtf8Bytes.CopyTo(topicBytes);
+            var payloadBytes = new byte[p.Payload.Length];
+            p.Payload.CopyTo(payloadBytes);
+ 
+            parsedMsg = new ParsedPublishMsg
+            {
+               Topic = Encoding.UTF8.GetString(topicBytes),
+               Payload = Encoding.UTF8.GetString(payloadBytes),
+               MessageExpiryInterval = p.MessageExpiryInterval
+            };
+         }
+      };
+ 
+      var sequenceReader = new SequenceReader<byte>(buffer);
+      var parser = new PacketParser(stream, handler, MqttProtocolVersion.V50);
+      var parseResult = await parser.TryDispatch(ref sequenceReader, out var parsedBytes);
+      
+      if (parseResult.Failed || parseResult.Success != PacketDispatchResult.Success)
+      {
+         return null;
+      }
+ 
+      reader.AdvanceTo(buffer.GetPosition(parsedBytes));
+      return parsedMsg;
    }
 
    private class DummyNetworkListener : INetworkListener

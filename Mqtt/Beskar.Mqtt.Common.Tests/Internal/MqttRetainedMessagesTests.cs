@@ -108,6 +108,46 @@ public class MqttRetainedMessagesTests
       await Assert.That(server.RetainedMessages.GetMessages()).IsEmpty();
    }
 
+   [Test]
+   public async Task UpdateMessage_WithExpiredInterval_ShouldNotBeDeliveredAndShouldBePruned()
+   {
+      using var manager = new MqttRetainedMessages();
+
+      var topic = "sensor/temp/1";
+      var payload = "22.5"u8.ToArray();
+      
+      // Create message with 1 second expiry
+      var msg = new MqttPublishMessage(new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtMostOnce,
+         Retain = true,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(topic)),
+         Payload = new ReadOnlySequence<byte>(payload),
+         MessageExpiryInterval = 1,
+      });
+
+      // Store message
+      var changed = manager.UpdateMessage("client1", msg);
+      await Assert.That(changed).IsTrue();
+
+      // It should be there immediately
+      var messages = manager.GetMessages();
+      await Assert.That(messages).Count().IsEqualTo(1);
+
+      // Now wait 1.5 seconds for it to expire
+      await Task.Delay(1500);
+
+      // Checking messages now should filter it out and prune it
+      var messagesAfterExpiry = manager.GetMessages();
+      await Assert.That(messagesAfterExpiry).IsEmpty();
+
+      // Verify it's actually removed from the trie
+      var matched = new List<MqttPublishMessage>();
+      manager.GetMatchingMessages("sensor/temp/1"u8, matched);
+      await Assert.That(matched).IsEmpty();
+   }
+
    private static MqttPublishMessage CreatePublishMessage(string topic, byte[] payload)
    {
       return new MqttPublishMessage(new PublishPacket

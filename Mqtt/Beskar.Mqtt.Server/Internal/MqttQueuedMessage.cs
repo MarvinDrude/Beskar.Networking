@@ -14,4 +14,6 @@ public sealed class MqttQueuedMessage(
 
    public bool RetainAsPublished { get; } = retainAsPublished;
    public uint SubscriptionIdentifier { get; } = subscriptionIdentifier;
+
+   public DateTimeOffset QueueTimestamp { get; } = DateTimeOffset.UtcNow;
 }
