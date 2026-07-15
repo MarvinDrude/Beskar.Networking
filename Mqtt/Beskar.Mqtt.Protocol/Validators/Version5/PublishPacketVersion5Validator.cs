@@ -9,7 +9,7 @@ public static class PublishPacketVersion5Validator
 {
    public static VoidResult<StringError> Validate(ref PublishPacket packet)
    {
-      if (packet.TopicUtf8Bytes.IsEmpty)
+      if (packet.TopicUtf8Bytes.IsEmpty && packet.TopicAlias == 0)
       {
          return new StringError("Topic name cannot be empty.");
       }
@@ -19,12 +19,12 @@ public static class PublishPacketVersion5Validator
          return new StringError("Protocol Violation: QoS 3 is not allowed.");
       }
 
-      if (packet.QualityOfService == QualityOfServiceType.AtMostOnce && packet.Dup)
+      if (packet is { QualityOfService: QualityOfServiceType.AtMostOnce, Dup: true })
       {
          return new StringError("Protocol Violation: DUP flag must be set to 0 for QoS 0 messages.");
       }
 
-      if (packet.QualityOfService > QualityOfServiceType.AtMostOnce && packet.PacketIdentifier == 0)
+      if (packet is { QualityOfService: > QualityOfServiceType.AtMostOnce, PacketIdentifier: 0 })
       {
          return new StringError("Protocol Violation: Packet Identifier cannot be 0.");
       }

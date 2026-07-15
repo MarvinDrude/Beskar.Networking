@@ -701,4 +701,165 @@ public class MqttQosTests
 
       await clientA2.DisconnectAsync(new DisconnectOptions());
    }
+
+   [Test]
+   public async Task QoS_RetainHandling_DoNotSend_ShouldNotDeliverRetainedMessage()
+   {
+      var port = GetFreePort();
+
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      // 1. Publish retained message
+      var publisher = MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+      await publisher.PublishAsync(new PublishOptionsBuilder()
+         .WithTopic("test/retainhandling/nosend"u8)
+         .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+         .WithPayload("RetainedVal")
+         .WithRetain(true)
+         .Build());
+      await publisher.DisconnectAsync(new DisconnectOptions());
+
+      // 2. Subscribe with RetainHandlingType.DoNotSend
+      var subscriber = MqttClientFactory.CreateTcp();
+      await subscriber.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+
+      var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+      subscriber.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         tcs.TrySetResult(Encoding.UTF8.GetString(ctx.Message.Payload.Span));
+         return ValueTask.CompletedTask;
+      });
+
+      await subscriber.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/retainhandling/nosend"u8, QualityOfServiceType.AtLeastOnce, retainHandling: RetainHandlingType.DoNotSend)
+         .Build());
+
+      // Verify no message is delivered
+      var completed = await Task.WhenAny(tcs.Task, Task.Delay(500));
+      await Assert.That(completed != tcs.Task).IsTrue(); // Timed out (correct)
+
+      await subscriber.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task QoS_RetainHandling_SendOnNewSubscriptionOnly_ShouldDeliverOnNewSubscription()
+   {
+      var port = GetFreePort();
+
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      // 1. Publish retained message
+      var publisher = MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+      await publisher.PublishAsync(new PublishOptionsBuilder()
+         .WithTopic("test/retainhandling/newonly"u8)
+         .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+         .WithPayload("RetainedValNewOnly")
+         .WithRetain(true)
+         .Build());
+      await publisher.DisconnectAsync(new DisconnectOptions());
+
+      // 2. Subscribe with RetainHandlingType.SendOnNewSubscriptionOnly
+      var subscriber = MqttClientFactory.CreateTcp();
+      await subscriber.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+
+      var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+      subscriber.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         tcs.TrySetResult(Encoding.UTF8.GetString(ctx.Message.Payload.Span));
+         return ValueTask.CompletedTask;
+      });
+
+      await subscriber.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/retainhandling/newonly"u8, QualityOfServiceType.AtLeastOnce, retainHandling: RetainHandlingType.SendOnNewSubscriptionOnly)
+         .Build());
+
+      // Verify message is delivered
+      var received = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(received).IsEqualTo("RetainedValNewOnly");
+
+      await subscriber.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task QoS_TopicAlias_EndToEnd_ShouldDeliverMessagesWithAlias()
+   {
+      var port = GetFreePort();
+
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      // 1. Subscribe
+      var subscriber = MqttClientFactory.CreateTcp();
+      await subscriber.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+
+      var tcs1 = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+      var tcs2 = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+      int receiveCount = 0;
+      subscriber.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         var topic = ctx.Message.Topic;
+         var payload = Encoding.UTF8.GetString(ctx.Message.Payload.Span);
+         if (Interlocked.Increment(ref receiveCount) == 1)
+         {
+            tcs1.TrySetResult($"{topic}:{payload}");
+         }
+         else
+         {
+            tcs2.TrySetResult($"{topic}:{payload}");
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      await subscriber.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/alias/topic"u8, QualityOfServiceType.AtMostOnce)
+         .Build());
+
+      // 2. Publish with Topic Alias
+      var publisher = MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+
+      // First publish registers alias 1
+      await publisher.PublishAsync(new PublishOptionsBuilder()
+         .WithTopic("test/alias/topic"u8)
+         .WithTopicAlias(1)
+         .WithQualityOfService(QualityOfServiceType.AtMostOnce)
+         .WithPayload("FirstPayload")
+         .Build());
+
+      // Second publish uses alias 1 without topic name
+      await publisher.PublishAsync(new PublishOptionsBuilder()
+         .WithTopic(ReadOnlyMemory<byte>.Empty)
+         .WithTopicAlias(1)
+         .WithQualityOfService(QualityOfServiceType.AtMostOnce)
+         .WithPayload("SecondPayload")
+         .Build());
+
+      var r1 = await tcs1.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(r1).IsEqualTo("test/alias/topic:FirstPayload");
+
+      var r2 = await tcs2.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(r2).IsEqualTo("test/alias/topic:SecondPayload");
+
+      await subscriber.DisconnectAsync(new DisconnectOptions());
+      await publisher.DisconnectAsync(new DisconnectOptions());
+   }
 }
