@@ -77,14 +77,23 @@ public sealed class MqttAuthContext
       }
       else
       {
+         using var iterationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
          using var authAwaiter = Broker.AddAwaitable<AuthPacketResult>(0);
-         var authTask = authAwaiter.WaitOneAsync(ct).AsTask();
+
+         var authTask = authAwaiter.WaitOneAsync(iterationCts.Token).AsTask();
 
          var completed = await Task.WhenAny(authTask, ConnAckTask, ReceiveTask);
          if (completed == authTask)
          {
             return await authTask;
          }
+
+         await iterationCts.CancelAsync();
+         try
+         {
+            await authTask;
+         }
+         catch { /* ignored */ }
 
          return null;
       }

@@ -277,7 +277,7 @@ public sealed partial class MqttClient
             ResetKeepAliveTimestamp();
 
             lockToken.Dispose();
-            return signalAwaiter.WaitOneAsync(ct).AsTask();
+            return AwaitAck(signalAwaiter, ct);
          }
          catch (Exception error)
          {
@@ -285,14 +285,14 @@ public sealed partial class MqttClient
             lockToken.Dispose();
             signalAwaiter.Fail(error);
 
-            return signalAwaiter.WaitOneAsync(ct).AsTask();
+            return AwaitAck(signalAwaiter, ct);
          }
       }
       catch (Exception error)
       {
          TraceLogger.LogClientError("MqttClient.SendAndAck: Error acquiring writer lock for '{0}': {1}", typeof(TPacket).Name, error.Message);
          signalAwaiter.Fail(error);
-         return signalAwaiter.WaitOneAsync(ct).AsTask();
+         return AwaitAck(signalAwaiter, ct);
       }
    }
 
@@ -306,8 +306,8 @@ public sealed partial class MqttClient
       }
 
       TraceLogger.LogClientInfo("MqttClient.SendAndAck: Sending options '{0}' (PacketId: {1}) expecting '{2}'...", typeof(TOptions).Name, identifier, typeof(TResponse).Name);
-
       var signalAwaiter = _signalBroker.AddAwaitable<TResponse>(identifier);
+
       try
       {
          var lockTask = stream.AcquireWriterLock(ct);
@@ -340,7 +340,7 @@ public sealed partial class MqttClient
             ResetKeepAliveTimestamp();
 
             lockToken.Dispose();
-            return signalAwaiter.WaitOneAsync(ct).AsTask();
+            return AwaitAck(signalAwaiter, ct);
          }
          catch (Exception error)
          {
@@ -348,14 +348,23 @@ public sealed partial class MqttClient
             lockToken.Dispose();
             signalAwaiter.Fail(error);
 
-            return signalAwaiter.WaitOneAsync(ct).AsTask();
+            return AwaitAck(signalAwaiter, ct);
          }
       }
       catch (Exception error)
       {
          TraceLogger.LogClientError("MqttClient.SendAndAck: Error acquiring writer lock for options '{0}': {1}", typeof(TOptions).Name, error.Message);
          signalAwaiter.Fail(error);
-         return signalAwaiter.WaitOneAsync(ct).AsTask();
+
+         return AwaitAck(signalAwaiter, ct);
+      }
+   }
+
+   private static async Task<TResponse> AwaitAck<TResponse>(SignalAwaiter<TResponse> signalAwaiter, CancellationToken ct)
+   {
+      using (signalAwaiter)
+      {
+         return await signalAwaiter.WaitOneAsync(ct);
       }
    }
 
@@ -378,7 +387,7 @@ public sealed partial class MqttClient
          signalAwaiter.Fail(error);
       }
 
-      return await signalAwaiter.WaitOneAsync(ct);
+      return await AwaitAck(signalAwaiter, ct);
    }
 
    private async Task<TResponse> SendAndAckSlowAsync<TPacket, TResponse>(
@@ -416,7 +425,7 @@ public sealed partial class MqttClient
          signalAwaiter.Fail(error);
       }
 
-      return await signalAwaiter.WaitOneAsync(ct);
+      return await AwaitAck(signalAwaiter, ct);
    }
 
    private async Task<TResponse> SendAndAckSlowAsync<TOptions, TResponse>(
@@ -455,7 +464,7 @@ public sealed partial class MqttClient
          signalAwaiter.Fail(error);
       }
 
-      return await signalAwaiter.WaitOneAsync(ct);
+      return await AwaitAck(signalAwaiter, ct);
    }
 
    private Task Send<TPacket>(in TPacket packet, INetworkStream stream, CancellationToken ct = default)
