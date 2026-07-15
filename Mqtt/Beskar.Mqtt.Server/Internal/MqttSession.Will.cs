@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Beskar.Mqtt.Protocol.Enums;
@@ -13,7 +14,7 @@ public sealed partial class MqttSession
 }
 
 internal sealed class MqttWillMessageState(
-   string clientId,
+   byte[] clientId,
    string topic,
    byte[] payload,
    QualityOfServiceType qos,
@@ -26,7 +27,7 @@ internal sealed class MqttWillMessageState(
    UserPropertyCollection userProperties,
    uint willDelayInterval)
 {
-   public string ClientId { get; } = clientId;
+   public byte[] ClientId { get; } = clientId;
 
    public string Topic { get; } = topic;
    public byte[] Payload { get; } = payload;
@@ -91,7 +92,7 @@ internal sealed class MqttWillMessageState(
          try
          {
             await server.PublishWillMessageAsync(
-               ClientId,
+               Encoding.UTF8.GetString(ClientId),
                Topic,
                Payload,
                QualityOfService,
