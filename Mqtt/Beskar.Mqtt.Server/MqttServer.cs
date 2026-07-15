@@ -92,7 +92,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             RetainedMessages.LoadMessages(context.LoadedRetainedMessages);
          }
       }
- 
+
       await _cancellationTokenSource.CancelAsync();
       _cancellationTokenSource.Dispose();
 
@@ -545,7 +545,8 @@ public sealed partial class MqttServer : IAsyncDisposable
             var written = writer.Position;
             if (written > 0)
             {
-               publishPacket.PropertiesBytes = new ReadOnlySequence<byte>(propertiesBuffer.AsMemory(0, written));
+               publishPacket.PropertiesBytes = new ReadOnlySequence<byte>(
+                  propertiesBuffer.AsMemory(0, written));
             }
          }
          finally

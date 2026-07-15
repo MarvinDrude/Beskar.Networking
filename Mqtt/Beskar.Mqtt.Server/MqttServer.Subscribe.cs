@@ -75,7 +75,7 @@ public sealed partial class MqttServer
             var matched = new List<MqttPublishMessage>();
             RetainedMessages.GetMatchingMessages(topicFilterBytes, matched);
 
-            if (matched.Count > 0 && session.Client is { } client && client.IsConnected)
+            if (matched.Count > 0 && session.Client is { IsConnected: true } client)
             {
                var subId = subscriptionIdentifier;
                var localRetainAsPublished = filter.RetainAsPublished;
@@ -103,10 +103,7 @@ public sealed partial class MqttServer
                            });
                         }
 
-                        var retainAsPublished = client.ProtocolVersion is MqttProtocolVersion.V50
-                           ? localRetainAsPublished
-                           : true;
-
+                        var retainAsPublished = client.ProtocolVersion is not MqttProtocolVersion.V50 || localRetainAsPublished;
                         await SendPublishMessageAsync(
                            client,
                            message,
