@@ -19,9 +19,13 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
    // 0 = Pending, 1 = Completed, 2 = Failed/Canceled, 3 = Disposed
    private int _state;
    private volatile bool _isPruned;
+
    private int _isPooled;
+   private int _isResultRetrieved;
+   private int _isAwaited;
 
    private CancellationTokenRegistration _cancellationRegistration;
+
    private ManualResetValueTaskSourceCore<TResponseMessage> _core = new()
    {
       RunContinuationsAsynchronously = true
@@ -31,6 +35,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    public ValueTask<TResponseMessage> WaitOneAsync(CancellationToken cancellationToken)
    {
+      _isAwaited = 1;
       if (cancellationToken.CanBeCanceled)
       {
          _cancellationRegistration = cancellationToken.Register(
@@ -104,10 +109,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
    public void OnPruned()
    {
       _isPruned = true;
-      if (Volatile.Read(ref _state) == 3)
-      {
-         TryPool();
-      }
+      CheckAndPool();
    }
 
    public void Reset(ushort newIdentifier, SignalBroker broker)
@@ -120,7 +122,10 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       Identifier = newIdentifier;
       Next = null;
       _isPruned = false;
+
       _isPooled = 0;
+      _isResultRetrieved = 0;
+      _isAwaited = 0;
 
       _broker = broker;
       _state = 0;
@@ -131,33 +136,52 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       var previousState = Interlocked.Exchange(ref _state, 3);
       if (previousState == 3) return;
 
-      var isSafeToPool = false;
       if (previousState == 0)
       {
          _core.SetException(new OperationCanceledException());
          _cancellationRegistration.Dispose();
       }
 
-      var broker = _broker;
-      if (_isPruned)
-      {
-         isSafeToPool = true;
-      }
-      else if (broker is not null)
-      {
-         isSafeToPool = broker.TryRemove(Identifier, this);
-      }
+      CheckAndPool();
+   }
 
-      if (!isSafeToPool) return;
-      TryPool();
+   private void CheckAndPool()
+   {
+      if (Volatile.Read(ref _state) == 3 &&
+          (Volatile.Read(ref _isAwaited) == 0 || Volatile.Read(ref _isResultRetrieved) == 1))
+      {
+         var broker = _broker;
+
+         if (_isPruned)
+         {
+            TryPool();
+         }
+         else
+         {
+            broker?.TryRemove(Identifier, this);
+         }
+      }
    }
 
    TResponseMessage IValueTaskSource<TResponseMessage>.GetResult(short token)
-      => _core.GetResult(token);
+   {
+      try
+      {
+         return _core.GetResult(token);
+      }
+      finally
+      {
+         if (Interlocked.CompareExchange(ref _isResultRetrieved, 1, 0) == 0)
+         {
+            CheckAndPool();
+         }
+      }
+   }
 
    ValueTaskSourceStatus IValueTaskSource<TResponseMessage>.GetStatus(short token)
       => _core.GetStatus(token);
 
-   void IValueTaskSource<TResponseMessage>.OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
+   void IValueTaskSource<TResponseMessage>.OnCompleted(
+      Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
       => _core.OnCompleted(continuation, state, token, flags);
 }

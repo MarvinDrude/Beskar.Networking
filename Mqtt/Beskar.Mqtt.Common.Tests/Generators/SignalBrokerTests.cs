@@ -83,7 +83,7 @@ public class SignalBrokerTests
    }
 
    [Test]
-   public async Task TimeoutAndCancellationPruning_ShouldPruneAndPoolCorrectly()
+   public async Task TimeoutAndCancellationPruning_ShouldPoolImmediately()
    {
       // Arrange
       using var broker = new SignalBroker();
@@ -113,26 +113,21 @@ public class SignalBrokerTests
 
       await Assert.That(exceptionThrown).IsTrue();
 
-      // Dispose awaiter1 (should not pool yet because it's not the head of the chain)
+      // Dispose awaiter1 (should pool immediately because of striped locking mid-chain deletion)
       awaiter1.Dispose();
+
+      // Verify that awaiter1 was returned to the pool immediately.
+      var reusedAwaiter = SignalAwaiterPool<PingResponse>.Get(0, broker);
+      await Assert.That(ReferenceEquals(reusedAwaiter, awaiter1)).IsTrue();
+
+      // Clean up
+      reusedAwaiter.Dispose();
 
       // Now complete the head awaiter2
       var dispatched = broker.TryDispatch(new PingResponse(), 0);
       await Assert.That(dispatched).IsTrue();
       await task2;
       awaiter2.Dispose();
-
-      // Now add a new awaiter on ID 0. This should prune the dead awaiter1!
-      var awaiter3 = broker.AddAwaitable<PingResponse>(0);
-
-      // Verify that awaiter1 was pruned and thus returned to the pool.
-      // We can verify this by checking if the next awaiter we get from the pool is awaiter1 reference!
-      var reusedAwaiter = SignalAwaiterPool<PingResponse>.Get(0, broker);
-      await Assert.That(ReferenceEquals(reusedAwaiter, awaiter1)).IsTrue();
-
-      // Clean up
-      awaiter3.Dispose();
-      reusedAwaiter.Dispose();
    }
 
    [Test]
@@ -228,7 +223,7 @@ public class SignalBrokerTests
    }
 
    [Test]
-   public async Task CollisionDifferentTypes_CompletedNonHead_ShouldNotPoolUntilPruned()
+   public async Task CollisionDifferentTypes_ShouldPoolImmediately()
    {
       // Arrange
       using var broker = new SignalBroker();
@@ -245,22 +240,15 @@ public class SignalBrokerTests
 
       awaiter1.Dispose();
 
+      // Under our striped locking broker, awaiter1 is pooled immediately!
       var tempAwaiter = SignalAwaiterPool<PingResponse>.Get(100, broker);
-      await Assert.That(ReferenceEquals(tempAwaiter, awaiter1)).IsFalse();
+      await Assert.That(ReferenceEquals(tempAwaiter, awaiter1)).IsTrue();
       tempAwaiter.Dispose();
 
       var dispatched2 = broker.TryDispatch(new PubAckResponse(), 10);
       await Assert.That(dispatched2).IsTrue();
       await task2;
       awaiter2.Dispose();
-
-      // Trigger pruning on ID 10 by adding a new awaitable.
-      // This will notice that the head (awaiter1) is dead (disposed/state 3) and prune/pool it.
-      using var awaiter3 = broker.AddAwaitable<PingResponse>(10);
-
-      var reusedAwaiter = SignalAwaiterPool<PingResponse>.Get(100, broker);
-      await Assert.That(ReferenceEquals(reusedAwaiter, awaiter1)).IsTrue();
-      reusedAwaiter.Dispose();
    }
 
    [Test]

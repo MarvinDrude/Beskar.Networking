@@ -1,15 +1,13 @@
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace Beskar.Mqtt.Common.Generators;
 
 public sealed class SignalBroker : IDisposable
 {
-   /// <summary>
-   /// Since we want the fastest lookups and registrations in a thread safe way
-   /// and we know exactly the maximum identifier possible, we just allocate the complete
-   /// range of possible indexes here. It allows us to completely throw out any locking etc.
-   /// </summary>
    private readonly ISignalAwaiter?[] _waiters = new ISignalAwaiter?[65536];
+   private readonly Lock[] _locks = [.. Enumerable.Range(0, 1024).Select(_ => new Lock())];
+
    private int _isDisposed;
 
    public SignalAwaiter<TResponseMessage> AddAwaitable<TResponseMessage>(ushort identifier)
@@ -17,38 +15,35 @@ public sealed class SignalBroker : IDisposable
       ThrowIfDisposed();
       var awaitable = SignalAwaiterPool<TResponseMessage>.Get(identifier, this);
 
-      while (true)
+      lock (_locks[identifier % 1024])
       {
-         var currentHead = Volatile.Read(ref _waiters[identifier]);
+         var currentHead = _waiters[identifier];
 
          // Prune dead nodes at the head of the chain
-         if (currentHead is not null && !currentHead.IsPending)
+         while (currentHead is not null && !currentHead.IsPending)
          {
             var next = currentHead.Next;
-            if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
-            {
-               currentHead.OnPruned();
-            }
+            _waiters[identifier] = next;
 
-            continue;
+            currentHead.OnPruned();
+            currentHead = next;
          }
 
          awaitable.Next = currentHead;
-         if (Interlocked.CompareExchange(ref _waiters[identifier], awaitable, currentHead) == currentHead)
-         {
-            if (Volatile.Read(ref _isDisposed) == 1)
-            {
-               if (TryRemove(identifier, awaitable))
-               {
-                  awaitable.Fail(new ObjectDisposedException(nameof(SignalBroker)));
-                  awaitable.Dispose();
-               }
+         _waiters[identifier] = awaitable;
 
-               throw new ObjectDisposedException(nameof(SignalBroker));
+         if (Volatile.Read(ref _isDisposed) == 1)
+         {
+            if (TryRemoveInternal(identifier, awaitable))
+            {
+               awaitable.Fail(new ObjectDisposedException(nameof(SignalBroker)));
+               awaitable.Dispose();
             }
 
-            return awaitable;
+            throw new ObjectDisposedException(nameof(SignalBroker));
          }
+
+         return awaitable;
       }
    }
 
@@ -62,85 +57,108 @@ public sealed class SignalBroker : IDisposable
       ThrowIfDisposed();
       var msgType = message.GetType();
 
-      while (true)
+      lock (_locks[identifier % 1024])
       {
-         var currentHead = Volatile.Read(ref _waiters[identifier]);
+         var currentHead = _waiters[identifier];
+
+         // Prune dead nodes at the head of the chain
+         while (currentHead is not null && !currentHead.IsPending)
+         {
+            var next = currentHead.Next;
+            _waiters[identifier] = next;
+
+            currentHead.OnPruned();
+            currentHead = next;
+         }
+
          if (currentHead is null)
          {
             return false;
          }
 
-         if (!currentHead.IsPending)
-         {
-            var next = currentHead.Next;
-            if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
-            {
-               currentHead.OnPruned();
-            }
-
-            continue;
-         }
-
          if (currentHead.MessageType == msgType)
          {
-            // fast path
             var next = currentHead.Next;
-            if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
-            {
-               currentHead.OnPruned();
-               return currentHead.TryComplete(in message);
-            }
+            _waiters[identifier] = next;
 
-            // oh no a collision! retry
-            continue;
+            currentHead.OnPruned();
+            return currentHead.TryComplete(in message);
          }
 
+         var prev = currentHead;
          var current = currentHead.Next;
+
          while (current is not null)
          {
+            // Prune dead/completed nodes in the chain
+            if (!current.IsPending)
+            {
+               prev.Next = current.Next;
+               current.OnPruned();
+
+               current = prev.Next;
+               continue;
+            }
+
             if (current.MessageType == msgType)
             {
                if (current.TryComplete(in message))
                {
+                  prev.Next = current.Next;
+                  current.OnPruned();
                   return true;
                }
             }
 
+            prev = current;
             current = current.Next;
          }
 
-         return false; // Message type not found in this ID's chain
+         return false;
       }
    }
 
    public bool TryRemove<TResponseMessage>(ushort identifier, SignalAwaiter<TResponseMessage> awaiter)
    {
-      while (true)
+      lock (_locks[identifier % 1024])
       {
-         var currentHead = Volatile.Read(ref _waiters[identifier]);
-         if (currentHead is null)
-         {
-            return false;
-         }
+         return TryRemoveInternal(identifier, awaiter);
+      }
+   }
 
-         // Prune dead nodes at the head of the chain
-         if (!currentHead.IsPending)
-         {
-            var next = currentHead.Next;
-            if (Interlocked.CompareExchange(ref _waiters[identifier], next, currentHead) == currentHead)
-            {
-               currentHead.OnPruned();
-               if (ReferenceEquals(currentHead, awaiter))
-               {
-                  return true;
-               }
-            }
-
-            continue;
-         }
-
+   private bool TryRemoveInternal<TResponseMessage>(ushort identifier, SignalAwaiter<TResponseMessage> awaiter)
+   {
+      var currentHead = _waiters[identifier];
+      if (currentHead is null)
+      {
          return false;
       }
+
+      if (ReferenceEquals(currentHead, awaiter))
+      {
+         _waiters[identifier] = currentHead.Next;
+         currentHead.OnPruned();
+         return true;
+      }
+
+      var prev = currentHead;
+      var current = currentHead.Next;
+
+      while (current is not null)
+      {
+         if (ReferenceEquals(current, awaiter))
+         {
+            prev.Next = current.Next;
+            current.OnPruned();
+
+            return true;
+         }
+
+         prev = current;
+         current = current.Next;
+      }
+
+      return false;
    }
 
    public void Reset()
@@ -150,8 +168,12 @@ public sealed class SignalBroker : IDisposable
 
       for (var i = 0; i < _waiters.Length; i++)
       {
-         // Atomically extract the entire chain for this index and wipe the slot
-         var current = Interlocked.Exchange(ref _waiters[i], null);
+         ISignalAwaiter? current;
+         lock (_locks[i % 1024])
+         {
+            current = _waiters[i];
+            _waiters[i] = null;
+         }
 
          while (current != null)
          {
@@ -171,8 +193,12 @@ public sealed class SignalBroker : IDisposable
 
       for (var i = 0; i < _waiters.Length; i++)
       {
-         // Atomically extract the entire chain for this index and wipe the slot
-         var current = Interlocked.Exchange(ref _waiters[i], null);
+         ISignalAwaiter? current;
+         lock (_locks[i % 1024])
+         {
+            current = _waiters[i];
+            _waiters[i] = null;
+         }
 
          while (current != null)
          {
