@@ -1,5 +1,6 @@
 using System.Buffers;
 using Beskar.Memory.Owners;
+using Beskar.Memory.Threading;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Encoders.Properties;
@@ -7,6 +8,7 @@ using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Mqtt.Server.Contexts;
 using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Internal;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -90,12 +92,12 @@ public sealed partial class ServerPacketHandler
          {
             case QualityOfServiceType.AtMostOnce: // QoS 0
             {
-               DispatchToSubscribers(server, client, in packet, resolvedTopicBytes);
+               DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
                break;
             }
             case QualityOfServiceType.AtLeastOnce: // QoS 1
             {
-               DispatchToSubscribers(server, client, in packet, resolvedTopicBytes);
+               DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
 
                var pubAck = new PubAckPacket
                {
@@ -104,6 +106,13 @@ public sealed partial class ServerPacketHandler
                };
                await stream.Send(in pubAck, client.ProtocolVersion, ct);
 
+               if (server.Events.OnAcknowledgePub.Count > 0)
+               {
+                  await server.Events.OnAcknowledgePub.ExecuteAsync(
+                     new MqttAcknowledgePubContext() { Session = session, PublishPacket = packet },
+                     HandlerExecutionStrategy.SequentialContinueOnError, ct);
+               }
+
                break;
             }
             case QualityOfServiceType.ExactlyOnce: // QoS 2
@@ -111,7 +120,7 @@ public sealed partial class ServerPacketHandler
                var isNew = session.TryAddQos2Packet(packet.PacketIdentifier);
                if (isNew)
                {
-                  DispatchToSubscribers(server, client, in packet, resolvedTopicBytes);
+                  DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
                }
 
                var pubRec = new PubRecPacket
@@ -120,6 +129,13 @@ public sealed partial class ServerPacketHandler
                   ReasonCode = PubRecReasonCode.Success
                };
                await stream.Send(in pubRec, client.ProtocolVersion, ct);
+
+               if (server.Events.OnAcknowledgePub.Count > 0)
+               {
+                  await server.Events.OnAcknowledgePub.ExecuteAsync(
+                     new MqttAcknowledgePubContext() { Session = session, PublishPacket = packet },
+                     HandlerExecutionStrategy.SequentialContinueOnError, ct);
+               }
 
                break;
             }
@@ -130,7 +146,8 @@ public sealed partial class ServerPacketHandler
          MqttServer server,
          MqttServerClient publisherClient,
          in PublishPacket packet,
-         byte[] resolvedTopicBytes)
+         byte[] resolvedTopicBytes,
+         CancellationToken ct)
       {
          var topicSequence = new ReadOnlySequence<byte>(resolvedTopicBytes);
          var publishMessage = new MqttPublishMessage(new PublishPacket
@@ -152,10 +169,33 @@ public sealed partial class ServerPacketHandler
 
          var visitor = new PublishMessageDispatcherVisitor(publisherClient, publishMessage);
          server.SubscriptionRouter.Route(resolvedTopicBytes, ref visitor);
+
+         if (visitor.MatchCount == 0 && publisherClient.MqttSession is not null)
+         {
+            var session = publisherClient.MqttSession;
+            var packetCopy = packet;
+
+            if (server.Events.OnNoSubscriberMessage.Count > 0)
+            {
+               _ = Task.Run(async () =>
+               {
+                  try
+                  {
+                     await server.Events.OnNoSubscriberMessage.ExecuteAsync(
+                        new MqttNoSubscriberMessageContext() { Session = session, PublishPacket = packetCopy },
+                        HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                  }
+                  catch (Exception)
+                  {
+                     // ignored
+                  }
+               }, ct);
+            }
+         }
       }
    }
 
-   private readonly struct PublishMessageDispatcherVisitor(
+   private struct PublishMessageDispatcherVisitor(
       MqttServerClient publisherClient,
       MqttPublishMessage message)
       : ISubscriptionVisitor
@@ -163,8 +203,11 @@ public sealed partial class ServerPacketHandler
       private readonly MqttServerClient _publisherClient = publisherClient;
       private readonly MqttPublishMessage _message = message;
 
+      public int MatchCount;
+
       public void Visit(in MqttSubscription subscription)
       {
+         MatchCount++;
          var session = subscription.Session;
          if (subscription.NoLocal && session == _publisherClient.MqttSession)
          {

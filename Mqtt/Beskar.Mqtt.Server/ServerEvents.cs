@@ -18,4 +18,12 @@ public sealed class ServerEvents
    public readonly HandlerPipeline<MqttServerStopContext> OnStop = new();
 
    public readonly HandlerPipeline<MqttDeleteSessionContext> OnDeleteSession = new();
+
+   public readonly HandlerPipeline<MqttSubscribeContext> OnSubscribe = new();
+
+   public readonly HandlerPipeline<MqttUnsubscribeContext> OnUnsubscribe = new();
+
+   public readonly HandlerPipeline<MqttAcknowledgePubContext> OnAcknowledgePub = new();
+
+   public readonly HandlerPipeline<MqttNoSubscriberMessageContext> OnNoSubscriberMessage = new();
 }

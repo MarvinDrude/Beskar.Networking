@@ -1,7 +1,10 @@
 using System.Buffers;
+using System.Text;
 using Beskar.Memory.Owners;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Models;
+using Beskar.Mqtt.Server.Contexts;
+using Beskar.Memory.Threading;
 using Beskar.Mqtt.Server.Enumerators;
 using Beskar.Mqtt.Server.Internal;
 
@@ -33,6 +36,35 @@ public sealed partial class MqttServer
          filter.RetainHandling,
          subscriptionIdentifier);
 
+      if (Events.OnSubscribe.Count > 0)
+      {
+         var topicFilterString = Encoding.UTF8.GetString(topicFilterBytes);
+         var filterQos = filter.QualityOfService;
+         var filterNoLocal = filter.NoLocal;
+         var filterRetainAsPublished = filter.RetainAsPublished;
+         var filterRetainHandling = filter.RetainHandling;
+
+         _ = Task.Run(async () =>
+         {
+            try
+            {
+               await Events.OnSubscribe.ExecuteAsync(new MqttSubscribeContext()
+               {
+                  Session = session,
+                  TopicFilter = topicFilterString,
+                  QualityOfService = filterQos,
+                  NoLocal = filterNoLocal,
+                  RetainAsPublished = filterRetainAsPublished,
+                  RetainHandling = filterRetainHandling
+               }, HandlerExecutionStrategy.SequentialContinueOnError);
+            }
+            catch (Exception)
+            {
+               // ignored
+            }
+         });
+      }
+
       return qos switch
       {
          QualityOfServiceType.AtMostOnce => SubscribeReasonCode.GrantedQos0,
@@ -56,6 +88,25 @@ public sealed partial class MqttServer
       }
 
       SubscriptionRouter.Unsubscribe(session, topicFilter);
+
+      if (Events.OnUnsubscribe.Count > 0)
+      {
+         var filterString = Encoding.UTF8.GetString(topicFilter);
+         _ = Task.Run(async () =>
+         {
+            try
+            {
+               await Events.OnUnsubscribe.ExecuteAsync(
+                  new MqttUnsubscribeContext() { Session = session, TopicFilter = filterString },
+                  HandlerExecutionStrategy.SequentialContinueOnError);
+            }
+            catch (Exception)
+            {
+               // ignored
+            }
+         });
+      }
+
       return UnsubscribeReasonCode.Success;
    }
 
