@@ -240,7 +240,7 @@ public sealed partial class ServerPacketHandler
       }
    }
 
-   private struct PublishMessageDispatcherVisitor(
+   internal struct PublishMessageDispatcherVisitor(
       MqttServerClient publisherClient,
       MqttPublishMessage message)
       : ISubscriptionVisitor
@@ -254,7 +254,7 @@ public sealed partial class ServerPacketHandler
       {
          MatchCount++;
          var session = subscription.Session;
-         if (subscription.NoLocal && session == _publisherClient.MqttSession)
+         if (subscription.NoLocal && _publisherClient is not null && session == _publisherClient.MqttSession)
          {
             return;
          }

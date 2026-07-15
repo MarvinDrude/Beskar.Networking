@@ -20,6 +20,7 @@ using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Mqtt.Common.Encoders.Properties;
+using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Utilities.Tracing;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Models;
@@ -445,6 +446,70 @@ public sealed partial class MqttServer : IAsyncDisposable
          TraceLogger.LogServerInfo("MqttServer: Message receiver loop finished.");
          await disconnectHandler(ct);
       }
+   }
+
+   internal async Task PublishWillMessageAsync(
+      string clientId,
+      string topic,
+      byte[] payload,
+      QualityOfServiceType qos,
+      bool retain,
+      uint messageExpiryInterval,
+      PayloadFormat payloadFormat,
+      string? contentType,
+      string? responseTopic,
+      byte[]? correlationData,
+      UserPropertyCollection userProperties)
+   {
+      var topicBytes = Encoding.UTF8.GetBytes(topic);
+      var topicSequence = new ReadOnlySequence<byte>(topicBytes);
+
+      var packet = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = qos,
+         Retain = retain,
+         TopicUtf8Bytes = topicSequence,
+         Payload = new ReadOnlySequence<byte>(payload),
+         MessageExpiryInterval = messageExpiryInterval,
+         PayloadFormat = payloadFormat,
+         ContentTypeUtf8Bytes = string.IsNullOrEmpty(contentType)
+            ? ReadOnlySequence<byte>.Empty : new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(contentType)),
+         ResponseTopicUtf8Bytes = string.IsNullOrEmpty(responseTopic)
+            ? ReadOnlySequence<byte>.Empty : new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(responseTopic)),
+         CorrelationDataBytes = correlationData == null
+            ? ReadOnlySequence<byte>.Empty : new ReadOnlySequence<byte>(correlationData)
+      };
+
+      var msg = new MqttPublishMessage(packet);
+
+      if (retain)
+      {
+         var changed = RetainedMessages.UpdateMessage(clientId, msg);
+         if (changed && Events.OnRetainedMessageChanged.Count > 0)
+         {
+            var stored = RetainedMessages.GetMessages();
+            _ = Task.Run(async () =>
+            {
+               try
+               {
+                  await Events.OnRetainedMessageChanged.ExecuteAsync(new MqttRetainedMessageChangedContext
+                  {
+                     ClientId = clientId,
+                     ChangedRetainedMessage = msg.Payload.IsEmpty ? null : msg,
+                     StoredRetainedMessages = stored
+                  }, HandlerExecutionStrategy.SequentialContinueOnError);
+               }
+               catch (Exception)
+               {
+                  /* ignored */
+               }
+            });
+         }
+      }
+
+      var visitor = new ServerPacketHandler.PublishMessageDispatcherVisitor(null!, msg);
+      SubscriptionRouter.Route(topicBytes, ref visitor);
    }
 
    private static async Task SendPublishMessageAsync(

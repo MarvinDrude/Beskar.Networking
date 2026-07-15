@@ -1015,4 +1015,159 @@ public class MqttQosTests
 
       await subscriber.DisconnectAsync(new DisconnectOptions());
    }
+
+   [Test]
+   public async Task WillMessage_UngracefulDisconnect_ShouldPublishImmediately()
+   {
+      var port = GetFreePort();
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      // Subscriber Client B
+      var clientB = MqttClientFactory.CreateTcp();
+      clientB.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         tcs.TrySetResult(Encoding.UTF8.GetString(ctx.Message.Payload.Span));
+         return ValueTask.CompletedTask;
+      });
+
+      await clientB.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+      await clientB.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("will/test/immediate"u8, QualityOfServiceType.AtLeastOnce)
+         .Build());
+
+      // Publisher Client A with Will Message
+      var clientA = MqttClientFactory.CreateTcp();
+      var connectOptionsA = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
+         .WithClientId("client-a-will")
+         .WithWill("will/test/immediate", "WillPayloadBytes"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false)
+         .WithWillDelayInterval(0)
+         .Build();
+
+      await clientA.ConnectAsync(connectOptionsA);
+
+      // Drop connection ungracefully by disposing the client
+      await clientA.DisposeAsync();
+
+      // Verify Will message is received
+      var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(payload).IsEqualTo("WillPayloadBytes");
+
+      await clientB.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task WillMessage_WithWillDelay_UngracefulDisconnect_ShouldDelayAndCancelOnReconnect()
+   {
+      var port = GetFreePort();
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      // Subscriber Client B
+      var clientB = MqttClientFactory.CreateTcp();
+      clientB.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         tcs.TrySetResult(Encoding.UTF8.GetString(ctx.Message.Payload.Span));
+         return ValueTask.CompletedTask;
+      });
+
+      await clientB.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+      await clientB.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("will/test/delayed"u8, QualityOfServiceType.AtLeastOnce)
+         .Build());
+
+      // Client A with Will Delay of 3 seconds
+      var clientA = MqttClientFactory.CreateTcp();
+      var connectOptionsA = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
+         .WithClientId("client-a-will-delay")
+         .WithCleanSession(false)
+         .WithWill("will/test/delayed", "WillDelayPayload"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false)
+         .WithWillDelayInterval(3)
+         .Build();
+
+      await clientA.ConnectAsync(connectOptionsA);
+
+      // Drop connection ungracefully
+      await clientA.DisposeAsync();
+
+      // Wait 1 second and verify no Will message has been published
+      await Task.Delay(1000);
+      await Assert.That(tcs.Task.IsCompleted).IsFalse();
+
+      // Reconnect Client A
+      clientA = MqttClientFactory.CreateTcp();
+      await clientA.ConnectAsync(connectOptionsA);
+
+      // Wait 3 seconds and verify no Will message is published (since it was cancelled by reconnection)
+      var completed = await Task.WhenAny(tcs.Task, Task.Delay(3000));
+      await Assert.That(completed != tcs.Task).IsTrue();
+
+      await clientA.DisconnectAsync(new DisconnectOptions());
+      await clientB.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task WillMessage_WithWillDelay_UngracefulDisconnect_ShouldPublishAfterDelay()
+   {
+      var port = GetFreePort();
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      // Subscriber Client B
+      var clientB = MqttClientFactory.CreateTcp();
+      clientB.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         tcs.TrySetResult(Encoding.UTF8.GetString(ctx.Message.Payload.Span));
+         return ValueTask.CompletedTask;
+      });
+
+      await clientB.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+      await clientB.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("will/test/delayed-trigger"u8, QualityOfServiceType.AtLeastOnce)
+         .Build());
+
+      // Client A with Will Delay of 2 seconds
+      var clientA = MqttClientFactory.CreateTcp();
+      var connectOptionsA = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
+         .WithClientId("client-a-will-delay-trigger")
+         .WithWill("will/test/delayed-trigger", "WillTriggerPayload"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false)
+         .WithWillDelayInterval(2)
+         .Build();
+
+      await clientA.ConnectAsync(connectOptionsA);
+
+      // Drop connection ungracefully
+      await clientA.DisposeAsync();
+
+      // Wait 1 second and verify no Will message has been published
+      await Task.Delay(500);
+      await Assert.That(tcs.Task.IsCompleted).IsFalse();
+
+      // Wait for the delay (2 seconds total) and verify Will message is received
+      var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(payload).IsEqualTo("WillTriggerPayload");
+
+      await clientB.DisconnectAsync(new DisconnectOptions());
+   }
 }

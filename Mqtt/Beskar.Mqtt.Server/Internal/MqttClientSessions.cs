@@ -1,7 +1,11 @@
+using System.Buffers;
+using System.Collections.Concurrent;
+using System.Text;
 using Beskar.Memory.Threading;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
+using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Server.Contexts;
 using Beskar.Mqtt.Server.Enums;
@@ -21,6 +25,13 @@ public sealed class MqttClientSessions(MqttServer server)
 
    private readonly Dictionary<byte[], MqttServerClient> _clients = new(2048, ByteArrayEqualityComparer.Instance);
    private readonly MqttSessionRegistry _sessions = new();
+
+   private readonly ConcurrentDictionary<string, MqttWillMessageState> _pendingWillMessages = new();
+
+   internal void RemovePendingWillMessage(string clientId)
+   {
+      _pendingWillMessages.TryRemove(clientId, out _);
+   }
 
    public async Task<ArrayBuilderResult<MqttServerClient>> GetClients()
    {
@@ -81,6 +92,41 @@ public sealed class MqttClientSessions(MqttServer server)
             _sessions.Update(serverClient.ClientIdUtf8Bytes.Span, session);
             serverClient.MqttSession = session;
             session.Client = serverClient;
+
+            var clientIdStr = Encoding.UTF8.GetString(serverClient.ClientIdUtf8Bytes.Span);
+            if (_pendingWillMessages.TryRemove(clientIdStr, out var oldWill))
+            {
+               oldWill.Cancel();
+            }
+
+            if (connectOptions.HasWill)
+            {
+               var willTopic = Encoding.UTF8.GetString(connectOptions.WillTopicUtf8Bytes.Span);
+               var willState = new MqttWillMessageState(
+                  clientIdStr,
+                  willTopic,
+                  connectOptions.WillPayload.ToArray(),
+                  connectOptions.WillQualityOfService,
+                  connectOptions.WillRetain,
+                  connectOptions.WillMessageExpiryInterval ?? 0,
+                  connectOptions.WillPayloadFormatIndicator,
+                  connectOptions.WillContentTypeUtf8Bytes.IsEmpty
+                     ? null : Encoding.UTF8.GetString(connectOptions.WillContentTypeUtf8Bytes.Span),
+                  connectOptions.WillResponseTopicUtf8Bytes.IsEmpty
+                     ? null : Encoding.UTF8.GetString(connectOptions.WillResponseTopicUtf8Bytes.Span),
+                  connectOptions.WillCorrelationDataBytes.IsEmpty
+                     ? null : connectOptions.WillCorrelationDataBytes.ToArray(),
+                  UserPropertyCollection.Create(connectOptions.WillUserProperties.WrittenMemory),
+                  connectOptions.WillDelayInterval ?? 0
+               );
+
+               _pendingWillMessages[clientIdStr] = willState;
+               session.PendingWillMessage = willState;
+            }
+            else
+            {
+               session.PendingWillMessage = null;
+            }
 
             using (await _clientLock.LockAsync(ct))
             {
@@ -178,6 +224,21 @@ public sealed class MqttClientSessions(MqttServer server)
 
          session.DisconnectionTimestamp = DateTimeOffset.UtcNow;
          session.Client = null;
+
+         var clientIdStr = Encoding.UTF8.GetString(client.ClientIdUtf8Bytes.Span);
+         if (session.PendingWillMessage is not null)
+         {
+            if (client.DisconnectOptions?.ReasonCode is not DisconnectReasonCode.NormalDisconnection)
+            {
+               session.PendingWillMessage.StartDelayTimer(_server, this);
+            }
+            else
+            {
+               session.PendingWillMessage.Cancel();
+               _pendingWillMessages.TryRemove(clientIdStr, out _);
+               session.PendingWillMessage = null;
+            }
+         }
 
          if (session.ExpiryInterval == 0)
          {

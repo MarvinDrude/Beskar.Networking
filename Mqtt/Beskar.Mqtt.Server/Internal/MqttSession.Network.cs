@@ -43,6 +43,14 @@ public sealed partial class MqttSession
           if (_disposed) return;
           _disposed = true;
 
+          if (PendingWillMessage is not null)
+          {
+             if (PendingWillMessage.WillDelayInterval == 0 || ExpiryInterval > 0)
+             {
+                PendingWillMessage.TryPublish(Server, Server.ClientSessions);
+             }
+          }
+
           if (Server.Events.OnDeleteSession.Count > 0)
           {
              await Server.Events.OnDeleteSession.ExecuteAsync(new MqttDeleteSessionContext() { Session = this },
