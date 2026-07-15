@@ -121,7 +121,7 @@ var subAck = await mqttClient.SubscribeAsync(sub);
 var pub = new PublishOptionsBuilder()
    .WithTopic("test/ssss/b"u8)
    .WithUserProperty("test1", "test1sadsadsadsadsadsadsadsadsadsadsadsadsadsadsa")
-   .WithQualityOfService(QualityOfServiceType.ExactlyOnce)
+   .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
    .WithPayload("BOBA")
    .Build();
 
