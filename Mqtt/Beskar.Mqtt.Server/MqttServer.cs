@@ -22,6 +22,7 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Mqtt.Common.Encoders.Properties;
 using Beskar.Utilities.Tracing;
 using Beskar.Mqtt.Protocol.Extensions;
+using Beskar.Mqtt.Protocol.Models;
 
 namespace Beskar.Mqtt.Server;
 
@@ -348,7 +349,8 @@ public sealed partial class MqttServer : IAsyncDisposable
             }, HandlerExecutionStrategy.SequentialContinueOnError, ct);
          }
 
-         if (sessionResult is { IsSessionPresent: true, Session.OfflineQueueCount: > 0 })
+         if (sessionResult.IsSessionPresent
+             && (sessionResult.Session.OfflineQueueCount > 0 || sessionResult.Session.HasUnacknowledgedPublishes))
          {
             _ = Task.Run(() => DeliverOfflineMessagesAsync(client, sessionResult.Session, ct), ct);
          }
@@ -434,12 +436,143 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
    }
 
+   private static async Task SendPublishMessageAsync(
+      MqttServerClient client,
+      MqttPublishMessage message,
+      QualityOfServiceType qos,
+      bool retainAsPublished,
+      uint subscriptionIdentifier,
+      ushort packetIdentifier,
+      bool dup,
+      byte[] propertiesBuffer,
+      CancellationToken ct)
+   {
+      var topicBytes = Encoding.UTF8.GetBytes(message.Topic);
+      var responseTopicBytes = string.IsNullOrEmpty(message.ResponseTopic)
+         ? ReadOnlyMemory<byte>.Empty
+         : Encoding.UTF8.GetBytes(message.ResponseTopic);
+
+      var contentTypeBytes = string.IsNullOrEmpty(message.ContentType)
+         ? ReadOnlyMemory<byte>.Empty
+         : Encoding.UTF8.GetBytes(message.ContentType);
+
+      var publishPacket = new PublishPacket
+      {
+         Dup = dup,
+         QualityOfService = qos,
+         Retain = retainAsPublished && message.Retain,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>(topicBytes),
+         Payload = new ReadOnlySequence<byte>(message.Payload),
+         PacketIdentifier = packetIdentifier,
+         PayloadFormat = message.PayloadFormat,
+         MessageExpiryInterval = message.MessageExpiryInterval,
+         TopicAlias = 0,
+         ResponseTopicUtf8Bytes = new ReadOnlySequence<byte>(responseTopicBytes),
+         CorrelationDataBytes = message.CorrelationData.HasValue
+            ? new ReadOnlySequence<byte>(message.CorrelationData.Value)
+            : ReadOnlySequence<byte>.Empty,
+         ContentTypeUtf8Bytes = new ReadOnlySequence<byte>(contentTypeBytes),
+         PropertiesBytes = ReadOnlySequence<byte>.Empty
+      };
+
+      if (client.ProtocolVersion is MqttProtocolVersion.V50)
+      {
+         var writer = new ByteWriter(propertiesBuffer);
+         try
+         {
+            var propEncoder = writer.AsPublishPropertyEncoder();
+            try
+            {
+               if (subscriptionIdentifier > 0)
+               {
+                  propEncoder.WriteSubscriptionIdentifier(subscriptionIdentifier);
+               }
+
+               if (message.PayloadFormat is not PayloadFormat.Unspecified)
+               {
+                  propEncoder.WritePayloadFormatIndicator(message.PayloadFormat);
+               }
+
+               if (message.MessageExpiryInterval > 0)
+               {
+                  propEncoder.WriteMessageExpiryInterval(message.MessageExpiryInterval);
+               }
+
+               if (!responseTopicBytes.IsEmpty)
+               {
+                  propEncoder.WriteResponseTopic(responseTopicBytes.Span);
+               }
+
+               if (message.CorrelationData.HasValue)
+               {
+                  propEncoder.WriteCorrelationData(message.CorrelationData.Value.Span);
+               }
+
+               if (!contentTypeBytes.IsEmpty)
+               {
+                  propEncoder.WriteContentType(contentTypeBytes.Span);
+               }
+
+               if (message.UserProperties.Count > 0)
+               {
+                  var enumerator = message.UserProperties.GetDirectEnumerator();
+                  while (enumerator.MoveNext())
+                  {
+                     if (enumerator.Current.Identifier is not PropertyIdentifier.UserProperty)
+                        continue;
+
+                     var userProperty = enumerator.Current.AsUserProperty();
+                     propEncoder.WriteUserProperty(userProperty.KeyBytes, userProperty.ValueBytes);
+                  }
+               }
+            }
+            finally
+            {
+               writer = propEncoder.Encoder.Writer;
+            }
+
+            var written = writer.Position;
+            if (written > 0)
+            {
+               publishPacket.PropertiesBytes = new ReadOnlySequence<byte>(propertiesBuffer.AsMemory(0, written));
+            }
+         }
+         finally
+         {
+            writer.Dispose();
+         }
+      }
+
+      await client.Stream.Send(in publishPacket, client.ProtocolVersion, ct);
+   }
+
    private static async Task DeliverOfflineMessagesAsync(MqttServerClient client, MqttSession session,
       CancellationToken ct)
    {
       try
       {
          var propertiesBuffer = new byte[128];
+         var unacknowledged = session.GetUnacknowledgedPublishes();
+
+         foreach (var pending in unacknowledged)
+         {
+            if (!client.IsConnected || ct.IsCancellationRequested)
+            {
+               break;
+            }
+
+            await SendPublishMessageAsync(
+               client,
+               pending.Message,
+               pending.QualityOfService,
+               pending.RetainAsPublished,
+               pending.SubscriptionIdentifier,
+               pending.PacketIdentifier,
+               dup: true,
+               propertiesBuffer,
+               ct);
+         }
+
          while (client.IsConnected && !ct.IsCancellationRequested)
          {
             if (!session.TryDequeueOfflineMessage(out var queuedMessage))
@@ -447,106 +580,31 @@ public sealed partial class MqttServer : IAsyncDisposable
                break;
             }
 
-            var message = queuedMessage.Message;
             var targetQos = queuedMessage.QualityOfService;
+            var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
 
-            var topicBytes = Encoding.UTF8.GetBytes(message.Topic);
-            var responseTopicBytes = string.IsNullOrEmpty(message.ResponseTopic)
-               ? ReadOnlyMemory<byte>.Empty
-               : Encoding.UTF8.GetBytes(message.ResponseTopic);
-
-            var contentTypeBytes = string.IsNullOrEmpty(message.ContentType)
-               ? ReadOnlyMemory<byte>.Empty
-               : Encoding.UTF8.GetBytes(message.ContentType);
-
-            var publishPacket = new PublishPacket
+            if (targetQos > 0)
             {
-               Dup = false,
-               QualityOfService = targetQos,
-               Retain = queuedMessage.RetainAsPublished && message.Retain,
-               TopicUtf8Bytes = new ReadOnlySequence<byte>(topicBytes),
-               Payload = new ReadOnlySequence<byte>(message.Payload),
-               PacketIdentifier = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0,
-               PayloadFormat = message.PayloadFormat,
-               MessageExpiryInterval = message.MessageExpiryInterval,
-               TopicAlias = 0,
-               ResponseTopicUtf8Bytes = new ReadOnlySequence<byte>(responseTopicBytes),
-               CorrelationDataBytes = message.CorrelationData.HasValue
-                  ? new ReadOnlySequence<byte>(message.CorrelationData.Value)
-                  : ReadOnlySequence<byte>.Empty,
-               ContentTypeUtf8Bytes = new ReadOnlySequence<byte>(contentTypeBytes),
-               PropertiesBytes = ReadOnlySequence<byte>.Empty
-            };
-
-            if (client.ProtocolVersion is MqttProtocolVersion.V50)
-            {
-               var writer = new ByteWriter(propertiesBuffer);
-               try
+               session.AddUnacknowledgedPublish(new MqttPendingPublish
                {
-                  var propEncoder = writer.AsPublishPropertyEncoder();
-                  try
-                  {
-                     if (queuedMessage.SubscriptionIdentifier > 0)
-                     {
-                        propEncoder.WriteSubscriptionIdentifier(queuedMessage.SubscriptionIdentifier);
-                     }
-
-                     if (message.PayloadFormat is not PayloadFormat.Unspecified)
-                     {
-                        propEncoder.WritePayloadFormatIndicator(message.PayloadFormat);
-                     }
-
-                     if (message.MessageExpiryInterval > 0)
-                     {
-                        propEncoder.WriteMessageExpiryInterval(message.MessageExpiryInterval);
-                     }
-
-                     if (!responseTopicBytes.IsEmpty)
-                     {
-                        propEncoder.WriteResponseTopic(responseTopicBytes.Span);
-                     }
-
-                     if (message.CorrelationData.HasValue)
-                     {
-                        propEncoder.WriteCorrelationData(message.CorrelationData.Value.Span);
-                     }
-
-                     if (!contentTypeBytes.IsEmpty)
-                     {
-                        propEncoder.WriteContentType(contentTypeBytes.Span);
-                     }
-
-                     if (message.UserProperties.Count > 0)
-                     {
-                        var enumerator = message.UserProperties.GetDirectEnumerator();
-                        while (enumerator.MoveNext())
-                        {
-                           if (enumerator.Current.Identifier is not PropertyIdentifier.UserProperty)
-                              continue;
-
-                           var userProperty = enumerator.Current.AsUserProperty();
-                           propEncoder.WriteUserProperty(userProperty.KeyBytes, userProperty.ValueBytes);
-                        }
-                     }
-                  }
-                  finally
-                  {
-                     writer = propEncoder.Encoder.Writer;
-                  }
-
-                  var written = writer.Position;
-                  if (written > 0)
-                  {
-                     publishPacket.PropertiesBytes = new ReadOnlySequence<byte>(propertiesBuffer.AsMemory(0, written));
-                  }
-               }
-               finally
-               {
-                  writer.Dispose();
-               }
+                  PacketIdentifier = packetId,
+                  Message = queuedMessage.Message,
+                  QualityOfService = targetQos,
+                  RetainAsPublished = queuedMessage.RetainAsPublished,
+                  SubscriptionIdentifier = queuedMessage.SubscriptionIdentifier
+               });
             }
 
-            await client.Stream.Send(in publishPacket, client.ProtocolVersion, ct);
+            await SendPublishMessageAsync(
+               client,
+               queuedMessage.Message,
+               targetQos,
+               queuedMessage.RetainAsPublished,
+               queuedMessage.SubscriptionIdentifier,
+               packetId,
+               dup: false,
+               propertiesBuffer,
+               ct);
          }
       }
       catch (Exception ex)

@@ -104,23 +104,47 @@ public sealed partial class ServerPacketHandler
       return ValueTask.CompletedTask;
    }
 
-   public ValueTask ExecuteAsync(INetworkStream stream, in PubAckPacket packet, CancellationToken ct = default)
-   {
-      // should not be sent by the client
-      return ValueTask.CompletedTask;
-   }
+    public ValueTask ExecuteAsync(INetworkStream stream, in PubAckPacket packet, CancellationToken ct = default)
+    {
+       if (!IsValid) return ValueTask.CompletedTask;
 
-   public ValueTask ExecuteAsync(INetworkStream stream, in PubCompPacket packet, CancellationToken ct = default)
-   {
-      // should not be sent by the client
-      return ValueTask.CompletedTask;
-   }
+       var session = _client.MqttSession;
+       session?.AcknowledgePublish(packet.PacketIdentifier);
 
-   public ValueTask ExecuteAsync(INetworkStream stream, in PubRecPacket packet, CancellationToken ct = default)
-   {
-      // should not be sent by the client
-      return ValueTask.CompletedTask;
-   }
+       return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ExecuteAsync(INetworkStream stream, in PubCompPacket packet, CancellationToken ct = default)
+    {
+       if (!IsValid) return ValueTask.CompletedTask;
+
+       var session = _client.MqttSession;
+       session?.AcknowledgePublish(packet.PacketIdentifier);
+
+       return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ExecuteAsync(INetworkStream stream, in PubRecPacket packet, CancellationToken ct = default)
+    {
+       if (!IsValid) return ValueTask.CompletedTask;
+
+       var session = _client.MqttSession;
+       var pending = session?.PeekUnacknowledgedPublish(packet.PacketIdentifier);
+
+       if (pending is null) return ValueTask.CompletedTask;
+       return Awaited(stream, packet, _client, ct);
+
+       static async ValueTask Awaited(INetworkStream stream, PubRecPacket packet, MqttServerClient client, CancellationToken ct)
+       {
+          var pubRel = new PubRelPacket
+          {
+             PacketIdentifier = packet.PacketIdentifier,
+             ReasonCode = PubRelReasonCode.Success
+          };
+
+          await stream.Send(in pubRel, client.ProtocolVersion, ct);
+       }
+    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PubRelPacket packet, CancellationToken ct = default)
    {

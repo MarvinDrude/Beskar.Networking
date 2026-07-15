@@ -20,6 +20,18 @@ public sealed partial class MqttSession : IAsyncDisposable
    private readonly HashSet<ushort> _incomingQos2Packets = [];
    private readonly PacketIdentifierGenerator _packetIdGenerator = new();
    private readonly Queue<MqttQueuedMessage> _offlineQueue = new();
+   private readonly List<MqttPendingPublish> _unacknowledgedPublishes = [];
+
+   public bool HasUnacknowledgedPublishes
+   {
+      get
+      {
+         lock (_unacknowledgedPublishes)
+         {
+            return _unacknowledgedPublishes.Count > 0;
+         }
+      }
+   }
 
    public ushort GenerateNextPacketIdentifier() => _packetIdGenerator.GenerateNextIdentifier();
 
@@ -73,6 +85,44 @@ public sealed partial class MqttSession : IAsyncDisposable
       lock (_offlineQueue)
       {
          return _offlineQueue.TryDequeue(out message);
+      }
+   }
+
+   internal void AddUnacknowledgedPublish(MqttPendingPublish pendingPublish)
+   {
+      lock (_unacknowledgedPublishes)
+      {
+         _unacknowledgedPublishes.Add(pendingPublish);
+      }
+   }
+
+   internal MqttPendingPublish? AcknowledgePublish(ushort packetIdentifier)
+   {
+      lock (_unacknowledgedPublishes)
+      {
+         var found = _unacknowledgedPublishes.Find(p => p.PacketIdentifier == packetIdentifier);
+         if (found is not null)
+         {
+            _unacknowledgedPublishes.Remove(found);
+         }
+
+         return found;
+      }
+   }
+
+   internal MqttPendingPublish? PeekUnacknowledgedPublish(ushort packetIdentifier)
+   {
+      lock (_unacknowledgedPublishes)
+      {
+         return _unacknowledgedPublishes.Find(p => p.PacketIdentifier == packetIdentifier);
+      }
+   }
+
+   internal List<MqttPendingPublish> GetUnacknowledgedPublishes()
+   {
+      lock (_unacknowledgedPublishes)
+      {
+         return [.. _unacknowledgedPublishes];
       }
    }
 }

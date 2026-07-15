@@ -224,6 +224,7 @@ public sealed partial class ServerPacketHandler
             var localSession = session;
             var localQos = targetQos;
             var localRetain = subscription.RetainAsPublished && _message.Retain;
+            var localRetainAsPublished = subscription.RetainAsPublished;
             var localSubId = subscription.SubscriptionIdentifier;
             var localMsg = _message;
 
@@ -257,6 +258,18 @@ public sealed partial class ServerPacketHandler
                      ContentTypeUtf8Bytes = new ReadOnlySequence<byte>(contentTypeBytes),
                      PropertiesBytes = ReadOnlySequence<byte>.Empty
                   };
+
+                  if (localQos > 0)
+                  {
+                     localSession.AddUnacknowledgedPublish(new MqttPendingPublish
+                     {
+                        PacketIdentifier = publishPacket.PacketIdentifier,
+                        Message = localMsg,
+                        QualityOfService = localQos,
+                        RetainAsPublished = localRetainAsPublished,
+                        SubscriptionIdentifier = localSubId
+                     });
+                  }
 
                   if (localClient.ProtocolVersion is MqttProtocolVersion.V50)
                   {
