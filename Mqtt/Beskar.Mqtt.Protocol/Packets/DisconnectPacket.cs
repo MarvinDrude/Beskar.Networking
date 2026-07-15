@@ -15,7 +15,7 @@ public struct DisconnectPacket : IRawMqttPacket
    public ReadOnlySequence<byte> ReasonUtf8Bytes;
 
    public ReadOnlySequence<byte> ServerReferenceUtf8Bytes;
-   public uint SessionExpiryInterval;
+   public uint? SessionExpiryInterval;
 
    public ReadOnlySequence<byte> PropertiesBytes;
    public readonly MqttPropertyEnumerator GetProperties() => new(PropertiesBytes);

@@ -62,7 +62,6 @@ public ref partial struct PacketPropertyEncoder
 
    public void WriteSessionExpiryInterval(uint value)
    {
-      if (value == 0) return;
       Write(PropertyIdentifier.SessionExpiryInterval, value);
    }
 

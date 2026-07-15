@@ -20,11 +20,10 @@ namespace Beskar.Mqtt.Common.Tests.Internal;
 
 public class MqttClientEventTests
 {
+   private static int _nextPort = 15000;
    private static int GetFreePort()
    {
-      using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-      socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-      return ((IPEndPoint)socket.LocalEndPoint!).Port;
+      return Interlocked.Increment(ref _nextPort);
    }
 
    [Test]

@@ -164,6 +164,18 @@ public sealed class MqttClientSessions(MqttServer server)
             alternateLookup.Remove(client.ClientIdUtf8Bytes.Span);
          }
 
+         if (client.DisconnectOptions is not null && _server.Options.SupportPersistentSessions)
+         {
+            if (client.DisconnectOptions.SessionExpiryInterval.HasValue)
+            {
+               var val = client.DisconnectOptions.SessionExpiryInterval.Value;
+               if (session.ExpiryInterval > 0 || val == 0)
+               {
+                  session.ExpiryInterval = val;
+               }
+            }
+         }
+
          session.DisconnectionTimestamp = DateTimeOffset.UtcNow;
          session.Client = null;
 

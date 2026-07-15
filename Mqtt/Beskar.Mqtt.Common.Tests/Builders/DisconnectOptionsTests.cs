@@ -68,7 +68,7 @@ public class DisconnectOptionsTests
       // Assert
       await Assert.That(options.ReasonCode).IsEqualTo(DisconnectReasonCode.NormalDisconnection);
       await Assert.That(options.ReasonString).IsNull();
-      await Assert.That(options.SessionExpiryInterval).IsEqualTo(0U);
+      await Assert.That(options.SessionExpiryInterval).IsNull();
       await Assert.That(options.UserProperties.Count).IsEqualTo(0);
    }
 

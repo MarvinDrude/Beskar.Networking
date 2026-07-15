@@ -33,7 +33,7 @@ public sealed class DisconnectOptions(int builderCapacity = -1)
    /// Session expiry interval
    /// <remarks>MQTT 5.0.0 and above required.</remarks>
    /// </summary>
-   public uint SessionExpiryInterval { get; set; }
+   public uint? SessionExpiryInterval { get; set; }
 
    /// <summary>
    /// Clears the options back to their defaults.
@@ -45,7 +45,7 @@ public sealed class DisconnectOptions(int builderCapacity = -1)
       ReasonCode = DisconnectReasonCode.NormalDisconnection;
       ReasonString = null;
       ServerReference = null;
-      SessionExpiryInterval = 0;
+      SessionExpiryInterval = null;
    }
 
    public static DisconnectOptionsBuilder Create() => new();

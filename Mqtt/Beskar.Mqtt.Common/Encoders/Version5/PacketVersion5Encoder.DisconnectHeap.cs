@@ -33,9 +33,9 @@ public readonly ref partial struct PacketVersion5Encoder
 
                   try
                   {
-                     if (options.SessionExpiryInterval != 0)
+                     if (options.SessionExpiryInterval.HasValue)
                      {
-                        propEncoder.WriteSessionExpiryInterval(options.SessionExpiryInterval);
+                        propEncoder.WriteSessionExpiryInterval(options.SessionExpiryInterval.Value);
                      }
 
                      if (options.ReasonString is { } reasonString)
@@ -103,14 +103,14 @@ public readonly ref partial struct PacketVersion5Encoder
    {
       var len = 0;
 
-      if (options.SessionExpiryInterval != 0)
+      if (options.SessionExpiryInterval.HasValue)
       {
          len += 5;
       }
 
       if (options.ReasonString is { } reasonString)
       {
-         len += 3 + System.Text.Encoding.UTF8.GetByteCount(reasonString);
+         len += 3 + Encoding.UTF8.GetByteCount(reasonString);
       }
 
       len += options.UserProperties.ByteCount;

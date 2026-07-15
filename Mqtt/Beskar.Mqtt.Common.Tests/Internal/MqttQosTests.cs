@@ -15,11 +15,10 @@ namespace Beskar.Mqtt.Common.Tests.Internal;
 
 public class MqttQosTests
 {
+   private static int _nextPort = 12000;
    private static int GetFreePort()
    {
-      using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-      socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-      return ((IPEndPoint)socket.LocalEndPoint!).Port;
+      return Interlocked.Increment(ref _nextPort);
    }
 
    [Test]
@@ -651,18 +650,17 @@ public class MqttQosTests
       // Disconnect Client A1
       await clientA1.DisconnectAsync(new DisconnectOptions());
 
-      // Wait for disconnect event to fire on the server
-      var start = DateTime.UtcNow;
-      while (!disconnectEventFired && DateTime.UtcNow - start < TimeSpan.FromSeconds(5)) await Task.Delay(50);
+       // Wait for disconnect event to fire and session client to clear on the server
+       var start = DateTime.UtcNow;
+       while ((sessionA == null || sessionA.Client != null) && DateTime.UtcNow - start < TimeSpan.FromSeconds(5))
+       {
+          await Task.Delay(50);
+       }
 
-      // Add a tiny extra delay to make sure session cleanup completes
-      await Task.Delay(100);
-
-      // Verify server session state diagnostic info
-      if (sessionA == null) throw new Exception("Diagnostic: sessionA is NULL");
-      if (sessionA.Client != null)
-         throw new Exception(
-            $"Diagnostic: sessionA.Client is NOT NULL. ClientId={Encoding.UTF8.GetString(sessionA.Client.ClientIdUtf8Bytes.Span)}. IsConnected={sessionA.Client.IsConnected}. DisconnectEventFired={disconnectEventFired}");
+       if (sessionA == null) throw new Exception("Diagnostic: sessionA is NULL");
+       if (sessionA.Client != null)
+          throw new Exception(
+             $"Diagnostic: sessionA.Client is NOT NULL. ClientId={Encoding.UTF8.GetString(sessionA.Client.ClientIdUtf8Bytes.Span)}. IsConnected={sessionA.Client.IsConnected}. DisconnectEventFired={disconnectEventFired}");
 
       // 2. Client B (Publisher) publishes QoS 1 message while A is offline
       var publisher = MqttClientFactory.CreateTcp();
@@ -861,5 +859,160 @@ public class MqttQosTests
 
       await subscriber.DisconnectAsync(new DisconnectOptions());
       await publisher.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+    public async Task QoS_CleanStartFalse_WithSessionExpiryUpdateToZeroOnDisconnect_ShouldDiscardSessionImmediately()
+    {
+       var port = GetFreePort();
+
+       // Enable persistent sessions
+       var serverOptions = new MqttServerOptions { SupportPersistentSessions = true };
+
+      await using var server = MqttServerFactory.CreateBuilder(serverOptions)
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      var clientId = Encoding.UTF8.GetBytes("client-expiry-update-id");
+      MqttSession? sessionA = null;
+
+      server.Events.OnConnect.Add((ctx, ct) =>
+      {
+         if (ctx.Client.ClientIdUtf8Bytes.Span.SequenceEqual(clientId))
+         {
+            sessionA = ctx.Client.MqttSession;
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      // 1. Connect with long expiry
+      var clientA1 = MqttClientFactory.CreateTcp();
+      await clientA1.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ClientIdUtf8Bytes = clientId,
+         CleanSession = true,
+         SessionExpiryInterval = 300
+      });
+
+      await clientA1.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/expiry-update"u8, QualityOfServiceType.AtLeastOnce)
+         .Build());
+
+      // Disconnect specifying SessionExpiryInterval = 0
+      await clientA1.DisconnectAsync(new DisconnectOptions { SessionExpiryInterval = 0 });
+
+      // Wait for session.Client to become null (indicating disconnection handling completed)
+      var start = DateTime.UtcNow;
+      while ((sessionA == null || sessionA.Client != null) && DateTime.UtcNow - start < TimeSpan.FromSeconds(5))
+      {
+         await Task.Delay(50);
+      }
+
+      // Verify server session has been immediately discarded (Client = null, session removed or ExpiryInterval updated)
+      await Assert.That(sessionA).IsNotNull();
+      await Assert.That(sessionA!.Client).IsNull();
+      await Assert.That(sessionA.ExpiryInterval).IsEqualTo(0u);
+
+      // 2. Publish message to test/expiry-update
+      var publisher = MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+      await publisher.PublishAsync(new PublishOptionsBuilder()
+         .WithTopic("test/expiry-update"u8)
+         .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+         .WithPayload("ShouldNotBeDelivered")
+         .Build());
+      await publisher.DisconnectAsync(new DisconnectOptions());
+
+      // 3. Connect clientA2 with cleanSession = false
+      var clientA2 = MqttClientFactory.CreateTcp();
+      var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+      clientA2.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         tcs.TrySetResult(Encoding.UTF8.GetString(ctx.Message.Payload.Span));
+         return ValueTask.CompletedTask;
+      });
+
+      await clientA2.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ClientIdUtf8Bytes = clientId,
+         CleanSession = false
+      });
+
+      // Verify no message was queued because session expired/discarded immediately
+      var completed = await Task.WhenAny(tcs.Task, Task.Delay(500));
+      await Assert.That(completed != tcs.Task).IsTrue(); // Timed out (no queued message delivered)
+
+      await clientA2.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task QoS_RetainHandling_SendOnNewSubscriptionOnly_WithExistingSubscription_ShouldNotDeliverMessage()
+   {
+      var port = GetFreePort();
+
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      // 1. Publish retained message
+      var publisher = MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+      await publisher.PublishAsync(new PublishOptionsBuilder()
+         .WithTopic("test/retainhandling/newonly-existing"u8)
+         .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+         .WithPayload("NewOnlyExistingValue")
+         .WithRetain(true)
+         .Build());
+      await publisher.DisconnectAsync(new DisconnectOptions());
+
+      // 2. Subscribe first time with SendOnNewSubscriptionOnly
+      var subscriber = MqttClientFactory.CreateTcp();
+      await subscriber.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });
+
+      var tcs1 = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+      var tcs2 = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+      int receiveCount = 0;
+      subscriber.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         var payload = Encoding.UTF8.GetString(ctx.Message.Payload.Span);
+         if (Interlocked.Increment(ref receiveCount) == 1)
+         {
+            tcs1.TrySetResult(payload);
+         }
+         else
+         {
+            tcs2.TrySetResult(payload);
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      await subscriber.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/retainhandling/newonly-existing"u8, QualityOfServiceType.AtLeastOnce, retainHandling: RetainHandlingType.SendOnNewSubscriptionOnly)
+         .Build());
+
+      // First subscribe delivers retained message
+      var r1 = await tcs1.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(r1).IsEqualTo("NewOnlyExistingValue");
+
+      // 3. Subscribe second time to the same topic filter (existing subscription)
+      await subscriber.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/retainhandling/newonly-existing"u8, QualityOfServiceType.AtLeastOnce, retainHandling: RetainHandlingType.SendOnNewSubscriptionOnly)
+         .Build());
+
+      // Verify no message is delivered this second time (since subscription already existed)
+      var completed = await Task.WhenAny(tcs2.Task, Task.Delay(500));
+      await Assert.That(completed != tcs2.Task).IsTrue(); // Timed out
+
+      await subscriber.DisconnectAsync(new DisconnectOptions());
    }
 }
