@@ -1,5 +1,6 @@
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Mqtt.Client.States;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Connecting;
@@ -634,13 +635,20 @@ public sealed partial class MqttClient
       return Send(options, stream, 0, ct);
    }
 
-    public Task SendAsync<TPacket>(in TPacket packet, CancellationToken ct = default)
+     public Task SendAsync<TPacket>(in TPacket packet, CancellationToken ct = default)
       where TPacket : struct, IRawMqttPacket
    {
-      var clientResult = ValidateClient();
-      if (!clientResult.IsSuccess)
+      var disposedResult = ValidateDisposed();
+      if (disposedResult.Failed)
       {
-         return Task.FromException(new InvalidOperationException(clientResult.Error.Detail));
+         return Task.FromException(new InvalidOperationException(disposedResult.Error.Detail));
+      }
+
+      var state = (MqttClientConnectionState)_state;
+      if (state is not MqttClientConnectionState.Connected &&
+          !(state is MqttClientConnectionState.Connecting && typeof(TPacket) == typeof(AuthPacket)))
+      {
+         return Task.FromException(new InvalidOperationException("Client is not connected."));
       }
 
       if (_controlStream is not { } stream)

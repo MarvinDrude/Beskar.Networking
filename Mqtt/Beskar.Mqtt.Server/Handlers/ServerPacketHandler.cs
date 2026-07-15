@@ -16,6 +16,7 @@ using Beskar.Mqtt.Server.Internal;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
 using Beskar.Memory.Writers;
+using Beskar.Mqtt.Common.Options;
 using Beskar.Mqtt.Server.Options;
 using Beskar.Utilities.Tracing;
 

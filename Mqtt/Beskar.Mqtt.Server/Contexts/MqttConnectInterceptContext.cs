@@ -1,9 +1,12 @@
 using System.Text;
 using Beskar.Mqtt.Common.Builders.Common;
 using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Common.Options;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
+using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Internal;
+using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Server.Contexts;
@@ -81,5 +84,13 @@ public sealed class MqttConnectInterceptContext(MqttServerClient client)
    public async Task<IHeapMqttOptions?> ReceiveControlPacketAsync(CancellationToken ct = default)
    {
       return await Client.ReceiveControlPacketAsync("UNKNOWN", ct);
+   }
+
+   /// <summary>
+   /// Send an AUTH packet to the client.
+   /// </summary>
+   public async Task SendAuthPacketAsync(AuthPacketOptions options, CancellationToken ct = default)
+   {
+      await Client.Stream.Send(options, Client.ProtocolVersion, ct);
    }
 }

@@ -4,7 +4,7 @@ using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
 
-namespace Beskar.Mqtt.Server.Options;
+namespace Beskar.Mqtt.Common.Options;
 
 public sealed class AuthPacketOptions(in AuthPacket packet)
    : IHeapMqttOptions
