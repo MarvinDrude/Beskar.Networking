@@ -109,10 +109,10 @@ mqttClient.AddMessageReceiveHandler((ctx, ct) =>
 });
 
 var sub = new SubscribeOptionsBuilder()
-   .WithTopicFilter("test/2"u8, QualityOfServiceType.AtMostOnce)
-   .WithTopicFilter("teaaast/+/b"u8, QualityOfServiceType.AtMostOnce)
-   .WithTopicFilter("test/#"u8, QualityOfServiceType.ExactlyOnce)
-   .WithTopicFilter("tessadsat/#"u8, QualityOfServiceType.ExactlyOnce)
+   .WithTopicFilter("test/2"u8, QualityOfServiceType.AtMostOnce, noLocal: true)
+   .WithTopicFilter("teaaast/+/b"u8, QualityOfServiceType.AtMostOnce, noLocal: true)
+   .WithTopicFilter("test/#"u8, QualityOfServiceType.ExactlyOnce, noLocal: true)
+   .WithTopicFilter("tessadsat/#"u8, QualityOfServiceType.ExactlyOnce, noLocal: true)
    .WithUserProperty("test", "test")
    .Build();
 

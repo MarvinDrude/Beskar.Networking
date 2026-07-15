@@ -192,10 +192,14 @@ public class PublishHandlerTests
       await handler.ExecuteAsync(stream, pubPacket);
 
       // Wait a tiny bit since dispatch runs asynchronously
-      await Task.Delay(10);
+      await Task.Delay(100);
 
       // Verify no message was queued to offline queue of its own session
       await Assert.That(session!.OfflineQueueCount).IsEqualTo(0);
+
+      // Verify no data was written to the network stream (online delivery blocked)
+      var hasData = stream.Transport.Input.TryRead(out var readResult) && readResult.Buffer.Length > 0;
+      await Assert.That(hasData).IsFalse();
    }
 
    [Test]
