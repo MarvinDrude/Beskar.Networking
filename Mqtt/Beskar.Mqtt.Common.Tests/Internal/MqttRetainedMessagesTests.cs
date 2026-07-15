@@ -3,7 +3,10 @@ using System.Text;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Mqtt.Server;
+using Beskar.Mqtt.Server.Contexts;
 using Beskar.Mqtt.Server.Internal;
+using Beskar.Mqtt.Server.Options;
 
 namespace Beskar.Mqtt.Common.Tests.Internal;
 
@@ -68,6 +71,41 @@ public class MqttRetainedMessagesTests
       await Assert.That(topicsHash).Contains("a/b/c");
       await Assert.That(topicsHash).Contains("a/x/c");
       await Assert.That(topicsHash).Contains("a/b/d");
+   }
+
+   [Test]
+   public async Task Server_LoadingAndClearingRetainedMessagesEvents_ShouldWork()
+   {
+      await using var server = new MqttServer([], new MqttServerOptions());
+
+      var loadedTriggered = false;
+      server.Events.OnLoadingRetainedMessages.Add((context, ct) =>
+      {
+         loadedTriggered = true;
+         context.LoadedRetainedMessages.Add(CreatePublishMessage("loaded/topic", "hello"u8.ToArray()));
+         return ValueTask.CompletedTask;
+      });
+
+      var clearedTriggered = false;
+      server.Events.OnRetainedMessagesCleared.Add((context, ct) =>
+      {
+         clearedTriggered = true;
+         return ValueTask.CompletedTask;
+      });
+
+      // Start triggers OnLoadingRetainedMessages
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+      await Assert.That(loadedTriggered).IsTrue();
+
+      var stored = server.RetainedMessages.GetMessages();
+      await Assert.That(stored).Count().IsEqualTo(1);
+      await Assert.That(stored[0].Topic).IsEqualTo("loaded/topic");
+
+      // Clear triggers OnRetainedMessagesCleared
+      await server.ClearRetainedMessagesAsync();
+      await Assert.That(clearedTriggered).IsTrue();
+      await Assert.That(server.RetainedMessages.GetMessages()).IsEmpty();
    }
 
    private static MqttPublishMessage CreatePublishMessage(string topic, byte[] payload)

@@ -30,4 +30,8 @@ public sealed class ServerEvents
    public readonly HandlerPipeline<MqttPublishAcknowledgedContext> OnPublishAcknowledged = new();
 
    public readonly HandlerPipeline<MqttRetainedMessageChangedContext> OnRetainedMessageChanged = new();
+
+   public readonly HandlerPipeline<MqttLoadingRetainedMessagesContext> OnLoadingRetainedMessages = new();
+
+   public readonly HandlerPipeline<MqttRetainedMessagesClearedContext> OnRetainedMessagesCleared = new();
 }

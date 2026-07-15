@@ -220,6 +220,7 @@ public sealed partial class ServerPacketHandler
 
       if (changed && server.Events.OnRetainedMessageChanged.Count > 0)
       {
+         var stored = server.RetainedMessages.GetMessages();
          _ = Task.Run(async () =>
          {
             try
@@ -227,7 +228,8 @@ public sealed partial class ServerPacketHandler
                await server.Events.OnRetainedMessageChanged.ExecuteAsync(new MqttRetainedMessageChangedContext
                {
                   ClientId = clientIdStr,
-                  Message = msg.Payload.IsEmpty ? null : msg
+                  ChangedRetainedMessage = msg.Payload.IsEmpty ? null : msg,
+                  StoredRetainedMessages = stored
                }, HandlerExecutionStrategy.SequentialContinueOnError);
             }
             catch (Exception)

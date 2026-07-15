@@ -83,6 +83,16 @@ public sealed partial class MqttServer : IAsyncDisposable
 
       State = MqttServerState.Starting;
 
+      if (Events.OnLoadingRetainedMessages.Count > 0)
+      {
+         var context = new MqttLoadingRetainedMessagesContext { Server = this };
+         await Events.OnLoadingRetainedMessages.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError);
+         if (context.LoadedRetainedMessages.Count > 0)
+         {
+            RetainedMessages.LoadMessages(context.LoadedRetainedMessages);
+         }
+      }
+ 
       await _cancellationTokenSource.CancelAsync();
       _cancellationTokenSource.Dispose();
 
@@ -615,6 +625,16 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
    }
 
+   public async Task ClearRetainedMessagesAsync()
+   {
+      RetainedMessages.Clear();
+      if (Events.OnRetainedMessagesCleared.Count > 0)
+      {
+         await Events.OnRetainedMessagesCleared.ExecuteAsync(
+            new MqttRetainedMessagesClearedContext { Server = this },
+            HandlerExecutionStrategy.SequentialContinueOnError);
+      }
+   }
 
    public async ValueTask DisposeAsync()
    {
