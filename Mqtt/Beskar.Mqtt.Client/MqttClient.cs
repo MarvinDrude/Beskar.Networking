@@ -240,11 +240,13 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
       while (true)
       {
+         using var iterationCts = CancellationTokenSource.CreateLinkedTokenSource(combined.Token);
+
          using var connAckAwaiter = _signalBroker.AddAwaitable<ClientConnectResult>(0);
          using var authAwaiter = _signalBroker.AddAwaitable<AuthPacketResult>(0);
 
-         var connAckTask = connAckAwaiter.WaitOneAsync(combined.Token).AsTask();
-         var authTask = authAwaiter.WaitOneAsync(combined.Token).AsTask();
+         var connAckTask = connAckAwaiter.WaitOneAsync(iterationCts.Token).AsTask();
+         var authTask = authAwaiter.WaitOneAsync(iterationCts.Token).AsTask();
 
          if (first)
          {
@@ -287,16 +289,43 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          if (completedTask == connAckTask)
          {
             var connAckResult = await connAckTask;
-            TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received CONNACK (Reason: {0}).", connAckResult.ReasonCode);
-            if (connAckResult.ReasonCode != ConnectReasonCode.Success)
+            await iterationCts.CancelAsync();
+
+            try
             {
-               return new StringError($"Connection refused: {connAckResult.ReasonCode}");
+               await authTask;
+            }
+            catch { /* ignored */ }
+
+            if (_protocolVersion is MqttProtocolVersion.V50)
+            {
+               TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received CONNACK (Reason: {0}).", connAckResult.ReasonCode);
+               if (connAckResult.ReasonCode is not ConnectReasonCode.Success)
+               {
+                  return new StringError($"Connection refused: {connAckResult.ReasonCode}");
+               }
+            }
+            else
+            {
+               TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received CONNACK (ReturnCode: {0}).", connAckResult.ReturnCode);
+               if (connAckResult.ReturnCode is not ConnectReturnCode.Accepted)
+               {
+                  return new StringError($"Connection refused: {connAckResult.ReturnCode}");
+               }
             }
 
             return connAckResult;
          }
 
          authResult = await authTask;
+         await iterationCts.CancelAsync();
+
+         try
+         {
+            await connAckTask;
+         }
+         catch { /* ignored */ }
+
          TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received AUTH packet.");
          if (_connectOptions.AuthenticationMethodUtf8Bytes.IsEmpty)
          {

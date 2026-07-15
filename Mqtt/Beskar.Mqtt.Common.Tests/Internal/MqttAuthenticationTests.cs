@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Client;
@@ -12,6 +13,7 @@ using Beskar.Mqtt.Common.Options;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Common.Tests.Internal;
 
@@ -229,5 +231,103 @@ public class MqttAuthenticationTests
 
          return true;
       }
+   }
+
+   [Test]
+   public async Task MqttV3_ConnectWithValidCredentials_ShouldConnectSuccessfully()
+   {
+      var port = GetFreePort();
+
+      // Start the server
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      server.Events.OnConnectIntercept.Add((ctx, ct) =>
+      {
+         // Verify protocol version is V3.1.1
+         if (ctx.ConnectOptions.ProtocolVersion != MqttProtocolVersion.V311)
+         {
+            ctx.ReasonCode = ConnectReasonCode.UnsupportedProtocolVersion;
+            return ValueTask.CompletedTask;
+         }
+
+         var username = Encoding.UTF8.GetString(ctx.ConnectOptions.UsernameUtf8Bytes.Span);
+         var password = Encoding.UTF8.GetString(ctx.ConnectOptions.PasswordBytes.Span);
+         TraceLogger.LogServerInfo($"SERVER INTERCEPT V3 SUCCESS: User={username}, Pass={password}");
+
+         if (username != "validUser" || password != "validPass")
+         {
+            ctx.ReasonCode = ConnectReasonCode.NotAuthorized;
+            return ValueTask.CompletedTask;
+         }
+
+         ctx.ReasonCode = ConnectReasonCode.Success;
+         return ValueTask.CompletedTask;
+      });
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      // Create and connect client using MQTT v3.1.1
+      var client = MqttClientFactory.CreateTcp();
+      var connectOptions = new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ProtocolVersion = MqttProtocolVersion.V311,
+         UsernameUtf8Bytes = "validUser"u8.ToArray(),
+         PasswordBytes = "validPass"u8.ToArray()
+      };
+
+      var connectResult = await client.ConnectAsync(connectOptions);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      await client.PingAsync();
+      await client.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task MqttV3_ConnectWithInvalidCredentials_ShouldFailToConnect()
+   {
+      var port = GetFreePort();
+
+      // Start the server
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      server.Events.OnConnectIntercept.Add((ctx, ct) =>
+      {
+         var username = Encoding.UTF8.GetString(ctx.ConnectOptions.UsernameUtf8Bytes.Span);
+         var password = Encoding.UTF8.GetString(ctx.ConnectOptions.PasswordBytes.Span);
+         TraceLogger.LogServerInfo($"SERVER INTERCEPT V3 FAIL: User={username}, Pass={password}");
+
+         if (username != "validUser" || password != "validPass")
+         {
+            ctx.ReasonCode = ConnectReasonCode.NotAuthorized;
+            return ValueTask.CompletedTask;
+         }
+
+         ctx.ReasonCode = ConnectReasonCode.Success;
+         return ValueTask.CompletedTask;
+      });
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      // Create and connect client using MQTT v3.1.1 with wrong credentials
+      var client = MqttClientFactory.CreateTcp();
+      var connectOptions = new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ProtocolVersion = MqttProtocolVersion.V311,
+         UsernameUtf8Bytes = "wrongUser"u8.ToArray(),
+         PasswordBytes = "wrongPass"u8.ToArray()
+      };
+
+      var connectResult = await client.ConnectAsync(connectOptions);
+      await Assert.That(connectResult.Failed).IsTrue();
    }
 }
