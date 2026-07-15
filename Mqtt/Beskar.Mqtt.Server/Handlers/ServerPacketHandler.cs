@@ -18,6 +18,8 @@ using Beskar.Networking.Abstractions.Interfaces.Pools;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Options;
 using Beskar.Mqtt.Server.Options;
+using Beskar.Memory.Threading;
+using Beskar.Mqtt.Server.Contexts;
 using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Server.Handlers;
@@ -106,22 +108,63 @@ public sealed partial class ServerPacketHandler
 
     public ValueTask ExecuteAsync(INetworkStream stream, in PubAckPacket packet, CancellationToken ct = default)
     {
-       if (!IsValid) return ValueTask.CompletedTask;
+        if (!IsValid) return ValueTask.CompletedTask;
 
-       var session = _client.MqttSession;
-       session?.AcknowledgePublish(packet.PacketIdentifier);
+        var session = _client.MqttSession;
+        if (session is null) return ValueTask.CompletedTask;
 
-       return ValueTask.CompletedTask;
+        var pending = session.AcknowledgePublish(packet.PacketIdentifier);
+        if (pending is null || _server.Events.OnPublishAcknowledged.Count <= 0)
+           return ValueTask.CompletedTask;
+
+        var server = _server;
+        _ = Task.Run(async () =>
+        {
+           try
+           {
+              await server.Events.OnPublishAcknowledged.ExecuteAsync(new MqttPublishAcknowledgedContext
+              {
+                 Session = session,
+                 PendingPublish = pending
+              }, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+           }
+           catch (Exception)
+           {
+              // ignored
+           }
+        }, ct);
+
+        return ValueTask.CompletedTask;
     }
 
     public ValueTask ExecuteAsync(INetworkStream stream, in PubCompPacket packet, CancellationToken ct = default)
     {
-       if (!IsValid) return ValueTask.CompletedTask;
+        if (!IsValid) return ValueTask.CompletedTask;
 
-       var session = _client.MqttSession;
-       session?.AcknowledgePublish(packet.PacketIdentifier);
+        var session = _client.MqttSession;
+        var pending = session?.AcknowledgePublish(packet.PacketIdentifier);
 
-       return ValueTask.CompletedTask;
+        if (session is null || pending is null || _server.Events.OnPublishAcknowledged.Count <= 0)
+           return ValueTask.CompletedTask;
+
+        var server = _server;
+        _ = Task.Run(async () =>
+        {
+           try
+           {
+              await server.Events.OnPublishAcknowledged.ExecuteAsync(new MqttPublishAcknowledgedContext
+              {
+                 Session = session,
+                 PendingPublish = pending
+              }, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+           }
+           catch (Exception)
+           {
+              // ignored
+           }
+        }, ct);
+
+        return ValueTask.CompletedTask;
     }
 
     public ValueTask ExecuteAsync(INetworkStream stream, in PubRecPacket packet, CancellationToken ct = default)

@@ -26,4 +26,6 @@ public sealed class ServerEvents
    public readonly HandlerPipeline<MqttAcknowledgePubContext> OnAcknowledgePub = new();
 
    public readonly HandlerPipeline<MqttNoSubscriberMessageContext> OnNoSubscriberMessage = new();
+
+   public readonly HandlerPipeline<MqttPublishAcknowledgedContext> OnPublishAcknowledged = new();
 }
