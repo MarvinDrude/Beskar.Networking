@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using Beskar.Memory.Threading;
+using Beskar.Mqtt.Server.Contexts;
 using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Server.Internal;
@@ -34,31 +36,35 @@ public sealed partial class MqttSession
       IsConnected = serverClient is not null;
    }
 
-   public ValueTask DisposeAsync()
-   {
-      try
-      {
-         if (_disposed) return ValueTask.CompletedTask;
-         _disposed = true;
+    public async ValueTask DisposeAsync()
+    {
+       try
+       {
+          if (_disposed) return;
+          _disposed = true;
 
-         Server.SubscriptionRouter.UnsubscribeAll(this);
+          if (Server.Events.OnDeleteSession.Count > 0)
+          {
+             await Server.Events.OnDeleteSession.ExecuteAsync(new MqttDeleteSessionContext() { Session = this },
+                HandlerExecutionStrategy.SequentialContinueOnError);
+          }
 
-         lock (_incomingQos2Packets)
-         {
-            _incomingQos2Packets.Clear();
-         }
-         lock (_offlineQueue)
-         {
-            _offlineQueue.Clear();
-         }
+          Server.SubscriptionRouter.UnsubscribeAll(this);
 
-         _serverClient = null;
+          lock (_incomingQos2Packets)
+          {
+             _incomingQos2Packets.Clear();
+          }
+          lock (_offlineQueue)
+          {
+             _offlineQueue.Clear();
+          }
 
-         return ValueTask.CompletedTask;
-      }
-      catch (Exception exception)
-      {
-         return ValueTask.FromException(exception);
-      }
-   }
+          _serverClient = null;
+       }
+       catch (Exception)
+       {
+          throw;
+       }
+    }
 }

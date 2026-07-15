@@ -16,4 +16,6 @@ public sealed class ServerEvents
    public readonly HandlerPipeline<MqttServerStartContext> OnStart = new();
 
    public readonly HandlerPipeline<MqttServerStopContext> OnStop = new();
+
+   public readonly HandlerPipeline<MqttDeleteSessionContext> OnDeleteSession = new();
 }
