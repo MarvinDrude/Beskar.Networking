@@ -109,7 +109,7 @@ public sealed partial class ServerPacketHandler
                if (server.Events.OnAcknowledgePub.Count > 0)
                {
                   await server.Events.OnAcknowledgePub.ExecuteAsync(
-                     new MqttAcknowledgePubContext() { Session = session, PublishPacket = packet },
+                     new MqttAcknowledgePubContext() { Session = session, PublishMessage = new MqttPublishMessage(packet) },
                      HandlerExecutionStrategy.SequentialContinueOnError, ct);
                }
 
@@ -133,7 +133,7 @@ public sealed partial class ServerPacketHandler
                if (server.Events.OnAcknowledgePub.Count > 0)
                {
                   await server.Events.OnAcknowledgePub.ExecuteAsync(
-                     new MqttAcknowledgePubContext() { Session = session, PublishPacket = packet },
+                     new MqttAcknowledgePubContext() { Session = session, PublishMessage = new MqttPublishMessage(packet) },
                      HandlerExecutionStrategy.SequentialContinueOnError, ct);
                }
 
@@ -173,16 +173,16 @@ public sealed partial class ServerPacketHandler
          if (visitor.MatchCount == 0 && publisherClient.MqttSession is not null)
          {
             var session = publisherClient.MqttSession;
-            var packetCopy = packet;
 
             if (server.Events.OnNoSubscriberMessage.Count > 0)
             {
+               var publishMessageContext = new MqttPublishMessage(packet);
                _ = Task.Run(async () =>
                {
                   try
                   {
                      await server.Events.OnNoSubscriberMessage.ExecuteAsync(
-                        new MqttNoSubscriberMessageContext() { Session = session, PublishPacket = packetCopy },
+                        new MqttNoSubscriberMessageContext() { Session = session, PublishMessage = publishMessageContext },
                         HandlerExecutionStrategy.SequentialContinueOnError, ct);
                   }
                   catch (Exception)
