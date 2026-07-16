@@ -37,6 +37,8 @@ public sealed class WsNetworkSession : INetworkSession
       StreamsOpened = Interlocked.Read(ref _streamsOpened)
    };
 
+   public IReadOnlyCollection<INetworkStream> ActiveStreams => [_stream];
+
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public TransportKind Transport => TransportKind.WebSocket;
 

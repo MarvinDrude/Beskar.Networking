@@ -52,6 +52,8 @@ public sealed class QuicNetworkSession(
       StreamsOpened = Interlocked.Read(ref _streamsOpened)
    };
 
+   public IReadOnlyCollection<INetworkStream> ActiveStreams => [.. _activeStreams.Values];
+
    public NetworkStats Stats
    {
       get

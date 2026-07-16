@@ -44,6 +44,10 @@ public sealed class TcpNetworkSession(
       StreamsOpened = Interlocked.Read(ref _streamsOpened)
    };
 
+   public IReadOnlyCollection<INetworkStream> ActiveStreams => _stream is not null
+      ? new[] { _stream }
+      : Array.Empty<INetworkStream>();
+
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public TransportKind Transport => TransportKind.Tcp;
 

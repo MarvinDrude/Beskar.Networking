@@ -72,6 +72,11 @@ public interface INetworkSession : IAsyncDisposable
    public NetworkSessionStats SessionStats { get; }
 
    /// <summary>
+   /// Gets a read-only collection of all active streams on this session.
+   /// </summary>
+   public IReadOnlyCollection<INetworkStream> ActiveStreams { get; }
+
+   /// <summary>
    /// Accepts or gets the network stream of the current network session.
    /// </summary>
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default);

@@ -19,6 +19,7 @@ public class DummyNetworkSession : INetworkSession
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
    public NetworkSessionStats SessionStats => default;
+   public IReadOnlyCollection<INetworkStream> ActiveStreams => Array.Empty<INetworkStream>();
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 

@@ -732,6 +732,7 @@ public class PublishHandlerTests
       public TransportKind Transport => TransportKind.Unknown;
       public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
       public NetworkSessionStats SessionStats => default;
+      public IReadOnlyCollection<INetworkStream> ActiveStreams => Array.Empty<INetworkStream>();
 
       public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
       {
