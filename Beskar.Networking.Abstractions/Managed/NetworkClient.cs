@@ -32,6 +32,7 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
    private Task? _reconnectTask;
 
    public TransportKind Transport => _innerClient.Transport;
+   public bool IsConnected => State == ConnectionState.Connected;
 
    /// <summary>
    /// Occurs when the client successfully connects or reconnects to the endpoint.

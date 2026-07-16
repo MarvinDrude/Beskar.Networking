@@ -38,10 +38,12 @@ public class NetworkClientTests
       });
 
       // Act
+      await Assert.That(client.IsConnected).IsFalse();
       var result = await client.ConnectAsync(_testEndPoint);
 
       // Assert
       await Assert.That(result.IsSuccess).IsTrue();
+      await Assert.That(client.IsConnected).IsTrue();
       await Assert.That(client.State).IsEqualTo(ConnectionState.Connected);
       await Assert.That(client.Session).IsEqualTo(fakeSession);
       await Assert.That(connectedHandlerInvoked).IsTrue();
@@ -336,6 +338,8 @@ public class FakeNetworkClient : INetworkClient
    public Func<CancellationToken, ValueTask>? OnDisconnectAsync { get; set; }
 
    public TransportKind Transport => TransportKind.Unknown;
+
+   public bool IsConnected => ConnectCount > DisconnectCount;
 
    public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
       CancellationToken ct = default)

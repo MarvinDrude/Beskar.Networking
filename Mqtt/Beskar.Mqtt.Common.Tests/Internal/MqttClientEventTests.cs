@@ -226,6 +226,7 @@ public class MqttClientEventTests
    private class MockNetworkClient : INetworkClient
    {
       public TransportKind Transport => TransportKind.Unknown;
+      public bool IsConnected => false;
       public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
          CancellationToken ct = default)
       {

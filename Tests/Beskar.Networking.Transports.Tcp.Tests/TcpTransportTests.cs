@@ -25,14 +25,20 @@ public class TcpTransportTests
       var options = new TcpTransportOptions();
       var listener = new TcpNetworkListener(endPoint, options);
 
+      // Assert initially unbound
+      await Assert.That(listener.IsBound).IsFalse();
+
       // Bind listener
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
+      await Assert.That(listener.IsBound).IsTrue();
 
       // Connect client
       var client = new TcpNetworkClient(options);
+      await Assert.That(client.IsConnected).IsFalse();
       var connectResult = await client.ConnectAsync(endPoint);
       await Assert.That(connectResult.Failed).IsFalse();
+      await Assert.That(client.IsConnected).IsTrue();
 
       // Accept server session
       var acceptResult = await listener.AcceptSessionAsync();

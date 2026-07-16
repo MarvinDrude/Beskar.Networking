@@ -17,6 +17,9 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
 {
    public TransportKind Transport => TransportKind.Quic;
 
+   public bool IsConnected => _activeSession is not null
+      && !_activeSession.SessionClosedToken.IsCancellationRequested;
+
    private readonly QuicTransportOptions _options = options;
    private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);
 

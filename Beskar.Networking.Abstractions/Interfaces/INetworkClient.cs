@@ -16,6 +16,11 @@ public interface INetworkClient : IAsyncDisposable
    public TransportKind Transport { get; }
 
    /// <summary>
+   /// Gets a value indicating whether the client is currently connected to a remote endpoint.
+   /// </summary>
+   public bool IsConnected { get; }
+
+   /// <summary>
    /// Tries to connect to a remote endpoint.
    /// </summary>
    public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(

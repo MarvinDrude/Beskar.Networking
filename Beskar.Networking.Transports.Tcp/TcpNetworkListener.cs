@@ -21,7 +21,9 @@ public sealed class TcpNetworkListener(
    : INetworkListener
 {
    public EndPoint LocalAddress { get; } = localAddress;
+
    public TransportKind Transport => TransportKind.Tcp;
+   public bool IsBound => _listenerSocket is not null;
 
    private readonly TcpTransportOptions _options = options;
    private readonly TcpIoQueueRegistry _ioQueueRegistry = new(options);

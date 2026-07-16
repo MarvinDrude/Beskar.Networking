@@ -16,6 +16,11 @@ public interface INetworkListener : IAsyncDisposable
    public EndPoint LocalAddress { get; }
 
    /// <summary>
+   /// Gets a value indicating whether the listener is currently bound and listening.
+   /// </summary>
+   public bool IsBound { get; }
+
+   /// <summary>
    /// The transport kind of the current listener.
    /// </summary>
    public TransportKind Transport { get; }

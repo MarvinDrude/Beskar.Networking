@@ -694,6 +694,7 @@ public class PublishHandlerTests
    {
       public EndPoint LocalAddress => new IPEndPoint(IPAddress.Loopback, 0);
       public TransportKind Transport => TransportKind.Unknown;
+      public bool IsBound => true;
 
       public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
       {

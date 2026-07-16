@@ -15,7 +15,9 @@ namespace Beskar.Networking.Transports.Ws;
 public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions options) : INetworkListener
 {
    public EndPoint LocalAddress { get; } = localAddress;
+
    public TransportKind Transport => TransportKind.WebSocket;
+   public bool IsBound => _tcpListener.IsBound;
 
    private readonly WsTransportOptions _options = options;
    private readonly TcpNetworkListener _tcpListener = new(localAddress, options.TcpOptions);

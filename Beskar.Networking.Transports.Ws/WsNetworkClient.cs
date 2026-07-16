@@ -16,6 +16,9 @@ public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
 {
    public TransportKind Transport => TransportKind.WebSocket;
 
+   public bool IsConnected => _activeSession is not null
+      && !_activeSession.SessionClosedToken.IsCancellationRequested;
+
    private readonly WsTransportOptions _options = options;
    private readonly TcpNetworkClient _tcpClient = new(options.TcpOptions);
 

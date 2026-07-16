@@ -14,6 +14,9 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
 {
    public TransportKind Transport => TransportKind.Tcp;
 
+   public bool IsConnected => _activeSession is not null
+      && !_activeSession.SessionClosedToken.IsCancellationRequested;
+
    private readonly TcpTransportOptions _options = options;
    private readonly TcpIoQueueRegistry _ioQueueRegistry = new(options);
 
