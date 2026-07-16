@@ -344,6 +344,8 @@ public class FakeNetworkClient : INetworkClient
    public bool IsConnected => ConnectCount > DisconnectCount;
    public NetworkClientStats Stats => default;
    public INetworkSession? Session { get; set; }
+   public EndPoint? LocalAddress => Session?.LocalAddress;
+   public EndPoint? RemoteAddress => Session?.RemoteAddress;
 
    public async ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
       CancellationToken ct = default)

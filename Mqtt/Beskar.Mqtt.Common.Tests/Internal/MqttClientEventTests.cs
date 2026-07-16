@@ -230,6 +230,8 @@ public class MqttClientEventTests
       public bool IsConnected => false;
       public NetworkClientStats Stats => default;
       public INetworkSession? Session => null;
+      public EndPoint? LocalAddress => null;
+      public EndPoint? RemoteAddress => null;
       public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
          CancellationToken ct = default)
       {

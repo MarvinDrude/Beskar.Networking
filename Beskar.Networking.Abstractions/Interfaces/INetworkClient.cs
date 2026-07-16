@@ -34,6 +34,16 @@ public interface INetworkClient : IAsyncDisposable
    public INetworkSession? Session { get; }
 
    /// <summary>
+   /// Gets the local endpoint of the active connection, or null if not connected.
+   /// </summary>
+   public EndPoint? LocalAddress { get; }
+
+   /// <summary>
+   /// Gets the remote endpoint of the active connection, or null if not connected.
+   /// </summary>
+   public EndPoint? RemoteAddress { get; }
+
+   /// <summary>
    /// Tries to connect to a remote endpoint.
    /// </summary>
    public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(

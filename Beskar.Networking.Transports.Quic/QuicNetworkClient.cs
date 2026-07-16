@@ -25,6 +25,9 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
 
    public INetworkSession? Session => _activeSession;
 
+   public EndPoint? LocalAddress => _activeSession?.LocalAddress;
+   public EndPoint? RemoteAddress => _activeSession?.RemoteAddress;
+
    private long _connectionsEstablished;
    private long _connectionsLost;
 

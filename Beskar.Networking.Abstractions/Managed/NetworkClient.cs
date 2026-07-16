@@ -73,6 +73,9 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
    /// </summary>
    public INetworkSession? Session => Volatile.Read(ref _currentSession);
 
+   public EndPoint? LocalAddress => Session?.LocalAddress;
+   public EndPoint? RemoteAddress => Session?.RemoteAddress;
+
    /// <summary>
    /// Initializes a new instance of the <see cref="NetworkClient"/> class.
    /// </summary>
