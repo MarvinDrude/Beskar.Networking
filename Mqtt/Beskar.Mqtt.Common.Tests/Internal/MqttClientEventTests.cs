@@ -16,6 +16,7 @@ using Beskar.Mqtt.Server;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 
 namespace Beskar.Mqtt.Common.Tests.Internal;
 
@@ -227,6 +228,7 @@ public class MqttClientEventTests
    {
       public TransportKind Transport => TransportKind.Unknown;
       public bool IsConnected => false;
+      public NetworkClientStats Stats => default;
       public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
          CancellationToken ct = default)
       {

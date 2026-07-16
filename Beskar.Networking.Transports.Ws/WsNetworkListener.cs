@@ -2,6 +2,7 @@ using System.Net;
 using System.Threading.Channels;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
@@ -18,6 +19,17 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
    public TransportKind Transport => TransportKind.WebSocket;
    public bool IsBound => _tcpListener.IsBound;
+
+   private long _binds;
+   private long _unbinds;
+   private long _sessionsAccepted;
+
+   public NetworkListenerStats Stats => new()
+   {
+      Binds = Interlocked.Read(ref _binds),
+      Unbinds = Interlocked.Read(ref _unbinds),
+      SessionsAccepted = Interlocked.Read(ref _sessionsAccepted)
+   };
 
    private readonly WsTransportOptions _options = options;
    private readonly TcpNetworkListener _tcpListener = new(localAddress, options.TcpOptions);
@@ -48,6 +60,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
       _acceptLoopTask = AcceptLoopAsync(_acceptCts.Token);
 
       TraceLogger.LogServerInfo("WS Listener: Successfully bound and listening on {0}", LocalAddress);
+      Interlocked.Increment(ref _binds);
       return true;
    }
 
@@ -78,6 +91,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
          _sessionChannel.Writer.TryComplete();
 
          TraceLogger.LogServerInfo("WS Listener: Successfully unbound from {0}", LocalAddress);
+         Interlocked.Increment(ref _unbinds);
          return true;
       }
       catch (Exception ex)
@@ -159,6 +173,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   wsSession = new WsNetworkSession(tcpSession, wsPipe);
 
                   TraceLogger.LogServerInfo("WS Listener: WebSocket server handshake successfully completed for client {0}. Enqueuing session {1}", tcpSession.RemoteAddress, wsSession.Id);
+                  Interlocked.Increment(ref _sessionsAccepted);
                   await _sessionChannel.Writer.WriteAsync(wsSession, token);
                }
                catch (Exception ex)

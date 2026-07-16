@@ -3,6 +3,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
@@ -16,6 +17,15 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
 
    public bool IsConnected => _activeSession is not null
       && !_activeSession.SessionClosedToken.IsCancellationRequested;
+
+   private long _connectionsEstablished;
+   private long _connectionsLost;
+
+   public NetworkClientStats Stats => new()
+   {
+      ConnectionsEstablished = Interlocked.Read(ref _connectionsEstablished),
+      ConnectionsLost = Interlocked.Read(ref _connectionsLost)
+   };
 
    private readonly TcpTransportOptions _options = options;
    private readonly TcpIoQueueRegistry _ioQueueRegistry = new(options);
@@ -83,6 +93,9 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
          {
             await oldSession.DisposeAsync();
          }
+
+         Interlocked.Increment(ref _connectionsEstablished);
+         session.SessionClosedToken.Register(() => Interlocked.Increment(ref _connectionsLost));
 
          TraceLogger.LogClientInfo("TCP ConnectAsync: Network session {0} successfully established for {1}", session.Id, remoteEndPoint);
          return session;

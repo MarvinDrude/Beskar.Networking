@@ -28,6 +28,15 @@ public sealed class WsNetworkSession : INetworkSession
 
    public NetworkStats Stats => _stream.Stats;
 
+   private long _streamsAccepted;
+   private long _streamsOpened;
+
+   public NetworkSessionStats SessionStats => new()
+   {
+      StreamsAccepted = Interlocked.Read(ref _streamsAccepted),
+      StreamsOpened = Interlocked.Read(ref _streamsOpened)
+   };
+
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public TransportKind Transport => TransportKind.WebSocket;
 
@@ -52,6 +61,7 @@ public sealed class WsNetworkSession : INetworkSession
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
       TraceLogger.LogServerInfo("WS Session {0}: Instantiating WebSocket stream wrapper", Id);
+      Interlocked.Increment(ref _streamsAccepted);
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
    }
 
@@ -60,6 +70,7 @@ public sealed class WsNetworkSession : INetworkSession
       CancellationToken ct = default)
    {
       TraceLogger.LogClientInfo("WS Session {0}: Opening WebSocket stream wrapper", Id);
+      Interlocked.Increment(ref _streamsOpened);
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
    }
 

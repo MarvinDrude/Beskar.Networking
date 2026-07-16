@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Threading.Channels;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
@@ -24,6 +25,17 @@ public sealed class TcpNetworkListener(
 
    public TransportKind Transport => TransportKind.Tcp;
    public bool IsBound => _listenerSocket is not null;
+
+   private long _binds;
+   private long _unbinds;
+   private long _sessionsAccepted;
+
+   public NetworkListenerStats Stats => new()
+   {
+      Binds = Interlocked.Read(ref _binds),
+      Unbinds = Interlocked.Read(ref _unbinds),
+      SessionsAccepted = Interlocked.Read(ref _sessionsAccepted)
+   };
 
    private readonly TcpTransportOptions _options = options;
    private readonly TcpIoQueueRegistry _ioQueueRegistry = new(options);
@@ -56,6 +68,7 @@ public sealed class TcpNetworkListener(
 
          _ = AcceptLoopAsync(socket, _acceptCts.Token);
          TraceLogger.LogServerInfo("TCP Listener: Successfully bound and listening on {0}", LocalAddress);
+         Interlocked.Increment(ref _binds);
          return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
       catch (SocketException ex)
@@ -87,6 +100,7 @@ public sealed class TcpNetworkListener(
          _sessionChannel.Writer.TryComplete();
 
          TraceLogger.LogServerInfo("TCP Listener: Successfully unbound from {0}", LocalAddress);
+         Interlocked.Increment(ref _unbinds);
          return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
       catch (Exception ex)
@@ -233,6 +247,7 @@ public sealed class TcpNetworkListener(
          var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
 
          TraceLogger.LogServerInfo("TCP Listener: Enqueuing network session {0} for client {1}", session.Id, remoteEndPoint);
+         Interlocked.Increment(ref _sessionsAccepted);
          await _sessionChannel.Writer.WriteAsync(session, token);
          success = true;
       }

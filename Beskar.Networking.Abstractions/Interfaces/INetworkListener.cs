@@ -2,6 +2,7 @@ using System.Net;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Models;
 
 namespace Beskar.Networking.Abstractions.Interfaces;
 
@@ -24,6 +25,11 @@ public interface INetworkListener : IAsyncDisposable
    /// The transport kind of the current listener.
    /// </summary>
    public TransportKind Transport { get; }
+
+   /// <summary>
+   /// Gets the operational statistics for this listener.
+   /// </summary>
+   public NetworkListenerStats Stats { get; }
 
    /// <summary>
    /// Binds the listener to the local address.

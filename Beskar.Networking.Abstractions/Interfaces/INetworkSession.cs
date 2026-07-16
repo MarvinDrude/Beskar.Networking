@@ -67,6 +67,11 @@ public interface INetworkSession : IAsyncDisposable
    public NetworkSecurityInfo SecurityInfo { get; }
 
    /// <summary>
+   /// Gets the stream statistics for this session.
+   /// </summary>
+   public NetworkSessionStats SessionStats { get; }
+
+   /// <summary>
    /// Accepts or gets the network stream of the current network session.
    /// </summary>
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default);

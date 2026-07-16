@@ -288,6 +288,7 @@ public class FakeNetworkSession : INetworkSession, IAsyncDisposable
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public TransportKind Transport => TransportKind.Unknown;
    public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
+   public NetworkSessionStats SessionStats => default;
 
    public Guid Id { get; } = Guid.NewGuid();
    public EndPoint RemoteAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
@@ -341,6 +342,7 @@ public class FakeNetworkClient : INetworkClient
    public TransportKind Transport => TransportKind.Unknown;
 
    public bool IsConnected => ConnectCount > DisconnectCount;
+   public NetworkClientStats Stats => default;
 
    public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
       CancellationToken ct = default)

@@ -35,6 +35,15 @@ public sealed class TcpNetworkSession(
 
    public NetworkStats Stats => _stream?.Stats ?? new NetworkStats();
 
+   private long _streamsAccepted;
+   private long _streamsOpened;
+
+   public NetworkSessionStats SessionStats => new()
+   {
+      StreamsAccepted = Interlocked.Read(ref _streamsAccepted),
+      StreamsOpened = Interlocked.Read(ref _streamsOpened)
+   };
+
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public TransportKind Transport => TransportKind.Tcp;
 
@@ -75,6 +84,7 @@ public sealed class TcpNetworkSession(
       {
          TraceLogger.LogServerInfo("TCP Session {0}: Instantiating bidirectional TCP stream wrapper", Id);
          _stream = new TcpNetworkStream(this, _connection);
+         Interlocked.Increment(ref _streamsAccepted);
       }
 
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
@@ -88,6 +98,7 @@ public sealed class TcpNetworkSession(
       {
          TraceLogger.LogClientInfo("TCP Session {0}: Opening bidirectional TCP stream connection", Id);
          _stream = new TcpNetworkStream(this, _connection);
+         Interlocked.Increment(ref _streamsOpened);
       }
 
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);

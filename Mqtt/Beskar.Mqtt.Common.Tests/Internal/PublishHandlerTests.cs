@@ -695,6 +695,7 @@ public class PublishHandlerTests
       public EndPoint LocalAddress => new IPEndPoint(IPAddress.Loopback, 0);
       public TransportKind Transport => TransportKind.Unknown;
       public bool IsBound => true;
+      public NetworkListenerStats Stats => default;
 
       public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
       {
@@ -730,6 +731,7 @@ public class PublishHandlerTests
       public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
       public TransportKind Transport => TransportKind.Unknown;
       public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
+      public NetworkSessionStats SessionStats => default;
 
       public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
       {

@@ -74,6 +74,7 @@ public class MqttKeepAliveTests
       public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
       public TransportKind Transport => TransportKind.Unknown;
       public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
+      public NetworkSessionStats SessionStats => default;
       public EndPoint RemoteAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
       public EndPoint LocalAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
       public bool IsSupportingMultiplexing => false;
@@ -92,6 +93,7 @@ public class MqttKeepAliveTests
       public TransportKind Transport => TransportKind.Unknown;
       public EndPoint LocalAddress => new IPEndPoint(IPAddress.Loopback, 0);
       public bool IsBound => true;
+      public NetworkListenerStats Stats => default;
       public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default) => ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
       public ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default) => ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
       public ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default) => throw new NotImplementedException();

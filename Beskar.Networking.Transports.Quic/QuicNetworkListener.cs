@@ -4,6 +4,7 @@ using System.Net.Security;
 using System.Threading.Channels;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
@@ -22,6 +23,17 @@ public sealed class QuicNetworkListener(
 
    public TransportKind Transport => TransportKind.Quic;
    public bool IsBound => _listener is not null;
+
+   private long _binds;
+   private long _unbinds;
+   private long _sessionsAccepted;
+
+   public NetworkListenerStats Stats => new()
+   {
+      Binds = Interlocked.Read(ref _binds),
+      Unbinds = Interlocked.Read(ref _unbinds),
+      SessionsAccepted = Interlocked.Read(ref _sessionsAccepted)
+   };
 
    private readonly QuicTransportOptions _options = options;
    private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);
@@ -91,6 +103,7 @@ public sealed class QuicNetworkListener(
 
          _ = AcceptLoopAsync(_listener, _acceptCts.Token);
          TraceLogger.LogServerInfo("QUIC Listener: Successfully bound and listening on {0}", LocalAddress);
+         Interlocked.Increment(ref _binds);
          return true;
       }
       catch (QuicException ex)
@@ -126,6 +139,7 @@ public sealed class QuicNetworkListener(
          _sessionChannel.Writer.TryComplete();
 
          TraceLogger.LogServerInfo("QUIC Listener: Successfully unbound from {0}", LocalAddress);
+         Interlocked.Increment(ref _unbinds);
          return true;
       }
       catch (Exception ex)
@@ -172,6 +186,7 @@ public sealed class QuicNetworkListener(
             var session = new QuicNetworkSession(quicConnection, _options, _ioQueueRegistry);
 
             TraceLogger.LogServerInfo("QUIC Listener: Enqueuing network session {0} for client {1}", session.Id, quicConnection.RemoteEndPoint);
+            Interlocked.Increment(ref _sessionsAccepted);
             await _sessionChannel.Writer.WriteAsync(session, token);
          }
          catch (OperationCanceledException)

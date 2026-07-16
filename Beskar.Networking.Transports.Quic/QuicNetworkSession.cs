@@ -43,6 +43,15 @@ public sealed class QuicNetworkSession(
       RemoteCertificate: _connection.RemoteCertificate
    );
 
+   private long _streamsAccepted;
+   private long _streamsOpened;
+
+   public NetworkSessionStats SessionStats => new()
+   {
+      StreamsAccepted = Interlocked.Read(ref _streamsAccepted),
+      StreamsOpened = Interlocked.Read(ref _streamsOpened)
+   };
+
    public NetworkStats Stats
    {
       get
@@ -115,6 +124,7 @@ public sealed class QuicNetworkSession(
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
          _activeStreams.TryAdd(newStream.StreamId, newStream);
+         Interlocked.Increment(ref _streamsAccepted);
 
          TraceLogger.LogServerInfo("QUIC Session {0}: Successfully accepted inbound {1} stream {2}", Id, newStream.Direction, newStream.StreamId);
          return newStream;
@@ -160,6 +170,7 @@ public sealed class QuicNetworkSession(
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
          _activeStreams.TryAdd(newStream.StreamId, newStream);
+         Interlocked.Increment(ref _streamsOpened);
 
          TraceLogger.LogClientInfo("QUIC Session {0}: Successfully opened outbound {1} stream {2}", Id, newStream.Direction, newStream.StreamId);
          return newStream;

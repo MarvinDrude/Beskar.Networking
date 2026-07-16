@@ -18,6 +18,7 @@ public class DummyNetworkSession : INetworkSession
    public TransportKind Transport => TransportKind.Unknown;
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
+   public NetworkSessionStats SessionStats => default;
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 

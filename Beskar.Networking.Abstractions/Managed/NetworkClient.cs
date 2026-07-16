@@ -6,6 +6,7 @@ using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Managed.Events;
 using Beskar.Networking.Abstractions.Options;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Abstractions.Managed;
@@ -33,6 +34,7 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
 
    public TransportKind Transport => _innerClient.Transport;
    public bool IsConnected => State == ConnectionState.Connected;
+   public NetworkClientStats Stats => _innerClient.Stats;
 
    /// <summary>
    /// Occurs when the client successfully connects or reconnects to the endpoint.

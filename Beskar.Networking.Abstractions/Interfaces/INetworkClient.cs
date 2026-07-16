@@ -2,6 +2,7 @@ using System.Net;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Models;
 
 namespace Beskar.Networking.Abstractions.Interfaces;
 
@@ -19,6 +20,11 @@ public interface INetworkClient : IAsyncDisposable
    /// Gets a value indicating whether the client is currently connected to a remote endpoint.
    /// </summary>
    public bool IsConnected { get; }
+
+   /// <summary>
+   /// Gets the operational statistics for this client.
+   /// </summary>
+   public NetworkClientStats Stats { get; }
 
    /// <summary>
    /// Tries to connect to a remote endpoint.

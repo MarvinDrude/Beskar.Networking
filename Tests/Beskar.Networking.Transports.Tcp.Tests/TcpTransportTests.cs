@@ -32,6 +32,7 @@ public class TcpTransportTests
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
       await Assert.That(listener.IsBound).IsTrue();
+      await Assert.That(listener.Stats.Binds).IsEqualTo(1);
 
       // Connect client
       var client = new TcpNetworkClient(options);
@@ -39,6 +40,7 @@ public class TcpTransportTests
       var connectResult = await client.ConnectAsync(endPoint);
       await Assert.That(connectResult.Failed).IsFalse();
       await Assert.That(client.IsConnected).IsTrue();
+      await Assert.That(client.Stats.ConnectionsEstablished).IsEqualTo(1);
 
       // Accept server session
       var acceptResult = await listener.AcceptSessionAsync();
@@ -47,16 +49,21 @@ public class TcpTransportTests
       var clientSession = connectResult.Success!;
       var serverSession = acceptResult.Success!;
 
+      await Assert.That(listener.Stats.SessionsAccepted).IsEqualTo(1);
+
       // Assert session security info for non-SSL connection
       await Assert.That(clientSession.SecurityInfo.IsEncrypted).IsFalse();
       await Assert.That(serverSession.SecurityInfo.IsEncrypted).IsFalse();
 
       // Accept / Open streams
-      var clientStreamResult = await clientSession.AcceptStreamAsync();
+      var clientStreamResult = await clientSession.OpenStreamAsync();
       var serverStreamResult = await serverSession.AcceptStreamAsync();
 
       await Assert.That(clientStreamResult.Failed).IsFalse();
       await Assert.That(serverStreamResult.Failed).IsFalse();
+
+      await Assert.That(clientSession.SessionStats.StreamsOpened).IsEqualTo(1);
+      await Assert.That(serverSession.SessionStats.StreamsAccepted).IsEqualTo(1);
 
       var clientStream = clientStreamResult.Success!;
       var serverStream = serverStreamResult.Success!;
@@ -89,6 +96,9 @@ public class TcpTransportTests
       await clientSession.DisposeAsync();
       await serverSession.DisposeAsync();
       await listener.UnbindAsync();
+
+      await Assert.That(client.Stats.ConnectionsLost).IsEqualTo(1);
+      await Assert.That(listener.Stats.Unbinds).IsEqualTo(1);
    }
 
    [Test]

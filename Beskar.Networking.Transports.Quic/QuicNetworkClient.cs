@@ -3,6 +3,7 @@ using System.Net.Quic;
 using System.Net.Security;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
@@ -19,6 +20,15 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
 
    public bool IsConnected => _activeSession is not null
       && !_activeSession.SessionClosedToken.IsCancellationRequested;
+
+   private long _connectionsEstablished;
+   private long _connectionsLost;
+
+   public NetworkClientStats Stats => new()
+   {
+      ConnectionsEstablished = Interlocked.Read(ref _connectionsEstablished),
+      ConnectionsLost = Interlocked.Read(ref _connectionsLost)
+   };
 
    private readonly QuicTransportOptions _options = options;
    private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);
@@ -67,6 +77,9 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
          {
             await oldSession.DisposeAsync();
          }
+
+         Interlocked.Increment(ref _connectionsEstablished);
+         session.SessionClosedToken.Register(() => Interlocked.Increment(ref _connectionsLost));
 
          TraceLogger.LogClientInfo("QUIC ConnectAsync: Successfully established QUIC session {0} (Remote: {1}, Local: {2})", session.Id, connection.RemoteEndPoint, connection.LocalEndPoint);
          return session;

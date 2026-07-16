@@ -2,6 +2,7 @@ using System.Net;
 using System.Threading;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
@@ -18,6 +19,15 @@ public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
 
    public bool IsConnected => _activeSession is not null
       && !_activeSession.SessionClosedToken.IsCancellationRequested;
+
+   private long _connectionsEstablished;
+   private long _connectionsLost;
+
+   public NetworkClientStats Stats => new()
+   {
+      ConnectionsEstablished = Interlocked.Read(ref _connectionsEstablished),
+      ConnectionsLost = Interlocked.Read(ref _connectionsLost)
+   };
 
    private readonly WsTransportOptions _options = options;
    private readonly TcpNetworkClient _tcpClient = new(options.TcpOptions);
@@ -69,6 +79,9 @@ public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
          {
             await oldSession.DisposeAsync();
          }
+
+         Interlocked.Increment(ref _connectionsEstablished);
+         wsSession.SessionClosedToken.Register(() => Interlocked.Increment(ref _connectionsLost));
 
          TraceLogger.LogClientInfo("WS ConnectAsync: WebSocket session {0} successfully established for {1}", wsSession.Id, endPoint);
          return wsSession;
