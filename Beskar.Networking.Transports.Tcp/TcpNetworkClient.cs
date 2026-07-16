@@ -46,7 +46,7 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
       try
       {
          TraceLogger.LogClientInfo("TCP ConnectAsync: Initiating socket connection to {0}", endPoint);
-         socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+         socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
 
          if (_options.NoDelay)
          {
