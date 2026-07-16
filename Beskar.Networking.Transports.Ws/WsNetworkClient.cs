@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Threading;
 using Beskar.Networking.Abstractions.Errors;
@@ -17,8 +18,11 @@ public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
 {
    public TransportKind Transport => TransportKind.WebSocket;
 
+   [MemberNotNullWhen(true, nameof(_activeSession), nameof(Session))]
    public bool IsConnected => _activeSession is not null
       && !_activeSession.SessionClosedToken.IsCancellationRequested;
+
+   public INetworkSession? Session => _activeSession;
 
    private long _connectionsEstablished;
    private long _connectionsLost;

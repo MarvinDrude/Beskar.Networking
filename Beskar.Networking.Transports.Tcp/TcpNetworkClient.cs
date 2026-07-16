@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -15,8 +16,11 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
 {
    public TransportKind Transport => TransportKind.Tcp;
 
+   [MemberNotNullWhen(true, nameof(_activeSession), nameof(Session))]
    public bool IsConnected => _activeSession is not null
       && !_activeSession.SessionClosedToken.IsCancellationRequested;
+
+   public INetworkSession? Session => _activeSession;
 
    private long _connectionsEstablished;
    private long _connectionsLost;

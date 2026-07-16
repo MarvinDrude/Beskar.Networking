@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
@@ -18,8 +19,11 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
 {
    public TransportKind Transport => TransportKind.Quic;
 
+   [MemberNotNullWhen(true, nameof(_activeSession), nameof(Session))]
    public bool IsConnected => _activeSession is not null
       && !_activeSession.SessionClosedToken.IsCancellationRequested;
+
+   public INetworkSession? Session => _activeSession;
 
    private long _connectionsEstablished;
    private long _connectionsLost;

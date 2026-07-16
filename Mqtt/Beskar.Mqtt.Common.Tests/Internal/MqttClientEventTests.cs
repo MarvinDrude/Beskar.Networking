@@ -229,6 +229,7 @@ public class MqttClientEventTests
       public TransportKind Transport => TransportKind.Unknown;
       public bool IsConnected => false;
       public NetworkClientStats Stats => default;
+      public INetworkSession? Session => null;
       public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
          CancellationToken ct = default)
       {

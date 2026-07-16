@@ -343,21 +343,27 @@ public class FakeNetworkClient : INetworkClient
 
    public bool IsConnected => ConnectCount > DisconnectCount;
    public NetworkClientStats Stats => default;
+   public INetworkSession? Session { get; set; }
 
-   public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
+   public async ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint,
       CancellationToken ct = default)
    {
       Interlocked.Increment(ref _connectCount);
-      if (OnConnectAsync is not null) return OnConnectAsync(endPoint, ct);
-      return ValueTask.FromResult(new Result<INetworkSession, NetworkCodeError>(
-         new NetworkCodeError(-1, "Not configured")));
+      var result = OnConnectAsync is not null
+         ? await OnConnectAsync(endPoint, ct)
+         : new Result<INetworkSession, NetworkCodeError>(new NetworkCodeError(-1, "Not configured"));
+      if (result.IsSuccess)
+      {
+         Session = result.Success;
+      }
+      return result;
    }
 
-   public ValueTask DisconnectAsync(CancellationToken ct = default)
+   public async ValueTask DisconnectAsync(CancellationToken ct = default)
    {
       Interlocked.Increment(ref _disconnectCount);
-      if (OnDisconnectAsync is not null) return OnDisconnectAsync(ct);
-      return ValueTask.CompletedTask;
+      Session = null;
+      if (OnDisconnectAsync is not null) await OnDisconnectAsync(ct);
    }
 
    public async ValueTask DisposeAsync()

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Memory.Results;
@@ -19,12 +20,18 @@ public interface INetworkClient : IAsyncDisposable
    /// <summary>
    /// Gets a value indicating whether the client is currently connected to a remote endpoint.
    /// </summary>
+   [MemberNotNullWhen(true, nameof(Session))]
    public bool IsConnected { get; }
 
    /// <summary>
    /// Gets the operational statistics for this client.
    /// </summary>
    public NetworkClientStats Stats { get; }
+
+   /// <summary>
+   /// Gets the active network session, or null if not connected.
+   /// </summary>
+   public INetworkSession? Session { get; }
 
    /// <summary>
    /// Tries to connect to a remote endpoint.
