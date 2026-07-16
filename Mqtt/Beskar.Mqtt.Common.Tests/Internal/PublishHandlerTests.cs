@@ -729,6 +729,7 @@ public class PublishHandlerTests
       public NetworkStats Stats => default;
       public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
       public TransportKind Transport => TransportKind.Unknown;
+      public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
 
       public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
       {

@@ -47,6 +47,10 @@ public class TcpTransportTests
       var clientSession = connectResult.Success!;
       var serverSession = acceptResult.Success!;
 
+      // Assert session security info for non-SSL connection
+      await Assert.That(clientSession.SecurityInfo.IsEncrypted).IsFalse();
+      await Assert.That(serverSession.SecurityInfo.IsEncrypted).IsFalse();
+
       // Accept / Open streams
       var clientStreamResult = await clientSession.AcceptStreamAsync();
       var serverStreamResult = await serverSession.AcceptStreamAsync();
@@ -127,6 +131,14 @@ public class TcpTransportTests
 
       var clientSession = connectResult.Success!;
       var serverSession = acceptResult.Success!;
+
+      // Assert session security info for SSL connection
+      await Assert.That(clientSession.SecurityInfo.IsEncrypted).IsTrue();
+      await Assert.That(serverSession.SecurityInfo.IsEncrypted).IsTrue();
+      await Assert.That(clientSession.SecurityInfo.Protocol).IsNotNull();
+      await Assert.That(serverSession.SecurityInfo.Protocol).IsNotNull();
+      await Assert.That(clientSession.SecurityInfo.RemoteCertificate).IsNotNull();
+      await Assert.That(serverSession.SecurityInfo.LocalCertificate).IsNotNull();
 
       var clientStreamResult = await clientSession.AcceptStreamAsync();
       var serverStreamResult = await serverSession.AcceptStreamAsync();

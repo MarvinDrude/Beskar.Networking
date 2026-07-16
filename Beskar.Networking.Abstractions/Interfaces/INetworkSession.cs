@@ -62,6 +62,11 @@ public interface INetworkSession : IAsyncDisposable
    public TransportKind Transport { get; }
 
    /// <summary>
+   /// Gets the security information for this session.
+   /// </summary>
+   public NetworkSecurityInfo SecurityInfo { get; }
+
+   /// <summary>
    /// Accepts or gets the network stream of the current network session.
    /// </summary>
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default);

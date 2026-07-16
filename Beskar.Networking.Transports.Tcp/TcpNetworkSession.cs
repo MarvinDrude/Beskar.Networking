@@ -1,9 +1,11 @@
 using System.IO.Pipelines;
 using System.Net;
+using System.Net.Security;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 
@@ -35,6 +37,29 @@ public sealed class TcpNetworkSession(
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public TransportKind Transport => TransportKind.Tcp;
+
+   public NetworkSecurityInfo SecurityInfo
+   {
+      get
+      {
+         if (_connection is StreamConnection { InnerStream: SslStream sslStream })
+         {
+            return new NetworkSecurityInfo(
+               IsEncrypted: sslStream.IsEncrypted,
+               Protocol: sslStream.IsAuthenticated
+                  ? sslStream.SslProtocol : null,
+               CipherSuite: sslStream.IsAuthenticated
+                  ? sslStream.NegotiatedCipherSuite.ToString() : null,
+               LocalCertificate: sslStream.IsAuthenticated
+                  ? sslStream.LocalCertificate : null,
+               RemoteCertificate: sslStream.IsAuthenticated
+                  ? sslStream.RemoteCertificate : null
+            );
+         }
+
+         return new NetworkSecurityInfo(IsEncrypted: false);
+      }
+   }
 
    private readonly IDuplexPipe _connection = connection;
    private readonly CancellationTokenSource _cts = new();

@@ -16,8 +16,6 @@ public sealed class StreamConnection(
    private readonly Pipe _readPipe = new(readOptions);
    private readonly Pipe _writePipe = new(writeOptions);
 
-   private Stream? _stream;
-
    private Task? _readTask;
    private Task? _writeTask;
 
@@ -29,6 +27,8 @@ public sealed class StreamConnection(
    public PipeReader Input => _readPipe.Reader;
    public PipeWriter Output => _writePipe.Writer;
 
+   public Stream? InnerStream { get; private set; }
+
    public void Initialize(Stream stream)
    {
       ArgumentNullException.ThrowIfNull(stream);
@@ -37,12 +37,12 @@ public sealed class StreamConnection(
          throw new ArgumentException("Stream must be readable or writable.", nameof(stream));
       }
 
-      _stream = stream;
+      InnerStream = stream;
    }
 
    public void Start()
    {
-      if (_stream == null)
+      if (InnerStream == null)
       {
          throw new InvalidOperationException("StreamConnection must be initialized with a Stream before starting.");
       }
@@ -54,7 +54,7 @@ public sealed class StreamConnection(
             throw new InvalidOperationException("Cannot start a stopped StreamConnection.");
          }
 
-         if (_stream.CanWrite)
+         if (InnerStream.CanWrite)
          {
             _writeTask = Task.Run(CopyWritePipeToStream);
          }
@@ -63,7 +63,7 @@ public sealed class StreamConnection(
             _writePipe.Reader.Complete();
          }
 
-         if (_stream.CanRead)
+         if (InnerStream.CanRead)
          {
             _readTask = Task.Run(CopyStreamToReadPipe);
          }
@@ -121,7 +121,7 @@ public sealed class StreamConnection(
          }
       }
 
-      var stream = _stream;
+      var stream = InnerStream;
       if (stream is not null)
       {
          try
@@ -159,7 +159,7 @@ public sealed class StreamConnection(
       _readPipe.Reset();
       _writePipe.Reset();
 
-      _stream = null;
+      InnerStream = null;
       _stopped = false;
 
       _cts.Dispose();
@@ -173,7 +173,7 @@ public sealed class StreamConnection(
 
    private async Task CopyWritePipeToStream()
    {
-      var stream = _stream;
+      var stream = InnerStream;
       if (stream == null) return;
 
       var reader = _writePipe.Reader;
@@ -228,7 +228,7 @@ public sealed class StreamConnection(
 
    private async Task CopyStreamToReadPipe()
    {
-      var stream = _stream;
+      var stream = InnerStream;
       if (stream == null) return;
 
       Exception? error = null;

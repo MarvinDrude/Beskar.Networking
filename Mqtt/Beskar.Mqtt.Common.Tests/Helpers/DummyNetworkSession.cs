@@ -17,6 +17,7 @@ public class DummyNetworkSession : INetworkSession
    public CancellationToken SessionClosedToken => CancellationToken.None;
    public TransportKind Transport => TransportKind.Unknown;
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+   public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 

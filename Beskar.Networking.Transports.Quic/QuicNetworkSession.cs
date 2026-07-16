@@ -35,6 +35,11 @@ public sealed class QuicNetworkSession(
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public TransportKind Transport => TransportKind.Quic;
 
+   public NetworkSecurityInfo SecurityInfo => new(
+      IsEncrypted: true,
+      Protocol: System.Security.Authentication.SslProtocols.Tls13
+   );
+
    public NetworkStats Stats
    {
       get

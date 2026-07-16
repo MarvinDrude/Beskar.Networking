@@ -287,6 +287,7 @@ public class FakeNetworkSession : INetworkSession, IAsyncDisposable
    public bool Disposed { get; private set; }
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public TransportKind Transport => TransportKind.Unknown;
+   public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
 
    public Guid Id { get; } = Guid.NewGuid();
    public EndPoint RemoteAddress { get; } = new IPEndPoint(IPAddress.Loopback, 0);
