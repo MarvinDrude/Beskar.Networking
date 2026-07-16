@@ -225,4 +225,81 @@ public class QuicTransportTests
 
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task QuicClientSessionProperties_VerifyExposedCorrectly()
+   {
+      if (!QuicConnection.IsSupported)
+         return;
+
+      var clientSslOptions = new SslClientAuthenticationOptions
+      {
+         ApplicationProtocols = [new SslApplicationProtocol("beskar-quic")],
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+      };
+      var options = new QuicTransportOptions
+      {
+         SslClientOptions = clientSslOptions
+      };
+      var listener = new QuicNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new QuicNetworkClient(options);
+      
+      // Verify initial client state
+      await Assert.That(client.Session).IsNull();
+      await Assert.That(client.LocalAddress).IsNull();
+      await Assert.That(client.RemoteAddress).IsNull();
+
+      // Connect
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+      var clientSession = connectResult.Success!;
+
+      // Verify client session reference & addresses
+      await Assert.That(client.Session).IsEqualTo(clientSession);
+      await Assert.That(client.LocalAddress).IsEqualTo(clientSession.LocalAddress);
+      await Assert.That(client.RemoteAddress).IsEqualTo(clientSession.RemoteAddress);
+
+      // Accept server session
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+      var serverSession = acceptResult.Success!;
+
+      // Verify initial active streams
+      await Assert.That(clientSession.ActiveStreams).IsEmpty();
+      await Assert.That(serverSession.ActiveStreams).IsEmpty();
+
+      // Open stream and verify active streams
+      var clientStreamResult = await clientSession.OpenStreamAsync();
+      await Assert.That(clientStreamResult.Failed).IsFalse();
+      var clientStream = clientStreamResult.Success!;
+
+      await Assert.That(clientSession.ActiveStreams).Count().IsEqualTo(1);
+      await Assert.That(clientSession.ActiveStreams).Contains(clientStream);
+
+      // Write data to trigger stream acceptance on the server
+      var payload = "Hi"u8.ToArray();
+      await clientStream.Transport.Output.WriteAsync(payload);
+      await clientStream.Transport.Output.FlushAsync();
+
+      // Accept stream and verify server active streams
+      var serverStreamResult = await serverSession.AcceptStreamAsync();
+      await Assert.That(serverStreamResult.Failed).IsFalse();
+      var serverStream = serverStreamResult.Success!;
+
+      await Assert.That(serverSession.ActiveStreams).Count().IsEqualTo(1);
+      await Assert.That(serverSession.ActiveStreams).Contains(serverStream);
+
+      // Cleanup
+      await client.DisconnectAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+
+      // Verify client properties are cleared
+      await Assert.That(client.Session).IsNull();
+      await Assert.That(client.LocalAddress).IsNull();
+      await Assert.That(client.RemoteAddress).IsNull();
+   }
 }
