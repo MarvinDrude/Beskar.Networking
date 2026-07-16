@@ -195,4 +195,34 @@ public class QuicTransportTests
       await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task QuicListener_DynamicPortBinding_ResolvesActualLocalAddress()
+   {
+      if (!QuicConnection.IsSupported)
+         return;
+
+      var clientSslOptions = new SslClientAuthenticationOptions
+      {
+         ApplicationProtocols = [new SslApplicationProtocol("beskar-quic")],
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+      };
+      var options = new QuicTransportOptions
+      {
+         SslClientOptions = clientSslOptions
+      };
+      var listener = new QuicNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+
+      await Assert.That(listener.LocalAddress).IsEqualTo(new IPEndPoint(IPAddress.Loopback, 0));
+
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+      await Assert.That(listener.IsBound).IsTrue();
+
+      var localAddress = listener.LocalAddress as IPEndPoint;
+      await Assert.That(localAddress).IsNotNull();
+      await Assert.That(localAddress!.Port).IsGreaterThan(0);
+
+      await listener.UnbindAsync();
+   }
 }

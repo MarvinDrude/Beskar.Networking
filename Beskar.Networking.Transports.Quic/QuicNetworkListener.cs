@@ -19,7 +19,8 @@ public sealed class QuicNetworkListener(
    QuicTransportOptions options)
    : INetworkListener
 {
-   public EndPoint LocalAddress { get; } = localAddress;
+   private readonly EndPoint _configuredLocalAddress = localAddress;
+   public EndPoint LocalAddress => _listener?.LocalEndPoint ?? _configuredLocalAddress;
 
    public TransportKind Transport => TransportKind.Quic;
    public bool IsBound => _listener is not null;

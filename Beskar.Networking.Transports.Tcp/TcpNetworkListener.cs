@@ -21,7 +21,8 @@ public sealed class TcpNetworkListener(
    TcpTransportOptions options)
    : INetworkListener
 {
-   public EndPoint LocalAddress { get; } = localAddress;
+   private readonly EndPoint _configuredLocalAddress = localAddress;
+   public EndPoint LocalAddress => _listenerSocket?.LocalEndPoint ?? _configuredLocalAddress;
 
    public TransportKind Transport => TransportKind.Tcp;
    public bool IsBound => _listenerSocket is not null;

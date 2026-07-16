@@ -88,4 +88,23 @@ public class WsTransportTests
       await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task WsListener_DynamicPortBinding_ResolvesActualLocalAddress()
+   {
+      var options = new WsTransportOptions();
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+
+      await Assert.That(listener.LocalAddress).IsEqualTo(new IPEndPoint(IPAddress.Loopback, 0));
+
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+      await Assert.That(listener.IsBound).IsTrue();
+
+      var localAddress = listener.LocalAddress as IPEndPoint;
+      await Assert.That(localAddress).IsNotNull();
+      await Assert.That(localAddress!.Port).IsGreaterThan(0);
+
+      await listener.UnbindAsync();
+   }
 }
