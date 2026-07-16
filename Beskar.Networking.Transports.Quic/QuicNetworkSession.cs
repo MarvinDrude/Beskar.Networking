@@ -37,7 +37,10 @@ public sealed class QuicNetworkSession(
 
    public NetworkSecurityInfo SecurityInfo => new(
       IsEncrypted: true,
-      Protocol: System.Security.Authentication.SslProtocols.Tls13
+      Protocol: _connection.SslProtocol,
+      CipherSuite: _connection.NegotiatedCipherSuite.ToString(),
+      LocalCertificate: null,
+      RemoteCertificate: _connection.RemoteCertificate
    );
 
    public NetworkStats Stats

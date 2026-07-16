@@ -50,6 +50,12 @@ public class QuicTransportTests
       var clientSession = connectResult.Success!;
       var serverSession = acceptResult.Success!;
 
+      // Assert security info is populated from the actual QUIC connection
+      await Assert.That(clientSession.SecurityInfo.IsEncrypted).IsTrue();
+      await Assert.That(serverSession.SecurityInfo.IsEncrypted).IsTrue();
+      await Assert.That(clientSession.SecurityInfo.Protocol).IsNotNull();
+      await Assert.That(serverSession.SecurityInfo.Protocol).IsNotNull();
+
       // Client opens a bidirectional stream
       var clientStreamResult = await clientSession.OpenStreamAsync();
       await Assert.That(clientStreamResult.Failed).IsFalse();
