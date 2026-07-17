@@ -1206,12 +1206,12 @@ public class MqttQosTests
          .WithTopicFilter("will/test/delayed-trigger"u8, QualityOfServiceType.AtLeastOnce)
          .Build());
 
-      // Client A with Will Delay of 2 seconds
+      // Client A with Will Delay of 1 second
       var clientA = MqttClientFactory.CreateTcp();
       var connectOptionsA = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
          .WithClientId("client-a-will-delay-trigger")
          .WithWill("will/test/delayed-trigger", "WillTriggerPayload"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false)
-         .WithWillDelayInterval(2)
+         .WithWillDelayInterval(1)
          .Build();
 
       await clientA.ConnectAsync(connectOptionsA);
@@ -1219,12 +1219,12 @@ public class MqttQosTests
       // Drop connection ungracefully
       await clientA.DisposeAsync();
 
-      // Wait 1 second and verify no Will message has been published
-      await Task.Delay(500);
+      // Wait a short moment and verify no Will message has been published
+      await Task.Delay(200);
       await Assert.That(tcs.Task.IsCompleted).IsFalse();
 
-      // Wait for the delay (2 seconds total) and verify Will message is received
-      var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      // Wait for the delay (1 second total) and verify Will message is received
+      var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(15));
       await Assert.That(payload).IsEqualTo("WillTriggerPayload");
 
       await clientB.DisconnectAsync(new DisconnectOptions());

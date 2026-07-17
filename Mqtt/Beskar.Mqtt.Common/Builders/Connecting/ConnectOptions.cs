@@ -39,7 +39,7 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    /// <summary>
    /// The timeout for the network connection attempt.
    /// </summary>
-   public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(15);
+   public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
 
    /// <summary>
    /// The Client Identifier.
@@ -197,7 +197,7 @@ public sealed class ConnectOptions(int builderCapacity = -1)
       ProtocolVersion = MqttProtocolVersion.V50;
       CleanSession = true;
       KeepAlivePeriod = 60;
-      Timeout = TimeSpan.FromSeconds(15);
+      Timeout = TimeSpan.FromSeconds(30);
 
       ClientIdUtf8Bytes = ReadOnlyMemory<byte>.Empty;
       UsernameUtf8Bytes = ReadOnlyMemory<byte>.Empty;

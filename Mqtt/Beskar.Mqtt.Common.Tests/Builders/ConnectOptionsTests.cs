@@ -162,7 +162,7 @@ public class ConnectOptionsTests
       await Assert.That(options.ProtocolVersion).IsEqualTo(MqttProtocolVersion.V50);
       await Assert.That(options.CleanSession).IsTrue();
       await Assert.That(options.KeepAlivePeriod).IsEqualTo((ushort)60);
-      await Assert.That(options.Timeout).IsEqualTo(TimeSpan.FromSeconds(15));
+      await Assert.That(options.Timeout).IsEqualTo(TimeSpan.FromSeconds(30));
       await Assert.That(options.ClientIdUtf8Bytes.IsEmpty).IsTrue();
       await Assert.That(options.UsernameUtf8Bytes.IsEmpty).IsTrue();
       await Assert.That(options.PasswordBytes.IsEmpty).IsTrue();
