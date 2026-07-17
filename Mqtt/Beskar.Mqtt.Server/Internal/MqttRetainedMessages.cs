@@ -23,41 +23,40 @@ public sealed class MqttRetainedMessages : IDisposable
    {
       using var disposer = _lock.EnterWriteLock();
 
-      var topicBytes = Encoding.UTF8.GetBytes(message.Topic);
-      var enumerator = new TopicLevelEnumerator(topicBytes);
-      var node = _rootNode;
-
-      while (enumerator.MoveNext())
-      {
-         var level = enumerator.Current;
-         var children = node.Children;
-         var lookup = children.GetAlternateLookup<ReadOnlySpan<byte>>();
-
-         if (!lookup.TryGetValue(level, out var child))
-         {
-            var levelBytes = level.ToArray();
-
-            child = new MqttRetainedMessageNode(levelBytes);
-            children.Add(levelBytes, child);
-         }
-
-         node = child;
-      }
-
-      var changed = false;
       if (message.Payload.IsEmpty)
       {
-         if (node.Message is null) return changed;
-
-         node.Message = null;
+         var enumerator = new TopicLevelEnumerator(Encoding.UTF8.GetBytes(message.Topic));
+         RemoveMessageRecursive(_rootNode, ref enumerator, out var changed);
+         return changed;
       }
       else
       {
-         node.Message = message;
-      }
+         var topicBytes = Encoding.UTF8.GetBytes(message.Topic);
+         var enumerator = new TopicLevelEnumerator(topicBytes);
+         var node = _rootNode;
 
-      changed = true;
-      return changed;
+         while (enumerator.MoveNext())
+         {
+            var level = enumerator.Current;
+            var children = node.Children;
+            var lookup = children.GetAlternateLookup<ReadOnlySpan<byte>>();
+
+            if (!lookup.TryGetValue(level, out var child))
+            {
+               var levelBytes = level.ToArray();
+
+               child = new MqttRetainedMessageNode(levelBytes);
+               children.Add(levelBytes, child);
+            }
+
+            node = child;
+         }
+
+         var changed = node.Message is null || !ReferenceEquals(node.Message, message);
+         node.Message = message;
+
+         return changed;
+      }
    }
 
    public void LoadMessages(IEnumerable<MqttPublishMessage> messages)
@@ -108,18 +107,19 @@ public sealed class MqttRetainedMessages : IDisposable
    {
       if (!levels.MoveNext())
       {
-         if (node.Message is not null)
+         var msg = node.Message;
+
+         if (msg is not null)
          {
-            if (node.Message.MessageExpiryInterval > 0)
+            if (msg.MessageExpiryInterval > 0)
             {
-               var timeSpent = (uint)(DateTimeOffset.UtcNow - node.Message.CreatedAt).TotalSeconds;
-               if (timeSpent >= node.Message.MessageExpiryInterval)
+               var timeSpent = (uint)(DateTimeOffset.UtcNow - msg.CreatedAt).TotalSeconds;
+               if (timeSpent >= msg.MessageExpiryInterval)
                {
-                  node.Message = null;
                   return;
                }
             }
-            matched.Add(node.Message);
+            matched.Add(msg);
          }
          return;
       }
@@ -154,23 +154,21 @@ public sealed class MqttRetainedMessages : IDisposable
 
    private static void CollectAllRecursive(MqttRetainedMessageNode node, List<MqttPublishMessage> matched)
    {
-      if (node.Message is not null)
+      var msg = node.Message;
+
+      if (msg is not null)
       {
-         if (node.Message.MessageExpiryInterval > 0)
+         if (msg.MessageExpiryInterval > 0)
          {
-            var timeSpent = (uint)(DateTimeOffset.UtcNow - node.Message.CreatedAt).TotalSeconds;
-            if (timeSpent >= node.Message.MessageExpiryInterval)
+            var timeSpent = (uint)(DateTimeOffset.UtcNow - msg.CreatedAt).TotalSeconds;
+            if (timeSpent < msg.MessageExpiryInterval)
             {
-               node.Message = null;
-            }
-            else
-            {
-               matched.Add(node.Message);
+               matched.Add(msg);
             }
          }
          else
          {
-            matched.Add(node.Message);
+            matched.Add(msg);
          }
       }
 
@@ -178,6 +176,41 @@ public sealed class MqttRetainedMessages : IDisposable
       {
          CollectAllRecursive(child, matched);
       }
+   }
+
+   private static bool RemoveMessageRecursive(MqttRetainedMessageNode node, ref TopicLevelEnumerator levels, out bool changed)
+   {
+      if (!levels.MoveNext())
+      {
+         changed = node.Message is not null;
+         node.Message = null;
+         return CheckNodeEmpty(node);
+      }
+
+      var currentLevel = levels.Current;
+      var children = node.Children;
+      var lookup = children.GetAlternateLookup<ReadOnlySpan<byte>>();
+
+      if (!lookup.TryGetValue(currentLevel, out var child))
+      {
+         changed = false;
+         return CheckNodeEmpty(node);
+      }
+
+      var nextLevels = levels;
+      if (RemoveMessageRecursive(child, ref nextLevels, out changed))
+      {
+         lookup.Remove(currentLevel);
+      }
+
+      return CheckNodeEmpty(node);
+   }
+
+   private static bool CheckNodeEmpty(MqttRetainedMessageNode node)
+   {
+      return node.Level is not null
+          && node.Message is null
+          && node.Children.Count == 0;
    }
 
    public List<MqttPublishMessage> GetMessages()

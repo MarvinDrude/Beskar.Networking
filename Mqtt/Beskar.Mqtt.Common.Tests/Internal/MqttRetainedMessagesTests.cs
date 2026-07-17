@@ -148,6 +148,33 @@ public class MqttRetainedMessagesTests
       await Assert.That(matched).IsEmpty();
    }
 
+   [Test]
+   public async Task UpdateMessage_ShouldCleanUpTrieNodes_WhenClearingRetainedMessage()
+   {
+      using var manager = new MqttRetainedMessages();
+
+      var topic = "sensor/temp/1";
+      var payload = "22.5"u8.ToArray();
+      var msg = CreatePublishMessage(topic, payload);
+
+      // Store message
+      manager.UpdateMessage("client1", msg);
+
+      // Prune message with empty payload
+      var emptyMsg = CreatePublishMessage(topic, Array.Empty<byte>());
+      manager.UpdateMessage("client1", emptyMsg);
+
+      // Verify the Trie internal node structure is actually cleared
+      var fieldInfo = typeof(MqttRetainedMessages).GetField("_rootNode", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+      var rootNode = fieldInfo!.GetValue(manager);
+
+      var childrenProperty = rootNode!.GetType().GetProperty("Children", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+      var children = (System.Collections.IDictionary)childrenProperty!.GetValue(rootNode)!;
+
+      // The root node's children dictionary should be empty now because the nodes were pruned
+      await Assert.That(children.Count).IsEqualTo(0);
+   }
+
    private static MqttPublishMessage CreatePublishMessage(string topic, byte[] payload)
    {
       return new MqttPublishMessage(new PublishPacket

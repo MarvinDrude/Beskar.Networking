@@ -51,7 +51,14 @@ public sealed partial class MqttClient
       }
       finally
       {
-         semaphore?.Release();
+         try
+         {
+            semaphore?.Release();
+         }
+         catch (ObjectDisposedException)
+         {
+            // Ignored
+         }
       }
    }
 
@@ -130,7 +137,7 @@ public sealed partial class MqttClient
 
          var pubCompPacket = await SendAndAck<PubRelPacket, PubCompPacket>(pubRelPacket, stream, ct);
          TraceLogger.LogClientInfo("MqttClient.PublishExactlyOnceAsync: Received PUBCOMP (PacketId: {0}, ReasonCode: {1}). QoS 2 publish complete.", pubCompPacket.PacketIdentifier, pubCompPacket.ReasonCode);
-         
+
          if (pubCompPacket.ReasonCode is PubCompReasonCode.PacketIdentifierNotFound)
          {
             return new PublishResult()
