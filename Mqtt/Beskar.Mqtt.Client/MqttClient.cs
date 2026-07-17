@@ -71,6 +71,9 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private ConnectOptions _connectOptions = new() { EndPoint = new IPEndPoint(0, 0) };
    private readonly Dictionary<ushort, byte[]> _topicAliases = new(16);
 
+   private SemaphoreSlim? _inFlightSemaphore;
+   private int _incomingInFlightCount;
+
    public MqttClient(INetworkClient networkClient)
    {
       _networkClient = networkClient;
@@ -172,6 +175,15 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          var connectResult = result.Success;
          StartKeepAliveOnDemand(connectResult);
 
+         var receiveMax = connectResult.ReceiveMaximum ?? 65535;
+         if (receiveMax == 0) receiveMax = 65535;
+
+         _inFlightSemaphore = new SemaphoreSlim(receiveMax, receiveMax);
+         lock (_topicAliases)
+         {
+            _incomingInFlightCount = 0;
+         }
+
          TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Successfully connected. Assigned KeepAlive: {0}s", connectResult.ServerKeepAlive > 0 ? connectResult.ServerKeepAlive : _connectOptions.KeepAlivePeriod);
          CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting);
 
@@ -203,6 +215,32 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    internal void SetTopicAlias(ushort alias, byte[] topic)
    {
       _topicAliases[alias] = topic;
+   }
+
+   internal bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
+   {
+      lock (_topicAliases)
+      {
+         current = _incomingInFlightCount;
+         if (receiveMaximum > 0 && current >= receiveMaximum)
+         {
+            return false;
+         }
+
+         _incomingInFlightCount++;
+         return true;
+      }
+   }
+
+   private void DecrementIncomingInFlight()
+   {
+      lock (_topicAliases)
+      {
+         if (_incomingInFlightCount > 0)
+         {
+            _incomingInFlightCount--;
+         }
+      }
    }
 
    private async Task DispatchConnectedAsync(ClientConnectResult connectResult)
@@ -354,7 +392,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    {
       TraceLogger.LogClientWarning("MqttClient: Received DISCONNECT from server (ReasonCode: {0}).", packet.ReasonCode);
       _disconnectReason = new MqttClientDisconnectReason(false, (int)packet.ReasonCode);
-      return DisconnectInternalAsync();
+
+      return DisconnectInternalAsync(false);
    }
 
    private void StartKeepAliveOnDemand(ClientConnectResult connectResult)

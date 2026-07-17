@@ -117,6 +117,11 @@ public sealed partial class ServerPacketHandler
         if (session is null) return ValueTask.CompletedTask;
 
         var pending = session.AcknowledgePublish(packet.PacketIdentifier);
+        if (pending is not null)
+        {
+           _ = Task.Run(() => MqttServer.DeliverNextQueuedMessagesAsync(session), ct);
+        }
+
         if (pending is null || _server.Events.OnPublishAcknowledged.Count <= 0)
            return ValueTask.CompletedTask;
 
@@ -146,6 +151,11 @@ public sealed partial class ServerPacketHandler
 
         var session = _client.MqttSession;
         var pending = session?.AcknowledgePublish(packet.PacketIdentifier);
+
+        if (session is not null && pending is not null)
+        {
+           _ = Task.Run(() => MqttServer.DeliverNextQueuedMessagesAsync(session), ct);
+        }
 
         if (session is null || pending is null || _server.Events.OnPublishAcknowledged.Count <= 0)
            return ValueTask.CompletedTask;
@@ -209,6 +219,10 @@ public sealed partial class ServerPacketHandler
          CancellationToken ct)
       {
          session.RemoveQos2Packet(packet.PacketIdentifier);
+         if (client.ProtocolVersion is MqttProtocolVersion.V50)
+         {
+            session.DecrementIncomingInFlight();
+         }
 
          var pubComp = new PubCompPacket
          {

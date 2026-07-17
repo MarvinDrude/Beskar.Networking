@@ -35,100 +35,80 @@ public sealed partial class ServerPacketHandler
          MqttSession session,
          CancellationToken ct)
       {
-         byte[] resolvedTopicBytes;
-         if (client.ProtocolVersion is MqttProtocolVersion.V50)
-         {
-            if (packet.TopicAlias > 0)
-            {
-               if (packet.TopicUtf8Bytes.IsEmpty)
-               {
-                  if (!client.TryGetTopicAlias(packet.TopicAlias, out var topicBytes))
-                  {
-                     await client.DisconnectAsync(new DisconnectOptions
-                        { ReasonCode = DisconnectReasonCode.TopicAliasInvalid });
-                     return;
-                  }
+         var isQos1Or2 = packet.QualityOfService > QualityOfServiceType.AtMostOnce;
+         var wasIncremented = false;
 
-                  resolvedTopicBytes = topicBytes;
+         if (client.ProtocolVersion is MqttProtocolVersion.V50 && isQos1Or2)
+         {
+            var receiveMax = server.Options.ReceiveMaximum;
+            if (!session.TryIncrementIncomingInFlight(receiveMax, out var currentCount))
+            {
+               TraceLogger.LogServerError("ServerPacketHandler.Publish: Incoming in-flight QoS 1/2 publishes count {0} exceeds ReceiveMaximum {1} for client {2}.", currentCount, receiveMax, client.ClientIdUtf8Bytes.GetUtf8String());
+               await client.DisconnectAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ReceiveMaximumExceeded });
+               return;
+            }
+            wasIncremented = true;
+         }
+
+         var isNewRegistered = false;
+         try
+         {
+            byte[] resolvedTopicBytes;
+            if (client.ProtocolVersion is MqttProtocolVersion.V50)
+            {
+               if (packet.TopicAlias > 0)
+               {
+                  if (packet.TopicUtf8Bytes.IsEmpty)
+                  {
+                     if (!client.TryGetTopicAlias(packet.TopicAlias, out var topicBytes))
+                     {
+                        await client.DisconnectAsync(new DisconnectOptions
+                           { ReasonCode = DisconnectReasonCode.TopicAliasInvalid });
+                        return;
+                     }
+
+                     resolvedTopicBytes = topicBytes;
+                  }
+                  else
+                  {
+                     resolvedTopicBytes = packet.TopicUtf8Bytes.ToArray();
+                     client.SetTopicAlias(packet.TopicAlias, resolvedTopicBytes);
+                  }
                }
                else
                {
+                  if (packet.TopicUtf8Bytes.IsEmpty)
+                  {
+                     await client.DisconnectAsync(
+                        new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError });
+                     return;
+                  }
+
                   resolvedTopicBytes = packet.TopicUtf8Bytes.ToArray();
-                  client.SetTopicAlias(packet.TopicAlias, resolvedTopicBytes);
                }
             }
-            else
+            else // MQTT v3.x
             {
                if (packet.TopicUtf8Bytes.IsEmpty)
                {
-                  await client.DisconnectAsync(
-                     new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError });
+                  await client.DisconnectAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError });
                   return;
                }
 
                resolvedTopicBytes = packet.TopicUtf8Bytes.ToArray();
             }
-         }
-         else // MQTT v3.x
-         {
-            if (packet.TopicUtf8Bytes.IsEmpty)
+
+            var resolvedTopicSpan = new ReadOnlySpan<byte>(resolvedTopicBytes);
+            if (resolvedTopicSpan.IsEmpty || resolvedTopicSpan.Contains((byte)0x23) ||
+                resolvedTopicSpan.Contains((byte)0x2B))
             {
-               await client.DisconnectAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError });
+               await client.DisconnectAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicNameInvalid });
                return;
             }
 
-            resolvedTopicBytes = packet.TopicUtf8Bytes.ToArray();
-         }
-
-         var resolvedTopicSpan = new ReadOnlySpan<byte>(resolvedTopicBytes);
-         if (resolvedTopicSpan.IsEmpty || resolvedTopicSpan.Contains((byte)0x23) ||
-             resolvedTopicSpan.Contains((byte)0x2B))
-         {
-            await client.DisconnectAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicNameInvalid });
-            return;
-         }
-
-         switch (packet.QualityOfService)
-         {
-            case QualityOfServiceType.AtMostOnce: // QoS 0
+            switch (packet.QualityOfService)
             {
-               if (packet.Retain)
-               {
-                  UpdateRetainedMessage(server, client, in packet, resolvedTopicBytes);
-               }
-
-               DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
-               break;
-            }
-            case QualityOfServiceType.AtLeastOnce: // QoS 1
-            {
-               if (packet.Retain)
-               {
-                  UpdateRetainedMessage(server, client, in packet, resolvedTopicBytes);
-               }
-
-               DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
-
-               var pubAck = new PubAckPacket
-               {
-                  PacketIdentifier = packet.PacketIdentifier,
-                  ReasonCode = PubAckReasonCode.Success
-               };
-               await stream.Send(in pubAck, client.ProtocolVersion, ct);
-
-               if (server.Events.OnAcknowledgePub.Count > 0)
-               {
-                  await server.Events.OnAcknowledgePub.ExecuteAsync(
-                     new MqttAcknowledgePubContext() { Session = session, PublishMessage = new MqttPublishMessage(packet) },
-                     HandlerExecutionStrategy.SequentialContinueOnError, ct);
-               }
-
-               break;
-            }
-            case QualityOfServiceType.ExactlyOnce: // QoS 2
-            {
-               var isNew = session.TryAddQos2Packet(packet.PacketIdentifier);
-               if (isNew)
+               case QualityOfServiceType.AtMostOnce: // QoS 0
                {
                   if (packet.Retain)
                   {
@@ -136,23 +116,74 @@ public sealed partial class ServerPacketHandler
                   }
 
                   DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
+                  break;
                }
-
-               var pubRec = new PubRecPacket
+               case QualityOfServiceType.AtLeastOnce: // QoS 1
                {
-                  PacketIdentifier = packet.PacketIdentifier,
-                  ReasonCode = PubRecReasonCode.Success
-               };
-               await stream.Send(in pubRec, client.ProtocolVersion, ct);
+                  if (packet.Retain)
+                  {
+                     UpdateRetainedMessage(server, client, in packet, resolvedTopicBytes);
+                  }
 
-               if (server.Events.OnAcknowledgePub.Count > 0)
-               {
-                  await server.Events.OnAcknowledgePub.ExecuteAsync(
-                     new MqttAcknowledgePubContext() { Session = session, PublishMessage = new MqttPublishMessage(packet) },
-                     HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                  DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
+
+                  var pubAck = new PubAckPacket
+                  {
+                     PacketIdentifier = packet.PacketIdentifier,
+                     ReasonCode = PubAckReasonCode.Success
+                  };
+                  await stream.Send(in pubAck, client.ProtocolVersion, ct);
+
+                  if (server.Events.OnAcknowledgePub.Count > 0)
+                  {
+                     await server.Events.OnAcknowledgePub.ExecuteAsync(
+                        new MqttAcknowledgePubContext() { Session = session, PublishMessage = new MqttPublishMessage(packet) },
+                        HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                  }
+
+                  break;
                }
+               case QualityOfServiceType.ExactlyOnce: // QoS 2
+               {
+                  var isNew = session.TryAddQos2Packet(packet.PacketIdentifier);
+                  if (isNew)
+                  {
+                     isNewRegistered = true;
+                     if (packet.Retain)
+                     {
+                        UpdateRetainedMessage(server, client, in packet, resolvedTopicBytes);
+                     }
 
-               break;
+                     DispatchToSubscribers(server, client, in packet, resolvedTopicBytes, ct);
+                  }
+
+                  var pubRec = new PubRecPacket
+                  {
+                     PacketIdentifier = packet.PacketIdentifier,
+                     ReasonCode = PubRecReasonCode.Success
+                  };
+                  await stream.Send(in pubRec, client.ProtocolVersion, ct);
+
+                  if (server.Events.OnAcknowledgePub.Count > 0)
+                  {
+                     await server.Events.OnAcknowledgePub.ExecuteAsync(
+                        new MqttAcknowledgePubContext() { Session = session, PublishMessage = new MqttPublishMessage(packet) },
+                        HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                  }
+
+                  break;
+               }
+            }
+         }
+         finally
+         {
+            if (wasIncremented)
+            {
+               var qos2Duplicate = packet.QualityOfService == QualityOfServiceType.ExactlyOnce && !isNewRegistered;
+               if (packet.QualityOfService == QualityOfServiceType.AtLeastOnce || qos2Duplicate)
+               {
+                  session.DecrementIncomingInFlight();
+               }
             }
          }
       }
@@ -272,6 +303,17 @@ public sealed partial class ServerPacketHandler
             var localRetainAsPublished = subscription.RetainAsPublished;
             var localSubId = subscription.SubscriptionIdentifier;
             var localMsg = _message;
+
+            if (localQos > 0)
+            {
+               if (localSession.GetUnacknowledgedPublishCount() >= localSession.ClientReceiveMaximum)
+               {
+                  var queuedMessage = new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId);
+                  localSession.EnqueueOfflineMessage(queuedMessage);
+                  
+                  return;
+               }
+            }
 
             _ = Task.Run(async () =>
             {

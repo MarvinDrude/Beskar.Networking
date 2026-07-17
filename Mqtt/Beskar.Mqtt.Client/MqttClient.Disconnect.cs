@@ -158,6 +158,18 @@ public sealed partial class MqttClient
       finally
       {
          _topicAliases.Clear();
+         try
+         {
+            var sem = _inFlightSemaphore;
+            _inFlightSemaphore = null;
+
+            sem?.Dispose();
+         }
+         catch
+         {
+            // ignored
+         }
+
          CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Disconnecting);
          TraceLogger.LogClientInfo("MqttClient: Disconnected from transport layer. State transitioned to Disconnected.");
 

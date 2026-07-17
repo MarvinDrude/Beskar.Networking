@@ -201,6 +201,7 @@ public sealed class MqttClientSessions(MqttServer server)
       return new MqttSession(_server, client)
       {
          ExpiryInterval = _server.Options.SupportPersistentSessions ? (connectOptions.SessionExpiryInterval ?? 0) : 0,
+         ClientReceiveMaximum = connectOptions.ReceiveMaximum ?? 65535,
       };
    }
 

@@ -30,6 +30,11 @@ public sealed class MqttServerOptions
    public ushort MaxPendingMessagesPerConnection { get; set; } = 1024;
 
    /// <summary>
+   /// The maximum number of concurrent QoS 1 and QoS 2 messages in flight allowed for a client connection.
+   /// </summary>
+   public ushort ReceiveMaximum { get; set; } = 1000;
+
+   /// <summary>
    /// Default timeout for packet awaits etc.
    /// </summary>
    public TimeSpan DefaultTimeout { get; set; } = TimeSpan.FromSeconds(120);

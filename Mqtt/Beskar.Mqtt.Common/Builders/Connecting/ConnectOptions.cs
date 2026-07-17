@@ -69,6 +69,12 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    public ushort? TopicAliasMaximum { get; set; }
 
    /// <summary>
+   /// The Receive Maximum.
+   /// <remarks>MQTT 5.0.0 and above required.</remarks>
+   /// </summary>
+   public ushort? ReceiveMaximum { get; set; }
+
+   /// <summary>
    /// The Maximum Packet Size.
    /// <remarks>MQTT 5.0.0 and above required.</remarks>
    /// </summary>
@@ -199,6 +205,7 @@ public sealed class ConnectOptions(int builderCapacity = -1)
 
       SessionExpiryInterval = null;
       TopicAliasMaximum = null;
+      ReceiveMaximum = null;
       MaximumPacketSize = null;
       RequestResponseInformation = false;
       RequestProblemInformation = true;
@@ -259,6 +266,9 @@ public sealed class ConnectOptions(int builderCapacity = -1)
                    break;
                 case PropertyIdentifier.TopicAliasMaximum:
                    options.TopicAliasMaximum = propEnumerator.Current.AsTopicAliasMaximum();
+                   break;
+                case PropertyIdentifier.ReceiveMaximum:
+                   options.ReceiveMaximum = propEnumerator.Current.AsReceiveMaximum();
                    break;
                 case PropertyIdentifier.MaximumPacketSize:
                    options.MaximumPacketSize = propEnumerator.Current.AsMaximumPacketSize();

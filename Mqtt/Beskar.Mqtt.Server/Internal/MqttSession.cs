@@ -118,11 +118,49 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
+   internal int GetUnacknowledgedPublishCount()
+   {
+      lock (_unacknowledgedPublishes)
+      {
+         return _unacknowledgedPublishes.Count;
+      }
+   }
+
    internal List<MqttPendingPublish> GetUnacknowledgedPublishes()
    {
       lock (_unacknowledgedPublishes)
       {
          return [.. _unacknowledgedPublishes];
+      }
+   }
+
+   public ushort ClientReceiveMaximum { get; internal set; } = 65535;
+
+   private int _incomingInFlightCount;
+
+   public bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
+   {
+      lock (_incomingQos2Packets)
+      {
+         current = _incomingInFlightCount;
+         if (receiveMaximum > 0 && current >= receiveMaximum)
+         {
+            return false;
+         }
+
+         _incomingInFlightCount++;
+         return true;
+      }
+   }
+
+   public void DecrementIncomingInFlight()
+   {
+      lock (_incomingQos2Packets)
+      {
+         if (_incomingInFlightCount > 0)
+         {
+            _incomingInFlightCount--;
+         }
       }
    }
 }

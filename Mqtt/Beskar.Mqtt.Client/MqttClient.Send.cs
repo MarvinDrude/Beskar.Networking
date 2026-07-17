@@ -471,6 +471,11 @@ public sealed partial class MqttClient
       where TPacket : IRawMqttPacket
    {
       TraceLogger.LogClientInfo("MqttClient.Send: Sending packet '{0}'...", typeof(TPacket).Name);
+      if (typeof(TPacket) == typeof(PubAckPacket) || typeof(TPacket) == typeof(PubCompPacket))
+      {
+         DecrementIncomingInFlight();
+      }
+
       try
       {
          var lockTask = stream.AcquireWriterLock(ct);

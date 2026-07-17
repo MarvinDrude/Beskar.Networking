@@ -135,6 +135,19 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             }
          }
 
+         if (client.ProtocolVersion is MqttProtocolVersion.V50 && resolvedPacket.QualityOfService > QualityOfServiceType.AtMostOnce)
+         {
+            var localReceiveMax = client.CurrentConnectOptions.ReceiveMaximum ?? 65535;
+            if (localReceiveMax == 0) localReceiveMax = 65535;
+
+            if (!client.TryIncrementIncomingInFlight(localReceiveMax, out var currentCount))
+            {
+               TraceLogger.LogClientError("ClientPacketHandler: Incoming in-flight QoS 1/2 publishes count {0} exceeds ReceiveMaximum {1}.", currentCount, localReceiveMax);
+               await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ReceiveMaximumExceeded }, ct);
+               return;
+            }
+         }
+
          TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBLISH packet (PacketId: {0}, Topic: '{1}', QoS: {2}). Dispatching to receive handlers...", resolvedPacket.PacketIdentifier, resolvedPacket.TopicUtf8Bytes.GetUtf8String(), resolvedPacket.QualityOfService);
 
          var converted = new MqttPublishMessage(resolvedPacket);

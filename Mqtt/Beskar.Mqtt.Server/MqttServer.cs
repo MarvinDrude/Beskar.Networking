@@ -322,10 +322,14 @@ public sealed partial class MqttServer : IAsyncDisposable
             context.ReasonCode = ConnectReasonCode.ClientIdentifierNotValid;
          }
 
+         var propertiesBuffer = new byte[512];
+         var connAckProperties = BuildConnAckProperties(
+            this, client, context, connectOptions, assignedClientIdUtf8Bytes, propertiesBuffer);
+
          var connAck = new ConnAckPacket()
          {
             ResponseInfoUtf8Bytes = ReadOnlySequence<byte>.Empty,
-            ReceiveMaximum = 0,
+            ReceiveMaximum = Options.ReceiveMaximum,
             MaximumPacketSize = 0,
             MaximumQualityOfService = QualityOfServiceType.ExactlyOnce,
 
@@ -338,7 +342,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             IsWildcardSubscriptionAvailable = true,
             AssignedClientIdentifierUtf8Bytes = new ReadOnlySequence<byte>(assignedClientIdUtf8Bytes),
 
-            PropertiesBytes = new ReadOnlySequence<byte>(context.ResponseUserProperties.WrittenMemory),
+            PropertiesBytes = connAckProperties,
             ServerReferenceUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(context.ServerReference)),
             ReasonStringUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(context.ReasonString)),
             AuthenticationMethodUtf8Bytes = new ReadOnlySequence<byte>(connectOptions.AuthenticationMethodUtf8Bytes),
@@ -382,6 +386,86 @@ public sealed partial class MqttServer : IAsyncDisposable
             // ignored
          }
       }
+   }
+
+   private static ReadOnlySequence<byte> BuildConnAckProperties(
+      MqttServer server,
+      MqttServerClient client,
+      MqttConnectInterceptContext context,
+      ConnectOptions connectOptions,
+      ReadOnlyMemory<byte> assignedClientIdBytes,
+      byte[] propertiesBuffer)
+   {
+      var writer = new ByteWriter(propertiesBuffer);
+      try
+      {
+         var propEncoder = writer.AsConnAckPropertyEncoder();
+         try
+         {
+            if (server.Options.ReceiveMaximum > 0)
+            {
+               propEncoder.WriteReceiveMaximum(server.Options.ReceiveMaximum);
+            }
+
+            propEncoder.WriteMaximumQoS(QualityOfServiceType.ExactlyOnce);
+            propEncoder.WriteRetainAvailable(true);
+            propEncoder.WriteTopicAliasMaximum(ushort.MaxValue);
+            propEncoder.WriteWildcardSubscriptionAvailable(true);
+            propEncoder.WriteSubscriptionIdentifiersAvailable(true);
+            propEncoder.WriteSharedSubscriptionAvailable(false);
+
+            if (!assignedClientIdBytes.IsEmpty)
+            {
+               propEncoder.WriteAssignedClientIdentifier(assignedClientIdBytes.Span);
+            }
+
+            if (!string.IsNullOrEmpty(context.ReasonString))
+            {
+               propEncoder.WriteReasonString(Encoding.UTF8.GetBytes(context.ReasonString));
+            }
+
+            if (!string.IsNullOrEmpty(context.ServerReference))
+            {
+               propEncoder.WriteServerReference(Encoding.UTF8.GetBytes(context.ServerReference));
+            }
+
+            if (!connectOptions.AuthenticationMethodUtf8Bytes.IsEmpty)
+            {
+               propEncoder.WriteAuthenticationMethod(connectOptions.AuthenticationMethodUtf8Bytes.Span);
+            }
+
+            if (!context.ResponseAuthenticationData.IsEmpty)
+            {
+               propEncoder.WriteAuthenticationData(context.ResponseAuthenticationData.Span);
+            }
+
+            if (context.ResponseUserProperties.Count > 0)
+            {
+               var enumerator = context.ResponseUserProperties.GetEnumerator();
+               while (enumerator.MoveNext())
+               {
+                  var prop = enumerator.Current;
+                  propEncoder.WriteUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+               }
+            }
+         }
+         finally
+         {
+            writer = propEncoder.Encoder.Writer;
+         }
+
+         var written = writer.Position;
+         if (written > 0)
+         {
+            return new ReadOnlySequence<byte>(propertiesBuffer.AsMemory(0, written));
+         }
+      }
+      finally
+      {
+         writer.Dispose();
+      }
+
+      return ReadOnlySequence<byte>.Empty;
    }
 
    private async Task RunClientListenTask(
@@ -677,6 +761,11 @@ public sealed partial class MqttServer : IAsyncDisposable
 
          while (client.IsConnected && !ct.IsCancellationRequested)
          {
+            if (session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum)
+            {
+               break;
+            }
+
             if (!session.TryDequeueOfflineMessage(out var queuedMessage))
             {
                break;
@@ -721,6 +810,72 @@ public sealed partial class MqttServer : IAsyncDisposable
       catch (Exception ex)
       {
          TraceLogger.LogServerError("MqttServer: Error delivering offline messages to client '{0}': {1}",
+            client.ClientIdUtf8Bytes.GetUtf8String(), ex.Message);
+      }
+   }
+
+   internal static async Task DeliverNextQueuedMessagesAsync(MqttSession session)
+   {
+      var client = session.Client;
+      if (client is null || !client.IsConnected) return;
+
+      using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(client.CancellationToken);
+      var ct = combinedCts.Token;
+
+      try
+      {
+         var propertiesBuffer = new byte[128];
+         while (client.IsConnected && !ct.IsCancellationRequested)
+         {
+            if (session.GetUnacknowledgedPublishes().Count >= session.ClientReceiveMaximum)
+            {
+               break;
+            }
+
+            if (!session.TryDequeueOfflineMessage(out var queuedMessage))
+            {
+               break;
+            }
+
+            if (queuedMessage.Message.MessageExpiryInterval > 0)
+            {
+               var timeSpent = (uint)(DateTimeOffset.UtcNow - queuedMessage.Message.CreatedAt).TotalSeconds;
+               if (timeSpent >= queuedMessage.Message.MessageExpiryInterval)
+               {
+                  continue; // Message expired, discard and skip
+               }
+            }
+
+            var targetQos = queuedMessage.QualityOfService;
+            var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
+
+            if (targetQos > 0)
+            {
+               session.AddUnacknowledgedPublish(new MqttPendingPublish
+               {
+                  PacketIdentifier = packetId,
+                  Message = queuedMessage.Message,
+                  QualityOfService = targetQos,
+                  RetainAsPublished = queuedMessage.RetainAsPublished,
+                  SubscriptionIdentifier = queuedMessage.SubscriptionIdentifier
+               });
+            }
+
+            await SendPublishMessageAsync(
+               client,
+               queuedMessage.Message,
+               targetQos,
+               queuedMessage.RetainAsPublished,
+               queuedMessage.SubscriptionIdentifier,
+               packetId,
+               dup: false,
+               propertiesBuffer,
+               ct);
+         }
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogServerError("MqttServer: Error delivering next queued messages to client '{0}': {1}",
             client.ClientIdUtf8Bytes.GetUtf8String(), ex.Message);
       }
    }

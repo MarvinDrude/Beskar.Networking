@@ -188,6 +188,16 @@ public sealed class ConnectOptionsBuilder(IPEndPoint endPoint, ConnectOptions? o
    }
 
    /// <summary>
+   /// Sets the Receive Maximum.
+   /// <remarks>MQTT 5.0.0 and above required.</remarks>
+   /// </summary>
+   public ConnectOptionsBuilder WithReceiveMaximum(ushort maximum)
+   {
+      _options.ReceiveMaximum = maximum;
+      return this;
+   }
+
+   /// <summary>
    /// Sets the Maximum Packet Size.
    /// <remarks>MQTT 5.0.0 and above required.</remarks>
    /// </summary>

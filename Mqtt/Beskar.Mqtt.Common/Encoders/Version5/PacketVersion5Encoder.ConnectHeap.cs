@@ -73,6 +73,11 @@ public readonly ref partial struct PacketVersion5Encoder
                   propEncoder.WriteTopicAliasMaximum(options.TopicAliasMaximum.Value);
                }
 
+               if (options.ReceiveMaximum.HasValue && options.ReceiveMaximum.Value != 0)
+               {
+                  propEncoder.WriteReceiveMaximum(options.ReceiveMaximum.Value);
+               }
+
                if (options.MaximumPacketSize.HasValue && options.MaximumPacketSize.Value != 0)
                {
                   propEncoder.WriteMaximumPacketSize(options.MaximumPacketSize.Value);
@@ -263,6 +268,11 @@ public readonly ref partial struct PacketVersion5Encoder
       }
 
       if (options.TopicAliasMaximum.HasValue && options.TopicAliasMaximum.Value != 0)
+      {
+         len += 3;
+      }
+
+      if (options.ReceiveMaximum.HasValue && options.ReceiveMaximum.Value != 0)
       {
          len += 3;
       }

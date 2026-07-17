@@ -29,13 +29,30 @@ public sealed partial class MqttClient
 
       TraceLogger.LogClientInfo("MqttClient.PublishAsync: Publishing to topic '{0}' (QoS: {1}).", Encoding.UTF8.GetString(options.TopicUtf8Bytes.Span), options.QualityOfService);
 
-      return options.QualityOfService switch
+      if (options.QualityOfService is QualityOfServiceType.AtMostOnce)
       {
-         QualityOfServiceType.ExactlyOnce => await PublishExactlyOnceAsync(options, stream, ct),
-         QualityOfServiceType.AtLeastOnce => await PublishAtLeastOnceAsync(options, stream, ct),
-         QualityOfServiceType.AtMostOnce => await PublishAtMostOnceAsync(options, stream, ct),
-         _ => new StringError("Invalid quality of service.")
-      };
+         return await PublishAtMostOnceAsync(options, stream, ct);
+      }
+
+      var semaphore = _inFlightSemaphore;
+      if (semaphore is not null)
+      {
+         await semaphore.WaitAsync(ct);
+      }
+
+      try
+      {
+         return options.QualityOfService switch
+         {
+            QualityOfServiceType.ExactlyOnce => await PublishExactlyOnceAsync(options, stream, ct),
+            QualityOfServiceType.AtLeastOnce => await PublishAtLeastOnceAsync(options, stream, ct),
+            _ => new StringError("Invalid quality of service.")
+         };
+      }
+      finally
+      {
+         semaphore?.Release();
+      }
    }
 
    private async Task<Result<PublishResult, StringError>> PublishAtMostOnceAsync(
