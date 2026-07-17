@@ -76,6 +76,28 @@ public class MqttServerEventsTests
    }
 
    [Test]
+   public async Task StartAsync_WhenOneListenerFails_RollsBackAndUnbindsStartedListeners()
+   {
+      var mockListener1 = new TrackingNetworkListener(failToBind: false);
+      var mockListener2 = new TrackingNetworkListener(failToBind: true);
+
+      await using var server = new MqttServer([mockListener1, mockListener2], new MqttServerOptions());
+
+      var startResult = await server.StartAsync();
+
+      await Assert.That(startResult.Failed).IsTrue();
+      await Assert.That(startResult.Error.Detail).Contains("Failed to start one of the listener");
+
+      // Verify that mockListener1 was bound and subsequently unbound/cleaned up
+      await Assert.That(mockListener1.BindCalled).IsTrue();
+      await Assert.That(mockListener1.UnbindCalled).IsTrue();
+
+      // Verify that mockListener2 was attempted to be bound (and failed), and did not need cleanup
+      await Assert.That(mockListener2.BindCalled).IsTrue();
+      await Assert.That(mockListener2.UnbindCalled).IsFalse();
+   }
+
+   [Test]
    public async Task ConnectionEvents_ShouldFireCorrectly()
    {
       var options = new MqttServerOptions();
@@ -445,6 +467,45 @@ public class MqttServerEventsTests
       await Assert.That(firedCopy).Contains("Subscribe");
 
       await server.StopAsync();
+   }
+
+   private class TrackingNetworkListener(bool failToBind) : INetworkListener
+   {
+      public bool BindCalled { get; private set; }
+      public bool UnbindCalled { get; private set; }
+
+      public EndPoint LocalAddress => new IPEndPoint(IPAddress.Loopback, 0);
+      public TransportKind Transport => TransportKind.Unknown;
+      public bool IsBound { get; private set; }
+      public NetworkListenerStats Stats => default;
+
+      public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
+      {
+         BindCalled = true;
+         if (failToBind)
+         {
+            return ValueTask.FromResult<VoidResult<NetworkCodeError>>(new NetworkCodeError(-1, "Simulated bind failure"));
+         }
+         IsBound = true;
+         return ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
+      }
+
+      public ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default)
+      {
+         UnbindCalled = true;
+         IsBound = false;
+         return ValueTask.FromResult<VoidResult<NetworkCodeError>>(true);
+      }
+
+      public ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
+      {
+         throw new NotImplementedException();
+      }
+
+      public ValueTask DisposeAsync()
+      {
+         return ValueTask.CompletedTask;
+      }
    }
 
    private class DummyNetworkListener : INetworkListener

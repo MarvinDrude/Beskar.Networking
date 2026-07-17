@@ -84,6 +84,9 @@ public sealed partial class ServerPacketHandler
    {
       if (!IsValid) return ValueTask.CompletedTask;
 
+      TraceLogger.LogServerInfo("ServerPacketHandler: Received DISCONNECT packet. SessionExpiryInterval: {0}",
+         packet.SessionExpiryInterval);
+
       _client.DisconnectOptions = DisconnectOptions.Create(in packet);
       return ValueTask.CompletedTask;
    }

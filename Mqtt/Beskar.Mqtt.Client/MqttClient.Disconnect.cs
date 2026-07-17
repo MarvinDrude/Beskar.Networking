@@ -20,7 +20,9 @@ public sealed partial class MqttClient
       if (validateResult.Failed) return;
 
       var beforeConnected = IsConnected;
-      TraceLogger.LogClientInfo("MqttClient.DisconnectAsync: Initiating disconnect (ReasonCode: {0}).", options.ReasonCode);
+      TraceLogger.LogClientInfo("MqttClient.DisconnectAsync: Initiating disconnect (ReasonCode: {0}, SessionExpiryInterval: {1}).",
+         options.ReasonCode, options.SessionExpiryInterval);
+
       if (DisconnectingAlreadyInProcessOrDone())
       {
          return;

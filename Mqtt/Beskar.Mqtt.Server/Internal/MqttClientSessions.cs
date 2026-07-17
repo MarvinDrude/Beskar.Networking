@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using Beskar.Memory.Threading;
 using Beskar.Memory.Writers;
+using Beskar.Utilities.Tracing;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Protocol.Collections;
@@ -150,10 +151,17 @@ public sealed class MqttClientSessions(MqttServer server)
 
          if (takenOverClient is not null)
          {
-            await takenOverClient.DisconnectAsync(new DisconnectOptions()
+            try
             {
-               ReasonCode = DisconnectReasonCode.SessionTakenOver,
-            });
+               await takenOverClient.DisconnectAsync(new DisconnectOptions()
+               {
+                  ReasonCode = DisconnectReasonCode.SessionTakenOver,
+               });
+            }
+            catch (Exception ex)
+            {
+               TraceLogger.LogServerWarning("MqttClientSessions: Failed to send session taken over disconnect packet to old client. Error: {0}", ex.Message);
+            }
 
             if (_server.Events.OnDisconnect.Count > 0)
             {

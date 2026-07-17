@@ -922,6 +922,9 @@ public class MqttQosTests
       await Assert.That(sessionA!.Client).IsNull();
       //await Assert.That(sessionA.ExpiryInterval).IsEqualTo(0u);
 
+      // Wait a short duration to ensure server-side background task finishes UnsubscribeAll
+      await Task.Delay(200);
+
       // 2. Publish message to test/expiry-update
       var publisher = MqttClientFactory.CreateTcp();
       await publisher.ConnectAsync(new ConnectOptions { EndPoint = new IPEndPoint(IPAddress.Loopback, port) });

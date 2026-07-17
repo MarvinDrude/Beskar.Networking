@@ -107,7 +107,11 @@ public sealed partial class MqttServer : IAsyncDisposable
          var startResult = await listener.BindAsync(ct);
          _ = Task.Run(() => RunAcceptTask(listener, ct), ct);
 
-         if (!startResult.Failed) continue;
+         if (!startResult.Failed)
+         {
+            startedBuilder.Add(listener);
+            continue;
+         }
 
          await CleanupCode(startedBuilder, ct);
          return new StringError($"Failed to start one of the listener: {startResult.Error.Message}");
