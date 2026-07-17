@@ -172,7 +172,7 @@ public class MqttReceiveMaximumTests
 
       // The subscriber should now receive the second message
       await receiveTcs2.Task.WaitAsync(TimeSpan.FromSeconds(5));
-      
+
       int count2;
       string p1;
       string p2;
@@ -209,7 +209,7 @@ public class MqttReceiveMaximumTests
       await server.StartAsync();
 
       var client = (MqttClient)MqttClientFactory.CreateTcp();
-      
+
       var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
       client.Events.OnClientDisconnected.Add((ctx, ct) =>
       {
@@ -358,14 +358,14 @@ public class MqttReceiveMaximumTests
       // Wait until the server receives the publication and enters the hook (so pub1 is in-flight)
       await ackTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-      // Attempt to publish a second QoS 1 message. 
+      // Attempt to publish a second QoS 1 message.
       // Since it's MQTT V3, client should NOT throttle it even though ReceiveMaximum is 1 and 1 is already in-flight!
       var pub2Task = client.PublishAsync(pubOptions);
 
       // Verify that pub2Task is NOT throttled and both tasks are running (they both wait on proceedTcs inside the server hook)
       var completedTask = await Task.WhenAny(pub2Task, Task.Delay(500));
       await Assert.That(completedTask == pub2Task).IsFalse(); // it timed out because server hook is holding it, NOT client semaphore!
-      
+
       // Let's release the hook on the server so both can complete
       proceedTcs.TrySetResult();
 
@@ -396,7 +396,7 @@ public class MqttReceiveMaximumTests
       await server.StartAsync();
 
       var client = (MqttClient)MqttClientFactory.CreateTcp();
-      
+
       var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
       client.Events.OnClientDisconnected.Add((ctx, ct) =>
       {
@@ -498,6 +498,218 @@ public class MqttReceiveMaximumTests
       // Verify we received all 10 messages successfully without disconnecting
       await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
       await Assert.That(disconnectTcs.Task.IsCompleted).IsFalse();
+
+      await subscriber.DisconnectAsync(new DisconnectOptions());
+      await publisher.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task ReceiveMaximum_ClientEnforcement_QoS2_ShouldSucceed_WhenReceivingManyMessagesConsecutively()
+   {
+      var port = GetFreePort();
+
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      await server.StartAsync();
+
+      var subscriber = (MqttClient)MqttClientFactory.CreateTcp();
+      var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
+      subscriber.Events.OnClientDisconnected.Add((ctx, ct) =>
+      {
+         disconnectTcs.TrySetResult(ctx.ReasonCode);
+         return ValueTask.CompletedTask;
+      });
+
+      // Connect with ReceiveMaximum = 2
+      await subscriber.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ReceiveMaximum = 2
+      });
+
+      var messageCount = 0;
+      var receiveFinishedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      subscriber.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         var count = Interlocked.Increment(ref messageCount);
+         if (count == 10)
+         {
+            receiveFinishedTcs.TrySetResult();
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      await subscriber.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/clientmanyqos2"u8, QualityOfServiceType.ExactlyOnce)
+         .Build());
+
+      var publisher = (MqttClient)MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port)
+      });
+
+      var pubOptions = new PublishOptionsBuilder()
+         .WithTopic("test/clientmanyqos2"u8)
+         .WithQualityOfService(QualityOfServiceType.ExactlyOnce)
+         .WithPayload("Payload")
+         .Build();
+
+      // Send 10 messages. Since ReceiveMaximum is 2, if the client did not decrement the count correctly (double-decrement or leak),
+      // it would get out of sync or exceed the limit. With the fix, it should successfully receive all 10 messages.
+      for (var i = 0; i < 10; i++)
+      {
+         await publisher.PublishAsync(pubOptions);
+      }
+
+      await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(disconnectTcs.Task.IsCompleted).IsFalse();
+
+      await subscriber.DisconnectAsync(new DisconnectOptions());
+      await publisher.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task ReceiveMaximum_ClientEnforcement_QoS2_FailurePath_ShouldReleaseSlot()
+   {
+      var port = GetFreePort();
+
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      await server.StartAsync();
+
+      var subscriber = (MqttClient)MqttClientFactory.CreateTcp();
+      var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
+      subscriber.Events.OnClientDisconnected.Add((ctx, ct) =>
+      {
+         disconnectTcs.TrySetResult(ctx.ReasonCode);
+         return ValueTask.CompletedTask;
+      });
+
+      // Connect with ReceiveMaximum = 1
+      await subscriber.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ReceiveMaximum = 1
+      });
+
+      var messageCount = 0;
+      var receiveFinishedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      subscriber.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         ctx.ReasonCode = PubAckReasonCode.UnspecifiedError;
+
+         var count = Interlocked.Increment(ref messageCount);
+         if (count == 5)
+         {
+            receiveFinishedTcs.TrySetResult();
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      await subscriber.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/clientfailqos2"u8, QualityOfServiceType.ExactlyOnce)
+         .Build());
+
+      var publisher = (MqttClient)MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port)
+      });
+
+      var pubOptions = new PublishOptionsBuilder()
+         .WithTopic("test/clientfailqos2"u8)
+         .WithQualityOfService(QualityOfServiceType.ExactlyOnce)
+         .WithPayload("Payload")
+         .Build();
+
+      // Send 5 messages sequentially. Since ReceiveMaximum is 1, if the client leaked the slot on failure,
+      // it would disconnect on the second message because the slot remains occupied.
+      // With the fix, the client should successfully receive and reject all 5 messages without disconnecting.
+      for (var i = 0; i < 5; i++)
+      {
+         await publisher.PublishAsync(pubOptions);
+      }
+
+      await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(disconnectTcs.Task.IsCompleted).IsFalse();
+
+      await subscriber.DisconnectAsync(new DisconnectOptions());
+      await publisher.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task ReceiveMaximum_ServerEnforcement_QoS2_FailurePath_ShouldNotSendPubRel()
+   {
+      var port = GetFreePort();
+
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      await server.StartAsync();
+
+      // Subscriber client
+      var subscriber = (MqttClient)MqttClientFactory.CreateTcp();
+      await subscriber.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port)
+      });
+
+      subscriber.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         ctx.ReasonCode = PubAckReasonCode.UnspecifiedError; // Client returns failed PUBREC
+         return ValueTask.CompletedTask;
+      });
+
+      await subscriber.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/serverfailqos2"u8, QualityOfServiceType.ExactlyOnce)
+         .Build());
+
+      // Publisher client
+      var publisher = (MqttClient)MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port)
+      });
+
+      using var clientsResult = await server.ClientSessions.GetClients();
+      MqttSession? subSession = null;
+      foreach (var c in clientsResult.WrittenSpan)
+      {
+         if (c.IsConnected && !c.ClientIdUtf8Bytes.Span.SequenceEqual(publisher.CurrentConnectOptions.ClientIdUtf8Bytes.Span))
+         {
+            subSession = c.MqttSession;
+            break;
+         }
+      }
+      await Assert.That(subSession).IsNotNull();
+
+      var pubOptions = new PublishOptionsBuilder()
+         .WithTopic("test/serverfailqos2"u8)
+         .WithQualityOfService(QualityOfServiceType.ExactlyOnce)
+         .WithPayload("Payload")
+         .Build();
+
+      var pubResult = await publisher.PublishAsync(pubOptions);
+
+      // Verify that the publish to server succeeded
+      await Assert.That(pubResult.Failed).IsFalse();
+
+      // Wait a moment for any potentially violating PUBREL to arrive
+      await Task.Delay(200);
+
+      // The server should have cleaned up the publish from its session without sending PUBREL
+      await Assert.That(subSession!.GetUnacknowledgedPublishCount()).IsEqualTo(0);
 
       await subscriber.DisconnectAsync(new DisconnectOptions());
       await publisher.DisconnectAsync(new DisconnectOptions());

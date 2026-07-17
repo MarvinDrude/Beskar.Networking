@@ -471,7 +471,10 @@ public sealed partial class MqttClient
       where TPacket : IRawMqttPacket
    {
       TraceLogger.LogClientInfo("MqttClient.Send: Sending packet '{0}'...", typeof(TPacket).Name);
-      if (typeof(TPacket) == typeof(PubAckPacket) || typeof(TPacket) == typeof(PubCompPacket))
+
+      if (typeof(TPacket) == typeof(PubAckPacket) ||
+          typeof(TPacket) == typeof(PubCompPacket) ||
+          packet is PubRecPacket { ReasonCode: >= PubRecReasonCode.UnspecifiedError })
       {
          DecrementIncomingInFlight();
       }

@@ -209,12 +209,18 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    internal bool TryGetTopicAlias(ushort alias, [NotNullWhen(true)] out byte[]? topic)
    {
-      return _topicAliases.TryGetValue(alias, out topic);
+      lock (_topicAliases)
+      {
+         return _topicAliases.TryGetValue(alias, out topic);
+      }
    }
 
    internal void SetTopicAlias(ushort alias, byte[] topic)
    {
-      _topicAliases[alias] = topic;
+      lock (_topicAliases)
+      {
+         _topicAliases[alias] = topic;
+      }
    }
 
    internal bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
@@ -232,8 +238,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
    }
 
-    internal void DecrementIncomingInFlight()
-    {
+   internal void DecrementIncomingInFlight()
+   {
       lock (_topicAliases)
       {
          if (_incomingInFlightCount > 0)
@@ -332,6 +338,11 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
          TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Awaiting handshakes (CONNACK or AUTH)...");
          var completedTask = await Task.WhenAny(connAckTask, authTask, _receiveTask);
+
+         if (connAckTask.IsCompleted)
+         {
+            completedTask = connAckTask;
+         }
 
          if (completedTask == _receiveTask)
          {

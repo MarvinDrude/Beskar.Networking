@@ -163,16 +163,25 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
          // probably best here to defer actual handlers to run on new task?
          _ = Task.Run(async () =>
          {
+            var shouldDecrementInFinally = wasIncremented;
             try
             {
                await client.Events.OnMessageReceive.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
 
                if (context.AutoAcknowledge)
+               {
                   await context.AcknowledgeAsync(ct);
+               }
+
+               shouldDecrementInFinally = false;
+            }
+            catch (Exception ex)
+            {
+               TraceLogger.LogClientError("ClientPacketHandler: Error executing message receive handler: {0}", ex.Message);
             }
             finally
             {
-               if (wasIncremented && resolvedPacket.QualityOfService == QualityOfServiceType.AtLeastOnce)
+               if (shouldDecrementInFinally)
                {
                   client.DecrementIncomingInFlight();
                }
@@ -192,11 +201,6 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
    {
       TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBREL packet (PacketId: {0}, ReasonCode: {1}). Replying with PUBCOMP...", packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
-
-      if (_client.ProtocolVersion is MqttProtocolVersion.V50)
-      {
-         _client.DecrementIncomingInFlight();
-      }
 
       return Awaited(packet);
 

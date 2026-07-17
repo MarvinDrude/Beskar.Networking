@@ -157,7 +157,11 @@ public sealed partial class MqttClient
       }
       finally
       {
-         _topicAliases.Clear();
+         lock (_topicAliases)
+         {
+            _topicAliases.Clear();
+         }
+
          try
          {
             var sem = _inFlightSemaphore;

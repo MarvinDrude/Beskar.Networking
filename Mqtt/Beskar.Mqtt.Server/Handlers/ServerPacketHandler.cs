@@ -180,27 +180,60 @@ public sealed partial class ServerPacketHandler
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ExecuteAsync(INetworkStream stream, in PubRecPacket packet, CancellationToken ct = default)
-    {
-       if (!IsValid) return ValueTask.CompletedTask;
+     public ValueTask ExecuteAsync(INetworkStream stream, in PubRecPacket packet, CancellationToken ct = default)
+     {
+        if (!IsValid) return ValueTask.CompletedTask;
 
-       var session = _client.MqttSession;
-       var pending = session?.PeekUnacknowledgedPublish(packet.PacketIdentifier);
+        var session = _client.MqttSession;
+        if (session is null) return ValueTask.CompletedTask;
 
-       if (pending is null) return ValueTask.CompletedTask;
-       return Awaited(stream, packet, _client, ct);
+        var pending = session.PeekUnacknowledgedPublish(packet.PacketIdentifier);
+        if (pending is null) return ValueTask.CompletedTask;
 
-       static async ValueTask Awaited(INetworkStream stream, PubRecPacket packet, MqttServerClient client, CancellationToken ct)
-       {
-          var pubRel = new PubRelPacket
-          {
-             PacketIdentifier = packet.PacketIdentifier,
-             ReasonCode = PubRelReasonCode.Success
-          };
+        if (packet.ReasonCode >= PubRecReasonCode.UnspecifiedError)
+        {
+           TraceLogger.LogServerWarning("ServerPacketHandler: Received failed PUBREC (PacketId: {0}, ReasonCode: {1}). Aborting QoS 2 transaction.",
+              packet.PacketIdentifier, packet.ReasonCode);
 
-          await stream.Send(in pubRel, client.ProtocolVersion, ct);
-       }
-    }
+           session.AcknowledgePublish(packet.PacketIdentifier);
+           _ = Task.Run(() => MqttServer.DeliverNextQueuedMessagesAsync(session), ct);
+
+           if (_server.Events.OnPublishAcknowledged.Count > 0)
+           {
+              var server = _server;
+              _ = Task.Run(async () =>
+              {
+                 try
+                 {
+                    await server.Events.OnPublishAcknowledged.ExecuteAsync(new MqttPublishAcknowledgedContext
+                    {
+                       Session = session,
+                       PendingPublish = pending
+                    }, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                 }
+                 catch (Exception)
+                 {
+                    // ignored
+                 }
+              }, ct);
+           }
+
+           return ValueTask.CompletedTask;
+        }
+
+        return Awaited(stream, packet, _client, ct);
+
+        static async ValueTask Awaited(INetworkStream stream, PubRecPacket packet, MqttServerClient client, CancellationToken ct)
+        {
+           var pubRel = new PubRelPacket
+           {
+              PacketIdentifier = packet.PacketIdentifier,
+              ReasonCode = PubRelReasonCode.Success
+           };
+
+           await stream.Send(in pubRel, client.ProtocolVersion, ct);
+        }
+     }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PubRelPacket packet, CancellationToken ct = default)
    {

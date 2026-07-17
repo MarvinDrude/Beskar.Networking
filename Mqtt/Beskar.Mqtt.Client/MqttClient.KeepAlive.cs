@@ -32,10 +32,13 @@ public sealed partial class MqttClient
 
             TraceLogger.LogClientInfo("MqttClient: Sending keep-alive PINGREQ...");
             var pingResult = await PingAsync(combined.Token);
+
             if (pingResult.Failed)
             {
+               ct.ThrowIfCancellationRequested();
                throw new Exception($"Keep-alive ping failed: {pingResult.Error.Detail}");
             }
+
             TraceLogger.LogClientInfo("MqttClient: Keep-alive PINGRESP received successfully.");
          }
       }
