@@ -66,6 +66,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
    {
       if (connection is StreamConnection streamConn)
       {
+         await streamConn.StopAsync();
          if (_streamConnectionPool is not null)
          {
             TraceLogger.LogNeutralInfo("TCP IO Registry: Returning stream connection to pool");
@@ -79,6 +80,8 @@ public sealed class TcpIoQueueRegistry : IDisposable
       }
       else if (connection is SocketConnection socketConn)
       {
+         await socketConn.StopAsync();
+
          if (_socketConnectionPool is not null)
          {
             TraceLogger.LogNeutralInfo("TCP IO Registry: Returning socket connection to pool");

@@ -959,6 +959,58 @@ public class MqttQosTests
    }
 
    [Test]
+   public async Task Client_DisconnectAsync_ShouldGracefullyDeliverDisconnectPacketWithProperties()
+   {
+      var port = GetFreePort();
+
+      // Enable persistent sessions on server
+      var serverOptions = new MqttServerOptions { SupportPersistentSessions = true };
+
+      await using var server = MqttServerFactory.CreateBuilder(serverOptions)
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      var disconnectTcs = new TaskCompletionSource<DisconnectOptions>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      server.Events.OnDisconnect.Add((ctx, ct) =>
+      {
+         if (ctx.ServerClient.DisconnectOptions is not null)
+         {
+            disconnectTcs.TrySetResult(ctx.ServerClient.DisconnectOptions);
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      var client = MqttClientFactory.CreateTcp();
+      await client.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ClientIdUtf8Bytes = "test-graceful-disconnect-client"u8.ToArray(),
+         CleanSession = true,
+         SessionExpiryInterval = 300
+      });
+
+      var disconnectOptions = new DisconnectOptions
+      {
+         ReasonCode = DisconnectReasonCode.NormalDisconnection,
+         SessionExpiryInterval = 120,
+         ReasonString = "Disconnecting normally"
+      };
+
+      await client.DisconnectAsync(disconnectOptions);
+
+      var receivedOptions = await disconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+      await Assert.That(receivedOptions).IsNotNull();
+      await Assert.That(receivedOptions.SessionExpiryInterval).IsEqualTo(120u);
+      await Assert.That(receivedOptions.ReasonString).IsEqualTo("Disconnecting normally");
+   }
+
+   [Test]
    public async Task QoS_RetainHandling_SendOnNewSubscriptionOnly_WithExistingSubscription_ShouldNotDeliverMessage()
    {
       var port = GetFreePort();

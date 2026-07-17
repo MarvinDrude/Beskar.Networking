@@ -6,14 +6,14 @@ using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Transports.Common.Sockets;
 
-public sealed class SocketSender(PipeOptions pipeOptions) 
+public sealed class SocketSender(PipeOptions pipeOptions)
    : IPooledObject, IAsyncDisposable
 {
    public Pipe Pipe { get; } = new(pipeOptions);
 
    private SocketConnection? _connection;
    private Socket? _socket;
-   
+
    private Task? _sendTask;
    private CancellationTokenSource _cts = new();
    private bool _stopped;
@@ -37,7 +37,7 @@ public sealed class SocketSender(PipeOptions pipeOptions)
          {
             throw new InvalidOperationException("Cannot start a stopped SocketSender.");
          }
-         
+
          _sendTask = Task.Run(ProcessSendAsync);
       }
    }
@@ -48,7 +48,7 @@ public sealed class SocketSender(PipeOptions pipeOptions)
       {
          if (_stopped) return;
          _stopped = true;
-         
+
          _cts.Cancel();
       }
 
@@ -58,6 +58,28 @@ public sealed class SocketSender(PipeOptions pipeOptions)
 
    public async ValueTask StopAsync()
    {
+      await Pipe.Writer.CompleteAsync();
+
+      if (_sendTask is not null)
+      {
+         try
+         {
+            using var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await _sendTask.WaitAsync(delayCts.Token);
+         }
+         catch
+         {
+            lock (_cts)
+            {
+               if (!_stopped)
+               {
+                  _stopped = true;
+                  _cts.Cancel();
+               }
+            }
+         }
+      }
+
       Stop();
 
       if (_sendTask is not null)
@@ -136,14 +158,14 @@ public sealed class SocketSender(PipeOptions pipeOptions)
       while (!memory.IsEmpty)
       {
          var bytesSent = await socket.SendAsync(memory, SocketFlags.None, cancellationToken);
-         
+
          if (bytesSent == 0)
          {
             throw new SocketException((int)SocketError.ConnectionAborted);
          }
 
          TraceLogger.LogNeutralInfo("SocketSender: Transmitted {0} bytes to socket", bytesSent);
-         
+
          memory = memory[bytesSent..];
       }
    }
@@ -160,10 +182,10 @@ public sealed class SocketSender(PipeOptions pipeOptions)
       _connection = null;
       _socket = null;
       _stopped = false;
-      
+
       _cts.Dispose();
       _cts = new CancellationTokenSource();
-      
+
       return true;
    }
 

@@ -92,11 +92,28 @@ public sealed class StreamConnection(
 
    public async ValueTask StopAsync()
    {
+      await _writePipe.Writer.CompleteAsync();
+
+      var writeTask = _writeTask;
+      if (writeTask is not null)
+      {
+         try
+         {
+            using var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await writeTask.WaitAsync(delayCts.Token);
+         }
+         catch
+         {
+            lock (_lock)
+            {
+               _cts.Cancel();
+            }
+         }
+      }
+
       Stop();
 
       var readTask = _readTask;
-      var writeTask = _writeTask;
-
       if (readTask is not null)
       {
          try

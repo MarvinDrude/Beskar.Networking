@@ -44,6 +44,7 @@ public sealed partial class MqttClient
          _disconnectReason = new MqttClientDisconnectReason(true, (int)options.ReasonCode);
 
          await Send(options, stream, 0, ct);
+         await stream.Transport.Output.CompleteAsync();
       }
       finally
       {

@@ -67,6 +67,8 @@ public sealed class QuicIoQueueRegistry : IAsyncDisposable
 
    public async ValueTask ReturnAsync(StreamConnection connection)
    {
+      await connection.StopAsync();
+
       TraceLogger.LogNeutralInfo("QUIC IO Registry: Returning stream connection to pool");
       await _streamConnectionPool.ReturnAsync(connection);
    }
