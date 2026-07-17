@@ -136,7 +136,12 @@ public class MqttTrieSubscriptionRouterTests
       await Assert.That(visitor1.Matches).Count().IsEqualTo(1);
 
       // Unsubscribe
-      router.Unsubscribe(session1, filter);
+      var wasRemoved = router.Unsubscribe(session1, filter);
+      await Assert.That(wasRemoved).IsTrue();
+
+      // Unsubscribe again (should return false as it doesn't exist)
+      var wasRemoved2 = router.Unsubscribe(session1, filter);
+      await Assert.That(wasRemoved2).IsFalse();
 
       var visitor2 = new TestVisitor();
       router.Route("a/b/c"u8, ref visitor2);

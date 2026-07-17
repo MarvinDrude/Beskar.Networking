@@ -97,7 +97,9 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
       using var disposer = _lock.EnterWriteLock();
 
       var enumerator = new TopicLevelEnumerator(topicFilter);
-      var removed = UnsubscribeRecursive(_rootNode, ref enumerator, session);
+      var removed = false;
+
+      UnsubscribeRecursive(_rootNode, ref enumerator, session, ref removed);
 
       var alternateLookup = session.Subscriptions.GetAlternateLookup<ReadOnlySpan<byte>>();
       alternateLookup.Remove(topicFilter);
@@ -105,7 +107,11 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
       return removed;
    }
 
-   private static bool UnsubscribeRecursive(MqttTrieNode node, ref TopicLevelEnumerator levels, MqttSession session)
+   private static bool UnsubscribeRecursive(
+      MqttTrieNode node,
+      ref TopicLevelEnumerator levels,
+      MqttSession session,
+      ref bool removed)
    {
       if (!levels.MoveNext())
       {
@@ -115,6 +121,7 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
                continue;
 
             node.Subscriptions.RemoveAt(i);
+            removed = true;
             break;
          }
 
@@ -128,7 +135,7 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
             return CheckNodeEmpty(node);
 
          var nextLevels = levels;
-         if (UnsubscribeRecursive(node.SingleLevelWildcardChild, ref nextLevels, session))
+         if (UnsubscribeRecursive(node.SingleLevelWildcardChild, ref nextLevels, session, ref removed))
          {
             node.SingleLevelWildcardChild = null;
          }
@@ -139,7 +146,7 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
             return CheckNodeEmpty(node);
 
          var nextLevels = levels;
-         if (UnsubscribeRecursive(node.MultiLevelWildcardChild, ref nextLevels, session))
+         if (UnsubscribeRecursive(node.MultiLevelWildcardChild, ref nextLevels, session, ref removed))
          {
             node.MultiLevelWildcardChild = null;
          }
@@ -151,7 +158,7 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
             return CheckNodeEmpty(node);
 
          var nextLevels = levels;
-         if (UnsubscribeRecursive(child, ref nextLevels, session))
+         if (UnsubscribeRecursive(child, ref nextLevels, session, ref removed))
          {
             lookup.Remove(currentLevel);
          }
@@ -187,7 +194,8 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
       foreach (var filter in filters)
       {
          var enumerator = new TopicLevelEnumerator(filter);
-         UnsubscribeRecursive(_rootNode, ref enumerator, session);
+         var dummy = false;
+         UnsubscribeRecursive(_rootNode, ref enumerator, session, ref dummy);
       }
 
       session.Subscriptions.Clear();
