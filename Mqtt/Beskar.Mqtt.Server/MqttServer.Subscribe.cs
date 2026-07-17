@@ -17,9 +17,18 @@ public sealed partial class MqttServer
       return Subscribe(session, in filter, 0);
    }
 
+   private static readonly byte[] SharedSubscriptionPrefix = [.. "$share/"u8];
+
    public SubscribeReasonCode Subscribe(MqttSession session, in TopicFilter filter, uint subscriptionIdentifier)
    {
       var topicFilterBytes = filter.TopicUtf8Bytes.ToArray();
+      if (topicFilterBytes.AsSpan().StartsWith(SharedSubscriptionPrefix))
+      {
+         return session.Client?.ProtocolVersion is MqttProtocolVersion.V50
+            ? SubscribeReasonCode.SharedSubscriptionsNotSupported
+            : SubscribeReasonCode.UnspecifiedError;
+      }
+
       if (!ValidateTopicFilter(topicFilterBytes))
       {
          return SubscribeReasonCode.TopicFilterInvalid;
