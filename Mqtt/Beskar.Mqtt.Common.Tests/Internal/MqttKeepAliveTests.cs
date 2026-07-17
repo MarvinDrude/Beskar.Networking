@@ -58,7 +58,7 @@ public class MqttKeepAliveTests
       // Act & Assert
       // Wait for keep-alive background service to detect timeout
       var timeout = DateTimeOffset.UtcNow.AddSeconds(5);
-      while (client.IsConnected && DateTimeOffset.UtcNow < timeout)
+      while ((client.IsConnected || client.DisconnectOptions is null) && DateTimeOffset.UtcNow < timeout)
       {
          await Task.Delay(10);
       }

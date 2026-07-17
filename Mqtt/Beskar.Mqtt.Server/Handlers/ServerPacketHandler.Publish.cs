@@ -304,70 +304,73 @@ public sealed partial class ServerPacketHandler
             var localSubId = subscription.SubscriptionIdentifier;
             var localMsg = _message;
 
-            if (localQos > 0)
-            {
-               if (localSession.GetUnacknowledgedPublishCount() >= localSession.ClientReceiveMaximum)
-               {
-                  var queuedMessage = new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId);
-                  localSession.EnqueueOfflineMessage(queuedMessage);
-                  
-                  return;
-               }
-            }
+             ushort packetId = 0;
+             if (localQos > 0)
+             {
+                if (localSession.GetUnacknowledgedPublishCount() >= localSession.ClientReceiveMaximum)
+                {
+                   var queuedMessage = new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId);
+                   localSession.EnqueueOfflineMessage(queuedMessage);
+                   
+                   return;
+                }
 
-            _ = Task.Run(async () =>
-            {
-               try
-               {
-                  var remainingExpiry = localMsg.MessageExpiryInterval;
-                  if (localMsg.MessageExpiryInterval > 0)
-                  {
-                     var timeSpent = (uint)(DateTimeOffset.UtcNow - localMsg.CreatedAt).TotalSeconds;
-                     if (timeSpent >= localMsg.MessageExpiryInterval)
-                     {
-                        return; // Expired, do not deliver
-                     }
-                     remainingExpiry = localMsg.MessageExpiryInterval - timeSpent;
-                  }
+                packetId = localSession.GenerateNextPacketIdentifier();
+                localSession.AddUnacknowledgedPublish(new MqttPendingPublish
+                {
+                   PacketIdentifier = packetId,
+                   Message = localMsg,
+                   QualityOfService = localQos,
+                   RetainAsPublished = localRetainAsPublished,
+                   SubscriptionIdentifier = localSubId
+                });
+             }
 
-                  var topicBytes = System.Text.Encoding.UTF8.GetBytes(localMsg.Topic);
-                  var responseTopicBytes = string.IsNullOrEmpty(localMsg.ResponseTopic)
-                     ? ReadOnlyMemory<byte>.Empty
-                     : System.Text.Encoding.UTF8.GetBytes(localMsg.ResponseTopic);
-                  var contentTypeBytes = string.IsNullOrEmpty(localMsg.ContentType)
-                     ? ReadOnlyMemory<byte>.Empty
-                     : System.Text.Encoding.UTF8.GetBytes(localMsg.ContentType);
+             _ = Task.Run(async () =>
+             {
+                try
+                {
+                   var remainingExpiry = localMsg.MessageExpiryInterval;
+                   if (localMsg.MessageExpiryInterval > 0)
+                   {
+                      var timeSpent = (uint)(DateTimeOffset.UtcNow - localMsg.CreatedAt).TotalSeconds;
+                      if (timeSpent >= localMsg.MessageExpiryInterval)
+                      {
+                         if (localQos > 0)
+                         {
+                            localSession.AcknowledgePublish(packetId);
+                         }
+                         return; // Expired, do not deliver
+                      }
+                      remainingExpiry = localMsg.MessageExpiryInterval - timeSpent;
+                   }
 
-                  var publishPacket = new PublishPacket
-                  {
-                     Dup = false,
-                     QualityOfService = localQos,
-                     Retain = localRetain,
-                     TopicUtf8Bytes = new ReadOnlySequence<byte>(topicBytes),
-                     Payload = new ReadOnlySequence<byte>(localMsg.Payload),
-                     PacketIdentifier = localQos > 0 ? localSession.GenerateNextPacketIdentifier() : (ushort)0,
-                     PayloadFormat = localMsg.PayloadFormat,
-                     MessageExpiryInterval = remainingExpiry,
-                     TopicAlias = 0,
-                     ResponseTopicUtf8Bytes = new ReadOnlySequence<byte>(responseTopicBytes),
-                     CorrelationDataBytes = localMsg.CorrelationData.HasValue
-                        ? new ReadOnlySequence<byte>(localMsg.CorrelationData.Value)
-                        : ReadOnlySequence<byte>.Empty,
-                     ContentTypeUtf8Bytes = new ReadOnlySequence<byte>(contentTypeBytes),
-                     PropertiesBytes = ReadOnlySequence<byte>.Empty
-                  };
+                   var topicBytes = System.Text.Encoding.UTF8.GetBytes(localMsg.Topic);
+                   var responseTopicBytes = string.IsNullOrEmpty(localMsg.ResponseTopic)
+                      ? ReadOnlyMemory<byte>.Empty
+                      : System.Text.Encoding.UTF8.GetBytes(localMsg.ResponseTopic);
+                   var contentTypeBytes = string.IsNullOrEmpty(localMsg.ContentType)
+                      ? ReadOnlyMemory<byte>.Empty
+                      : System.Text.Encoding.UTF8.GetBytes(localMsg.ContentType);
 
-                  if (localQos > 0)
-                  {
-                     localSession.AddUnacknowledgedPublish(new MqttPendingPublish
-                     {
-                        PacketIdentifier = publishPacket.PacketIdentifier,
-                        Message = localMsg,
-                        QualityOfService = localQos,
-                        RetainAsPublished = localRetainAsPublished,
-                        SubscriptionIdentifier = localSubId
-                     });
-                  }
+                   var publishPacket = new PublishPacket
+                   {
+                      Dup = false,
+                      QualityOfService = localQos,
+                      Retain = localRetain,
+                      TopicUtf8Bytes = new ReadOnlySequence<byte>(topicBytes),
+                      Payload = new ReadOnlySequence<byte>(localMsg.Payload),
+                      PacketIdentifier = packetId,
+                      PayloadFormat = localMsg.PayloadFormat,
+                      MessageExpiryInterval = remainingExpiry,
+                      TopicAlias = 0,
+                      ResponseTopicUtf8Bytes = new ReadOnlySequence<byte>(responseTopicBytes),
+                      CorrelationDataBytes = localMsg.CorrelationData.HasValue
+                         ? new ReadOnlySequence<byte>(localMsg.CorrelationData.Value)
+                         : ReadOnlySequence<byte>.Empty,
+                      ContentTypeUtf8Bytes = new ReadOnlySequence<byte>(contentTypeBytes),
+                      PropertiesBytes = ReadOnlySequence<byte>.Empty
+                   };
 
                   if (localClient.ProtocolVersion is MqttProtocolVersion.V50)
                   {
