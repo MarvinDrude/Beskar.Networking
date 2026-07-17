@@ -216,7 +216,16 @@ public sealed class MqttClientSessions(MqttServer server)
          using (await _clientLock.LockAsync())
          {
             var alternateLookup = _clients.GetAlternateLookup<ReadOnlySpan<byte>>();
-            alternateLookup.Remove(client.ClientIdUtf8Bytes.Span);
+            if (alternateLookup.TryGetValue(client.ClientIdUtf8Bytes.Span, out var activeClient) && activeClient == client)
+            {
+               alternateLookup.Remove(client.ClientIdUtf8Bytes.Span);
+            }
+         }
+
+         if (session.Client != client)
+         {
+            // already taken over
+            return;
          }
 
          if (client.DisconnectOptions is not null && _server.Options.SupportPersistentSessions)
