@@ -135,6 +135,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             }
          }
 
+         var wasIncremented = false;
          if (client.ProtocolVersion is MqttProtocolVersion.V50 && resolvedPacket.QualityOfService > QualityOfServiceType.AtMostOnce)
          {
             var localReceiveMax = client.CurrentConnectOptions.ReceiveMaximum ?? 65535;
@@ -146,6 +147,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
                await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ReceiveMaximumExceeded }, ct);
                return;
             }
+
+            wasIncremented = true;
          }
 
          TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBLISH packet (PacketId: {0}, Topic: '{1}', QoS: {2}). Dispatching to receive handlers...", resolvedPacket.PacketIdentifier, resolvedPacket.TopicUtf8Bytes.GetUtf8String(), resolvedPacket.QualityOfService);
@@ -160,10 +163,20 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
          // probably best here to defer actual handlers to run on new task?
          _ = Task.Run(async () =>
          {
-            await client.Events.OnMessageReceive.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+            try
+            {
+               await client.Events.OnMessageReceive.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
 
-            if (context.AutoAcknowledge)
-               await context.AcknowledgeAsync(ct);
+               if (context.AutoAcknowledge)
+                  await context.AcknowledgeAsync(ct);
+            }
+            finally
+            {
+               if (wasIncremented && resolvedPacket.QualityOfService == QualityOfServiceType.AtLeastOnce)
+               {
+                  client.DecrementIncomingInFlight();
+               }
+            }
          }, ct);
       }
    }
@@ -179,6 +192,11 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
    {
       TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBREL packet (PacketId: {0}, ReasonCode: {1}). Replying with PUBCOMP...", packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
+
+      if (_client.ProtocolVersion is MqttProtocolVersion.V50)
+      {
+         _client.DecrementIncomingInFlight();
+      }
 
       return Awaited(packet);
 

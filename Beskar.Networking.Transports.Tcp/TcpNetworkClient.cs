@@ -74,7 +74,7 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
             var sslOptions = _options.SslClientOptions ?? _options.StreamOptions.SslClientOptions;
             if (sslOptions is null)
             {
-               socket.Dispose();
+               await sslStream.DisposeAsync();
                TraceLogger.LogClientError("TCP ConnectAsync: SSL authentication failed. SslClientOptions are missing.");
                return new NetworkCodeError(-1, "SSL client authentication options are missing.");
             }

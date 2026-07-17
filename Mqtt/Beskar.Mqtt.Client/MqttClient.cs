@@ -232,8 +232,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
    }
 
-   private void DecrementIncomingInFlight()
-   {
+    internal void DecrementIncomingInFlight()
+    {
       lock (_topicAliases)
       {
          if (_incomingInFlightCount > 0)

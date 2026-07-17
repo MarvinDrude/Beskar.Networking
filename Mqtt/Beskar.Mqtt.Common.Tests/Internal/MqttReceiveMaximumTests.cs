@@ -431,4 +431,75 @@ public class MqttReceiveMaximumTests
 
       await client.DisconnectAsync(new DisconnectOptions());
    }
+
+   [Test]
+   public async Task ReceiveMaximum_ClientEnforcement_ShouldSucceed_WhenReceivingManyMessagesConsecutively()
+   {
+      var port = GetFreePort();
+
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      await server.StartAsync();
+
+      var subscriber = (MqttClient)MqttClientFactory.CreateTcp();
+      var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
+      subscriber.Events.OnClientDisconnected.Add((ctx, ct) =>
+      {
+         disconnectTcs.TrySetResult(ctx.ReasonCode);
+         return ValueTask.CompletedTask;
+      });
+
+      // Connect with ReceiveMaximum = 2
+      await subscriber.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ReceiveMaximum = 2
+      });
+
+      var messageCount = 0;
+      var receiveFinishedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      subscriber.AddMessageReceiveHandler((ctx, ct) =>
+      {
+         var count = Interlocked.Increment(ref messageCount);
+         if (count == 10)
+         {
+            receiveFinishedTcs.TrySetResult();
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      await subscriber.SubscribeAsync(new SubscribeOptionsBuilder()
+         .WithTopicFilter("test/clientmany"u8, QualityOfServiceType.AtLeastOnce)
+         .Build());
+
+      var publisher = (MqttClient)MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port)
+      });
+
+      var pubOptions = new PublishOptionsBuilder()
+         .WithTopic("test/clientmany"u8)
+         .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+         .WithPayload("Payload")
+         .Build();
+
+      // Send 10 messages. Since ReceiveMaximum is 2, if the client did not decrement the count,
+      // it would exceed the limit and disconnect. With the fix, the client should successfully receive all 10 messages.
+      for (var i = 0; i < 10; i++)
+      {
+         await publisher.PublishAsync(pubOptions);
+      }
+
+      // Verify we received all 10 messages successfully without disconnecting
+      await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(disconnectTcs.Task.IsCompleted).IsFalse();
+
+      await subscriber.DisconnectAsync(new DisconnectOptions());
+      await publisher.DisconnectAsync(new DisconnectOptions());
+   }
 }
