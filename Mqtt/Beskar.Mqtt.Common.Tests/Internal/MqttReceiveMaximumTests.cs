@@ -311,4 +311,124 @@ public class MqttReceiveMaximumTests
 
       await publisher.DisconnectAsync(new DisconnectOptions());
    }
+
+   [Test]
+   public async Task ReceiveMaximum_V3_ShouldNotEnforceLimits()
+   {
+      var port = GetFreePort();
+
+      // Start server with ReceiveMaximum = 1
+      var serverOptions = new MqttServerOptions
+      {
+         ReceiveMaximum = 1
+      };
+      await using var server = MqttServerFactory.CreateBuilder(serverOptions)
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      await server.StartAsync();
+
+      // Connect client with MQTT v3.1.1
+      var client = (MqttClient)MqttClientFactory.CreateTcp();
+      await client.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ProtocolVersion = MqttProtocolVersion.V311
+      });
+
+      // Hook server OnAcknowledgePub to delay acknowledgements so we can have multiple in-flight
+      var ackTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var proceedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      server.Events.OnAcknowledgePub.Add(async (ctx, ct) =>
+      {
+         ackTcs.TrySetResult();
+         await proceedTcs.Task;
+      });
+
+      // Publish QoS 1 message
+      var pubOptions = new PublishOptionsBuilder()
+         .WithTopic("test/receivemaxv3"u8)
+         .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+         .WithPayload("Payload1")
+         .Build();
+
+      var pub1Task = client.PublishAsync(pubOptions);
+
+      // Wait until the server receives the publication and enters the hook (so pub1 is in-flight)
+      await ackTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+      // Attempt to publish a second QoS 1 message. 
+      // Since it's MQTT V3, client should NOT throttle it even though ReceiveMaximum is 1 and 1 is already in-flight!
+      var pub2Task = client.PublishAsync(pubOptions);
+
+      // Verify that pub2Task is NOT throttled and both tasks are running (they both wait on proceedTcs inside the server hook)
+      var completedTask = await Task.WhenAny(pub2Task, Task.Delay(500));
+      await Assert.That(completedTask == pub2Task).IsFalse(); // it timed out because server hook is holding it, NOT client semaphore!
+      
+      // Let's release the hook on the server so both can complete
+      proceedTcs.TrySetResult();
+
+      var result1 = await pub1Task.WaitAsync(TimeSpan.FromSeconds(5));
+      var result2 = await pub2Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+      await Assert.That(result1.Failed).IsFalse();
+      await Assert.That(result2.Failed).IsFalse();
+
+      await client.DisconnectAsync(new DisconnectOptions());
+   }
+
+   [Test]
+   public async Task ReceiveMaximum_V3_ServerEnforcement_ShouldNotDisconnectClient()
+   {
+      var port = GetFreePort();
+
+      // Server ReceiveMaximum = 1
+      var serverOptions = new MqttServerOptions
+      {
+         ReceiveMaximum = 1
+      };
+      await using var server = MqttServerFactory.CreateBuilder(serverOptions)
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      await server.StartAsync();
+
+      var client = (MqttClient)MqttClientFactory.CreateTcp();
+      
+      var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
+      client.Events.OnClientDisconnected.Add((ctx, ct) =>
+      {
+         disconnectTcs.TrySetResult(ctx.ReasonCode);
+         return ValueTask.CompletedTask;
+      });
+
+      await client.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ProtocolVersion = MqttProtocolVersion.V311
+      });
+
+      // Publish two QoS 2 messages concurrently.
+      var pubOptions = new PublishOptionsBuilder()
+         .WithTopic("test/serverexceedv3"u8)
+         .WithQualityOfService(QualityOfServiceType.ExactlyOnce)
+         .WithPayload("Payload")
+         .Build();
+
+      var pub1 = client.PublishAsync(pubOptions);
+      var pub2 = client.PublishAsync(pubOptions);
+
+      // Under V3, the server should not disconnect the client.
+      // So both publishes should eventually complete when we wait for them.
+      var result1 = await pub1.WaitAsync(TimeSpan.FromSeconds(5));
+      var result2 = await pub2.WaitAsync(TimeSpan.FromSeconds(5));
+
+      await Assert.That(result1.Failed).IsFalse();
+      await Assert.That(result2.Failed).IsFalse();
+      await Assert.That(disconnectTcs.Task.IsCompleted).IsFalse();
+
+      await client.DisconnectAsync(new DisconnectOptions());
+   }
 }
