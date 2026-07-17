@@ -117,7 +117,7 @@ public class WsTransportTests
       await Assert.That(bindResult.Failed).IsFalse();
 
       var client = new WsNetworkClient(options);
-      
+
       // Verify initial client state
       await Assert.That(client.Session).IsNull();
       await Assert.That(client.LocalAddress).IsNull();
@@ -163,5 +163,162 @@ public class WsTransportTests
       await Assert.That(client.Session).IsNull();
       await Assert.That(client.LocalAddress).IsNull();
       await Assert.That(client.RemoteAddress).IsNull();
+   }
+
+   [Test]
+   public async Task WsHandshake_WithHeadersExceedingLimit_AbortsConnection()
+   {
+      var port = GetFreePort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var options = new WsTransportOptions
+      {
+         Path = "/chat",
+         MaxHeaderSize = 120 // Keep it very small
+      };
+
+      var listener = new WsNetworkListener(endPoint, options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, port);
+      await using var stream = tcpClient.GetStream();
+
+      var longHeaderRequest = "GET /chat HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSome-Long-Header: " + new string('A', 200) + "\r\n\r\n";
+      var bytes = System.Text.Encoding.ASCII.GetBytes(longHeaderRequest);
+      await stream.WriteAsync(bytes);
+      await stream.FlushAsync();
+
+      var buffer = new byte[1024];
+      var read = await stream.ReadAsync(buffer);
+      await Assert.That(read).IsEqualTo(0);
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsFrameParser_WithFrameSizeExceedingLimit_ClosesSession()
+   {
+      var port = GetFreePort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var options = new WsTransportOptions
+      {
+         Path = "/chat",
+         MaxFrameSize = 100 // Keep it very small
+      };
+
+      var listener = new WsNetworkListener(endPoint, options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(options);
+      var connectResult = await client.ConnectAsync(endPoint);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      var clientStreamResult = await clientSession.AcceptStreamAsync();
+      var serverStreamResult = await serverSession.AcceptStreamAsync();
+
+      var clientStream = clientStreamResult.Success!;
+      var serverStream = serverStreamResult.Success!;
+
+      var largePayload = new byte[150];
+      Array.Fill(largePayload, (byte)0x41);
+
+      await clientStream.Transport.Output.WriteAsync(largePayload);
+      await clientStream.Transport.Output.FlushAsync();
+
+      var readResult = await serverStream.Transport.Input.ReadAsync();
+      await Assert.That(readResult.IsCompleted).IsTrue();
+      await Assert.That(readResult.Buffer.Length).IsEqualTo(0);
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsClient_ReceivesMaskedFrame_ClosesSession()
+   {
+      var port = GetFreePort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      using var tcpListener = new TcpListener(endPoint);
+      tcpListener.Start();
+
+      var clientOptions = new WsTransportOptions
+      {
+         Path = "/mock"
+      };
+      var client = new WsNetworkClient(clientOptions);
+
+      var connectTask = client.ConnectAsync(endPoint).AsTask();
+      using var serverSocket = await tcpListener.AcceptSocketAsync();
+
+      var buffer = new byte[1024];
+      var read = await serverSocket.ReceiveAsync(buffer, SocketFlags.None);
+      var requestText = System.Text.Encoding.ASCII.GetString(buffer, 0, read);
+
+      var keyLine = requestText.Split("\r\n").First(l => l.StartsWith("Sec-WebSocket-Key:", StringComparison.OrdinalIgnoreCase));
+      var clientKey = keyLine.Split(':')[1].Trim();
+      var acceptKey = WsHandshake.ComputeAcceptKey(clientKey);
+
+      var responseText = $"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {acceptKey}\r\n\r\n";
+      await serverSocket.SendAsync(System.Text.Encoding.ASCII.GetBytes(responseText), SocketFlags.None);
+
+      var clientSession = (await connectTask).Success!;
+      var clientStreamResult = await clientSession.AcceptStreamAsync();
+      var clientStream = clientStreamResult.Success!;
+
+      var maskedFrame = new byte[] { 0x81, 0x85, 0x00, 0x00, 0x00, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F };
+      await serverSocket.SendAsync(maskedFrame, SocketFlags.None);
+
+      var readResult = await clientStream.Transport.Input.ReadAsync();
+      await Assert.That(readResult.IsCompleted).IsTrue();
+      await Assert.That(readResult.Buffer.Length).IsEqualTo(0);
+
+      await clientSession.DisposeAsync();
+      tcpListener.Stop();
+   }
+
+   [Test]
+   public async Task WsServer_ReceivesUnmaskedFrame_ClosesSession()
+   {
+      var port = GetFreePort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var options = new WsTransportOptions { Path = "/chat" };
+      var listener = new WsNetworkListener(endPoint, options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, port);
+      await using var stream = tcpClient.GetStream();
+
+      var handshakeRequest = "GET /chat HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+      await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(handshakeRequest));
+      await stream.FlushAsync();
+
+      var buffer = new byte[1024];
+      var read = await stream.ReadAsync(buffer);
+      var responseText = System.Text.Encoding.ASCII.GetString(buffer, 0, read);
+      await Assert.That(responseText).Contains("101 Switching Protocols");
+
+      var unmaskedFrame = new byte[] { 0x81, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F };
+      await stream.WriteAsync(unmaskedFrame);
+      await stream.FlushAsync();
+
+      var readBytes = await stream.ReadAsync(buffer);
+      await Assert.That(readBytes).IsEqualTo(0);
+
+      await listener.UnbindAsync();
    }
 }

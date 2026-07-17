@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Security.Cryptography;
 using Beskar.Networking.Abstractions.Threading;
 using Beskar.Networking.Transports.Ws.Enums;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Transports.Ws;
 
@@ -15,6 +16,8 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 {
    private readonly IDuplexPipe _tcpPipe;
    private readonly bool _maskOutgoing;
+   private readonly int _maxFrameSize;
+   private readonly bool _expectMask;
 
    private readonly Pipe _inputPipe = new();
    private readonly Pipe _outputPipe = new();
@@ -29,10 +32,12 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    public PipeReader Input => _inputPipe.Reader;
    public PipeWriter Output => _outputPipe.Writer;
 
-   public WsDuplexPipe(IDuplexPipe tcpPipe, bool maskOutgoing)
+   public WsDuplexPipe(IDuplexPipe tcpPipe, bool maskOutgoing, WsTransportOptions options)
    {
       _tcpPipe = tcpPipe;
       _maskOutgoing = maskOutgoing;
+      _maxFrameSize = options.MaxFrameSize;
+      _expectMask = !maskOutgoing;
 
       _readTask = Task.Run(ReadLoopAsync);
       _writeTask = Task.Run(WriteLoopAsync);
@@ -51,7 +56,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             var buffer = result.Buffer;
 
             while (TryParseFrame(ref buffer, out var opcode,
-                      out var payload, out var maskKey, out var isFin))
+                      out var payload, out var maskKey, out var isFin, _maxFrameSize, _expectMask))
             {
                if (opcode is (byte)WebSocketOpcode.Binary or (byte)WebSocketOpcode.Text)
                {
@@ -95,9 +100,16 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       {
          // Normal shutdown
       }
-      catch (Exception)
+      catch (Exception ex)
       {
-         // Connection reset / error
+         if (_maskOutgoing)
+         {
+            TraceLogger.LogClientError("WS Connection: Error in read loop: {0}", ex.Message);
+         }
+         else
+         {
+            TraceLogger.LogServerError("WS Connection: Error in read loop: {0}", ex.Message);
+         }
       }
       finally
       {
@@ -168,7 +180,9 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       out byte opcode,
       out ReadOnlySequence<byte> payload,
       out byte[]? maskKey,
-      out bool isFin)
+      out bool isFin,
+      int maxFrameSize,
+      bool expectMask)
    {
       opcode = 0;
       payload = default;
@@ -199,7 +213,29 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          if (!reader.TryReadBigEndian(out long len64))
             return false;
 
+         if (len64 < 0 || len64 > maxFrameSize)
+         {
+            throw new InvalidDataException($"WebSocket frame payload length {len64} is invalid or exceeds the maximum allowed size of {maxFrameSize} bytes.");
+         }
+
          len = len64;
+      }
+
+      if (len < 0 || len > maxFrameSize)
+      {
+         throw new InvalidDataException($"WebSocket frame payload length {len} is invalid or exceeds the maximum allowed size of {maxFrameSize} bytes.");
+      }
+
+      if (isMasked != expectMask)
+      {
+         if (expectMask)
+         {
+            throw new InvalidDataException("Received unmasked WebSocket frame, but server requires masked frames.");
+         }
+         else
+         {
+            throw new InvalidDataException("Received masked WebSocket frame, but client requires unmasked frames.");
+         }
       }
 
       if (isMasked)

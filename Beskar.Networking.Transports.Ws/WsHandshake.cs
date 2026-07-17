@@ -49,10 +49,10 @@ public static class WsHandshake
       var reader = tcpPipe.Input;
       var writer = tcpPipe.Output;
 
-      var headersText = await ReadHttpHeadersAsync(reader, ct);
+      var headersText = await ReadHttpHeadersAsync(reader, options.MaxHeaderSize, ct);
       if (headersText == null)
       {
-         TraceLogger.LogServerError("WS Handshake: Failed to read HTTP headers from client.");
+         TraceLogger.LogServerError("WS Handshake: Failed to read HTTP headers from client or headers exceeded limits.");
          return null;
       }
 
@@ -211,10 +211,10 @@ public static class WsHandshake
       await writer.FlushAsync(ct);
 
       // Read response headers
-      var responseHeaders = await ReadHttpHeadersAsync(reader, ct);
+      var responseHeaders = await ReadHttpHeadersAsync(reader, options.MaxHeaderSize, ct);
       if (responseHeaders == null)
       {
-         TraceLogger.LogClientError("WS Handshake: Failed to read HTTP response headers from server.");
+         TraceLogger.LogClientError("WS Handshake: Failed to read HTTP response headers from server or headers exceeded limits.");
          return false;
       }
 
@@ -253,7 +253,7 @@ public static class WsHandshake
       return serverAcceptKeyMatched;
    }
 
-   private static async Task<string?> ReadHttpHeadersAsync(PipeReader reader, CancellationToken ct)
+   private static async Task<string?> ReadHttpHeadersAsync(PipeReader reader, int maxHeaderSize, CancellationToken ct)
    {
       while (true)
       {
@@ -264,10 +264,26 @@ public static class WsHandshake
          if (position.HasValue)
          {
             var headerSequence = buffer.Slice(0, position.Value);
+            if (headerSequence.Length > maxHeaderSize)
+            {
+               TraceLogger.LogServerError("WS Handshake: HTTP headers exceeded the maximum allowed size of {0} bytes.", maxHeaderSize);
+               reader.AdvanceTo(buffer.End);
+
+               return null;
+            }
+
             var headerText = Encoding.ASCII.GetString(headerSequence);
 
             reader.AdvanceTo(buffer.GetPosition(4, position.Value));
             return headerText;
+         }
+
+         if (buffer.Length > maxHeaderSize)
+         {
+            TraceLogger.LogServerError("WS Handshake: HTTP headers exceeded the maximum allowed size of {0} bytes without reaching end of headers.", maxHeaderSize);
+            reader.AdvanceTo(buffer.End);
+
+            return null;
          }
 
          reader.AdvanceTo(buffer.Start, buffer.End);
