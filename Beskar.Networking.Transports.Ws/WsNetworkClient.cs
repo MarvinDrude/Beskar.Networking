@@ -78,7 +78,7 @@ public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
             return new NetworkCodeError(-1, "WebSocket handshake verification failed.");
          }
 
-         wsPipe = new WsDuplexPipe(tcpPipe, maskOutgoing: true, _options);
+         wsPipe = new WsDuplexPipe(tcpPipe, tcpSession, maskOutgoing: true, _options);
          var wsSession = new WsNetworkSession(tcpSession, wsPipe);
 
          var oldSession = Interlocked.Exchange(ref _activeSession, wsSession);

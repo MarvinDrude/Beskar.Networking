@@ -2,6 +2,7 @@ using System.Buffers;
 using System.IO.Pipelines;
 using System.Numerics;
 using System.Security.Cryptography;
+using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Threading;
 using Beskar.Networking.Transports.Ws.Enums;
 using Beskar.Utilities.Tracing;
@@ -15,6 +16,7 @@ namespace Beskar.Networking.Transports.Ws;
 public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 {
    private readonly IDuplexPipe _tcpPipe;
+   private readonly INetworkSession _tcpSession;
    private readonly bool _maskOutgoing;
    private readonly int _maxFrameSize;
    private readonly bool _expectMask;
@@ -32,9 +34,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    public PipeReader Input => _inputPipe.Reader;
    public PipeWriter Output => _outputPipe.Writer;
 
-   public WsDuplexPipe(IDuplexPipe tcpPipe, bool maskOutgoing, WsTransportOptions options)
+   public WsDuplexPipe(IDuplexPipe tcpPipe, INetworkSession tcpSession, bool maskOutgoing, WsTransportOptions options)
    {
       _tcpPipe = tcpPipe;
+      _tcpSession = tcpSession;
       _maskOutgoing = maskOutgoing;
       _maxFrameSize = options.MaxFrameSize;
       _expectMask = !maskOutgoing;
@@ -113,8 +116,20 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       }
       finally
       {
+         try
+         {
+            await _cts.CancelAsync();
+         }
+         catch { /* Ignored */ }
+
          await writer.CompleteAsync();
          await reader.CompleteAsync();
+
+         try
+         {
+            await _tcpSession.DisposeAsync();
+         }
+         catch { /* Ignored */ }
       }
    }
 

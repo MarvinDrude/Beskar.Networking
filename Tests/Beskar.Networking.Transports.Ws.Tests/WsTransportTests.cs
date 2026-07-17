@@ -319,6 +319,12 @@ public class WsTransportTests
       var readBytes = await stream.ReadAsync(buffer);
       await Assert.That(readBytes).IsEqualTo(0);
 
+      var acceptResult = await listener.AcceptSessionAsync();
+      if (!acceptResult.Failed)
+      {
+         await acceptResult.Success!.DisposeAsync();
+      }
+
       await listener.UnbindAsync();
    }
 }

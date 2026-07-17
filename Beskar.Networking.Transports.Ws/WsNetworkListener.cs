@@ -169,7 +169,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                      return;
                   }
 
-                  var wsPipe = new WsDuplexPipe(tcpPipe, maskOutgoing: false, _options);
+                  var wsPipe = new WsDuplexPipe(tcpPipe, tcpSession, maskOutgoing: false, _options);
                   wsSession = new WsNetworkSession(tcpSession, wsPipe);
 
                   TraceLogger.LogServerInfo("WS Listener: WebSocket server handshake successfully completed for client {0}. Enqueuing session {1}", tcpSession.RemoteAddress, wsSession.Id);
