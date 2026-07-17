@@ -45,7 +45,7 @@ public sealed partial class MqttClient
       }
       finally
       {
-         await DisconnectRoutineAsync(beforeConnected);
+         await DisconnectRoutineAsync(beforeConnected, awaitReceiveTask: true);
          _gracefulDisconnect = false;
       }
    }
@@ -61,17 +61,17 @@ public sealed partial class MqttClient
       }
    }
 
-   private ValueTask DisconnectInternalAsync()
+   private ValueTask DisconnectInternalAsync(bool awaitReceiveTask = true)
    {
       var beforeConnected = IsConnected;
 
       // Only disconnect if not already in progress
       return DisconnectingAlreadyInProcessOrDone()
          ? ValueTask.CompletedTask
-         : DisconnectRoutineAsync(beforeConnected);
+         : DisconnectRoutineAsync(beforeConnected, awaitReceiveTask);
    }
 
-   private async ValueTask DisconnectRoutineAsync(bool beforeConnected)
+   private async ValueTask DisconnectRoutineAsync(bool beforeConnected, bool awaitReceiveTask = true)
    {
       TraceLogger.LogClientInfo("MqttClient: Starting disconnect routine (BeforeConnected: {0}).", beforeConnected);
       await _clientTokenSource.CancelAsync();
@@ -96,6 +96,22 @@ public sealed partial class MqttClient
       catch (Exception ex)
       {
          TraceLogger.LogClientError("MqttClient: Error waiting for keep-alive task to end: {0}", ex.Message);
+      }
+
+      try
+      {
+         if (awaitReceiveTask)
+         {
+            var task = _receiveTask;
+            if (task is not null)
+            {
+               await task;
+            }
+         }
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogClientError("MqttClient: Error waiting for receive task to end: {0}", ex.Message);
       }
       finally
       {

@@ -70,7 +70,7 @@ public sealed partial class MqttClient
       finally
       {
          TraceLogger.LogClientInfo("MqttClient: Message receiver loop finished.");
-         await DisconnectInternalAsync();
+         await DisconnectInternalAsync(awaitReceiveTask: false);
       }
    }
 }

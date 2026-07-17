@@ -224,6 +224,50 @@ public class MqttClientEventTests
       await Assert.That(client.IsConnected).IsFalse();
    }
 
+   [Test]
+   public async Task Client_QuickReconnect_DoesNotHijackNewConnection()
+   {
+      var port = GetFreePort();
+
+      // Start the server
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      // Create client
+      var client = (MqttClient)MqttClientFactory.CreateTcp();
+
+      // Connect client first time
+      var connectOptions = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
+         .WithCleanSession()
+         .WithClientId("test-reconnect-client")
+         .Build();
+
+      var connectResult = await client.ConnectAsync(connectOptions);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      // Disconnect
+      await client.DisconnectAsync(new DisconnectOptions());
+
+      // Immediately connect again
+      var reconnectResult = await client.ConnectAsync(connectOptions);
+      await Assert.That(reconnectResult.Failed).IsFalse();
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Wait a short duration to ensure the old receiver loop's cleanup does not hijack the new connection
+      await Task.Delay(500);
+
+      // Verify that the client is STILL connected
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Clean up
+      await client.DisconnectAsync(new DisconnectOptions());
+   }
+
    private class MockNetworkClient : INetworkClient
    {
       public TransportKind Transport => TransportKind.Unknown;
