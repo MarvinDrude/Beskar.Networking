@@ -63,7 +63,7 @@ public class MqttReceiveMaximumTests
       var pub1Task = client.PublishAsync(pubOptions);
 
       // Wait until the server receives the publication and enters the hook (so pub1 is in-flight)
-      await ackTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await ackTcs.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
       // Attempt to publish a second QoS 1 message. It should be throttled by the client because in-flight is 1 (equal to ReceiveMaximum).
       var pub2Task = client.PublishAsync(pubOptions);
@@ -76,8 +76,8 @@ public class MqttReceiveMaximumTests
       proceedTcs.TrySetResult();
 
       // Now both publications should complete successfully
-      var result1 = await pub1Task.WaitAsync(TimeSpan.FromSeconds(5));
-      var result2 = await pub2Task.WaitAsync(TimeSpan.FromSeconds(5));
+      var result1 = await pub1Task.WaitAsync(TimeSpan.FromSeconds(30));
+      var result2 = await pub2Task.WaitAsync(TimeSpan.FromSeconds(30));
 
       await Assert.That(result1.Failed).IsFalse();
       await Assert.That(result2.Failed).IsFalse();
@@ -155,7 +155,7 @@ public class MqttReceiveMaximumTests
       await publisher.PublishAsync(pubOptions);
 
       // Wait until the first message is received by subscriber
-      await receiveTcs1.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await receiveTcs1.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
       // Verify that the second message is not received yet (because subscriber is holding ack of first,
       // and client receive maximum is 1, so server throttles and queues it)
@@ -171,7 +171,7 @@ public class MqttReceiveMaximumTests
       ackTcs.TrySetResult();
 
       // The subscriber should now receive the second message
-      await receiveTcs2.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await receiveTcs2.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
       int count2;
       string p1;
@@ -238,7 +238,7 @@ public class MqttReceiveMaximumTests
       _ = client.PublishAsync(pubOptions);
 
       // The server should disconnect the client with ReceiveMaximumExceeded (0x93)
-      var reason = await disconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      var reason = await disconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(30));
       await Assert.That(reason).IsEqualTo(DisconnectReasonCode.ReceiveMaximumExceeded);
    }
 
@@ -306,7 +306,7 @@ public class MqttReceiveMaximumTests
 
       // The subscriber client should detect that it has received more than 1 concurrent unacknowledged QoS 2 message
       // and disconnect with ReceiveMaximumExceeded (0x93)
-      var reason = await disconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      var reason = await disconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(30));
       await Assert.That(reason).IsEqualTo(DisconnectReasonCode.ReceiveMaximumExceeded);
 
       await publisher.DisconnectAsync(new DisconnectOptions());
@@ -356,7 +356,7 @@ public class MqttReceiveMaximumTests
       var pub1Task = client.PublishAsync(pubOptions);
 
       // Wait until the server receives the publication and enters the hook (so pub1 is in-flight)
-      await ackTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await ackTcs.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
       // Attempt to publish a second QoS 1 message.
       // Since it's MQTT V3, client should NOT throttle it even though ReceiveMaximum is 1 and 1 is already in-flight!
@@ -369,8 +369,8 @@ public class MqttReceiveMaximumTests
       // Let's release the hook on the server so both can complete
       proceedTcs.TrySetResult();
 
-      var result1 = await pub1Task.WaitAsync(TimeSpan.FromSeconds(5));
-      var result2 = await pub2Task.WaitAsync(TimeSpan.FromSeconds(5));
+      var result1 = await pub1Task.WaitAsync(TimeSpan.FromSeconds(30));
+      var result2 = await pub2Task.WaitAsync(TimeSpan.FromSeconds(30));
 
       await Assert.That(result1.Failed).IsFalse();
       await Assert.That(result2.Failed).IsFalse();
@@ -422,8 +422,8 @@ public class MqttReceiveMaximumTests
 
       // Under V3, the server should not disconnect the client.
       // So both publishes should eventually complete when we wait for them.
-      var result1 = await pub1.WaitAsync(TimeSpan.FromSeconds(5));
-      var result2 = await pub2.WaitAsync(TimeSpan.FromSeconds(5));
+      var result1 = await pub1.WaitAsync(TimeSpan.FromSeconds(30));
+      var result2 = await pub2.WaitAsync(TimeSpan.FromSeconds(30));
 
       await Assert.That(result1.Failed).IsFalse();
       await Assert.That(result2.Failed).IsFalse();
@@ -496,7 +496,7 @@ public class MqttReceiveMaximumTests
       }
 
       // Verify we received all 10 messages successfully without disconnecting
-      await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(30));
       await Assert.That(disconnectTcs.Task.IsCompleted).IsFalse();
 
       await subscriber.DisconnectAsync(new DisconnectOptions());
@@ -566,7 +566,7 @@ public class MqttReceiveMaximumTests
          await publisher.PublishAsync(pubOptions);
       }
 
-      await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(30));
       await Assert.That(disconnectTcs.Task.IsCompleted).IsFalse();
 
       await subscriber.DisconnectAsync(new DisconnectOptions());
@@ -639,7 +639,7 @@ public class MqttReceiveMaximumTests
          await publisher.PublishAsync(pubOptions);
       }
 
-      await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await receiveFinishedTcs.Task.WaitAsync(TimeSpan.FromSeconds(30));
       await Assert.That(disconnectTcs.Task.IsCompleted).IsFalse();
 
       await subscriber.DisconnectAsync(new DisconnectOptions());

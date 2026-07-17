@@ -139,8 +139,10 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       if (previousState == 0)
       {
          _core.SetException(new OperationCanceledException());
-         _cancellationRegistration.Dispose();
       }
+
+      _cancellationRegistration.Dispose();
+      _cancellationRegistration = default;
 
       CheckAndPool();
    }

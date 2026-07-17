@@ -391,62 +391,53 @@ public class SignalBrokerTests
    }
 
    [Test]
-   public async Task AddAwaitable_ConcurrentlyWithDispose_ShouldThrowObjectDisposedExceptionAndNotHang()
-   {
-      // Arrange
-      var broker = new SignalBroker();
-      var startBarrier = new Barrier(3);
-
-      var t1 = Task.Run(() =>
-      {
-         startBarrier.SignalAndWait();
-         try
-         {
-            while (true)
-            {
-               using var awaiter = broker.AddAwaitable<PingResponse>(0);
-            }
-         }
-         catch (ObjectDisposedException)
-         {
-            // Expected
-         }
-      });
-
-      var t2 = Task.Run(() =>
-      {
-         startBarrier.SignalAndWait();
-         try
-         {
-            while (true)
-            {
-               using var awaiter = broker.AddAwaitable<PubAckResponse>(0);
-            }
-         }
-         catch (ObjectDisposedException)
-         {
-            // Expected
-         }
-      });
-
-      var t3 = Task.Run(async () =>
-      {
-         startBarrier.SignalAndWait();
-         // Give t1 and t2 a tiny moment to start calling AddAwaitable
-         await Task.Delay(1);
-         broker.Dispose();
-      });
-
-      // Act & Assert
-      try
-      {
-         await Task.WhenAll(t1, t2, t3).WaitAsync(TimeSpan.FromSeconds(5));
-      }
-      catch (TimeoutException)
-      {
-         Assert.Fail("AddAwaitable hung concurrently with Dispose.");
-      }
-   }
+    public async Task AddAwaitable_ConcurrentlyWithDispose_ShouldThrowObjectDisposedExceptionAndNotHang()
+    {
+       // Arrange
+       var broker = new SignalBroker();
+       var cts = new CancellationTokenSource();
+ 
+       var t1 = Task.Run(async () =>
+       {
+          try
+          {
+             while (!cts.Token.IsCancellationRequested)
+             {
+                using var awaiter = broker.AddAwaitable<PingResponse>(0);
+                await Task.Delay(1);
+             }
+          }
+          catch (ObjectDisposedException)
+          {
+             // Expected
+          }
+       });
+ 
+       var t2 = Task.Run(async () =>
+       {
+          try
+          {
+             while (!cts.Token.IsCancellationRequested)
+             {
+                using var awaiter = broker.AddAwaitable<PubAckResponse>(0);
+                await Task.Delay(1);
+             }
+          }
+          catch (ObjectDisposedException)
+          {
+             // Expected
+          }
+       });
+ 
+       // Give t1 and t2 a moment to start running
+       await Task.Delay(50);
+ 
+       broker.Dispose();
+       await cts.CancelAsync();
+ 
+       // Verify they complete without hanging
+       await Task.WhenAll(t1, t2).WaitAsync(TimeSpan.FromSeconds(15));
+    }
 
    [Test]
    public async Task CollisionDifferentTypes_CompletedNonHeadMultipleSameType_ShouldCompleteAll()

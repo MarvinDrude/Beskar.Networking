@@ -37,7 +37,6 @@ public sealed class SignalBroker : IDisposable
             if (TryRemoveInternal(identifier, awaitable))
             {
                awaitable.Fail(new ObjectDisposedException(nameof(SignalBroker)));
-               awaitable.Dispose();
             }
 
             throw new ObjectDisposedException(nameof(SignalBroker));
@@ -168,20 +167,19 @@ public sealed class SignalBroker : IDisposable
 
       for (var i = 0; i < _waiters.Length; i++)
       {
-         ISignalAwaiter? current;
          lock (_locks[i % 1024])
          {
-            current = _waiters[i];
+            var current = _waiters[i];
             _waiters[i] = null;
-         }
 
-         while (current != null)
-         {
-            current.Fail(exception);
-            var next = current.Next;
+            while (current != null)
+            {
+               current.Fail(exception);
+               var next = current.Next;
 
-            current.OnPruned();
-            current = next;
+               current.OnPruned();
+               current = next;
+            }
          }
       }
    }
@@ -193,20 +191,19 @@ public sealed class SignalBroker : IDisposable
 
       for (var i = 0; i < _waiters.Length; i++)
       {
-         ISignalAwaiter? current;
          lock (_locks[i % 1024])
          {
-            current = _waiters[i];
+            var current = _waiters[i];
             _waiters[i] = null;
-         }
 
-         while (current != null)
-         {
-            current.Fail(exception);
-            var next = current.Next;
+            while (current != null)
+            {
+               current.Fail(exception);
+               var next = current.Next;
 
-            current.OnPruned();
-            current = next;
+               current.OnPruned();
+               current = next;
+            }
          }
       }
    }
