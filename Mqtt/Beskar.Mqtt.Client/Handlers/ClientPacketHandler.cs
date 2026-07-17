@@ -1,4 +1,6 @@
+using System.Buffers;
 using Beskar.Memory.Threading;
+using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Handlers.Contexts;
 using Beskar.Mqtt.Protocol.Enums;
@@ -79,25 +81,78 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PublishPacket packet, CancellationToken ct = default)
    {
-      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBLISH packet (PacketId: {0}, Topic: '{1}', QoS: {2}). Dispatching to receive handlers...", packet.PacketIdentifier, packet.TopicUtf8Bytes.GetUtf8String(), packet.QualityOfService);
+      return Awaited(_client, packet, ct);
 
-      var converted = new MqttPublishMessage(packet);
-      var context = new MessageReceiveContext()
+      static async ValueTask Awaited(MqttClient client, PublishPacket packet, CancellationToken ct)
       {
-         Message = converted,
-         PacketSender = _client
-      };
+         var resolvedPacket = packet;
 
-      // probably best here to defer actual handlers to run on new task?
-      _ = Task.Run(async () =>
-      {
-         await _client.Events.OnMessageReceive.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+         if (client.ProtocolVersion is MqttProtocolVersion.V50)
+         {
+            if (packet.TopicAlias > 0)
+            {
+               var topicAliasMax = client.CurrentConnectOptions.TopicAliasMaximum ?? 0;
+               if (packet.TopicAlias > topicAliasMax)
+               {
+                  TraceLogger.LogClientError("ClientPacketHandler: Received PUBLISH packet with TopicAlias {0} exceeding TopicAliasMaximum {1}.", packet.TopicAlias, topicAliasMax);
+                  await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicAliasInvalid }, ct);
+                  return;
+               }
 
-         if (context.AutoAcknowledge)
-            await context.AcknowledgeAsync(ct);
-      }, ct);
+               if (packet.TopicUtf8Bytes.IsEmpty)
+               {
+                  if (!client.TryGetTopicAlias(packet.TopicAlias, out var topicBytes))
+                  {
+                     TraceLogger.LogClientError("ClientPacketHandler: Received PUBLISH packet with unregistered TopicAlias {0}.", packet.TopicAlias);
+                     await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicAliasInvalid }, ct);
+                     return;
+                  }
 
-      return ValueTask.CompletedTask;
+                  resolvedPacket.TopicUtf8Bytes = new ReadOnlySequence<byte>(topicBytes);
+               }
+               else
+               {
+                  client.SetTopicAlias(packet.TopicAlias, packet.TopicUtf8Bytes.ToArray());
+               }
+            }
+            else
+            {
+               if (packet.TopicUtf8Bytes.IsEmpty)
+               {
+                  TraceLogger.LogClientError("ClientPacketHandler: Received PUBLISH packet with empty topic and no TopicAlias.");
+                  await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError }, ct);
+                  return;
+               }
+            }
+         }
+         else // MQTT v3.x
+         {
+            if (packet.TopicUtf8Bytes.IsEmpty)
+            {
+               TraceLogger.LogClientError("ClientPacketHandler: Received PUBLISH packet with empty topic under v3.x.");
+               await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError }, ct);
+               return;
+            }
+         }
+
+         TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBLISH packet (PacketId: {0}, Topic: '{1}', QoS: {2}). Dispatching to receive handlers...", resolvedPacket.PacketIdentifier, resolvedPacket.TopicUtf8Bytes.GetUtf8String(), resolvedPacket.QualityOfService);
+
+         var converted = new MqttPublishMessage(resolvedPacket);
+         var context = new MessageReceiveContext()
+         {
+            Message = converted,
+            PacketSender = client
+         };
+
+         // probably best here to defer actual handlers to run on new task?
+         _ = Task.Run(async () =>
+         {
+            await client.Events.OnMessageReceive.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+
+            if (context.AutoAcknowledge)
+               await context.AcknowledgeAsync(ct);
+         }, ct);
+      }
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PubRecPacket packet, CancellationToken ct = default)

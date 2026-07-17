@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -38,6 +39,9 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    /// </summary>
    public ClientEvents Events { get; } = new();
 
+   internal MqttProtocolVersion ProtocolVersion => _protocolVersion;
+   internal ConnectOptions CurrentConnectOptions => _connectOptions;
+
    private readonly INetworkClient _networkClient;
    private INetworkSession? _networkSession;
    private INetworkStream? _controlStream;
@@ -65,6 +69,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private DateTimeOffset _lastKeepAliveTimestamp;
 
    private ConnectOptions _connectOptions = new() { EndPoint = new IPEndPoint(0, 0) };
+   private readonly Dictionary<ushort, byte[]> _topicAliases = new(16);
 
    public MqttClient(INetworkClient networkClient)
    {
@@ -116,6 +121,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       {
          _connectOptions = options;
          _protocolVersion = options.ProtocolVersion;
+         _topicAliases.Clear();
 
          if (Events.OnClientConnecting.Count > 0)
          {
@@ -187,6 +193,16 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    internal bool TryDispatch<T>(in T packet, ushort identifier)
    {
       return _signalBroker.TryDispatch(in packet, identifier);
+   }
+
+   internal bool TryGetTopicAlias(ushort alias, [NotNullWhen(true)] out byte[]? topic)
+   {
+      return _topicAliases.TryGetValue(alias, out topic);
+   }
+
+   internal void SetTopicAlias(ushort alias, byte[] topic)
+   {
+      _topicAliases[alias] = topic;
    }
 
    private async Task DispatchConnectedAsync(ClientConnectResult connectResult)

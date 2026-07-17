@@ -53,6 +53,45 @@ public sealed partial class MqttClient
       }
    }
 
+   internal async Task DisconnectFromReceiveLoopAsync(DisconnectOptions options, CancellationToken ct = default)
+   {
+      var validateResult = ValidateClient();
+      if (validateResult.Failed) return;
+
+      var beforeConnected = IsConnected;
+      TraceLogger.LogClientInfo("MqttClient.DisconnectFromReceiveLoopAsync: Initiating disconnect from receive loop (ReasonCode: {0}, SessionExpiryInterval: {1}).",
+         options.ReasonCode, options.SessionExpiryInterval);
+
+      if (DisconnectingAlreadyInProcessOrDone())
+      {
+         return;
+      }
+
+      if (_controlStream is not { } stream)
+      {
+         return;
+      }
+
+      try
+      {
+         if (!beforeConnected)
+         {
+            return;
+         }
+
+         _gracefulDisconnect = true;
+         _disconnectReason = new MqttClientDisconnectReason(true, (int)options.ReasonCode);
+
+         await Send(options, stream, 0, ct);
+         await stream.Transport.Output.CompleteAsync();
+      }
+      finally
+      {
+         await DisconnectRoutineAsync(beforeConnected, awaitReceiveTask: false);
+         _gracefulDisconnect = false;
+      }
+   }
+
    internal void UpdateDisconnectPacket(in DisconnectPacket packet)
    {
       _disconnectReason = new MqttClientDisconnectReason(true, (int)packet.ReasonCode);
@@ -118,6 +157,7 @@ public sealed partial class MqttClient
       }
       finally
       {
+         _topicAliases.Clear();
          CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Disconnecting);
          TraceLogger.LogClientInfo("MqttClient: Disconnected from transport layer. State transitioned to Disconnected.");
 
