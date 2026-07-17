@@ -70,6 +70,7 @@ public sealed class TcpNetworkListener(
          _ = AcceptLoopAsync(socket, _acceptCts.Token);
          TraceLogger.LogServerInfo("TCP Listener: Successfully bound and listening on {0}", LocalAddress);
          Interlocked.Increment(ref _binds);
+
          return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
       catch (SocketException ex)
@@ -163,8 +164,9 @@ public sealed class TcpNetworkListener(
             {
                TraceLogger.LogServerError("TCP Listener: Rejected connection. Failed to get local endpoint.");
                WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get local endpoint."));
+
                clientSocket.Dispose();
-               return;
+               continue;
             }
 
             var remoteEndPoint = clientSocket.RemoteEndPoint;
@@ -172,8 +174,9 @@ public sealed class TcpNetworkListener(
             {
                TraceLogger.LogServerError("TCP Listener: Rejected connection. Failed to get remote endpoint.");
                WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get remote endpoint."));
+
                clientSocket.Dispose();
-               return;
+               continue;
             }
 
             TraceLogger.LogServerInfo("TCP Listener: Accepted connection from client {0}", remoteEndPoint);
