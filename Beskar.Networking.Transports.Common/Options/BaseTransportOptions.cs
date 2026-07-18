@@ -19,7 +19,7 @@ public abstract class BaseTransportOptions<TQueueSelf>
    /// <summary>
    /// The number of IO queues for the transport.
    /// </summary>
-   public int IoQueueCount { get; set; } = Math.Min(Environment.ProcessorCount, 24);
+   public int IoQueueCount { get; set; } = Math.Min(Environment.ProcessorCount, 12);
 
    /// <summary>
    /// The maximum size of the read buffer.

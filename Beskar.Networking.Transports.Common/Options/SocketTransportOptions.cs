@@ -9,7 +9,7 @@ public sealed class SocketTransportOptions
 {
    public override SocketQueueSettings CreateQueueSettings()
    {
-      var memoryPool = new PinnedBlockMemoryPool();
+      var memoryPool = SharedTransportMemoryPool.GetNext();
       var scheduler = new IoQueue();
 
       var maxReadBufferSize = MaxReadBufferSize ?? 0;
@@ -18,6 +18,7 @@ public sealed class SocketTransportOptions
       return new SocketQueueSettings()
       {
          MemoryPool = memoryPool,
+         OwnsMemoryPool = false,
          PipeScheduler = scheduler,
 
          ReceiveOptions = new PipeOptions(

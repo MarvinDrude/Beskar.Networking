@@ -9,7 +9,7 @@ public sealed class StreamTransportOptions
 {
    public override StreamQueueSettings CreateQueueSettings()
    {
-      var memoryPool = new PinnedBlockMemoryPool();
+      var memoryPool = SharedTransportMemoryPool.GetNext();
 
       var maxReadBufferSize = MaxReadBufferSize ?? 0;
       var maxWriteBufferSize = MaxWriteBufferSize ?? 0;
@@ -17,6 +17,7 @@ public sealed class StreamTransportOptions
       return new StreamQueueSettings()
       {
          MemoryPool = memoryPool,
+         OwnsMemoryPool = false,
 
          ReceiveOptions = new PipeOptions(
             memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
