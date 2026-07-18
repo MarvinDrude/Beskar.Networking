@@ -15,7 +15,6 @@ using Beskar.Mqtt.Common.Options;
 using Beskar.Utilities.Tracing;
 
 TraceLogger.IsEnabled = true;
-
 Console.WriteLine();
 Console.WriteLine("==========================================================");
 Console.WriteLine(" MQTT Authentication Example (v3.1.1 and v5.0 Challenges)");
@@ -28,9 +27,10 @@ var mqttServer = MqttServerFactory.CreateBuilder()
    .Build();
 
 // Intercept and handle incoming connect requests
-mqttServer.Events.OnConnectIntercept.Add(async (ctx, ct) =>
+mqttServer.Events.OnConnectIntercept.Add(async ValueTask (ctx, ct) =>
 {
    var protocolVersion = ctx.ConnectOptions.ProtocolVersion;
+   TraceLogger.LogServerInfo($"Server: Received connect request for protocol: {protocolVersion}");
 
    if (protocolVersion is MqttProtocolVersion.V311 or MqttProtocolVersion.V31)
    {
@@ -75,6 +75,7 @@ mqttServer.Events.OnConnectIntercept.Add(async (ctx, ct) =>
 
       var initialData = ctx.ConnectOptions.AuthenticationDataBytes.ToArray();
       var expectedInitialData = new byte[] { 2, 3, 4 };
+
       if (!initialData.SequenceEqual(expectedInitialData))
       {
          TraceLogger.LogServerWarning("Server: Invalid initial authentication data.");
@@ -100,6 +101,7 @@ mqttServer.Events.OnConnectIntercept.Add(async (ctx, ct) =>
       // Await client response
       TraceLogger.LogServerInfo("Server: Awaiting challenge response from client...");
       var response = await ctx.ReceiveControlPacketAsync(ct);
+
       if (response is not AuthPacketOptions clientAuthOptions)
       {
          ctx.ReasonCode = ConnectReasonCode.NotAuthorized;
@@ -114,6 +116,7 @@ mqttServer.Events.OnConnectIntercept.Add(async (ctx, ct) =>
       if (!clientResponseData.SequenceEqual(expectedResponse))
       {
          TraceLogger.LogServerWarning("Server: Challenge verification FAILED!");
+
          ctx.ReasonCode = ConnectReasonCode.NotAuthorized;
          ctx.ReasonString = "Invalid challenge response";
          return;
@@ -133,13 +136,15 @@ mqttServer.Events.OnConnectIntercept.Add(async (ctx, ct) =>
 // Start the MQTT Server
 TraceLogger.LogServerInfo("Server: Starting...");
 var startResult = await mqttServer.StartAsync();
+
 if (startResult.Failed)
 {
    throw new InvalidOperationException($"Server failed to start: {startResult.Error.Detail}");
 }
+
 TraceLogger.LogServerInfo("Server: Running on port 8000.");
 
-// Run Demonstration Cases
+// 4. Run Demonstration Cases
 try
 {
    await RunV3ClientDemo();
@@ -216,7 +221,7 @@ async Task RunV5ClientDemo()
    {
       EndPoint = new IPEndPoint(IPAddress.Loopback, 8000),
       ProtocolVersion = MqttProtocolVersion.V50,
-      AuthenticationMethodUtf8Bytes = Encoding.UTF8.GetBytes("ChallengeResponse"),
+      AuthenticationMethodUtf8Bytes = "ChallengeResponse"u8.ToArray(),
       AuthenticationDataBytes = new byte[] { 2, 3, 4 },
       AuthenticationHandler = new AuthHandler()
    });
@@ -241,11 +246,9 @@ public sealed class AuthHandler : IMqttAuthenticationHandler
       MqttAuthContext context, CancellationToken ct = default)
    {
       var authPacket = context.AuthPacket;
-
       if (authPacket.ReasonCode == AuthenticateReasonCode.ContinueAuthentication)
       {
          var challengeBytes = authPacket.AuthenticationData?.ToArray();
-
          if (challengeBytes is not null)
          {
             TraceLogger.LogClientInfo($"Client AuthHandler: Received challenge of length {challengeBytes.Length}");

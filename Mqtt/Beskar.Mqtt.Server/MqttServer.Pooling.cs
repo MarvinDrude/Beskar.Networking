@@ -14,7 +14,7 @@ public sealed partial class MqttServer
       FactoryFunc = static () => new MqttServerClient(),
       MaxSize = DefaultMaxPoolSize,
       InitialSize = DefaultInitialPoolSize,
-      ReturnFunc = static (_) => true
+      ReturnFunc = static (client) => client.TryResetState()
    });
 
    private readonly ObjectPool<ServerPacketHandler> _packetHandlerPool = new (new ObjectPoolOptions<ServerPacketHandler>
@@ -22,6 +22,6 @@ public sealed partial class MqttServer
       FactoryFunc = static () => new ServerPacketHandler(),
       MaxSize = DefaultMaxPoolSize,
       InitialSize = DefaultInitialPoolSize,
-      ReturnFunc = static (_) => true
+      ReturnFunc = static (handler) => handler.TryResetState()
    });
 }

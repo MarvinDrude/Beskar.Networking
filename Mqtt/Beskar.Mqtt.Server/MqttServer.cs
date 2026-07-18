@@ -230,12 +230,30 @@ public sealed partial class MqttServer : IAsyncDisposable
          packetHandler = _packetHandlerPool.Get(null);
          packetHandler.Initialize(this, client);
 
-         _ = Task.Factory.StartNew(
+         var connectionTask = Task.Factory.StartNew(
             () => RunClientConnectionTask(client, streamContext, packetHandler, combinedToken),
-            TaskCreationOptions.PreferFairness);
+            TaskCreationOptions.PreferFairness).Unwrap();
 
-         await RunClientListenTask(client, streamContext, packetHandler,
-            async (_) => await session.DisposeAsync(), combinedToken);
+         try
+         {
+            await RunClientListenTask(client, streamContext, packetHandler,
+               async (_) =>
+               {
+                  await client.DisconnectAsync();
+                  await session.DisposeAsync();
+               }, combinedToken);
+         }
+         finally
+         {
+            try
+            {
+               await connectionTask;
+            }
+            catch
+            {
+               // ignored to prevent obscuring listener exceptions
+            }
+         }
       }
       catch (Exception)
       {
@@ -292,7 +310,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          var options = await client.ReceiveControlPacketAsync("CONNECT", ct);
          if (options is not ConnectOptions connectOptions)
          {
-            await streamContext.Connection.Session.DisposeAsync();
+            await client.DisconnectAsync();
             return;
          }
 
@@ -359,7 +377,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             }
             catch { /* ignored */ }
 
-            await streamContext.Connection.Session.DisposeAsync();
+            await client.DisconnectAsync();
             return;
          }
 
@@ -386,7 +404,7 @@ public sealed partial class MqttServer : IAsyncDisposable
       {
          try
          {
-            await streamContext.Connection.Session.DisposeAsync();
+            await client.DisconnectAsync();
          }
          catch
          {
