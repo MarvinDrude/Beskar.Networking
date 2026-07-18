@@ -72,7 +72,7 @@ public sealed class TcpNetworkListener(
 
          socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
          socket.Bind(LocalAddress);
-         socket.Listen(512);
+         socket.Listen(_options.Backlog);
 
          _listenerSocket = socket;
          _acceptCts = new CancellationTokenSource();
@@ -193,6 +193,10 @@ public sealed class TcpNetworkListener(
             {
                clientSocket.ReceiveBufferSize = _options.ReceiveBufferSize.Value;
             }
+            if (_options.LingerState is not null)
+            {
+               clientSocket.LingerState = _options.LingerState;
+            }
 
             var localEndPoint = clientSocket.LocalEndPoint;
             if (localEndPoint is null)
@@ -280,7 +284,7 @@ public sealed class TcpNetworkListener(
          {
             TraceLogger.LogServerInfo("TCP Listener: Beginning SSL server authentication for client {0}", remoteEndPoint);
             using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            handshakeTimeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+            handshakeTimeoutCts.CancelAfter(_options.SslHandshakeTimeout);
 
             var networkStream = new NetworkStream(socket, ownsSocket: true);
             var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);

@@ -1,4 +1,5 @@
 using System.Net.Security;
+using System.Net.Sockets;
 using Beskar.Networking.Transports.Common.Options;
 
 namespace Beskar.Networking.Transports.Tcp;
@@ -80,4 +81,22 @@ public class TcpTransportOptions
    /// The maximum number of pending connections that can be queued in the listener's session channel. Defaults to 1024.
    /// </summary>
    public int MaxPendingConnections { get; set; } = 1024;
+
+   /// <summary>
+   /// The maximum length of the pending connections queue for the listener socket.
+   /// Defaults to 1024.
+   /// </summary>
+   public int Backlog { get; set; } = 1024;
+
+   /// <summary>
+   /// Controls the socket behavior upon closure if unsent data exists in the socket send buffer.
+   /// Set null to use the OS default.
+   /// </summary>
+   public LingerOption? LingerState { get; set; }
+
+   /// <summary>
+   /// The handshake timeout for SSL/TLS connections on both client and server.
+   /// Defaults to 10 seconds.
+   /// </summary>
+   public TimeSpan SslHandshakeTimeout { get; set; } = TimeSpan.FromSeconds(10);
 }

@@ -64,6 +64,10 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
          {
             socket.ReceiveBufferSize = _options.ReceiveBufferSize.Value;
          }
+         if (_options.LingerState is not null)
+         {
+            socket.LingerState = _options.LingerState;
+         }
 
          await socket.ConnectAsync(endPoint, ct);
          TraceLogger.LogClientInfo("TCP ConnectAsync: Socket successfully connected to {0} (Local: {1})", socket.RemoteEndPoint, socket.LocalEndPoint);
@@ -82,7 +86,10 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
                return new NetworkCodeError(-1, "SSL client authentication options are missing.");
             }
 
-            await sslStream.AuthenticateAsClientAsync(sslOptions, ct);
+            using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            handshakeTimeoutCts.CancelAfter(_options.SslHandshakeTimeout);
+
+            await sslStream.AuthenticateAsClientAsync(sslOptions, handshakeTimeoutCts.Token);
             stream = sslStream;
             TraceLogger.LogClientInfo("TCP ConnectAsync: SSL client successfully authenticated for {0}", endPoint);
          }

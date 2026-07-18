@@ -443,4 +443,59 @@ public class TcpTransportTests
       await client2.DisconnectAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task TcpListenerClient_VerifyLingerAndTimeoutOptionsConfigured_Succeeds()
+   {
+      var options = new TcpTransportOptions
+      {
+         Backlog = 10,
+         LingerState = new LingerOption(true, 5),
+         SslHandshakeTimeout = TimeSpan.FromSeconds(5)
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new TcpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      await connectResult.Success!.DisposeAsync();
+      await acceptResult.Success!.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task TcpListener_SslHandshakeTimeout_AbortsHandshake()
+   {
+      var options = new TcpTransportOptions
+      {
+         UseSsl = true,
+         SslHandshakeTimeout = TimeSpan.FromMilliseconds(100) // very short
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, actualPort);
+      await using var stream = tcpClient.GetStream();
+
+      // Client connects but sends no SSL bytes, exceeding handshake timeout
+      await Task.Delay(300);
+
+      // Verify that server has closed the connection
+      var buffer = new byte[10];
+      var readBytes = await stream.ReadAsync(buffer);
+      await Assert.That(readBytes).IsEqualTo(0); // connection closed by server
+
+      await listener.UnbindAsync();
+   }
 }
