@@ -44,7 +44,7 @@ public sealed class QuicNetworkListener(
 
    private bool _disposed;
 
-   private readonly Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
+   private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
       Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(new UnboundedChannelOptions
       {
          SingleWriter = false,
@@ -61,6 +61,13 @@ public sealed class QuicNetworkListener(
 
       try
       {
+         _sessionChannel = Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(
+            new UnboundedChannelOptions
+            {
+               SingleWriter = false,
+               SingleReader = true
+            });
+
          TraceLogger.LogServerInfo("QUIC Listener: Binding socket to address {0}", LocalAddress);
          var ipEndPoint = LocalAddress as IPEndPoint
             ?? throw new ArgumentException("IPEndPoint is required for QUIC listener.", nameof(LocalAddress));

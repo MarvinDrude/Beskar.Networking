@@ -94,8 +94,15 @@ public sealed partial class MqttServer : IAsyncDisposable
          }
       }
 
-      await _cancellationTokenSource.CancelAsync();
-      _cancellationTokenSource.Dispose();
+      try
+      {
+         await _cancellationTokenSource.CancelAsync();
+         _cancellationTokenSource.Dispose();
+      }
+      catch (ObjectDisposedException)
+      {
+         // already disposed
+      }
 
       _cancellationTokenSource = new CancellationTokenSource();
       var ct = _cancellationTokenSource.Token;
@@ -161,8 +168,15 @@ public sealed partial class MqttServer : IAsyncDisposable
          // ignored
       }
 
-      await _cancellationTokenSource.CancelAsync();
-      _cancellationTokenSource.Dispose();
+      try
+      {
+         await _cancellationTokenSource.CancelAsync();
+         _cancellationTokenSource.Dispose();
+      }
+      catch (ObjectDisposedException)
+      {
+         // already disposed
+      }
 
       // notify clients
 

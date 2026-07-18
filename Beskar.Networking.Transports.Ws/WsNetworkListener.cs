@@ -39,7 +39,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
    private bool _disposed;
 
-   private readonly Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
+   private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
       Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(new UnboundedChannelOptions
       {
          SingleWriter = false,
@@ -48,6 +48,13 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
    public async ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
    {
+      _sessionChannel = Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(
+         new UnboundedChannelOptions
+         {
+            SingleWriter = false,
+            SingleReader = true
+         });
+
       TraceLogger.LogServerInfo("WS Listener: Binding WebSocket listener to address {0} (Path: {1})", LocalAddress, _options.Path);
       var bindResult = await _tcpListener.BindAsync(ct);
       if (bindResult.Failed)

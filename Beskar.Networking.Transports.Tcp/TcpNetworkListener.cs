@@ -46,7 +46,7 @@ public sealed class TcpNetworkListener(
 
    private bool _disposed;
 
-   private readonly Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
+   private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
       Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(new UnboundedChannelOptions
       {
          SingleWriter = false,
@@ -57,6 +57,13 @@ public sealed class TcpNetworkListener(
    {
       try
       {
+         _sessionChannel = Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(
+            new UnboundedChannelOptions
+            {
+               SingleWriter = false,
+               SingleReader = true
+            });
+
          TraceLogger.LogServerInfo("TCP Listener: Binding socket to address {0}", LocalAddress);
          var socket = new Socket(LocalAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
