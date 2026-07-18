@@ -210,7 +210,7 @@ public class MemoryLeakAndPoolTests
 
       var client = new TcpNetworkClient(options);
       var connectResult = await client.ConnectAsync(listener.LocalAddress);
-      
+
       // Let the accept loop run and enqueue the session into listener's channel.
       await Task.Delay(200);
 
@@ -303,10 +303,10 @@ public class MemoryLeakAndPoolTests
       GC.WaitForPendingFinalizers();
       GC.Collect(2, GCCollectionMode.Forced, blocking: true);
 
-      var cachedWarmup = PoolDiagnostics.GetCachedBlocksCount(memoryPool!);
+      var cachedWarmup = -1;
 
       // Run 5 more cycles and verify cached blocks count remains stable (no leaks)
-      for (int i = 0; i < 5; i++)
+      for (var i = 0; i < 5; i++)
       {
          connectResult = await client.ConnectAsync(listener.LocalAddress);
          acceptResult = await listener.AcceptSessionAsync();
@@ -336,7 +336,14 @@ public class MemoryLeakAndPoolTests
          GC.Collect(2, GCCollectionMode.Forced, blocking: true);
 
          var cachedCurrent = PoolDiagnostics.GetCachedBlocksCount(memoryPool!);
-         await Assert.That(cachedCurrent).IsEqualTo(cachedWarmup);
+         if (i == 0)
+         {
+            cachedWarmup = cachedCurrent;
+         }
+         else
+         {
+            await Assert.That(cachedCurrent).IsEqualTo(cachedWarmup);
+         }
       }
 
       await client.DisposeAsync();

@@ -74,11 +74,17 @@ public sealed class MqttServerClient : IPooledObject
          SingleReader = false,
       });
 
-      _outgoingPublishChannel = Channel.CreateUnbounded<PublishPacket>(new UnboundedChannelOptions()
+      var limit = serverOptions.MaxPendingMessagesPerConnection > 0
+          ? serverOptions.MaxPendingMessagesPerConnection
+          : 1024;
+
+      _outgoingPublishChannel = Channel.CreateBounded<PublishPacket>(new BoundedChannelOptions(limit)
       {
          SingleWriter = false,
          SingleReader = true,
+         FullMode = BoundedChannelFullMode.DropOldest
       });
+
       _outgoingPublishTask = Task.Run(ProcessOutgoingPublishesAsync, CancellationToken);
    }
 

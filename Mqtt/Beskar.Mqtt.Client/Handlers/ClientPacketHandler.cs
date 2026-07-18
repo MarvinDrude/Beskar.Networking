@@ -28,7 +28,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in ConnAckPacket packet, CancellationToken ct = default)
    {
-      TraceLogger.LogClientInfo("ClientPacketHandler: Received CONNACK packet from server (ReasonCode: {0}).", packet.ReasonCode);
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received CONNACK packet from server (ReasonCode: {0}).",
+         packet.ReasonCode);
       var result = ClientConnectResult.Create(in packet);
       _client.TryDispatch(in result, 0);
 
@@ -42,7 +43,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in DisconnectPacket packet, CancellationToken ct = default)
    {
-      TraceLogger.LogClientWarning("ClientPacketHandler: Received DISCONNECT packet from server (ReasonCode: {0}).", packet.ReasonCode);
+      TraceLogger.LogClientWarning("ClientPacketHandler: Received DISCONNECT packet from server (ReasonCode: {0}).",
+         packet.ReasonCode);
 
       _client.UpdateDisconnectPacket(packet);
       return Awaited(packet);
@@ -67,14 +69,16 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PubAckPacket packet, CancellationToken ct = default)
    {
-      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBACK packet (PacketId: {0}, ReasonCode: {1}).", packet.PacketIdentifier, packet.ReasonCode);
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBACK packet (PacketId: {0}, ReasonCode: {1}).",
+         packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PubCompPacket packet, CancellationToken ct = default)
    {
-      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBCOMP packet (PacketId: {0}, ReasonCode: {1}).", packet.PacketIdentifier, packet.ReasonCode);
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBCOMP packet (PacketId: {0}, ReasonCode: {1}).",
+         packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }
@@ -94,8 +98,11 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
                var topicAliasMax = client.CurrentConnectOptions.TopicAliasMaximum ?? 0;
                if (packet.TopicAlias > topicAliasMax)
                {
-                  TraceLogger.LogClientError("ClientPacketHandler: Received PUBLISH packet with TopicAlias {0} exceeding TopicAliasMaximum {1}.", packet.TopicAlias, topicAliasMax);
-                  await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicAliasInvalid }, ct);
+                  TraceLogger.LogClientError(
+                     "ClientPacketHandler: Received PUBLISH packet with TopicAlias {0} exceeding TopicAliasMaximum {1}.",
+                     packet.TopicAlias, topicAliasMax);
+                  await client.DisconnectFromReceiveLoopAsync(
+                     new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicAliasInvalid }, ct);
                   return;
                }
 
@@ -103,8 +110,11 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
                {
                   if (!client.TryGetTopicAlias(packet.TopicAlias, out var topicBytes))
                   {
-                     TraceLogger.LogClientError("ClientPacketHandler: Received PUBLISH packet with unregistered TopicAlias {0}.", packet.TopicAlias);
-                     await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicAliasInvalid }, ct);
+                     TraceLogger.LogClientError(
+                        "ClientPacketHandler: Received PUBLISH packet with unregistered TopicAlias {0}.",
+                        packet.TopicAlias);
+                     await client.DisconnectFromReceiveLoopAsync(
+                        new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicAliasInvalid }, ct);
                      return;
                   }
 
@@ -119,8 +129,10 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             {
                if (packet.TopicUtf8Bytes.IsEmpty)
                {
-                  TraceLogger.LogClientError("ClientPacketHandler: Received PUBLISH packet with empty topic and no TopicAlias.");
-                  await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError }, ct);
+                  TraceLogger.LogClientError(
+                     "ClientPacketHandler: Received PUBLISH packet with empty topic and no TopicAlias.");
+                  await client.DisconnectFromReceiveLoopAsync(
+                     new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError }, ct);
                   return;
                }
             }
@@ -130,28 +142,36 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             if (packet.TopicUtf8Bytes.IsEmpty)
             {
                TraceLogger.LogClientError("ClientPacketHandler: Received PUBLISH packet with empty topic under v3.x.");
-               await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError }, ct);
+               await client.DisconnectFromReceiveLoopAsync(
+                  new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError }, ct);
                return;
             }
          }
 
          var wasIncremented = false;
-         if (client.ProtocolVersion is MqttProtocolVersion.V50 && resolvedPacket.QualityOfService > QualityOfServiceType.AtMostOnce)
+         if (client.ProtocolVersion is MqttProtocolVersion.V50 &&
+             resolvedPacket.QualityOfService > QualityOfServiceType.AtMostOnce)
          {
             var localReceiveMax = client.CurrentConnectOptions.ReceiveMaximum ?? 65535;
             if (localReceiveMax == 0) localReceiveMax = 65535;
 
             if (!client.TryIncrementIncomingInFlight(localReceiveMax, out var currentCount))
             {
-               TraceLogger.LogClientError("ClientPacketHandler: Incoming in-flight QoS 1/2 publishes count {0} exceeds ReceiveMaximum {1}.", currentCount, localReceiveMax);
-               await client.DisconnectFromReceiveLoopAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ReceiveMaximumExceeded }, ct);
+               TraceLogger.LogClientError(
+                  "ClientPacketHandler: Incoming in-flight QoS 1/2 publishes count {0} exceeds ReceiveMaximum {1}.",
+                  currentCount, localReceiveMax);
+               await client.DisconnectFromReceiveLoopAsync(
+                  new DisconnectOptions { ReasonCode = DisconnectReasonCode.ReceiveMaximumExceeded }, ct);
                return;
             }
 
             wasIncremented = true;
          }
 
-         TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBLISH packet (PacketId: {0}, Topic: '{1}', QoS: {2}). Dispatching to receive handlers...", resolvedPacket.PacketIdentifier, resolvedPacket.TopicUtf8Bytes.GetUtf8String(), resolvedPacket.QualityOfService);
+         TraceLogger.LogClientInfo(
+            "ClientPacketHandler: Received PUBLISH packet (PacketId: {0}, Topic: '{1}', QoS: {2}). Dispatching to receive handlers...",
+            resolvedPacket.PacketIdentifier, resolvedPacket.TopicUtf8Bytes.GetUtf8String(),
+            resolvedPacket.QualityOfService);
 
          var converted = new MqttPublishMessage(resolvedPacket);
          var context = new MessageReceiveContext()
@@ -160,13 +180,15 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             PacketSender = client
          };
 
-         // probably best here to defer actual handlers to run on new task?
-         _ = Task.Run(async () =>
+         var handlerTask = client.Events.OnMessageReceive.ExecuteAsync(
+            context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+
+         if (handlerTask.IsCompleted)
          {
             var shouldDecrementInFinally = wasIncremented;
             try
             {
-               await client.Events.OnMessageReceive.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+               handlerTask.GetAwaiter().GetResult();
 
                if (context.AutoAcknowledge)
                {
@@ -177,7 +199,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             }
             catch (Exception ex)
             {
-               TraceLogger.LogClientError("ClientPacketHandler: Error executing message receive handler: {0}", ex.Message);
+               TraceLogger.LogClientError("ClientPacketHandler: Error executing message receive handler: {0}",
+                  ex.Message);
             }
             finally
             {
@@ -186,20 +209,53 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
                   client.DecrementIncomingInFlight();
                }
             }
-         }, ct);
+         }
+         else
+         {
+            _ = Task.Run(async () =>
+            {
+               var shouldDecrementInFinally = wasIncremented;
+               try
+               {
+                  await handlerTask;
+
+                  if (context.AutoAcknowledge)
+                  {
+                     await context.AcknowledgeAsync(ct);
+                  }
+
+                  shouldDecrementInFinally = false;
+               }
+               catch (Exception ex)
+               {
+                  TraceLogger.LogClientError("ClientPacketHandler: Error executing message receive handler: {0}",
+                     ex.Message);
+               }
+               finally
+               {
+                  if (shouldDecrementInFinally)
+                  {
+                     client.DecrementIncomingInFlight();
+                  }
+               }
+            }, ct);
+         }
       }
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PubRecPacket packet, CancellationToken ct = default)
    {
-      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBREC packet (PacketId: {0}, ReasonCode: {1}).", packet.PacketIdentifier, packet.ReasonCode);
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBREC packet (PacketId: {0}, ReasonCode: {1}).",
+         packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PubRelPacket packet, CancellationToken ct = default)
    {
-      TraceLogger.LogClientInfo("ClientPacketHandler: Received PUBREL packet (PacketId: {0}, ReasonCode: {1}). Replying with PUBCOMP...", packet.PacketIdentifier, packet.ReasonCode);
+      TraceLogger.LogClientInfo(
+         "ClientPacketHandler: Received PUBREL packet (PacketId: {0}, ReasonCode: {1}). Replying with PUBCOMP...",
+         packet.PacketIdentifier, packet.ReasonCode);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
 
       return Awaited(packet);
@@ -217,7 +273,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in SubAckPacket packet, CancellationToken ct = default)
    {
-      TraceLogger.LogClientInfo("ClientPacketHandler: Received SUBACK packet (PacketId: {0}).", packet.PacketIdentifier);
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received SUBACK packet (PacketId: {0}).",
+         packet.PacketIdentifier);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }
@@ -229,7 +286,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in UnsubAckPacket packet, CancellationToken ct = default)
    {
-      TraceLogger.LogClientInfo("ClientPacketHandler: Received UNSUBACK packet (PacketId: {0}).", packet.PacketIdentifier);
+      TraceLogger.LogClientInfo("ClientPacketHandler: Received UNSUBACK packet (PacketId: {0}).",
+         packet.PacketIdentifier);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
       return ValueTask.CompletedTask;
    }
