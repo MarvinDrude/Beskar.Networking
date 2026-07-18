@@ -7,6 +7,7 @@ using Beskar.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Common.Tests;
 
+[NotInParallel]
 public class MemoryLeakAndPoolTests
 {
    [Test]

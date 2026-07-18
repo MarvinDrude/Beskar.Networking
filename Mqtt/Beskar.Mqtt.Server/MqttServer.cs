@@ -128,7 +128,6 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
 
       _keepAliveService.Start();
-      ClientSessions.Start();
 
       State = MqttServerState.Running;
       if (Events.OnStart.Count > 0)
@@ -166,15 +165,6 @@ public sealed partial class MqttServer : IAsyncDisposable
       try
       {
          await _keepAliveService.StopAsync();
-      }
-      catch (Exception)
-      {
-         // ignored
-      }
-
-      try
-      {
-         await ClientSessions.StopAsync();
       }
       catch (Exception)
       {
@@ -252,13 +242,13 @@ public sealed partial class MqttServer : IAsyncDisposable
          var connectionContext = new NetworkServerConnectionContext(listener, session);
          var streamContext = new NetworkServerStreamContext(connectionContext, controlStream.Success);
 
-         client = _serverClientPool.Get(null);
+         client = new MqttServerClient();
          client.Initialize(streamContext, Options);
 
          using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, client.CancellationToken);
          var combinedToken = combinedCts.Token;
 
-         packetHandler = _packetHandlerPool.Get(null);
+         packetHandler = new ServerPacketHandler();
          packetHandler.Initialize(this, client);
 
          var connectionTask = Task.Factory.StartNew(
@@ -324,11 +314,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          if (client is not null)
          {
             await ClientSessions.HandleClientDisconnectAsync(client);
-            _serverClientPool.Return(client);
          }
-
-         if (packetHandler is not null)
-            _packetHandlerPool.Return(packetHandler);
       }
    }
 

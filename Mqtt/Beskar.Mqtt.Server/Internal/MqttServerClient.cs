@@ -9,7 +9,6 @@ using Beskar.Mqtt.Server.Enums;
 using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
-using Beskar.Networking.Abstractions.Interfaces.Pools;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 
@@ -19,7 +18,7 @@ namespace Beskar.Mqtt.Server.Internal;
 /// Represents a currently connected client to the MQTT server.
 /// Do not confuse this with the Session associated with this client.
 /// </summary>
-public sealed class MqttServerClient : IPooledObject
+public sealed class MqttServerClient
 {
    [MemberNotNullWhen(true,
       nameof(Listener), nameof(_listener),
@@ -104,7 +103,7 @@ public sealed class MqttServerClient : IPooledObject
       if (ProtocolVersion is MqttProtocolVersion.V50
           && options is not null)
       {
-         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
          try
          {
             await _stream.Send(options, ProtocolVersion, ct: timeoutCts.Token);
@@ -169,39 +168,7 @@ public sealed class MqttServerClient : IPooledObject
       return _controlPacketChannel?.Writer.TryWrite(packet) ?? false;
    }
 
-   public bool TryResetState()
-   {
-      _listener = null;
-      _session = null;
-      _stream = null;
 
-      DisconnectOptions = null;
-      MqttSession = null;
-      ConnectOptions = null;
-      _isDisconnecting = false;
-
-      _cancellationTokenSource?.Cancel();
-      _cancellationTokenSource?.Dispose();
-      _cancellationTokenSource = null;
-
-      _topicAliases.Clear();
-      ProtocolVersion = MqttProtocolVersion.Unknown;
-
-      if (_controlPacketChannel is not null)
-      {
-         _controlPacketChannel.Writer.TryComplete();
-         _controlPacketChannel = null;
-      }
-
-      if (_outgoingPublishChannel is not null)
-      {
-         _outgoingPublishChannel.Writer.TryComplete();
-         _outgoingPublishChannel = null;
-      }
-      _outgoingPublishTask = null;
-
-      return true;
-   }
 
    internal void QueueOutgoingPublish(in PublishPacket packet)
    {

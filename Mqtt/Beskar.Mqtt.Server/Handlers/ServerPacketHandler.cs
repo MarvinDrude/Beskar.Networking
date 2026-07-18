@@ -14,7 +14,6 @@ using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Internal;
 using Beskar.Networking.Abstractions.Interfaces;
-using Beskar.Networking.Abstractions.Interfaces.Pools;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Options;
 using Beskar.Mqtt.Server.Options;
@@ -25,7 +24,7 @@ using Beskar.Utilities.Tracing;
 namespace Beskar.Mqtt.Server.Handlers;
 
 public sealed partial class ServerPacketHandler
-   : IPacketHandler, IPooledObject
+   : IPacketHandler
 {
    [MemberNotNullWhen(true, nameof(_server), nameof(_client))]
    public bool IsValid => _server is not null && _client is not null && _client.IsConnected;
@@ -38,14 +37,6 @@ public sealed partial class ServerPacketHandler
    {
       _server = server;
       _client = client;
-   }
-
-   public bool TryResetState()
-   {
-      _server = null;
-      _client = null;
-
-      return true;
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in AuthPacket packet, CancellationToken ct = default)
