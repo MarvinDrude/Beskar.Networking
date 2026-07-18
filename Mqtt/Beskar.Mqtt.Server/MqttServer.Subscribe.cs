@@ -35,8 +35,7 @@ public sealed partial class MqttServer
       }
 
       var qos = filter.QualityOfService;
-      var alternateLookup = session.Subscriptions.GetAlternateLookup<ReadOnlySpan<byte>>();
-      var subscriptionExisted = alternateLookup.ContainsKey(topicFilterBytes);
+      var subscriptionExisted = session.HasSubscription(topicFilterBytes);
 
       SubscriptionRouter.Subscribe(
          session,
@@ -159,8 +158,7 @@ public sealed partial class MqttServer
 
    public UnsubscribeReasonCode Unsubscribe(MqttSession session, ReadOnlySpan<byte> topicFilter)
    {
-      var alternateLookup = session.Subscriptions.GetAlternateLookup<ReadOnlySpan<byte>>();
-      if (!alternateLookup.ContainsKey(topicFilter))
+      if (!session.HasSubscription(topicFilter))
       {
          return UnsubscribeReasonCode.NoSubscriptionExisted;
       }
@@ -208,9 +206,16 @@ public sealed partial class MqttServer
    {
       var enumerator = new TopicLevelEnumerator(topicFilter);
       var hasHash = false;
+      var levels = 0;
 
       while (enumerator.MoveNext())
       {
+         levels++;
+         if (levels > 64)
+         {
+            return false;
+         }
+
          if (hasHash)
          {
             return false;

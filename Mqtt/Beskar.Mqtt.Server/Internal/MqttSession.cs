@@ -15,7 +15,60 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal MqttServer Server { get; }
 
-   public Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; } = new(ByteArrayEqualityComparer.Instance);
+   public Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; }
+      = new(ByteArrayEqualityComparer.Instance);
+
+   private readonly object _subscriptionsLock = new();
+
+   public bool HasSubscription(ReadOnlySpan<byte> topicFilter)
+   {
+      lock (_subscriptionsLock)
+      {
+         var alternateLookup = Subscriptions.GetAlternateLookup<ReadOnlySpan<byte>>();
+         return alternateLookup.ContainsKey(topicFilter);
+      }
+   }
+
+   public void AddOrUpdateSubscription(byte[] topicFilter, MqttSessionSubscription subscription)
+   {
+      lock (_subscriptionsLock)
+      {
+         Subscriptions[topicFilter] = subscription;
+      }
+   }
+
+   public bool RemoveSubscription(ReadOnlySpan<byte> topicFilter)
+   {
+      lock (_subscriptionsLock)
+      {
+         var alternateLookup = Subscriptions.GetAlternateLookup<ReadOnlySpan<byte>>();
+         return alternateLookup.Remove(topicFilter);
+      }
+   }
+
+   public int GetSubscriptionsCount()
+   {
+      lock (_subscriptionsLock)
+      {
+         return Subscriptions.Count;
+      }
+   }
+
+   public List<byte[]> GetSubscriptionKeys()
+   {
+      lock (_subscriptionsLock)
+      {
+         return [.. Subscriptions.Keys];
+      }
+   }
+
+   public void ClearSubscriptions()
+   {
+      lock (_subscriptionsLock)
+      {
+         Subscriptions.Clear();
+      }
+   }
 
    private readonly HashSet<ushort> _incomingQos2Packets = [];
    private readonly PacketIdentifierGenerator _packetIdGenerator = new();

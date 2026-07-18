@@ -373,7 +373,7 @@ public sealed partial class MqttServer : IAsyncDisposable
 
             ReturnCode = context.ReasonCode.ToReturnCode,
             ReasonCode = context.ReasonCode,
-            TopicAliasMaximum = ushort.MaxValue,
+            TopicAliasMaximum = Options.TopicAliasMaximum,
             IsRetainAvailable = true,
             IsSubscriptionIdentifierAvailable = true,
             IsSharedSubscriptionAvailable = false,
@@ -454,7 +454,12 @@ public sealed partial class MqttServer : IAsyncDisposable
 
             propEncoder.WriteMaximumQoS(QualityOfServiceType.ExactlyOnce);
             propEncoder.WriteRetainAvailable(true);
-            propEncoder.WriteTopicAliasMaximum(ushort.MaxValue);
+
+            if (server.Options.TopicAliasMaximum > 0)
+            {
+               propEncoder.WriteTopicAliasMaximum(server.Options.TopicAliasMaximum);
+            }
+
             propEncoder.WriteWildcardSubscriptionAvailable(true);
             propEncoder.WriteSubscriptionIdentifiersAvailable(true);
             propEncoder.WriteSharedSubscriptionAvailable(false);

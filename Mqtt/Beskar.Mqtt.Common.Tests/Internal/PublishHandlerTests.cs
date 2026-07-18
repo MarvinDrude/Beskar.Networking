@@ -5,6 +5,7 @@ using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server;
 using Beskar.Mqtt.Server.Enums;
@@ -666,6 +667,94 @@ public class PublishHandlerTests
 
       reader.AdvanceTo(buffer.GetPosition(parsedBytes));
       return parsedMsg;
+   }
+
+   [Test]
+   public async Task Publish_WithTopicAliasExceedingServerMaximum_ShouldDisconnect()
+   {
+      var options = new MqttServerOptions { TopicAliasMaximum = 5 };
+      var server = new MqttServer([], options);
+      var stream = new MockNetworkStream();
+      var connContext = new NetworkServerConnectionContext(new DummyNetworkListener(), stream.Session);
+      var streamContext = new NetworkServerStreamContext(connContext, stream);
+
+      var client = new MqttServerClient();
+      client.Initialize(streamContext, options);
+      client.ProtocolVersion = MqttProtocolVersion.V50;
+
+      var session = new MqttSession(server, client);
+      client.MqttSession = session;
+
+      var handler = new ServerPacketHandler();
+      handler.Initialize(server, client);
+
+      var packet = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtMostOnce,
+         Retain = false,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>("test/alias"u8.ToArray()),
+         Payload = ReadOnlySequence<byte>.Empty,
+         TopicAlias = 6 // Exceeds limit of 5
+      };
+
+      await handler.ExecuteAsync(stream, packet);
+
+      await Assert.That(client.IsConnected).IsFalse();
+      await Assert.That(client.DisconnectOptions).IsNotNull();
+      await Assert.That(client.DisconnectOptions!.ReasonCode).IsEqualTo(DisconnectReasonCode.TopicAliasInvalid);
+   }
+
+   [Test]
+   public async Task Publish_WithTopicLevelsExceedingMaximum_ShouldDisconnect()
+   {
+      var (server, client, handler, stream) = SetupEnvironment(MqttProtocolVersion.V50);
+
+      // Build a topic name with 65 levels
+      var sb = new StringBuilder();
+      for (var i = 0; i < 65; i++)
+      {
+         sb.Append("a/");
+      }
+      sb.Length--; // Remove trailing slash
+      var deepTopic = sb.ToString();
+
+      var packet = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtMostOnce,
+         Retain = false,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(deepTopic)),
+         Payload = ReadOnlySequence<byte>.Empty
+      };
+
+      await handler.ExecuteAsync(stream, packet);
+
+      await Assert.That(client.IsConnected).IsFalse();
+      await Assert.That(client.DisconnectOptions).IsNotNull();
+      await Assert.That(client.DisconnectOptions!.ReasonCode).IsEqualTo(DisconnectReasonCode.TopicNameInvalid);
+   }
+
+   [Test]
+   public async Task Subscribe_WithTopicLevelsExceedingMaximum_ShouldFail()
+   {
+      var (server, client, handler, stream) = SetupEnvironment(MqttProtocolVersion.V50);
+
+      // Build a topic filter with 65 levels
+      var sb = new StringBuilder();
+      for (var i = 0; i < 65; i++)
+      {
+         sb.Append("a/");
+      }
+      sb.Length--; // Remove trailing slash
+      var deepFilter = sb.ToString();
+
+      var filter = new TopicFilter(new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(deepFilter)), QualityOfServiceType.AtMostOnce);
+
+      var session = client.MqttSession!;
+      var reason = server.Subscribe(session, in filter);
+
+      await Assert.That(reason).IsEqualTo(SubscribeReasonCode.TopicFilterInvalid);
    }
 
    private class DummyNetworkListener : INetworkListener

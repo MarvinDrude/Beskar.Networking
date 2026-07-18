@@ -38,4 +38,10 @@ public sealed class MqttServerOptions
    /// Default timeout for packet awaits etc.
    /// </summary>
    public TimeSpan DefaultTimeout { get; set; } = TimeSpan.FromSeconds(120);
+
+   /// <summary>
+   /// The maximum topic alias value that the server allows clients to use.
+   /// Defaults to 32.
+   /// </summary>
+   public ushort TopicAliasMaximum { get; set; } = 32;
 }

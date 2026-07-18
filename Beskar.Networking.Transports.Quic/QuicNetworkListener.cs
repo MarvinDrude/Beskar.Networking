@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
 using System.Threading.Channels;
+using System.Security.Cryptography.X509Certificates;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
@@ -38,6 +39,7 @@ public sealed class QuicNetworkListener(
 
    private readonly QuicTransportOptions _options = options;
    private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);
+   private X509Certificate2? _generatedCertificate;
 
    private QuicListener? _listener;
    private CancellationTokenSource? _acceptCts;
@@ -81,7 +83,8 @@ public sealed class QuicNetworkListener(
          // Automatically generate a self-signed cert if not provided (convenient dev default)
          if (serverAuthOptions.ServerCertificate is null && serverAuthOptions.ServerCertificateSelectionCallback is null)
          {
-            serverAuthOptions.ServerCertificate = CertificateUtility.GenerateSelfSignedCertificate();
+            _generatedCertificate = CertificateUtility.GenerateSelfSignedCertificate();
+            serverAuthOptions.ServerCertificate = _generatedCertificate;
          }
 
          var listenerOptions = new QuicListenerOptions
@@ -140,6 +143,9 @@ public sealed class QuicNetworkListener(
          }
          _acceptCts?.Dispose();
          _acceptCts = null;
+
+         var cert = Interlocked.Exchange(ref _generatedCertificate, null);
+         cert?.Dispose();
 
          var listener = Interlocked.Exchange(ref _listener, null);
          if (listener is not null)

@@ -9,6 +9,7 @@ using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server.Contexts;
+using Beskar.Mqtt.Server.Enumerators;
 using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Internal;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -58,6 +59,13 @@ public sealed partial class ServerPacketHandler
             {
                if (packet.TopicAlias > 0)
                {
+                  if (packet.TopicAlias > server.Options.TopicAliasMaximum)
+                  {
+                     await client.DisconnectAsync(new DisconnectOptions
+                        { ReasonCode = DisconnectReasonCode.TopicAliasInvalid });
+                     return;
+                  }
+
                   if (packet.TopicUtf8Bytes.IsEmpty)
                   {
                      if (!client.TryGetTopicAlias(packet.TopicAlias, out var topicBytes))
@@ -101,6 +109,25 @@ public sealed partial class ServerPacketHandler
             var resolvedTopicSpan = new ReadOnlySpan<byte>(resolvedTopicBytes);
             if (resolvedTopicSpan.IsEmpty || resolvedTopicSpan.Contains((byte)0x23) ||
                 resolvedTopicSpan.Contains((byte)0x2B))
+            {
+               await client.DisconnectAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicNameInvalid });
+               return;
+            }
+
+            var topicEnumerator = new TopicLevelEnumerator(resolvedTopicSpan);
+            var levels = 0;
+            var isDepthValid = true;
+
+            while (topicEnumerator.MoveNext())
+            {
+               levels++;
+               if (levels <= 64) continue;
+
+               isDepthValid = false;
+               break;
+            }
+
+            if (!isDepthValid)
             {
                await client.DisconnectAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.TopicNameInvalid });
                return;
@@ -311,7 +338,7 @@ public sealed partial class ServerPacketHandler
                 {
                    var queuedMessage = new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId);
                    localSession.EnqueueOfflineMessage(queuedMessage);
-                   
+
                    return;
                 }
 

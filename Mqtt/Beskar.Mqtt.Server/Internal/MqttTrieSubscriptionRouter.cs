@@ -89,7 +89,7 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
          SubscriptionIdentifier = subscriptionIdentifier
       };
 
-      session.Subscriptions[topicFilter] = options;
+      session.AddOrUpdateSubscription(topicFilter, options);
    }
 
    public bool Unsubscribe(MqttSession session, ReadOnlySpan<byte> topicFilter)
@@ -101,8 +101,7 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
 
       UnsubscribeRecursive(_rootNode, ref enumerator, session, ref removed);
 
-      var alternateLookup = session.Subscriptions.GetAlternateLookup<ReadOnlySpan<byte>>();
-      alternateLookup.Remove(topicFilter);
+      session.RemoveSubscription(topicFilter);
 
       return removed;
    }
@@ -170,26 +169,18 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
    private static bool CheckNodeEmpty(MqttTrieNode node)
    {
       return node.Level is not null
-          && node.Subscriptions.Count == 0
-          && node.Children.Count == 0
-          && node.SingleLevelWildcardChild is null
-          && node.MultiLevelWildcardChild is null;
+             && node.Subscriptions.Count == 0
+             && node.Children.Count == 0
+             && node.SingleLevelWildcardChild is null
+             && node.MultiLevelWildcardChild is null;
    }
 
    public void UnsubscribeAll(MqttSession session)
    {
       using var disposer = _lock.EnterWriteLock();
 
-      var count = session.Subscriptions.Count;
-      if (count == 0) return;
-
-      var filters = new byte[count][];
-      var idx = 0;
-
-      foreach (var key in session.Subscriptions.Keys)
-      {
-         filters[idx++] = key;
-      }
+      var filters = session.GetSubscriptionKeys();
+      if (filters.Count == 0) return;
 
       foreach (var filter in filters)
       {
@@ -198,10 +189,11 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
          UnsubscribeRecursive(_rootNode, ref enumerator, session, ref dummy);
       }
 
-      session.Subscriptions.Clear();
+      session.ClearSubscriptions();
    }
 
-   public void Route<TVisitor>(ReadOnlySpan<byte> topic, ref TVisitor visitor) where TVisitor : struct, ISubscriptionVisitor
+   public void Route<TVisitor>(ReadOnlySpan<byte> topic, ref TVisitor visitor)
+      where TVisitor : struct, ISubscriptionVisitor
    {
       using var disposer = _lock.EnterReadLock();
 

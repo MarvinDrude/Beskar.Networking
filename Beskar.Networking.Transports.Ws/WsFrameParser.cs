@@ -168,7 +168,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          {
             await _cts.CancelAsync();
          }
-         catch { /* Ignored */ }
+         catch
+         {
+            /* Ignored */
+         }
 
          await writer.CompleteAsync();
          await reader.CompleteAsync();
@@ -177,7 +180,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          {
             await _tcpSession.DisposeAsync();
          }
-         catch { /* Ignored */ }
+         catch
+         {
+            /* Ignored */
+         }
       }
    }
 
@@ -278,7 +284,8 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
          if (len64 < 0 || len64 > maxFrameSize)
          {
-            throw new InvalidDataException($"WebSocket frame payload length {len64} is invalid or exceeds the maximum allowed size of {maxFrameSize} bytes.");
+            throw new InvalidDataException(
+               $"WebSocket frame payload length {len64} is invalid or exceeds the maximum allowed size of {maxFrameSize} bytes.");
          }
 
          len = len64;
@@ -286,7 +293,8 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
       if (len < 0 || len > maxFrameSize)
       {
-         throw new InvalidDataException($"WebSocket frame payload length {len} is invalid or exceeds the maximum allowed size of {maxFrameSize} bytes.");
+         throw new InvalidDataException(
+            $"WebSocket frame payload length {len} is invalid or exceeds the maximum allowed size of {maxFrameSize} bytes.");
       }
 
       if (isMasked != expectMask)
@@ -320,64 +328,65 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       return true;
    }
 
-    private static void MaskOrUnmask(Span<byte> target, ReadOnlySpan<byte> source, ReadOnlySpan<byte> maskKey, ref int payloadIndex)
-    {
-       var len = source.Length;
+   private static void MaskOrUnmask(Span<byte> target, ReadOnlySpan<byte> source, ReadOnlySpan<byte> maskKey,
+      ref int payloadIndex)
+   {
+      var len = source.Length;
 
-       if (Vector.IsHardwareAccelerated && len >= Vector<byte>.Count)
-       {
-          var vectorSize = Vector<byte>.Count;
-          Span<byte> vectorMaskBytes = stackalloc byte[vectorSize];
+      if (Vector.IsHardwareAccelerated && len >= Vector<byte>.Count)
+      {
+         var vectorSize = Vector<byte>.Count;
+         Span<byte> vectorMaskBytes = stackalloc byte[vectorSize];
 
-          for (var i = 0; i < vectorSize; i++)
-          {
-             vectorMaskBytes[i] = maskKey[(payloadIndex + i) % 4];
-          }
+         for (var i = 0; i < vectorSize; i++)
+         {
+            vectorMaskBytes[i] = maskKey[(payloadIndex + i) % 4];
+         }
 
-          var maskVector = new Vector<byte>(vectorMaskBytes);
-          var simdLength = len - (len % vectorSize);
+         var maskVector = new Vector<byte>(vectorMaskBytes);
+         var simdLength = len - (len % vectorSize);
 
-          for (var i = 0; i < simdLength; i += vectorSize)
-          {
-             var sourceVec = new Vector<byte>(source.Slice(i, vectorSize));
-             var xorVec = sourceVec ^ maskVector;
-             xorVec.CopyTo(target.Slice(i, vectorSize));
-          }
+         for (var i = 0; i < simdLength; i += vectorSize)
+         {
+            var sourceVec = new Vector<byte>(source.Slice(i, vectorSize));
+            var xorVec = sourceVec ^ maskVector;
+            xorVec.CopyTo(target.Slice(i, vectorSize));
+         }
 
-          payloadIndex += simdLength;
+         payloadIndex += simdLength;
 
-          for (var i = simdLength; i < len; i++)
-          {
-             target[i] = (byte)(source[i] ^ maskKey[payloadIndex++ % 4]);
-          }
-       }
-       else
-       {
-          for (var i = 0; i < len; i++)
-          {
-             target[i] = (byte)(source[i] ^ maskKey[payloadIndex++ % 4]);
-          }
-       }
-    }
+         for (var i = simdLength; i < len; i++)
+         {
+            target[i] = (byte)(source[i] ^ maskKey[payloadIndex++ % 4]);
+         }
+      }
+      else
+      {
+         for (var i = 0; i < len; i++)
+         {
+            target[i] = (byte)(source[i] ^ maskKey[payloadIndex++ % 4]);
+         }
+      }
+   }
 
-     private static void UnmaskAndWrite(PipeWriter writer, ReadOnlySequence<byte> payload, byte[] maskKey)
-     {
-        var payloadIndex = 0;
+   private static void UnmaskAndWrite(PipeWriter writer, ReadOnlySequence<byte> payload, byte[] maskKey)
+   {
+      var payloadIndex = 0;
 
-        foreach (var segment in payload)
-        {
-           var remaining = segment.Span;
-           while (!remaining.IsEmpty)
-           {
-              var chunkSize = Math.Min(remaining.Length, 4096);
-              var targetSpan = writer.GetSpan(chunkSize);
+      foreach (var segment in payload)
+      {
+         var remaining = segment.Span;
+         while (!remaining.IsEmpty)
+         {
+            var chunkSize = Math.Min(remaining.Length, 4096);
+            var targetSpan = writer.GetSpan(chunkSize);
 
-              MaskOrUnmask(targetSpan[..chunkSize], remaining[..chunkSize], maskKey, ref payloadIndex);
-              writer.Advance(chunkSize);
-              remaining = remaining[chunkSize..];
-           }
-        }
-     }
+            MaskOrUnmask(targetSpan[..chunkSize], remaining[..chunkSize], maskKey, ref payloadIndex);
+            writer.Advance(chunkSize);
+            remaining = remaining[chunkSize..];
+         }
+      }
+   }
 
    private static async Task WriteFrameAsync(
       PipeWriter tcpWriter,
@@ -464,36 +473,37 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       await tcpWriter.FlushAsync(ct);
    }
 
-    private async Task PingLoopAsync()
-    {
-       try
-       {
-          while (!_cts.Token.IsCancellationRequested)
-          {
-             await Task.Delay(_keepAliveInterval, _cts.Token);
+   private async Task PingLoopAsync()
+   {
+      try
+      {
+         while (!_cts.Token.IsCancellationRequested)
+         {
+            await Task.Delay(_keepAliveInterval, _cts.Token);
 
-             using (await _writeLock.LockAsync(_cts.Token))
-             {
-                await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Ping, ReadOnlySequence<byte>.Empty, _maskOutgoing, _cts.Token);
-             }
-          }
-       }
-       catch (OperationCanceledException)
-       {
-          // Normal shutdown
-       }
-       catch (Exception ex)
-       {
-          if (_maskOutgoing)
-          {
-             TraceLogger.LogClientError("WS Connection: Keep-alive ping failed: {0}", ex.Message);
-          }
-          else
-          {
-             TraceLogger.LogServerError("WS Connection: Keep-alive ping failed: {0}", ex.Message);
-          }
-       }
-    }
+            using (await _writeLock.LockAsync(_cts.Token))
+            {
+               await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Ping, ReadOnlySequence<byte>.Empty, _maskOutgoing,
+                  _cts.Token);
+            }
+         }
+      }
+      catch (OperationCanceledException)
+      {
+         // Normal shutdown
+      }
+      catch (Exception ex)
+      {
+         if (_maskOutgoing)
+         {
+            TraceLogger.LogClientError("WS Connection: Keep-alive ping failed: {0}", ex.Message);
+         }
+         else
+         {
+            TraceLogger.LogServerError("WS Connection: Keep-alive ping failed: {0}", ex.Message);
+         }
+      }
+   }
 
    public async ValueTask DisposeAsync()
    {
@@ -511,26 +521,35 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          // Ignored
       }
 
-       try
-       {
-          if (_pingTask is not null)
-          {
-             await _pingTask;
-          }
-       }
-       catch { /* Ignored */ }
+      try
+      {
+         if (_pingTask is not null)
+         {
+            await _pingTask;
+         }
+      }
+      catch
+      {
+         /* Ignored */
+      }
 
       try
       {
          await _readTask;
       }
-      catch { /* Ignored */ }
+      catch
+      {
+         /* Ignored */
+      }
 
       try
       {
          await _writeTask;
       }
-      catch { /* Ignored */ }
+      catch
+      {
+         /* Ignored */
+      }
 
       await _inputPipe.Reader.CompleteAsync();
       await _inputPipe.Writer.CompleteAsync();
