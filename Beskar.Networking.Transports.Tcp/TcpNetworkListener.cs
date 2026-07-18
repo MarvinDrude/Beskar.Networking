@@ -92,30 +92,41 @@ public sealed class TcpNetworkListener(
       }
    }
 
-   public ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default)
+   public async ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default)
    {
       try
       {
          TraceLogger.LogServerInfo("TCP Listener: Unbinding and stopping listener socket on {0}", LocalAddress);
-         _acceptCts?.Cancel();
-         _acceptCts?.Dispose();
+         if (_acceptCts is not null)
+         {
+            await _acceptCts.CancelAsync();
 
-         _acceptCts = null;
+            _acceptCts.Dispose();
+            _acceptCts = null;
+         }
 
          var socket = Interlocked.Exchange(ref _listenerSocket, null);
          socket?.Close();
          socket?.Dispose();
 
          _sessionChannel.Writer.TryComplete();
+         while (_sessionChannel.Reader.TryRead(out var result))
+         {
+            if (!result.Failed)
+            {
+               await result.Success.DisposeAsync();
+            }
+         }
 
          TraceLogger.LogServerInfo("TCP Listener: Successfully unbound from {0}", LocalAddress);
          Interlocked.Increment(ref _unbinds);
-         return new ValueTask<VoidResult<NetworkCodeError>>(true);
+
+         return true;
       }
       catch (Exception ex)
       {
          TraceLogger.LogServerError("TCP Listener: Error during unbind from {0}: {1}", LocalAddress, ex.Message);
-         return new ValueTask<VoidResult<NetworkCodeError>>(new NetworkCodeError(-1, ex.Message));
+         return new NetworkCodeError(-1, ex.Message);
       }
    }
 

@@ -125,7 +125,6 @@ public sealed class QuicNetworkListener(
          return new NetworkCodeError(-1, ex.Message);
       }
    }
-
    public async ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default)
    {
       try
@@ -145,6 +144,13 @@ public sealed class QuicNetworkListener(
          }
 
          _sessionChannel.Writer.TryComplete();
+         while (_sessionChannel.Reader.TryRead(out var result))
+         {
+            if (!result.Failed)
+            {
+               await result.Success.DisposeAsync();
+            }
+         }
 
          TraceLogger.LogServerInfo("QUIC Listener: Successfully unbound from {0}", LocalAddress);
          Interlocked.Increment(ref _unbinds);

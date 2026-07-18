@@ -76,8 +76,11 @@ public sealed class StatsTrackingDuplexPipe : IDuplexPipe
       [MethodImpl(MethodImplOptions.AggressiveInlining)]
       public override void CancelPendingRead() => _inner.CancelPendingRead();
 
-      [MethodImpl(MethodImplOptions.AggressiveInlining)]
-      public override void Complete(Exception? exception = null) => _inner.Complete(exception);
+      public override void Complete(Exception? exception = null)
+      {
+         _lastBuffer = default;
+         _inner.Complete(exception);
+      }
    }
 
    private sealed class StatsTrackingPipeWriter(PipeWriter inner, INetworkStream stream) : PipeWriter

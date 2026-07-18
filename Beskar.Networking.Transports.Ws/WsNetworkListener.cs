@@ -97,6 +97,14 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
          await _tcpListener.UnbindAsync(ct);
          _sessionChannel.Writer.TryComplete();
 
+         while (_sessionChannel.Reader.TryRead(out var result))
+         {
+            if (!result.Failed)
+            {
+               await result.Success.DisposeAsync();
+            }
+         }
+
          TraceLogger.LogServerInfo("WS Listener: Successfully unbound from {0}", LocalAddress);
          Interlocked.Increment(ref _unbinds);
          return true;
