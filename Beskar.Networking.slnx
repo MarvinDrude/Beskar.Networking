@@ -13,11 +13,17 @@
   <Folder Name="/Common/">
     <Project Path="Common/Beskar.Networking.Common/Beskar.Networking.Common.csproj" />
   </Folder>
+  <Folder Name="/Documentation/" />
+  <Folder Name="/Documentation/Basics/" />
+  <Folder Name="/Documentation/Mqtt/" />
   <Folder Name="/Examples/" />
   <Folder Name="/Examples/Advanced/">
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Client/Beskar.Adv.Chat.Client.csproj" />
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Common/Beskar.Adv.Chat.Common.csproj" />
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Server/Beskar.Adv.Chat.Server.csproj" />
+  </Folder>
+  <Folder Name="/Examples/Mqtt/">
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.Authentication/Beskar.Mqtt.Example.Authentication.csproj" />
   </Folder>
   <Folder Name="/Examples/Simple/">
     <Project Path="Examples/Simple/Beskar.Bare.PingPongMessage/Beskar.Bare.PingPongMessage.csproj" />

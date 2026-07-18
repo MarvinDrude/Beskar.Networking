@@ -46,6 +46,38 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 
 ---
 
+## API Overview
+
+`Beskar.Networking` offers different levels of abstraction depending on your application needs:
+
+### Low-Level Transports
+
+The core library features protocol-agnostic, low-level interfaces:
+* `INetworkListener` - The Server listener that accepts incoming connections and manages sessions.
+* `INetworkClient` - The client that initiates connections and manages sessions.
+* `INetworkSession` - Represents a single connection between a client and server.
+* `INetworkStream` - Provides transport-agnostic handling (supporting TCP, WebSockets, or QUIC).
+
+These interfaces provide transport-agnostic handling (supporting TCP, WebSockets, or QUIC).
+Because they are low-level, you are responsible for managing execution tasks yourself, such as
+starting your own accept loops, launching read/write tasks, and supervising session lifecycles.
+
+For more details, see the [Basics Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Basics).
+
+### High-Level Managed APIs
+
+For protocols like MQTT, `Beskar.Networking` provides fully managed implementations:
+* **Fully Managed Broker & Client**: Pre-built wrappers that manage the connection, session,
+and stream states automatically.
+* **Event-Driven**: Fully event-driven design with convenient events to react to incoming messages,
+client connections, and subscription actions, eliminating the need to write custom accept loops or pipeline plumbing.
+
+In the future, additional managed APIs for other application protocols will be added here.
+
+For more details, see the [MQTT Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Mqtt).
+
+---
+
 ## NuGet packages overview
 
 | Package / Project | Description                                                                                         | NuGet Link |
@@ -72,7 +104,9 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
 
 ## Documenation
 
-Under development.
+You can find detailed documentation for `Beskar.Networking` [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation).
+
+Or you can find examples directly [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples).
 
 ## Performance Benchmarks
 

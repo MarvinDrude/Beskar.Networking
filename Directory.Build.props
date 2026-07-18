@@ -4,5 +4,34 @@
       <LangVersion>Preview</LangVersion>
       <ImplicitUsings>enable</ImplicitUsings>
       <Nullable>enable</Nullable>
+
+      <Version>1.0.1</Version>
+      <FileVersion>1.0.1</FileVersion>
+      <AssemblyVersion>1.0.0</AssemblyVersion>
    </PropertyGroup>
+
+   <PropertyGroup>
+      <Authors>Marvin Drude</Authors>
+      <PackageLicenseExpression>MIT</PackageLicenseExpression>
+      <PackageReadmeFile>README.md</PackageReadmeFile>
+      <PublishRepositoryUrl>true</PublishRepositoryUrl>
+      <RepositoryUrl>https://github.com/MarvinDrude/Beskar.Networking</RepositoryUrl>
+      <IncludeSymbols>true</IncludeSymbols>
+      <IncludeSource>true</IncludeSource>
+      <EmbedUntrackedSources>true</EmbedUntrackedSources>
+      <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+      <PackageIcon>logo_small.png</PackageIcon>
+   </PropertyGroup>
+
+   <ItemGroup Condition="'$(IsPackable)' == 'true'">
+      <None Include="$(MSBuildThisFileDirectory)Resources\logo_small.png" Pack="true" PackagePath="\" Visible="false" />
+      <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+   </ItemGroup>
+
+   <ItemGroup>
+      <PackageReference Include="Microsoft.SourceLink.GitHub">
+         <PrivateAssets>all</PrivateAssets>
+         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      </PackageReference>
+   </ItemGroup>
 </Project>

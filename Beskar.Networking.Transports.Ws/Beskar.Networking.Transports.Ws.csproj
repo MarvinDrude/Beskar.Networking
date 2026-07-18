@@ -6,6 +6,12 @@
       <Nullable>enable</Nullable>
    </PropertyGroup>
 
+   <PropertyGroup>
+      <Title>Beskar.Networking.Transports.Ws</Title>
+      <Description>Underlying WebSocket Implementation for Beskar.Networking.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
    <ItemGroup>
      <ProjectReference Include="..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
      <ProjectReference Include="..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj" />
