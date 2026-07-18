@@ -17,6 +17,7 @@
   <Folder Name="/Documentation/Basics/" />
   <Folder Name="/Documentation/Mqtt/">
     <File Path="Documentation/Mqtt/Authentication.md" />
+    <File Path="Documentation/Mqtt/PubSub.md" />
   </Folder>
   <Folder Name="/Examples/" />
   <Folder Name="/Examples/Advanced/">
@@ -26,6 +27,7 @@
   </Folder>
   <Folder Name="/Examples/Mqtt/">
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.Authentication/Beskar.Mqtt.Example.Authentication.csproj" />
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.SimplePubSub/Beskar.Mqtt.Example.SimplePubSub.csproj" />
   </Folder>
   <Folder Name="/Examples/Simple/">
     <Project Path="Examples/Simple/Beskar.Bare.PingPongMessage/Beskar.Bare.PingPongMessage.csproj" />
