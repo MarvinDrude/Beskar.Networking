@@ -22,25 +22,20 @@ namespace Beskar.Mqtt.Common.Tests.Internal;
 
 public class MqttClientEventTests
 {
-   private static int _nextPort = 15000;
-   private static int GetFreePort()
-   {
-      return Interlocked.Increment(ref _nextPort);
-   }
-
    [Test]
    public async Task Client_ConnectionFlow_TriggersConnectingAndConnectedEvents()
    {
-      var port = GetFreePort();
 
       // Start the server
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Create client
       var client = (MqttClient)MqttClientFactory.CreateTcp();
@@ -85,16 +80,17 @@ public class MqttClientEventTests
    [Test]
    public async Task Client_PublishAndSubscribe_TriggersOnMessageReceive()
    {
-      var port = GetFreePort();
 
       // Start the server
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Create client
       var client = (MqttClient)MqttClientFactory.CreateTcp();
@@ -149,16 +145,17 @@ public class MqttClientEventTests
    [Test]
    public async Task Client_DisconnectAsync_TriggersOnClientDisconnected()
    {
-      var port = GetFreePort();
 
       // Start the server
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Create client
       var client = (MqttClient)MqttClientFactory.CreateTcp();
@@ -227,16 +224,17 @@ public class MqttClientEventTests
    [Test]
    public async Task Client_QuickReconnect_DoesNotHijackNewConnection()
    {
-      var port = GetFreePort();
 
       // Start the server
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Create client
       var client = (MqttClient)MqttClientFactory.CreateTcp();

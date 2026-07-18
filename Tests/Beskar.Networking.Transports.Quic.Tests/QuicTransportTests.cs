@@ -8,12 +8,6 @@ namespace Beskar.Networking.Transports.Quic.Tests;
 
 public class QuicTransportTests
 {
-   private static int GetFreePort()
-   {
-      using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-      socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-      return ((IPEndPoint)socket.LocalEndPoint!).Port;
-   }
 
    [Test]
    public async Task QuicClientServer_BidirectionalStream_DataExchangedSuccessfully()
@@ -21,9 +15,6 @@ public class QuicTransportTests
       if (!QuicConnection.IsSupported)
          // Skip the test if QUIC is not supported on the host platform
          return;
-
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
 
       var clientSslOptions = new SslClientAuthenticationOptions
       {
@@ -36,12 +27,12 @@ public class QuicTransportTests
          SslClientOptions = clientSslOptions
       };
 
-      var listener = new QuicNetworkListener(endPoint, options);
+      var listener = new QuicNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
 
       var client = new QuicNetworkClient(options);
-      var connectResult = await client.ConnectAsync(endPoint);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
       await Assert.That(connectResult.Failed).IsFalse();
 
       var acceptResult = await listener.AcceptSessionAsync();
@@ -103,9 +94,6 @@ public class QuicTransportTests
          // Skip the test if QUIC is not supported on the host platform
          return;
 
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
       var clientSslOptions = new SslClientAuthenticationOptions
       {
          ApplicationProtocols = [new SslApplicationProtocol("beskar-quic")],
@@ -117,12 +105,12 @@ public class QuicTransportTests
          SslClientOptions = clientSslOptions
       };
 
-      var listener = new QuicNetworkListener(endPoint, options);
+      var listener = new QuicNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
 
       var client = new QuicNetworkClient(options);
-      var connectResult = await client.ConnectAsync(endPoint);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
       await Assert.That(connectResult.Failed).IsFalse();
 
       var acceptResult = await listener.AcceptSessionAsync();

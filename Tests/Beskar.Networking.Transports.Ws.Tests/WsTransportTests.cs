@@ -6,13 +6,6 @@ namespace Beskar.Networking.Transports.Ws.Tests;
 
 public class WsTransportTests
 {
-   private static int GetFreePort()
-   {
-      using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-      socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-      return ((IPEndPoint)socket.LocalEndPoint!).Port;
-   }
-
    [Test]
    public async Task ComputeAcceptKey_WithStandardRfcKey_ReturnsExpectedBase64Hash()
    {
@@ -27,21 +20,18 @@ public class WsTransportTests
    [Test]
    public async Task WsClientServer_LoopbackConnection_HandshakeAndDataExchangedSuccessfully()
    {
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
       var options = new WsTransportOptions
       {
          Path = "/chat",
          Subprotocol = "chat-proto"
       };
 
-      var listener = new WsNetworkListener(endPoint, options);
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
 
       var client = new WsNetworkClient(options);
-      var connectResult = await client.ConnectAsync(endPoint);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
       await Assert.That(connectResult.Failed).IsFalse();
 
       var acceptResult = await listener.AcceptSessionAsync();
@@ -168,21 +158,19 @@ public class WsTransportTests
    [Test]
    public async Task WsHandshake_WithHeadersExceedingLimit_AbortsConnection()
    {
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
       var options = new WsTransportOptions
       {
          Path = "/chat",
          MaxHeaderSize = 120 // Keep it very small
       };
 
-      var listener = new WsNetworkListener(endPoint, options);
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
 
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
       using var tcpClient = new TcpClient();
-      await tcpClient.ConnectAsync(IPAddress.Loopback, port);
+      await tcpClient.ConnectAsync(IPAddress.Loopback, actualPort);
       await using var stream = tcpClient.GetStream();
 
       var longHeaderRequest = "GET /chat HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSome-Long-Header: " + new string('A', 200) + "\r\n\r\n";
@@ -200,21 +188,18 @@ public class WsTransportTests
    [Test]
    public async Task WsFrameParser_WithFrameSizeExceedingLimit_ClosesSession()
    {
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
       var options = new WsTransportOptions
       {
          Path = "/chat",
          MaxFrameSize = 100 // Keep it very small
       };
 
-      var listener = new WsNetworkListener(endPoint, options);
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
 
       var client = new WsNetworkClient(options);
-      var connectResult = await client.ConnectAsync(endPoint);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
       await Assert.That(connectResult.Failed).IsFalse();
 
       var acceptResult = await listener.AcceptSessionAsync();
@@ -247,11 +232,9 @@ public class WsTransportTests
    [Test]
    public async Task WsClient_ReceivesMaskedFrame_ClosesSession()
    {
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
-      using var tcpListener = new TcpListener(endPoint);
+      using var tcpListener = new TcpListener(new IPEndPoint(IPAddress.Loopback, 0));
       tcpListener.Start();
+      var actualEndPoint = tcpListener.LocalEndpoint;
 
       var clientOptions = new WsTransportOptions
       {
@@ -259,7 +242,7 @@ public class WsTransportTests
       };
       var client = new WsNetworkClient(clientOptions);
 
-      var connectTask = client.ConnectAsync(endPoint).AsTask();
+      var connectTask = client.ConnectAsync(actualEndPoint).AsTask();
       using var serverSocket = await tcpListener.AcceptSocketAsync();
 
       var buffer = new byte[1024];
@@ -291,16 +274,14 @@ public class WsTransportTests
    [Test]
    public async Task WsServer_ReceivesUnmaskedFrame_ClosesSession()
    {
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
       var options = new WsTransportOptions { Path = "/chat" };
-      var listener = new WsNetworkListener(endPoint, options);
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
 
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
       using var tcpClient = new TcpClient();
-      await tcpClient.ConnectAsync(IPAddress.Loopback, port);
+      await tcpClient.ConnectAsync(IPAddress.Loopback, actualPort);
       await using var stream = tcpClient.GetStream();
 
       var handshakeRequest = "GET /chat HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";

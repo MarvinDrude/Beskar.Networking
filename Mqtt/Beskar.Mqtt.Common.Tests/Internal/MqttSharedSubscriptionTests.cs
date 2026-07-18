@@ -9,23 +9,17 @@ using Beskar.Mqtt.Server;
 namespace Beskar.Mqtt.Common.Tests.Internal;
 
 public class MqttSharedSubscriptionTests
-{
-   private static int _nextPort = 14000;
-   private static int GetFreePort()
-   {
-      return Interlocked.Increment(ref _nextPort);
-   }
-
-   [Test]
+{[Test]
    public async Task Subscribe_SharedSubscription_V5_ShouldReturnSharedSubscriptionsNotSupported()
    {
-      var port = GetFreePort();
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var client = MqttClientFactory.CreateTcp();
       await client.ConnectAsync(new ConnectOptions
@@ -47,13 +41,14 @@ public class MqttSharedSubscriptionTests
    [Test]
    public async Task Subscribe_SharedSubscription_V3_ShouldReturnUnspecifiedError()
    {
-      var port = GetFreePort();
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var client = MqttClientFactory.CreateTcp();
       await client.ConnectAsync(new ConnectOptions

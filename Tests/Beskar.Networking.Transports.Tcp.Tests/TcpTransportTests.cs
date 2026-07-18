@@ -8,22 +8,12 @@ namespace Beskar.Networking.Transports.Tcp.Tests;
 
 public class TcpTransportTests
 {
-   private static int GetFreePort()
-   {
-      using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-      socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-
-      return ((IPEndPoint)socket.LocalEndPoint!).Port;
-   }
 
    [Test]
    public async Task TcpClientServer_StandardConnection_DataExchangedSuccessfully()
    {
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
       var options = new TcpTransportOptions();
-      var listener = new TcpNetworkListener(endPoint, options);
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
 
       // Assert initially unbound
       await Assert.That(listener.IsBound).IsFalse();
@@ -37,7 +27,7 @@ public class TcpTransportTests
       // Connect client
       var client = new TcpNetworkClient(options);
       await Assert.That(client.IsConnected).IsFalse();
-      var connectResult = await client.ConnectAsync(endPoint);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
       await Assert.That(connectResult.Failed).IsFalse();
       await Assert.That(client.IsConnected).IsTrue();
       await Assert.That(client.Stats.ConnectionsEstablished).IsEqualTo(1);
@@ -104,9 +94,6 @@ public class TcpTransportTests
    [Test]
    public async Task TcpClientServer_SslConnection_DataExchangedSuccessfully()
    {
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
       using var certificate = CertificateUtility.GenerateSelfSignedCertificate();
 
       var serverSslOptions = new SslServerAuthenticationOptions
@@ -128,12 +115,12 @@ public class TcpTransportTests
          SslClientOptions = clientSslOptions
       };
 
-      var listener = new TcpNetworkListener(endPoint, options);
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
 
       var client = new TcpNetworkClient(options);
-      var connectResult = await client.ConnectAsync(endPoint);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
       await Assert.That(connectResult.Failed).IsFalse();
 
       var acceptResult = await listener.AcceptSessionAsync();
@@ -177,17 +164,14 @@ public class TcpTransportTests
    [Test]
    public async Task TcpClient_DisconnectAsync_ClosesSessionAndCancelsSessionClosedToken()
    {
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
       var options = new TcpTransportOptions();
-      var listener = new TcpNetworkListener(endPoint, options);
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
 
       var bindResult = await listener.BindAsync();
       await Assert.That(bindResult.Failed).IsFalse();
 
       var client = new TcpNetworkClient(options);
-      var connectResult = await client.ConnectAsync(endPoint);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
       await Assert.That(connectResult.Failed).IsFalse();
 
       var clientSession = connectResult.Success!;
@@ -205,11 +189,8 @@ public class TcpTransportTests
    [Test]
    public async Task TcpClientServer_StandardConnection_StatsTrackedCorrectly()
    {
-      var port = GetFreePort();
-      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-
       var options = new TcpTransportOptions();
-      var listener = new TcpNetworkListener(endPoint, options);
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
 
       // Bind listener
       var bindResult = await listener.BindAsync();
@@ -217,7 +198,7 @@ public class TcpTransportTests
 
       // Connect client
       var client = new TcpNetworkClient(options);
-      var connectResult = await client.ConnectAsync(endPoint);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
       await Assert.That(connectResult.Failed).IsFalse();
 
       // Accept server session

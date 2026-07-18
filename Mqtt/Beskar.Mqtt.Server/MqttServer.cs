@@ -52,6 +52,8 @@ public sealed partial class MqttServer : IAsyncDisposable
    /// </summary>
    public ServerEvents Events { get; } = new();
 
+   public IReadOnlyList<INetworkListener> Listeners => _listeners;
+
    public MqttRetainedMessages RetainedMessages { get; } = new();
    internal MqttTrieSubscriptionRouter SubscriptionRouter { get; } = new();
    internal MqttClientSessions ClientSessions { get; }

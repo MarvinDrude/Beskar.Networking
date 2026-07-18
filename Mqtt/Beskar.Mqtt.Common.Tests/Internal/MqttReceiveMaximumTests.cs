@@ -15,16 +15,9 @@ namespace Beskar.Mqtt.Common.Tests.Internal;
 
 public class MqttReceiveMaximumTests
 {
-   private static int _nextPort = 13000;
-   private static int GetFreePort()
-   {
-      return Interlocked.Increment(ref _nextPort);
-   }
-
    [Test]
    public async Task ReceiveMaximum_ClientThrottling_ShouldThrottleQoS1()
    {
-      var port = GetFreePort();
 
       // Start server with ReceiveMaximum = 1
       var serverOptions = new MqttServerOptions
@@ -32,11 +25,13 @@ public class MqttReceiveMaximumTests
          ReceiveMaximum = 1
       };
       await using var server = MqttServerFactory.CreateBuilder(serverOptions)
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var client = (MqttClient)MqttClientFactory.CreateTcp();
       await client.ConnectAsync(new ConnectOptions
@@ -88,14 +83,15 @@ public class MqttReceiveMaximumTests
    [Test]
    public async Task ReceiveMaximum_ServerThrottling_ShouldQueueAndDeliverSubsequentMessages()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Subscriber connects with ReceiveMaximum = 1
       var subscriber = (MqttClient)MqttClientFactory.CreateTcp();
@@ -194,7 +190,6 @@ public class MqttReceiveMaximumTests
    [Test]
    public async Task ReceiveMaximum_ServerEnforcement_Exceeded_ShouldDisconnectClient()
    {
-      var port = GetFreePort();
 
       // Server ReceiveMaximum = 1
       var serverOptions = new MqttServerOptions
@@ -202,11 +197,13 @@ public class MqttReceiveMaximumTests
          ReceiveMaximum = 1
       };
       await using var server = MqttServerFactory.CreateBuilder(serverOptions)
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var client = (MqttClient)MqttClientFactory.CreateTcp();
 
@@ -245,14 +242,15 @@ public class MqttReceiveMaximumTests
    [Test]
    public async Task ReceiveMaximum_ClientEnforcement_Exceeded_ShouldDisconnect()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = (MqttClient)MqttClientFactory.CreateTcp();
       var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -315,7 +313,6 @@ public class MqttReceiveMaximumTests
    [Test]
    public async Task ReceiveMaximum_V3_ShouldNotEnforceLimits()
    {
-      var port = GetFreePort();
 
       // Start server with ReceiveMaximum = 1
       var serverOptions = new MqttServerOptions
@@ -323,11 +320,13 @@ public class MqttReceiveMaximumTests
          ReceiveMaximum = 1
       };
       await using var server = MqttServerFactory.CreateBuilder(serverOptions)
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Connect client with MQTT v3.1.1
       var client = (MqttClient)MqttClientFactory.CreateTcp();
@@ -381,7 +380,6 @@ public class MqttReceiveMaximumTests
    [Test]
    public async Task ReceiveMaximum_V3_ServerEnforcement_ShouldNotDisconnectClient()
    {
-      var port = GetFreePort();
 
       // Server ReceiveMaximum = 1
       var serverOptions = new MqttServerOptions
@@ -389,11 +387,13 @@ public class MqttReceiveMaximumTests
          ReceiveMaximum = 1
       };
       await using var server = MqttServerFactory.CreateBuilder(serverOptions)
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var client = (MqttClient)MqttClientFactory.CreateTcp();
 
@@ -435,14 +435,15 @@ public class MqttReceiveMaximumTests
    [Test]
    public async Task ReceiveMaximum_ClientEnforcement_ShouldSucceed_WhenReceivingManyMessagesConsecutively()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = (MqttClient)MqttClientFactory.CreateTcp();
       var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -506,14 +507,15 @@ public class MqttReceiveMaximumTests
    [Test]
    public async Task ReceiveMaximum_ClientEnforcement_QoS2_ShouldSucceed_WhenReceivingManyMessagesConsecutively()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = (MqttClient)MqttClientFactory.CreateTcp();
       var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -576,14 +578,15 @@ public class MqttReceiveMaximumTests
    [Test]
    public async Task ReceiveMaximum_ClientEnforcement_QoS2_FailurePath_ShouldReleaseSlot()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = (MqttClient)MqttClientFactory.CreateTcp();
       var disconnectTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -649,14 +652,15 @@ public class MqttReceiveMaximumTests
    [Test]
    public async Task ReceiveMaximum_ServerEnforcement_QoS2_FailurePath_ShouldNotSendPubRel()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       await server.StartAsync();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Subscriber client
       var subscriber = (MqttClient)MqttClientFactory.CreateTcp();

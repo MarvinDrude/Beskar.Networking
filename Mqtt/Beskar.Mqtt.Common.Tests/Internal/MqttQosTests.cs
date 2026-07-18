@@ -15,24 +15,19 @@ namespace Beskar.Mqtt.Common.Tests.Internal;
 
 public class MqttQosTests
 {
-   private static int _nextPort = 12000;
-   private static int GetFreePort()
-   {
-      return Interlocked.Increment(ref _nextPort);
-   }
-
    [Test]
    public async Task QoS0_PublishAndSubscribe_ShouldDeliverMessage()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = MqttClientFactory.CreateTcp();
       await subscriber.ConnectAsync(new ConnectOptions
@@ -78,15 +73,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS1_PublishAndSubscribe_ShouldDeliverMessage()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = MqttClientFactory.CreateTcp();
       await subscriber.ConnectAsync(new ConnectOptions
@@ -132,15 +128,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS2_PublishAndSubscribe_ShouldDeliverMessage()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = MqttClientFactory.CreateTcp();
       await subscriber.ConnectAsync(new ConnectOptions
@@ -186,15 +183,16 @@ public class MqttQosTests
    [Test]
    public async Task QoSDowngrade_PublishQoS2_SubscribeQoS0_ShouldDowngradeToQoS0()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = MqttClientFactory.CreateTcp();
       await subscriber.ConnectAsync(new ConnectOptions
@@ -240,15 +238,16 @@ public class MqttQosTests
    [Test]
    public async Task QoSUpgradeNotAllowed_PublishQoS0_SubscribeQoS2_ShouldDeliverAsQoS0()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = MqttClientFactory.CreateTcp();
       await subscriber.ConnectAsync(new ConnectOptions
@@ -294,15 +293,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS_RetainedMessage_ShouldDeliverOnSubscribe()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var publisher = MqttClientFactory.CreateTcp();
       await publisher.ConnectAsync(new ConnectOptions
@@ -353,15 +353,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS_SubscriptionIdentifier_ShouldBePropagated()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = MqttClientFactory.CreateTcp();
       await subscriber.ConnectAsync(new ConnectOptions
@@ -410,15 +411,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS_UserProperties_ShouldBePropagated()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = MqttClientFactory.CreateTcp();
       await subscriber.ConnectAsync(new ConnectOptions
@@ -474,15 +476,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS_WildcardSubscription_ShouldDeliverMessage()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var subscriber = MqttClientFactory.CreateTcp();
       await subscriber.ConnectAsync(new ConnectOptions
@@ -527,15 +530,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS_noLocal_ShouldNotForwardBackToPublisher()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Subscriber/Publisher A
       var clientA = MqttClientFactory.CreateTcp();
@@ -600,7 +604,6 @@ public class MqttQosTests
    [Test]
    public async Task QoS_CleanStartFalse_WithSessionExpiry_ShouldQueueOfflineMessages()
    {
-      var port = GetFreePort();
 
       // Explicitly enable persistent session support on the server
       var serverOptions = new MqttServerOptions
@@ -609,12 +612,14 @@ public class MqttQosTests
       };
 
       await using var server = MqttServerFactory.CreateBuilder(serverOptions)
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var clientId = Encoding.UTF8.GetBytes("client-persistent-id");
       MqttSession? sessionA = null;
@@ -703,15 +708,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS_RetainHandling_DoNotSend_ShouldNotDeliverRetainedMessage()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // 1. Publish retained message
       var publisher = MqttClientFactory.CreateTcp();
@@ -749,15 +755,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS_RetainHandling_SendOnNewSubscriptionOnly_ShouldDeliverOnNewSubscription()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // 1. Publish retained message
       var publisher = MqttClientFactory.CreateTcp();
@@ -795,15 +802,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS_TopicAlias_EndToEnd_ShouldDeliverMessagesWithAlias()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // 1. Subscribe
       var subscriber = MqttClientFactory.CreateTcp();
@@ -868,18 +876,19 @@ public class MqttQosTests
    [Test]
     public async Task QoS_CleanStartFalse_WithSessionExpiryUpdateToZeroOnDisconnect_ShouldDiscardSessionImmediately()
     {
-       var port = GetFreePort();
 
        // Enable persistent sessions
        var serverOptions = new MqttServerOptions { SupportPersistentSessions = true };
 
       await using var server = MqttServerFactory.CreateBuilder(serverOptions)
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var clientId = Encoding.UTF8.GetBytes("client-expiry-update-id");
       MqttSession? sessionA = null;
@@ -961,18 +970,19 @@ public class MqttQosTests
    [Test]
    public async Task Client_DisconnectAsync_ShouldGracefullyDeliverDisconnectPacketWithProperties()
    {
-      var port = GetFreePort();
 
       // Enable persistent sessions on server
       var serverOptions = new MqttServerOptions { SupportPersistentSessions = true };
 
       await using var server = MqttServerFactory.CreateBuilder(serverOptions)
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var disconnectTcs = new TaskCompletionSource<DisconnectOptions>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -1013,15 +1023,16 @@ public class MqttQosTests
    [Test]
    public async Task QoS_RetainHandling_SendOnNewSubscriptionOnly_WithExistingSubscription_ShouldNotDeliverMessage()
    {
-      var port = GetFreePort();
 
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // 1. Publish retained message
       var publisher = MqttClientFactory.CreateTcp();
@@ -1078,14 +1089,15 @@ public class MqttQosTests
    [Test]
    public async Task WillMessage_UngracefulDisconnect_ShouldPublishImmediately()
    {
-      var port = GetFreePort();
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -1125,14 +1137,15 @@ public class MqttQosTests
    [Test]
    public async Task WillMessage_WithWillDelay_UngracefulDisconnect_ShouldDelayAndCancelOnReconnect()
    {
-      var port = GetFreePort();
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -1182,14 +1195,15 @@ public class MqttQosTests
    [Test]
    public async Task WillMessage_WithWillDelay_UngracefulDisconnect_ShouldPublishAfterDelay()
    {
-      var port = GetFreePort();
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 

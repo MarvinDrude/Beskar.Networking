@@ -19,21 +19,13 @@ namespace Beskar.Mqtt.Common.Tests.Internal;
 
 public class MqttAuthenticationTests
 {
-   private static int GetFreePort()
-   {
-      using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-      socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-      return ((IPEndPoint)socket.LocalEndPoint!).Port;
-   }
-
    [Test]
    public async Task ChallengeResponse_Success_ShouldConnect()
    {
-      var port = GetFreePort();
 
       // Start the server
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -79,6 +71,8 @@ public class MqttAuthenticationTests
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
 
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
+
       // Create and connect client
       var client = MqttClientFactory.CreateTcp();
       var connectOptions = new ConnectOptions
@@ -99,11 +93,10 @@ public class MqttAuthenticationTests
    [Test]
    public async Task ChallengeResponse_WrongResponse_ShouldFailToConnect()
    {
-      var port = GetFreePort();
 
       // Start the server
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -141,6 +134,8 @@ public class MqttAuthenticationTests
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
 
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
+
       // Create and connect client with WrongAuthHandler (sends back unchanged bytes instead of adding 1)
       var client = MqttClientFactory.CreateTcp();
       var connectOptions = new ConnectOptions
@@ -158,11 +153,10 @@ public class MqttAuthenticationTests
    [Test]
    public async Task ChallengeResponse_UnsupportedMethod_ShouldFailToConnect()
    {
-      var port = GetFreePort();
 
       // Start the server
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -181,6 +175,8 @@ public class MqttAuthenticationTests
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Create and connect client with unsupported method name "UnsupportedMethod"
       var client = MqttClientFactory.CreateTcp();
@@ -236,11 +232,10 @@ public class MqttAuthenticationTests
    [Test]
    public async Task MqttV3_ConnectWithValidCredentials_ShouldConnectSuccessfully()
    {
-      var port = GetFreePort();
 
       // Start the server
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -270,6 +265,8 @@ public class MqttAuthenticationTests
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
 
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
+
       // Create and connect client using MQTT v3.1.1
       var client = MqttClientFactory.CreateTcp();
       var connectOptions = new ConnectOptions
@@ -290,11 +287,10 @@ public class MqttAuthenticationTests
    [Test]
    public async Task MqttV3_ConnectWithInvalidCredentials_ShouldFailToConnect()
    {
-      var port = GetFreePort();
 
       // Start the server
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(port)
+         .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -316,6 +312,8 @@ public class MqttAuthenticationTests
 
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
 
       // Create and connect client using MQTT v3.1.1 with wrong credentials
       var client = MqttClientFactory.CreateTcp();
