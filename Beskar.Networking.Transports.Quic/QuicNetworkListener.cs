@@ -208,6 +208,8 @@ public sealed class QuicNetworkListener(
             }
             TraceLogger.LogServerError("QUIC Listener: QuicException accepting connection (Code: {0}): {1}", (int)ex.QuicError, ex.Message);
             WriteToSessionChannel(new NetworkCodeError((int)ex.QuicError, $"Listener acceptance error: {ex.Message}"));
+
+            try { await Task.Delay(100, token); } catch (OperationCanceledException) { break; }
          }
          catch (Exception ex)
          {
@@ -217,6 +219,8 @@ public sealed class QuicNetworkListener(
             }
             TraceLogger.LogServerError("QUIC Listener: Unexpected error accepting connection: {0}", ex.Message);
             WriteToSessionChannel(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
+
+            try { await Task.Delay(100, token); } catch (OperationCanceledException) { break; }
          }
       }
    }

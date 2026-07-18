@@ -32,6 +32,9 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    private int _disposed;
    private byte _currentFrameOpcode;
 
+   private readonly TimeSpan _keepAliveInterval;
+   private readonly Task? _pingTask;
+
    public PipeReader Input => _inputPipe.Reader;
    public PipeWriter Output => _outputPipe.Writer;
 
@@ -42,9 +45,11 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       _maskOutgoing = maskOutgoing;
       _maxFrameSize = options.MaxFrameSize;
       _expectMask = !maskOutgoing;
+      _keepAliveInterval = options.KeepAliveInterval;
 
       _readTask = Task.Run(ReadLoopAsync);
       _writeTask = Task.Run(WriteLoopAsync);
+      _pingTask = _keepAliveInterval > TimeSpan.Zero ? Task.Run(PingLoopAsync) : null;
    }
 
    private async Task ReadLoopAsync()
@@ -459,6 +464,37 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       await tcpWriter.FlushAsync(ct);
    }
 
+    private async Task PingLoopAsync()
+    {
+       try
+       {
+          while (!_cts.Token.IsCancellationRequested)
+          {
+             await Task.Delay(_keepAliveInterval, _cts.Token);
+
+             using (await _writeLock.LockAsync(_cts.Token))
+             {
+                await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Ping, ReadOnlySequence<byte>.Empty, _maskOutgoing, _cts.Token);
+             }
+          }
+       }
+       catch (OperationCanceledException)
+       {
+          // Normal shutdown
+       }
+       catch (Exception ex)
+       {
+          if (_maskOutgoing)
+          {
+             TraceLogger.LogClientError("WS Connection: Keep-alive ping failed: {0}", ex.Message);
+          }
+          else
+          {
+             TraceLogger.LogServerError("WS Connection: Keep-alive ping failed: {0}", ex.Message);
+          }
+       }
+    }
+
    public async ValueTask DisposeAsync()
    {
       if (Interlocked.Exchange(ref _disposed, 1) == 1)
@@ -474,6 +510,15 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       {
          // Ignored
       }
+
+       try
+       {
+          if (_pingTask is not null)
+          {
+             await _pingTask;
+          }
+       }
+       catch { /* Ignored */ }
 
       try
       {

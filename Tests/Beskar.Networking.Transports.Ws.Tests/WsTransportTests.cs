@@ -308,4 +308,176 @@ public class WsTransportTests
 
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task WsServer_ReceivesFragmentedFrame_ConcatenatesSuccessfully()
+   {
+      var options = new WsTransportOptions { Path = "/chat" };
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, actualPort);
+      await using var stream = tcpClient.GetStream();
+
+      var handshakeRequest = "GET /chat HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+      await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(handshakeRequest));
+      await stream.FlushAsync();
+
+      var buffer = new byte[1024];
+      var read = await stream.ReadAsync(buffer);
+      var responseText = System.Text.Encoding.ASCII.GetString(buffer, 0, read);
+      await Assert.That(responseText).Contains("101 Switching Protocols");
+
+      var acceptSessionTask = listener.AcceptSessionAsync().AsTask();
+
+      // Frame 1: Fin = false, Opcode = Binary (2), Length = 6, Masked, Mask key = 0,0,0,0
+      var frame1 = new byte[] { 0x02, 0x86, 0x00, 0x00, 0x00, 0x00, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20 }; // "Hello "
+      await stream.WriteAsync(frame1);
+      await stream.FlushAsync();
+
+      // Frame 2: Fin = true, Opcode = Continuation (0), Length = 6, Masked, Mask key = 0,0,0,0
+      var frame2 = new byte[] { 0x80, 0x86, 0x00, 0x00, 0x00, 0x00, 0x57, 0x6F, 0x72, 0x6C, 0x64, 0x21 }; // "World!"
+      await stream.WriteAsync(frame2);
+      await stream.FlushAsync();
+
+      var serverSession = (await acceptSessionTask).Success!;
+      var serverStreamResult = await serverSession.AcceptStreamAsync();
+      var serverStream = serverStreamResult.Success!;
+
+      var receivedBytes = new List<byte>();
+      while (receivedBytes.Count < 12)
+      {
+         var readResult = await serverStream.Transport.Input.ReadAsync();
+         receivedBytes.AddRange(readResult.Buffer.ToArray());
+         serverStream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+      }
+
+      var receivedText = System.Text.Encoding.ASCII.GetString(receivedBytes.ToArray());
+      await Assert.That(receivedText).IsEqualTo("Hello World!");
+
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsServer_ReceivesUnexpectedContinuationFrame_ClosesSession()
+   {
+      var options = new WsTransportOptions { Path = "/chat" };
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, actualPort);
+      await using var stream = tcpClient.GetStream();
+
+      var handshakeRequest = "GET /chat HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+      await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(handshakeRequest));
+      await stream.FlushAsync();
+
+      var buffer = new byte[1024];
+      var read = await stream.ReadAsync(buffer);
+      var responseText = System.Text.Encoding.ASCII.GetString(buffer, 0, read);
+      await Assert.That(responseText).Contains("101 Switching Protocols");
+
+      // Send unexpected continuation frame (Opcode = 0) without prior start frame
+      var continuationFrame = new byte[] { 0x80, 0x85, 0x00, 0x00, 0x00, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F }; // "hello"
+      await stream.WriteAsync(continuationFrame);
+      await stream.FlushAsync();
+
+      var readBytes = await stream.ReadAsync(buffer);
+      await Assert.That(readBytes).IsEqualTo(0); // Expect connection closed by server due to protocol error
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      if (!acceptResult.Failed)
+      {
+         await acceptResult.Success!.DisposeAsync();
+      }
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsServer_ReceivesInterleavedStartingFrame_ClosesSession()
+   {
+      var options = new WsTransportOptions { Path = "/chat" };
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, actualPort);
+      await using var stream = tcpClient.GetStream();
+
+      var handshakeRequest = "GET /chat HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+      await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(handshakeRequest));
+      await stream.FlushAsync();
+
+      var buffer = new byte[1024];
+      var read = await stream.ReadAsync(buffer);
+      var responseText = System.Text.Encoding.ASCII.GetString(buffer, 0, read);
+      await Assert.That(responseText).Contains("101 Switching Protocols");
+
+      // Frame 1: Fin = false, Opcode = Binary (2)
+      var frame1 = new byte[] { 0x02, 0x85, 0x00, 0x00, 0x00, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F }; // "hello"
+      await stream.WriteAsync(frame1);
+      await stream.FlushAsync();
+
+      // Frame 2: Fin = false, Opcode = Text (1) - Violates RFC by starting new message before finishing previous
+      var frame2 = new byte[] { 0x01, 0x85, 0x00, 0x00, 0x00, 0x00, 0x77, 0x6F, 0x72, 0x6C, 0x64 }; // "world"
+      await stream.WriteAsync(frame2);
+      await stream.FlushAsync();
+
+      var readBytes = await stream.ReadAsync(buffer);
+      await Assert.That(readBytes).IsEqualTo(0); // Expect connection closed by server due to protocol error
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      if (!acceptResult.Failed)
+      {
+         await acceptResult.Success!.DisposeAsync();
+      }
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsClientServer_KeepAliveEnabled_PingsAndPongsSuccessfully()
+   {
+      var options = new WsTransportOptions
+      {
+         Path = "/chat",
+         KeepAliveInterval = TimeSpan.FromMilliseconds(100) // Ping frequently for test
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      // Just wait long enough for multiple pings and pongs to be exchanged in the background
+      await Task.Delay(500);
+
+      // Verify that no connections were closed/errored due to the background pings/pongs
+      await Assert.That(clientSession.SessionClosedToken.IsCancellationRequested).IsFalse();
+      await Assert.That(serverSession.SessionClosedToken.IsCancellationRequested).IsFalse();
+
+      // Cleanup
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
 }

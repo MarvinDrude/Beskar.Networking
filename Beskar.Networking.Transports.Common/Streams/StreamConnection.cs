@@ -22,6 +22,8 @@ public sealed class StreamConnection(
    private CancellationTokenSource _cts = new();
 
    private bool _stopped;
+   private bool _isDisposed;
+
    private readonly Lock _lock = new();
 
    public PipeReader Input => _readPipe.Reader;
@@ -161,6 +163,12 @@ public sealed class StreamConnection(
 
    public async ValueTask DisposeAsync()
    {
+      lock (_lock)
+      {
+         if (_isDisposed) return;
+         _isDisposed = true;
+      }
+
       await StopAsync();
       _cts.Dispose();
    }
@@ -178,6 +186,7 @@ public sealed class StreamConnection(
 
       InnerStream = null;
       _stopped = false;
+      _isDisposed = false;
 
       _cts.Dispose();
       _cts = new CancellationTokenSource();
