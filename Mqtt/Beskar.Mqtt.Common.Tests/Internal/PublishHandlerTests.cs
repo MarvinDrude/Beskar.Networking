@@ -86,9 +86,6 @@ public class PublishHandlerTests
          false, false, RetainHandlingType.SendAtSubscription, 0);
 
       await handler.ExecuteAsync(stream, usePacket);
-
-      // Wait a tiny bit since dispatch runs asynchronously
-      await Task.Delay(10);
    }
 
    [Test]
@@ -194,9 +191,6 @@ public class PublishHandlerTests
 
       await handler.ExecuteAsync(stream, pubPacket);
 
-      // Wait a tiny bit since dispatch runs asynchronously
-      await Task.Delay(100);
-
       // Verify no message was queued to offline queue of its own session
       await Assert.That(session!.OfflineQueueCount).IsEqualTo(0);
 
@@ -232,9 +226,6 @@ public class PublishHandlerTests
       };
 
       await handlerA.ExecuteAsync(streamA, pubPacket);
-
-      // Wait a tiny bit since routing is async
-      await Task.Delay(10);
 
       // Verify session B offline queue contains the message
       await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(1);
@@ -288,9 +279,6 @@ public class PublishHandlerTests
 
       await handlerA.ExecuteAsync(streamA, pubPacket);
 
-      // Wait a tiny bit since routing is async
-      await Task.Delay(10);
-
       // Verify session B was cleaned up immediately and does not receive the message
       await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(0);
    }
@@ -326,9 +314,6 @@ public class PublishHandlerTests
       };
 
       await handlerA.ExecuteAsync(streamA, pubPacket);
-
-      // Wait a tiny bit since routing is async
-      await Task.Delay(10);
 
       // Verify no message was queued since session is expired
       await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(0);
@@ -388,9 +373,6 @@ public class PublishHandlerTests
 
       await handlerA.ExecuteAsync(streamA, pubPacket);
 
-      // Wait a tiny bit since routing is async
-      await Task.Delay(10);
-
       // Verify no message was queued since persistent sessions are disabled
       await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(0);
    }
@@ -423,8 +405,6 @@ public class PublishHandlerTests
          };
          await handlerA.ExecuteAsync(streamA, pubPacket);
       }
-
-      await Task.Delay(15);
 
       // Verify size is capped at 2
       await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(2);
@@ -465,8 +445,6 @@ public class PublishHandlerTests
          };
          await handlerA.ExecuteAsync(streamA, pubPacket);
       }
-
-      await Task.Delay(15);
 
       // Verify size is capped at 2
       await Assert.That(sessionB.OfflineQueueCount).IsEqualTo(2);

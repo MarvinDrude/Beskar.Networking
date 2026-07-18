@@ -105,6 +105,13 @@ public class MqttClientTopicAliasTests
    {
       var (client, handler, _) = SetupClientEnvironment(topicAliasMaximum: 5);
 
+      var disconnectTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      client.Events.OnClientDisconnected.Add((ctx, ct) =>
+      {
+         disconnectTcs.TrySetResult();
+         return ValueTask.CompletedTask;
+      });
+
       // Try registering alias 6 (exceeding maximum of 5)
       var packet = new PublishPacket
       {
@@ -118,8 +125,8 @@ public class MqttClientTopicAliasTests
 
       await handler.ExecuteAsync(null!, packet);
 
-      // Wait a tiny bit for the disconnection to process
-      await Task.Delay(50);
+      // Wait for the disconnection to process
+      await disconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
       await Assert.That(client.IsConnected).IsFalse();
 
@@ -134,6 +141,13 @@ public class MqttClientTopicAliasTests
    {
       var (client, handler, _) = SetupClientEnvironment();
 
+      var disconnectTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      client.Events.OnClientDisconnected.Add((ctx, ct) =>
+      {
+         disconnectTcs.TrySetResult();
+         return ValueTask.CompletedTask;
+      });
+
       // Receive empty topic with alias 2 without registering it first
       var packet = new PublishPacket
       {
@@ -147,7 +161,7 @@ public class MqttClientTopicAliasTests
 
       await handler.ExecuteAsync(null!, packet);
 
-      await Task.Delay(50);
+      await disconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
       await Assert.That(client.IsConnected).IsFalse();
 

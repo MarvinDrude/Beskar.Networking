@@ -145,6 +145,6 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
          }
       }
 
-      _ioQueueRegistry.Dispose();
+      await _ioQueueRegistry.DisposeAsync();
    }
 }

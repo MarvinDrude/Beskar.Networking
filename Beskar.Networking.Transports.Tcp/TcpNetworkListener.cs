@@ -296,6 +296,8 @@ public sealed class TcpNetworkListener(
       _disposed = true;
 
       await UnbindAsync();
+
       _listenerSocket?.Dispose();
+      await _ioQueueRegistry.DisposeAsync();
    }
 }

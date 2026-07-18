@@ -632,9 +632,14 @@ public class MqttQosTests
          return ValueTask.CompletedTask;
       });
 
+      var serverDisconnectTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
       server.Events.OnDisconnect.Add((ctx, ct) =>
       {
-         if (ctx.ServerClient.ClientIdUtf8Bytes.Span.SequenceEqual(clientId)) disconnectEventFired = true;
+         if (ctx.ServerClient.ClientIdUtf8Bytes.Span.SequenceEqual(clientId))
+         {
+            disconnectEventFired = true;
+            serverDisconnectTcs.TrySetResult();
+         }
          return ValueTask.CompletedTask;
       });
 
@@ -655,17 +660,17 @@ public class MqttQosTests
       // Disconnect Client A1
       await clientA1.DisconnectAsync(new DisconnectOptions());
 
-       // Wait for disconnect event to fire and session client to clear on the server
-       var start = DateTime.UtcNow;
-       while ((sessionA == null || sessionA.Client != null) && DateTime.UtcNow - start < TimeSpan.FromSeconds(5))
-       {
-          await Task.Delay(50);
-       }
+      // Wait for disconnect event to fire and session client to clear on the server
+      await serverDisconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      while (sessionA == null || sessionA.Client != null)
+      {
+         await Task.Yield();
+      }
 
-       if (sessionA == null) throw new Exception("Diagnostic: sessionA is NULL");
-       if (sessionA.Client != null)
-          throw new Exception(
-             $"Diagnostic: sessionA.Client is NOT NULL. ClientId={Encoding.UTF8.GetString(sessionA.Client.ClientIdUtf8Bytes.Span)}. IsConnected={sessionA.Client.IsConnected}. DisconnectEventFired={disconnectEventFired}");
+      if (sessionA == null) throw new Exception("Diagnostic: sessionA is NULL");
+      if (sessionA.Client != null)
+         throw new Exception(
+            $"Diagnostic: sessionA.Client is NOT NULL. ClientId={Encoding.UTF8.GetString(sessionA.Client.ClientIdUtf8Bytes.Span)}. IsConnected={sessionA.Client.IsConnected}. DisconnectEventFired={disconnectEventFired}");
 
       // 2. Client B (Publisher) publishes QoS 1 message while A is offline
       var publisher = MqttClientFactory.CreateTcp();
@@ -852,8 +857,9 @@ public class MqttQosTests
          .WithPayload("FirstPayload")
          .Build());
 
-      // Allow server enough time to process and enqueue the first message before sending the second
-      await Task.Delay(100);
+      // Wait for the subscriber to receive the first message (guarantees server processed it)
+      var r1 = await tcs1.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(r1).IsEqualTo("test/alias/topic:FirstPayload");
 
       // Second publish uses alias 1 without topic name
       await publisher.PublishAsync(new PublishOptionsBuilder()
@@ -862,9 +868,6 @@ public class MqttQosTests
          .WithQualityOfService(QualityOfServiceType.AtMostOnce)
          .WithPayload("SecondPayload")
          .Build());
-
-      var r1 = await tcs1.Task.WaitAsync(TimeSpan.FromSeconds(5));
-      await Assert.That(r1).IsEqualTo("test/alias/topic:FirstPayload");
 
       var r2 = await tcs2.Task.WaitAsync(TimeSpan.FromSeconds(5));
       await Assert.That(r2).IsEqualTo("test/alias/topic:SecondPayload");
@@ -902,6 +905,16 @@ public class MqttQosTests
          return ValueTask.CompletedTask;
       });
 
+      var deleteSessionTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      server.Events.OnDeleteSession.Add((ctx, ct) =>
+      {
+         if (ctx.Session == sessionA)
+         {
+            deleteSessionTcs.TrySetResult();
+         }
+         return ValueTask.CompletedTask;
+      });
+
       // 1. Connect with long expiry
       var clientA1 = MqttClientFactory.CreateTcp();
       await clientA1.ConnectAsync(new ConnectOptions
@@ -919,20 +932,12 @@ public class MqttQosTests
       // Disconnect specifying SessionExpiryInterval = 0
       await clientA1.DisconnectAsync(new DisconnectOptions { SessionExpiryInterval = 0 });
 
-      // Wait for session.Client to become null (indicating disconnection handling completed)
-      var start = DateTime.UtcNow;
-      while ((sessionA == null || sessionA.Client != null) && DateTime.UtcNow - start < TimeSpan.FromSeconds(5))
-      {
-         await Task.Delay(50);
-      }
+      // Wait for the server to permanently delete/dispose the session (which runs unsubscribed and disposed asynchronously)
+      await deleteSessionTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-      // Verify server session has been immediately discarded (Client = null, session removed or ExpiryInterval updated)
+      // Verify server session has been immediately discarded (Client = null)
       await Assert.That(sessionA).IsNotNull();
       await Assert.That(sessionA!.Client).IsNull();
-      //await Assert.That(sessionA.ExpiryInterval).IsEqualTo(0u);
-
-      // Wait a short duration to ensure server-side background task finishes UnsubscribeAll
-      await Task.Delay(200);
 
       // 2. Publish message to test/expiry-update
       var publisher = MqttClientFactory.CreateTcp();

@@ -226,5 +226,6 @@ public sealed class QuicNetworkListener(
       _disposed = true;
 
       await UnbindAsync();
+      await _ioQueueRegistry.DisposeAsync();
    }
 }

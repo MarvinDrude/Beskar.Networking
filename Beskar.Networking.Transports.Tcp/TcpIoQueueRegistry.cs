@@ -7,7 +7,7 @@ using Beskar.Memory.Pools;
 
 namespace Beskar.Networking.Transports.Tcp;
 
-public sealed class TcpIoQueueRegistry : IDisposable
+public sealed class TcpIoQueueRegistry : IAsyncDisposable
 {
    private readonly ulong _ioQueueCountLong;
 
@@ -95,7 +95,7 @@ public sealed class TcpIoQueueRegistry : IDisposable
       }
    }
 
-   public void Dispose()
+   public async ValueTask DisposeAsync()
    {
       if (_isDisposed) return;
       _isDisposed = true;
@@ -103,6 +103,16 @@ public sealed class TcpIoQueueRegistry : IDisposable
       foreach (var setting in _ioQueues)
       {
          setting.Dispose();
+      }
+
+      if (_socketConnectionPool is not null)
+      {
+         await _socketConnectionPool.DisposeAsync();
+      }
+
+      if (_streamConnectionPool is not null)
+      {
+         await _streamConnectionPool.DisposeAsync();
       }
    }
 }

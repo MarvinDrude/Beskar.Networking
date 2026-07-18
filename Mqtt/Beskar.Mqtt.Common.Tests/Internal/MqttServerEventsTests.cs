@@ -133,9 +133,11 @@ public class MqttServerEventsTests
          return ValueTask.CompletedTask;
       });
 
+      var deleteSessionTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
       server.Events.OnDeleteSession.Add((ctx, ct) =>
       {
          deleteSessionCount++;
+         deleteSessionTcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
 
@@ -189,7 +191,7 @@ public class MqttServerEventsTests
       await Assert.That(disconnectCount).IsEqualTo(1);
 
       // 5. Delete session (triggered asynchronously inside HandleClientDisconnectAsync)
-      await Task.Delay(150);
+      await deleteSessionTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
       await Assert.That(deleteSessionCount).IsEqualTo(1);
    }
 
@@ -202,26 +204,30 @@ public class MqttServerEventsTests
       var subscribeCount = 0;
       var unsubscribeCount = 0;
 
+      var subscribeTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
       server.Events.OnSubscribe.Add((ctx, ct) =>
       {
          subscribeCount++;
+         subscribeTcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
 
+      var unsubscribeTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
       server.Events.OnUnsubscribe.Add((ctx, ct) =>
       {
          unsubscribeCount++;
+         unsubscribeTcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
 
       var filter = new TopicFilter(new ReadOnlySequence<byte>("test/filter"u8.ToArray()),
          QualityOfServiceType.AtLeastOnce);
       server.Subscribe(session!, filter);
-      await Task.Delay(150);
+      await subscribeTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
       await Assert.That(subscribeCount).IsEqualTo(1);
 
       server.Unsubscribe(session!, "test/filter"u8.ToArray());
-      await Task.Delay(150);
+      await unsubscribeTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
       await Assert.That(unsubscribeCount).IsEqualTo(1);
    }
 
@@ -235,21 +241,27 @@ public class MqttServerEventsTests
       var noSubscriberCount = 0;
       var publishAckedCount = 0;
 
+      var acknowledgeTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
       server.Events.OnAcknowledgePub.Add((ctx, ct) =>
       {
          acknowledgeCount++;
+         acknowledgeTcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
 
+      var noSubscriberTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
       server.Events.OnNoSubscriberMessage.Add((ctx, ct) =>
       {
          noSubscriberCount++;
+         noSubscriberTcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
 
+      var publishAckedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
       server.Events.OnPublishAcknowledged.Add((ctx, ct) =>
       {
          publishAckedCount++;
+         publishAckedTcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
 
@@ -264,7 +276,7 @@ public class MqttServerEventsTests
       };
 
       await handler.ExecuteAsync(stream, pubPacket);
-      await Task.Delay(150);
+      await Task.WhenAll(acknowledgeTcs.Task, noSubscriberTcs.Task).WaitAsync(TimeSpan.FromSeconds(5));
 
       // Verify OnNoSubscriberMessage and OnAcknowledgePub fired
       await Assert.That(noSubscriberCount).IsEqualTo(1);
@@ -287,7 +299,7 @@ public class MqttServerEventsTests
       };
 
       await handler.ExecuteAsync(stream, pubAckPacket);
-      await Task.Delay(150);
+      await publishAckedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
       // Verify OnPublishAcknowledged fired
       await Assert.That(publishAckedCount).IsEqualTo(1);
@@ -301,10 +313,21 @@ public class MqttServerEventsTests
       var changedCount = 0;
       MqttPublishMessage? lastChangedMsg = null;
 
+      var changedTcs1 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var changedTcs2 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
       server.Events.OnRetainedMessageChanged.Add((ctx, ct) =>
       {
          changedCount++;
          lastChangedMsg = ctx.ChangedRetainedMessage;
+         if (changedCount == 1)
+         {
+            changedTcs1.TrySetResult();
+         }
+         else if (changedCount == 2)
+         {
+            changedTcs2.TrySetResult();
+         }
          return ValueTask.CompletedTask;
       });
 
@@ -319,7 +342,7 @@ public class MqttServerEventsTests
       };
 
       await handler.ExecuteAsync(stream, pubPacket);
-      await Task.Delay(150);
+      await changedTcs1.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
       await Assert.That(changedCount).IsEqualTo(1);
       await Assert.That(lastChangedMsg).IsNotNull();
@@ -336,7 +359,7 @@ public class MqttServerEventsTests
       };
 
       await handler.ExecuteAsync(stream, prunePacket);
-      await Task.Delay(150);
+      await changedTcs2.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
       await Assert.That(changedCount).IsEqualTo(2);
       await Assert.That(lastChangedMsg).IsNull(); // Pruned is null
@@ -368,13 +391,16 @@ public class MqttServerEventsTests
 
          return ValueTask.CompletedTask;
       });
+      var retainedChangedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var subscribeTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
       server.Events.OnSubscribe.Add((ctx, ct) =>
       {
          lock (eventsFired)
          {
             eventsFired.Add("Subscribe");
          }
-
+         subscribeTcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
       server.Events.OnRetainedMessageChanged.Add((ctx, ct) =>
@@ -383,7 +409,7 @@ public class MqttServerEventsTests
          {
             eventsFired.Add("RetainedChanged");
          }
-
+         retainedChangedTcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
       server.Events.OnPublishAcknowledged.Add((ctx, ct) =>
@@ -446,13 +472,13 @@ public class MqttServerEventsTests
          Payload = new ReadOnlySequence<byte>("combined payload"u8.ToArray())
       };
       await handlerA.ExecuteAsync(streamA, pubPacket);
-      await Task.Delay(150);
-
+      await retainedChangedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+ 
       // 4. Client B subscribes to the topic filter
       var filter = new TopicFilter(new ReadOnlySequence<byte>("combined/#"u8.ToArray()),
          QualityOfServiceType.AtLeastOnce);
       server.Subscribe(sessionResultB.Session, filter);
-      await Task.Delay(150);
+      await subscribeTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
       // Verify Start, Connect, RetainedChanged, Subscribe all fired
       List<string> firedCopy;
