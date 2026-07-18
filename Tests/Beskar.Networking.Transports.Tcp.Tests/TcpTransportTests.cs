@@ -355,4 +355,46 @@ public class TcpTransportTests
       await Assert.That(client.LocalAddress).IsNull();
       await Assert.That(client.RemoteAddress).IsNull();
    }
+
+   [Test]
+   public async Task TcpListener_MaxConcurrentHandshakesLimit_BlocksAcceptingFurtherConnections()
+   {
+      var options = new TcpTransportOptions
+      {
+         UseSsl = true,
+         MaxConcurrentHandshakes = 1
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
+
+      // Connect Client 1 (raw TCP socket, no SSL handshake bytes sent)
+      using var clientSocket1 = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+      await clientSocket1.ConnectAsync(IPAddress.Loopback, actualPort);
+
+      // Give the server accept loop a moment to accept Client 1 and enter the SSL handshake (which blocks waiting for bytes)
+      await Task.Delay(100);
+
+      // Connect Client 2 (raw TCP socket)
+      using var clientSocket2 = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+      await clientSocket2.ConnectAsync(IPAddress.Loopback, actualPort);
+
+      // Give it another moment
+      await Task.Delay(100);
+
+      // At this point:
+      // Client 1 is stuck in the handshake, occupying the 1 semaphore slot.
+      // Client 2's socket is established at the OS level, but the listener accept loop should be blocked
+      // on the semaphore and should NOT have accepted Client 2's socket yet.
+      
+      // Let's close Client 1. This will cause its handshake to fail/abort, releasing the semaphore slot.
+      clientSocket1.Close();
+      await Task.Delay(150);
+
+      // Cleanup
+      await listener.UnbindAsync();
+   }
 }

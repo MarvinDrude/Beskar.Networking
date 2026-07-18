@@ -70,4 +70,9 @@ public class TcpTransportOptions
    /// after an accept exception occurs to prevent CPU busy spinning. Defaults to 10ms.
    /// </summary>
    public int AcceptExceptionDelay { get; set; } = 10;
+
+   /// <summary>
+   /// The maximum number of concurrent client handshakes allowed. Defaults to 512.
+   /// </summary>
+   public int MaxConcurrentHandshakes { get; set; } = 512;
 }

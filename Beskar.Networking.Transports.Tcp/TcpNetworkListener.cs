@@ -43,6 +43,7 @@ public sealed class TcpNetworkListener(
 
    private Socket? _listenerSocket;
    private CancellationTokenSource? _acceptCts;
+   private SemaphoreSlim? _handshakeSemaphore;
 
    private bool _disposed;
 
@@ -73,6 +74,7 @@ public sealed class TcpNetworkListener(
 
          _listenerSocket = socket;
          _acceptCts = new CancellationTokenSource();
+         _handshakeSemaphore = new SemaphoreSlim(_options.MaxConcurrentHandshakes);
 
          _ = AcceptLoopAsync(socket, _acceptCts.Token);
          TraceLogger.LogServerInfo("TCP Listener: Successfully bound and listening on {0}", LocalAddress);
@@ -108,6 +110,9 @@ public sealed class TcpNetworkListener(
          var socket = Interlocked.Exchange(ref _listenerSocket, null);
          socket?.Close();
          socket?.Dispose();
+
+         var semaphore = Interlocked.Exchange(ref _handshakeSemaphore, null);
+         semaphore?.Dispose();
 
          _sessionChannel.Writer.TryComplete();
          while (_sessionChannel.Reader.TryRead(out var result))
@@ -153,9 +158,26 @@ public sealed class TcpNetworkListener(
    {
       while (!token.IsCancellationRequested)
       {
+         var semaphore = _handshakeSemaphore;
+         if (semaphore is null)
+         {
+            break;
+         }
+
          try
          {
-            var clientSocket = await listenerSocket.AcceptAsync(token);
+            await semaphore.WaitAsync(token);
+
+            Socket clientSocket;
+            try
+            {
+               clientSocket = await listenerSocket.AcceptAsync(token);
+            }
+            catch
+            {
+               semaphore.Release();
+               throw;
+            }
 
             if (_options.NoDelay)
             {
@@ -177,6 +199,7 @@ public sealed class TcpNetworkListener(
                WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get local endpoint."));
 
                clientSocket.Dispose();
+               semaphore.Release();
                continue;
             }
 
@@ -187,13 +210,28 @@ public sealed class TcpNetworkListener(
                WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get remote endpoint."));
 
                clientSocket.Dispose();
+               semaphore.Release();
                continue;
             }
 
             TraceLogger.LogServerInfo("TCP Listener: Accepted connection from client {0}", remoteEndPoint);
-            _ = Task.Run(() => HandshakeAndEnqueueAsync(clientSocket, localEndPoint, remoteEndPoint, token), token);
+            _ = Task.Run(async () =>
+            {
+               try
+               {
+                  await HandshakeAndEnqueueAsync(clientSocket, localEndPoint, remoteEndPoint, token);
+               }
+               finally
+               {
+                  semaphore.Release();
+               }
+            }, token);
          }
          catch (OperationCanceledException)
+         {
+            break;
+         }
+         catch (ObjectDisposedException)
          {
             break;
          }
