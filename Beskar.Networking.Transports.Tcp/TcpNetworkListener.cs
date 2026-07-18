@@ -48,21 +48,23 @@ public sealed class TcpNetworkListener(
    private bool _disposed;
 
    private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
-      Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(new UnboundedChannelOptions
+      Channel.CreateBounded<Result<INetworkSession, NetworkCodeError>>(new BoundedChannelOptions(1024)
       {
          SingleWriter = false,
-         SingleReader = true
+         SingleReader = true,
+         FullMode = BoundedChannelFullMode.Wait
       });
 
    public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
    {
       try
       {
-         _sessionChannel = Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(
-            new UnboundedChannelOptions
+         _sessionChannel = Channel.CreateBounded<Result<INetworkSession, NetworkCodeError>>(
+            new BoundedChannelOptions(_options.MaxPendingConnections)
             {
                SingleWriter = false,
-               SingleReader = true
+               SingleReader = true,
+               FullMode = BoundedChannelFullMode.Wait
             });
 
          TraceLogger.LogServerInfo("TCP Listener: Binding socket to address {0}", LocalAddress);

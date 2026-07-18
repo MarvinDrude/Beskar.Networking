@@ -60,4 +60,9 @@ public class QuicTransportOptions
    /// after an accept exception occurs to prevent CPU busy spinning. Defaults to 10ms.
    /// </summary>
    public int AcceptExceptionDelay { get; set; } = 10;
+
+   /// <summary>
+   /// The maximum number of pending connections that can be queued in the listener's session channel. Defaults to 1024.
+   /// </summary>
+   public int MaxPendingConnections { get; set; } = 1024;
 }

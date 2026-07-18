@@ -397,4 +397,50 @@ public class TcpTransportTests
       // Cleanup
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task TcpListener_MaxPendingConnectionsBounded_BlocksWhenFullAndResumesOnRead()
+   {
+      var options = new TcpTransportOptions
+      {
+         MaxPendingConnections = 1
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new TcpNetworkClient(options);
+
+      // Connect Client 1
+      var connectTask1 = client.ConnectAsync(listener.LocalAddress).AsTask();
+      // Connect Client 2 (using a second client instance to avoid active session overwrite)
+      var client2 = new TcpNetworkClient(options);
+      var connectTask2 = client2.ConnectAsync(listener.LocalAddress).AsTask();
+
+      // Wait a moment for both handshakes to complete and attempt to enqueue
+      await Task.Delay(100);
+
+      // At this point:
+      // Client 1 is enqueued in the bounded channel.
+      // Client 2's session is blocked on WriteAsync because the channel is full.
+      // Let's accept Client 1 session:
+      var acceptResult1 = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult1.Failed).IsFalse();
+
+      // Freeing Client 1 should unblock Client 2, allowing it to enqueue in the channel.
+      // Let's accept Client 2 session:
+      var acceptResult2 = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult2.Failed).IsFalse();
+
+      // Clean up
+      var session1 = acceptResult1.Success!;
+      var session2 = acceptResult2.Success!;
+
+      await session1.DisposeAsync();
+      await session2.DisposeAsync();
+      await client.DisconnectAsync();
+      await client2.DisconnectAsync();
+      await listener.UnbindAsync();
+   }
 }

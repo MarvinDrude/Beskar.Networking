@@ -75,4 +75,9 @@ public class TcpTransportOptions
    /// The maximum number of concurrent client handshakes allowed. Defaults to 512.
    /// </summary>
    public int MaxConcurrentHandshakes { get; set; } = 512;
+
+   /// <summary>
+   /// The maximum number of pending connections that can be queued in the listener's session channel. Defaults to 1024.
+   /// </summary>
+   public int MaxPendingConnections { get; set; } = 1024;
 }
