@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Text;
+using System.Threading.Channels;
 using Beskar.Memory.Threading;
 using Beskar.Memory.Writers;
 using Beskar.Utilities.Tracing;
@@ -16,7 +17,7 @@ using Beskar.Networking.Abstractions.Threading;
 
 namespace Beskar.Mqtt.Server.Internal;
 
-public sealed class MqttClientSessions(MqttServer server)
+public sealed partial class MqttClientSessions(MqttServer server)
 {
    private readonly MqttServer _server = server;
 
@@ -151,42 +152,10 @@ public sealed class MqttClientSessions(MqttServer server)
             }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: ct);
          }
 
-         if (takenOverClient is not null)
+         if (takenOverClient is not null || previousSession is not null || existing is not null)
          {
-            try
-            {
-               await takenOverClient.DisconnectAsync(new DisconnectOptions()
-               {
-                  ReasonCode = DisconnectReasonCode.SessionTakenOver,
-               });
-            }
-            catch (Exception ex)
-            {
-               TraceLogger.LogServerWarning("MqttClientSessions: Failed to send session taken over disconnect packet to old client. Error: {0}", ex.Message);
-            }
-
-            if (_server.Events.OnDisconnect.Count > 0)
-            {
-               await _server.Events.OnDisconnect.ExecuteAsync(new MqttDisconnectContext()
-               {
-                  Reason = DisconnectReasonCode.SessionTakenOver,
-                  ServerClient = takenOverClient,
-                  DisconnectKind = ClientDisconnectKind.Graceful,
-                  IsSessionTakenOver = true
-               }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: ct);
-            }
-         }
-
-         if (previousSession is not null)
-         {
-            // dispose previous session if expired
-            await previousSession.DisposeAsync();
-         }
-
-         if (existing is not null)
-         {
-            // dispose existing session if new one required
-            await existing.DisposeAsync();
+            EnsureStarted();
+            _cleanupChannel?.Writer.TryWrite(new CleanupJob(takenOverClient, previousSession, existing));
          }
       }
 
@@ -266,18 +235,9 @@ public sealed class MqttClientSessions(MqttServer server)
          if (session.ExpiryInterval == 0)
          {
             _sessions.TryRemove(client.ClientIdUtf8Bytes.Span, out _);
-            _ = Task.Run(async () =>
-            {
-               try
-               {
-                  _server.SubscriptionRouter.UnsubscribeAll(session);
-                  await session.DisposeAsync();
-               }
-               catch (Exception)
-               {
-                  /* ignored */
-               }
-            });
+
+            EnsureStarted();
+            _cleanupChannel?.Writer.TryWrite(new CleanupJob(session, unsubscribe: true));
          }
       }
    }
@@ -294,18 +254,9 @@ public sealed class MqttClientSessions(MqttServer server)
          }
 
          _sessions.TryRemove(session.ClientIdUtf8Bytes, out _);
-         _ = Task.Run(async () =>
-         {
-            try
-            {
-               _server.SubscriptionRouter.UnsubscribeAll(session);
-               await session.DisposeAsync();
-            }
-            catch (Exception)
-            {
-               /* ignored */
-            }
-         });
+
+         EnsureStarted();
+         _cleanupChannel?.Writer.TryWrite(new CleanupJob(session, unsubscribe: true));
       }
    }
 

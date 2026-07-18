@@ -89,7 +89,8 @@ public sealed partial class MqttServer : IAsyncDisposable
       if (Events.OnLoadingRetainedMessages.Count > 0)
       {
          var context = new MqttLoadingRetainedMessagesContext { Server = this };
-         await Events.OnLoadingRetainedMessages.ExecuteAsync(context, HandlerExecutionStrategy.SequentialContinueOnError);
+         await Events.OnLoadingRetainedMessages.ExecuteAsync(context,
+            HandlerExecutionStrategy.SequentialContinueOnError);
          if (context.LoadedRetainedMessages.Count > 0)
          {
             RetainedMessages.LoadMessages(context.LoadedRetainedMessages);
@@ -127,6 +128,7 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
 
       _keepAliveService.Start();
+      ClientSessions.Start();
 
       State = MqttServerState.Running;
       if (Events.OnStart.Count > 0)
@@ -164,6 +166,15 @@ public sealed partial class MqttServer : IAsyncDisposable
       try
       {
          await _keepAliveService.StopAsync();
+      }
+      catch (Exception)
+      {
+         // ignored
+      }
+
+      try
+      {
+         await ClientSessions.StopAsync();
       }
       catch (Exception)
       {
@@ -395,7 +406,10 @@ public sealed partial class MqttServer : IAsyncDisposable
             {
                await streamContext.Stream.Transport.Output.CompleteAsync();
             }
-            catch { /* ignored */ }
+            catch
+            {
+               /* ignored */
+            }
 
             await client.DisconnectAsync();
             return;
@@ -610,11 +624,14 @@ public sealed partial class MqttServer : IAsyncDisposable
          MessageExpiryInterval = messageExpiryInterval,
          PayloadFormat = payloadFormat,
          ContentTypeUtf8Bytes = string.IsNullOrEmpty(contentType)
-            ? ReadOnlySequence<byte>.Empty : new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(contentType)),
+            ? ReadOnlySequence<byte>.Empty
+            : new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(contentType)),
          ResponseTopicUtf8Bytes = string.IsNullOrEmpty(responseTopic)
-            ? ReadOnlySequence<byte>.Empty : new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(responseTopic)),
+            ? ReadOnlySequence<byte>.Empty
+            : new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(responseTopic)),
          CorrelationDataBytes = correlationData == null
-            ? ReadOnlySequence<byte>.Empty : new ReadOnlySequence<byte>(correlationData)
+            ? ReadOnlySequence<byte>.Empty
+            : new ReadOnlySequence<byte>(correlationData)
       };
 
       var msg = new MqttPublishMessage(packet);
@@ -667,6 +684,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          {
             return; // Message expired, do not deliver
          }
+
          remainingExpiry = message.MessageExpiryInterval - timeSpent;
       }
 
