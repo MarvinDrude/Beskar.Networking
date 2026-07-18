@@ -16,6 +16,7 @@
   <Folder Name="/Documentation/" />
   <Folder Name="/Documentation/Basics/">
     <File Path="Documentation/Basics/Abstractions.md" />
+    <File Path="Documentation/Basics/Transports.md" />
   </Folder>
   <Folder Name="/Documentation/Mqtt/">
     <File Path="Documentation/Mqtt/Authentication.md" />
