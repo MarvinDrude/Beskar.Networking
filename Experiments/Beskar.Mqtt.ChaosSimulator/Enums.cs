@@ -12,5 +12,10 @@ public enum ClientRole
    Publisher,
    Subscriber,
    KeepAliveOnly,
-   Flaky
+   Flaky,
+   SlowSubscriber,
+   Qos2HeavyPublisher,
+   WildcardSubscriber,
+   AuthAlternator,
+   ChannelCongestor
 }

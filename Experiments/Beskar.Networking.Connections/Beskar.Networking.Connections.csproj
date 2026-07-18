@@ -6,11 +6,11 @@
    </PropertyGroup>
 
    <ItemGroup>
-      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
-      <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj" />
-      <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj" />
-      <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj" />
-      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj"/>
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj"/>
    </ItemGroup>
 
 </Project>

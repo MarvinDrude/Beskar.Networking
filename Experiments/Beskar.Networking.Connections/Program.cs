@@ -1,16 +1,12 @@
-using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Net;
+using System.Net.Quic;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Buffers;
-using System.IO.Pipelines;
-using Beskar.Networking.Abstractions.Interfaces;
-using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Enums;
-using Beskar.Networking.Transports.Tcp;
+using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Quic;
+using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Ws;
 
 namespace Beskar.Networking.Connections;
@@ -32,20 +28,28 @@ public interface ITestTransportFactory
 
 public class TcpTestTransportFactory : ITestTransportFactory
 {
-   public INetworkListener CreateListener(EndPoint localAddress) =>
-      new TcpNetworkListener(localAddress, new TcpTransportOptions());
+   public INetworkListener CreateListener(EndPoint localAddress)
+   {
+      return new TcpNetworkListener(localAddress, new TcpTransportOptions());
+   }
 
-   public INetworkClient CreateClient() =>
-      new TcpNetworkClient(new TcpTransportOptions());
+   public INetworkClient CreateClient()
+   {
+      return new TcpNetworkClient(new TcpTransportOptions());
+   }
 }
 
 public class WsTestTransportFactory : ITestTransportFactory
 {
-   public INetworkListener CreateListener(EndPoint localAddress) =>
-      new WsNetworkListener(localAddress, new WsTransportOptions());
+   public INetworkListener CreateListener(EndPoint localAddress)
+   {
+      return new WsNetworkListener(localAddress, new WsTransportOptions());
+   }
 
-   public INetworkClient CreateClient() =>
-      new WsNetworkClient(new WsTransportOptions());
+   public INetworkClient CreateClient()
+   {
+      return new WsNetworkClient(new WsTransportOptions());
+   }
 }
 
 public class QuicTestTransportFactory : ITestTransportFactory
@@ -105,11 +109,9 @@ public static class Program
       var selection = 1;
 
       if (int.TryParse(selectionStr, out var parsedSelection) && parsedSelection is >= 1 and <= 3)
-      {
          selection = parsedSelection;
-      }
 
-      if (selection == 3 && !System.Net.Quic.QuicConnection.IsSupported)
+      if (selection == 3 && !QuicConnection.IsSupported)
       {
          Console.ForegroundColor = ConsoleColor.Red;
          Console.WriteLine("Error: QUIC is not supported on this platform/OS version. Falling back to TCP.");
@@ -137,19 +139,14 @@ public static class Program
       var clientRunsStr = Console.ReadLine();
       var totalClientRuns = 500;
 
-      if (int.TryParse(clientRunsStr, out var parsedRuns) && parsedRuns > 0)
-      {
-         totalClientRuns = parsedRuns;
-      }
+      if (int.TryParse(clientRunsStr, out var parsedRuns) && parsedRuns > 0) totalClientRuns = parsedRuns;
 
       Console.Write("Enter concurrent client workers limit (default 50): ");
       var concurrencyStr = Console.ReadLine();
       var concurrencyLimit = 50;
 
       if (int.TryParse(concurrencyStr, out var parsedConcurrency) && parsedConcurrency > 0)
-      {
          concurrencyLimit = parsedConcurrency;
-      }
 
       var port = 18883;
       var serverEndPoint = new IPEndPoint(IPAddress.Loopback, port);
@@ -260,7 +257,8 @@ public static class Program
       Console.WriteLine($"Connect Successes:      {Interlocked.Read(ref _clientConnectSuccesses)}");
       Console.WriteLine($"Graceful Disconnects:   {Interlocked.Read(ref _clientGracefulDisconnects)}");
       Console.WriteLine($"Abrupt Disconnects:     {Interlocked.Read(ref _clientAbruptDisconnects)}");
-      Console.WriteLine($"Expected Failures:      {Interlocked.Read(ref _clientConnectFailuresExpected)} (Closed port simulation)");
+      Console.WriteLine(
+         $"Expected Failures:      {Interlocked.Read(ref _clientConnectFailuresExpected)} (Closed port simulation)");
       Console.WriteLine($"Unexpected Failures:    {Interlocked.Read(ref _clientConnectFailuresUnexpected)}");
       Console.WriteLine($"Pongs Received:         {Interlocked.Read(ref _clientPongsReceived)}");
       Console.WriteLine($"Stream Failures:        {Interlocked.Read(ref _clientStreamErrors)}");
@@ -311,10 +309,7 @@ public static class Program
          else
          {
             var acceptStreamResult = await session.AcceptStreamAsync(ct);
-            if (!acceptStreamResult.Failed)
-            {
-               await HandleServerStreamAsync(acceptStreamResult.Success, ct);
-            }
+            if (!acceptStreamResult.Failed) await HandleServerStreamAsync(acceptStreamResult.Success, ct);
          }
       }
       catch (Exception)
@@ -346,7 +341,7 @@ public static class Program
             {
                var content = Encoding.UTF8.GetString(buffer.Slice(0, 4).ToArray());
                if (content == "PING")
-                {
+               {
                   Interlocked.Increment(ref _serverPingsReceived);
 
                   // Send PONG
@@ -415,6 +410,7 @@ public static class Program
          {
             await badClient.DisposeAsync();
          }
+
          return;
       }
 
@@ -476,10 +472,7 @@ public static class Program
          if (buffer.Length >= 4)
          {
             var content = Encoding.UTF8.GetString(buffer.Slice(0, 4).ToArray());
-            if (content == "PONG")
-            {
-               Interlocked.Increment(ref _clientPongsReceived);
-            }
+            if (content == "PONG") Interlocked.Increment(ref _clientPongsReceived);
             reader.AdvanceTo(buffer.GetPosition(4));
          }
          else

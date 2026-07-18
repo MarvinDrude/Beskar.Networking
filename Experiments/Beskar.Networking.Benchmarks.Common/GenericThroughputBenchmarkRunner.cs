@@ -98,10 +98,7 @@ public static class GenericThroughputBenchmarkRunner
                                  var packets = (int)(totalBytesToProcess / config.PayloadSize);
                                  leftoverBytes = (int)(totalBytesToProcess % config.PayloadSize);
 
-                                 if (packets > 0)
-                                 {
-                                    Interlocked.Add(ref totalReceivedPackets, packets);
-                                 }
+                                 if (packets > 0) Interlocked.Add(ref totalReceivedPackets, packets);
 
                                  input.AdvanceTo(buffer.End);
                               }
@@ -146,10 +143,7 @@ public static class GenericThroughputBenchmarkRunner
                                     var packets = (int)(totalBytesToProcess / config.PayloadSize);
                                     leftoverBytes = (int)(totalBytesToProcess % config.PayloadSize);
 
-                                    if (packets > 0)
-                                    {
-                                       Interlocked.Add(ref totalReceivedPackets, packets);
-                                    }
+                                    if (packets > 0) Interlocked.Add(ref totalReceivedPackets, packets);
 
                                     input.AdvanceTo(buffer.End);
                                  }

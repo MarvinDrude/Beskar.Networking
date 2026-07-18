@@ -1,7 +1,6 @@
+using System.Buffers;
 using System.Net;
 using System.Text;
-using System.Buffers;
-using System.Linq;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Client;
@@ -14,7 +13,6 @@ using Beskar.Mqtt.Common.Options;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server;
-using Beskar.Mqtt.Server.Options;
 using Beskar.Utilities.Tracing;
 
 TraceLogger.IsEnabled = true;
@@ -109,10 +107,10 @@ mqttClient.AddMessageReceiveHandler((ctx, ct) =>
 });
 
 var sub = new SubscribeOptionsBuilder()
-   .WithTopicFilter("test/2"u8, QualityOfServiceType.AtMostOnce, noLocal: true)
-   .WithTopicFilter("teaaast/+/b"u8, QualityOfServiceType.AtMostOnce, noLocal: true)
-   .WithTopicFilter("test/#"u8, QualityOfServiceType.ExactlyOnce, noLocal: true)
-   .WithTopicFilter("tessadsat/#"u8, QualityOfServiceType.ExactlyOnce, noLocal: true)
+   .WithTopicFilter("test/2"u8, QualityOfServiceType.AtMostOnce, true)
+   .WithTopicFilter("teaaast/+/b"u8, QualityOfServiceType.AtMostOnce, true)
+   .WithTopicFilter("test/#"u8, QualityOfServiceType.ExactlyOnce, true)
+   .WithTopicFilter("tessadsat/#"u8, QualityOfServiceType.ExactlyOnce, true)
    .WithUserProperty("test", "test")
    .Build();
 
@@ -145,10 +143,7 @@ public sealed class AuthHandler : IMqttAuthenticationHandler
             TraceLogger.LogClientInfo($"Client: Received challenge of length {challengeBytes.Length}");
             // Transform: add 1 to each byte
             var responseBytes = new byte[challengeBytes.Length];
-            for (var i = 0; i < challengeBytes.Length; i++)
-            {
-               responseBytes[i] = (byte)(challengeBytes[i] + 1);
-            }
+            for (var i = 0; i < challengeBytes.Length; i++) responseBytes[i] = (byte)(challengeBytes[i] + 1);
 
             TraceLogger.LogClientInfo("Client: Sending challenge response...");
             await context.SendResponseAsync(responseBytes, "Solving challenge", ct);

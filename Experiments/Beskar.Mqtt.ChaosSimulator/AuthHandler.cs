@@ -1,5 +1,3 @@
-using System.Threading;
-using System.Threading.Tasks;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Interfaces;
@@ -23,12 +21,12 @@ public sealed class AuthHandler(bool solveCorrectly) : IMqttAuthenticationHandle
          {
             var responseBytes = new byte[challengeBytes.Length];
             for (var i = 0; i < challengeBytes.Length; i++)
-            {
                responseBytes[i] = (byte)(challengeBytes[i] + (_solveCorrectly ? 1 : 0));
-            }
-            await context.SendResponseAsync(responseBytes, _solveCorrectly ? "Challenge solved" : "Challenge failed", ct);
+            await context.SendResponseAsync(responseBytes, _solveCorrectly ? "Challenge solved" : "Challenge failed",
+               ct);
          }
       }
+
       return true;
    }
 }

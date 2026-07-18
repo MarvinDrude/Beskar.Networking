@@ -1,6 +1,4 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Diagnostics;
 using Beskar.Utilities.Console.Rendering;
 
 namespace Beskar.Mqtt.ChaosSimulator;
@@ -9,13 +7,13 @@ public static class StatsReporter
 {
    public static async Task RunStatsReporterAsync(CancellationToken ct)
    {
-      var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+      var stopwatch = Stopwatch.StartNew();
 
       while (!ct.IsCancellationRequested)
       {
          try
          {
-            await Task.Delay(10000, ct); // Report stats every 10 seconds
+            await Task.Delay(Program.StatsIntervalSeconds * 1000, ct);
          }
          catch (OperationCanceledException)
          {
@@ -39,10 +37,16 @@ public static class StatsReporter
                .AddColumn("V3 Count", Alignment.Right, ConsoleColor.White)
                .AddColumn("V5 Count", Alignment.Right, ConsoleColor.White)
                .AddColumn("Total / Details", Alignment.Left, ConsoleColor.Gray)
-               .AddRow("Client Auth Successes", Program.ServerAuthV3Success.ToString(), Program.ServerAuthV5Success.ToString(), $"Total: {Program.ServerAuthV3Success + Program.ServerAuthV5Success}")
-               .AddRow("Client Auth Failures", Program.ServerAuthV3Failure.ToString(), Program.ServerAuthV5Failure.ToString(), $"Total: {Program.ServerAuthV3Failure + Program.ServerAuthV5Failure}")
-               .AddRow("Active Connections", "", "", $"TCP: {Interlocked.Read(ref Program.ActiveTcpConnections)} | WS: {Interlocked.Read(ref Program.ActiveWsConnections)} | QUIC: {Interlocked.Read(ref Program.ActiveQuicConnections)}")
-               .AddRow("Server Disconnects", "", "", $"Graceful: {Interlocked.Read(ref Program.ServerConnectionsGraceful)} | Abrupt/Crash: {Interlocked.Read(ref Program.ServerConnectionsAbrupt)}")
+               .AddRow("Client Auth Successes", Program.ServerAuthV3Success.ToString(),
+                  Program.ServerAuthV5Success.ToString(),
+                  $"Total: {Program.ServerAuthV3Success + Program.ServerAuthV5Success}")
+               .AddRow("Client Auth Failures", Program.ServerAuthV3Failure.ToString(),
+                  Program.ServerAuthV5Failure.ToString(),
+                  $"Total: {Program.ServerAuthV3Failure + Program.ServerAuthV5Failure}")
+               .AddRow("Active Connections", "", "",
+                  $"TCP: {Interlocked.Read(ref Program.ActiveTcpConnections)} | WS: {Interlocked.Read(ref Program.ActiveWsConnections)} | QUIC: {Interlocked.Read(ref Program.ActiveQuicConnections)}")
+               .AddRow("Server Disconnects", "", "",
+                  $"Graceful: {Interlocked.Read(ref Program.ServerConnectionsGraceful)} | Abrupt/Crash: {Interlocked.Read(ref Program.ServerConnectionsAbrupt)}")
                .Render();
 
             // Render Client operations stats table
@@ -52,13 +56,16 @@ public static class StatsReporter
                .AddColumn("Server Received", Alignment.Right, ConsoleColor.White)
                .AddColumn("Clients Executed", Alignment.Right, ConsoleColor.White)
                .AddRow("Connect Attempts", Program.ServerConnectionsTotal.ToString(), Program.ClientAttempts.ToString())
-               .AddRow("Successful Handshakes", (Program.ServerAuthV3Success + Program.ServerAuthV5Success).ToString(), Program.ClientConnectSuccess.ToString())
-               .AddRow("Expected Failures", (Program.ServerAuthV3Failure + Program.ServerAuthV5Failure).ToString(), Program.ClientConnectFailExpected.ToString())
+               .AddRow("Successful Handshakes", (Program.ServerAuthV3Success + Program.ServerAuthV5Success).ToString(),
+                  Program.ClientConnectSuccess.ToString())
+               .AddRow("Expected Failures", (Program.ServerAuthV3Failure + Program.ServerAuthV5Failure).ToString(),
+                  Program.ClientConnectFailExpected.ToString())
                .AddRow("Unexpected Failures", "", Program.ClientConnectFailUnexpected.ToString())
                .AddRow("Publishes QoS 0", Program.ServerPublishesQoS0.ToString(), "")
                .AddRow("Publishes QoS 1", Program.ServerPublishesQoS1.ToString(), "")
                .AddRow("Publishes QoS 2", Program.ServerPublishesQoS2.ToString(), "")
-               .AddRow("Publishes Total", Program.ServerPublishesTotal.ToString(), Program.ClientPublishesSent.ToString())
+               .AddRow("Publishes Total", Program.ServerPublishesTotal.ToString(),
+                  Program.ClientPublishesSent.ToString())
                .AddRow("Publish Failures", "", Program.ClientPublishesFailed.ToString())
                .AddRow("Messages Received", "", Program.ClientMessagesReceived.ToString())
                .AddRow("No Subscriber Publishes", Program.ServerNoSubscriberMessages.ToString(), "")
