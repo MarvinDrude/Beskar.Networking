@@ -5,6 +5,7 @@ using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Mqtt.Server.Enums;
 using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -82,7 +83,9 @@ public sealed class MqttServerClient : IPooledObject
       {
          SingleWriter = false,
          SingleReader = true,
-         FullMode = BoundedChannelFullMode.DropOldest
+         FullMode = serverOptions.PendingMessageOverflowBehavior is MessageOverflowBehavior.DropNewest
+            ? BoundedChannelFullMode.DropNewest
+            : BoundedChannelFullMode.DropOldest
       });
 
       _outgoingPublishTask = Task.Run(ProcessOutgoingPublishesAsync, CancellationToken);

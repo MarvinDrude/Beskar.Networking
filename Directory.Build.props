@@ -12,8 +12,10 @@
 
    <PropertyGroup>
       <Authors>Marvin Drude</Authors>
+      <Copyright>Copyright (c) Marvin Drude</Copyright>
       <PackageLicenseExpression>MIT</PackageLicenseExpression>
       <PackageReadmeFile>README.md</PackageReadmeFile>
+      <PackageTags>Networking MQTT TCP WebSockets Pipelines QUIC Messaging Performance Allocation Sockets Streams Server Client</PackageTags>
       <PublishRepositoryUrl>true</PublishRepositoryUrl>
       <RepositoryUrl>https://github.com/MarvinDrude/Beskar.Networking</RepositoryUrl>
       <IncludeSymbols>true</IncludeSymbols>
