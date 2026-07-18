@@ -68,7 +68,9 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
             DefaultCloseErrorCode = _options.DefaultCloseErrorCode,
             MaxInboundBidirectionalStreams = _options.MaxInboundBidirectionalStreams,
             MaxInboundUnidirectionalStreams = _options.MaxInboundUnidirectionalStreams,
-            ClientAuthenticationOptions = clientAuthOptions
+            ClientAuthenticationOptions = clientAuthOptions,
+            IdleTimeout = _options.IdleTimeout,
+            HandshakeTimeout = _options.HandshakeTimeout
          };
 
          if (_options.KeepAliveInterval.HasValue)

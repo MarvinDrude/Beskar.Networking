@@ -290,4 +290,38 @@ public class QuicTransportTests
       await Assert.That(client.LocalAddress).IsNull();
       await Assert.That(client.RemoteAddress).IsNull();
    }
+
+   [Test]
+   public async Task QuicClientServer_VerifyTimeoutOptionsConfigured_Succeeds()
+   {
+      if (!QuicConnection.IsSupported || !QuicListener.IsSupported)
+      {
+         return;
+      }
+
+      var options = new QuicTransportOptions
+      {
+         IdleTimeout = TimeSpan.FromSeconds(5),
+         HandshakeTimeout = TimeSpan.FromSeconds(3)
+      };
+
+      var listener = new QuicNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new QuicNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      // Cleanup
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
 }

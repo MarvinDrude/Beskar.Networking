@@ -96,7 +96,9 @@ public sealed class QuicNetworkListener(
                   DefaultCloseErrorCode = _options.DefaultCloseErrorCode,
                   MaxInboundBidirectionalStreams = _options.MaxInboundBidirectionalStreams,
                   MaxInboundUnidirectionalStreams = _options.MaxInboundUnidirectionalStreams,
-                  ServerAuthenticationOptions = serverAuthOptions
+                  ServerAuthenticationOptions = serverAuthOptions,
+                  IdleTimeout = _options.IdleTimeout,
+                  HandshakeTimeout = _options.HandshakeTimeout
                };
 
                if (_options.KeepAliveInterval.HasValue)

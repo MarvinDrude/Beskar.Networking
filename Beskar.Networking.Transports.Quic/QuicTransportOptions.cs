@@ -65,4 +65,16 @@ public class QuicTransportOptions
    /// The maximum number of pending connections that can be queued in the listener's session channel. Defaults to 1024.
    /// </summary>
    public int MaxPendingConnections { get; set; } = 1024;
+
+   /// <summary>
+   /// The maximum idle timeout for the QUIC connection. Inactive connections will be closed automatically.
+   /// Defaults to 30 seconds.
+   /// </summary>
+   public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+   /// <summary>
+   /// The handshake timeout for the QUIC connection.
+   /// Defaults to 10 seconds.
+   /// </summary>
+   public TimeSpan HandshakeTimeout { get; set; } = TimeSpan.FromSeconds(10);
 }
