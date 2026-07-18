@@ -164,7 +164,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                try
                {
                   using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-                  handshakeTimeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+                  handshakeTimeoutCts.CancelAfter(_options.HandshakeTimeout);
 
                   var tcpStreamResult = await tcpSession.AcceptStreamAsync(handshakeTimeoutCts.Token);
                   if (tcpStreamResult.Failed)

@@ -480,4 +480,119 @@ public class WsTransportTests
       await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task WsHandshake_WithAllowedOriginsMatching_HandshakeSucceeds()
+   {
+      var serverOptions = new WsTransportOptions
+      {
+         Path = "/chat",
+         AllowedOrigins = new[] { "http://localhost:8080", "https://app.example.com" }
+      };
+
+      var clientOptions = new WsTransportOptions
+      {
+         Path = "/chat",
+         Origin = "https://app.example.com"
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), serverOptions);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(clientOptions);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      await connectResult.Success!.DisposeAsync();
+      await acceptResult.Success!.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsHandshake_WithAllowedOriginsMismatch_HandshakeFails()
+   {
+      var serverOptions = new WsTransportOptions
+      {
+         Path = "/chat",
+         AllowedOrigins = new[] { "https://app.example.com" }
+      };
+
+      var clientOptions = new WsTransportOptions
+      {
+         Path = "/chat",
+         Origin = "https://evil.com"
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), serverOptions);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(clientOptions);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      
+      // Client handshake should fail because server rejects origin with 403 Forbidden
+      await Assert.That(connectResult.Failed).IsTrue();
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsHandshake_WithAllowedOriginsConfiguredButClientOmitsOrigin_HandshakeFails()
+   {
+      var serverOptions = new WsTransportOptions
+      {
+         Path = "/chat",
+         AllowedOrigins = new[] { "https://app.example.com" }
+      };
+
+      var clientOptions = new WsTransportOptions
+      {
+         Path = "/chat",
+         Origin = null // No origin
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), serverOptions);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(clientOptions);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      
+      await Assert.That(connectResult.Failed).IsTrue();
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsHandshake_WithHandshakeTimeoutExceeded_HandshakeFails()
+   {
+      var serverOptions = new WsTransportOptions
+      {
+         Path = "/chat",
+         HandshakeTimeout = TimeSpan.FromMilliseconds(100) // very short
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), serverOptions);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, actualPort);
+      await using var stream = tcpClient.GetStream();
+
+      // Client connects but sends nothing, exceeding handshake timeout
+      await Task.Delay(300);
+
+      // Verify that server has closed the connection (subsequent write or read should indicate close)
+      var buffer = new byte[10];
+      var readBytes = await stream.ReadAsync(buffer);
+      await Assert.That(readBytes).IsEqualTo(0); // connection closed by server
+
+      await listener.UnbindAsync();
+   }
 }

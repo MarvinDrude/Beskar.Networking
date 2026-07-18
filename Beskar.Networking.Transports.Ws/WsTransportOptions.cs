@@ -40,4 +40,21 @@ public sealed class WsTransportOptions
    /// The underlying TCP options used to establish socket connections, SSL, and connection pooling.
    /// </summary>
    public TcpTransportOptions TcpOptions { get; set; } = new();
+
+   /// <summary>
+   /// Restricts the time allowed for the initial HTTP Upgrade request to be received.
+   /// Defaults to 10 seconds.
+   /// </summary>
+   public TimeSpan HandshakeTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+   /// <summary>
+   /// An array of allowed origins to validate in the HTTP header handshake.
+   /// Set null or empty to allow all origins.
+   /// </summary>
+   public string[]? AllowedOrigins { get; set; }
+
+   /// <summary>
+   /// The Origin header to send during the client-side handshake.
+   /// </summary>
+   public string? Origin { get; set; }
 }

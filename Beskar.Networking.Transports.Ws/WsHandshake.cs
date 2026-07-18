@@ -49,7 +49,20 @@ public static class WsHandshake
       var reader = tcpPipe.Input;
       var writer = tcpPipe.Output;
 
-      var headersText = await ReadHttpHeadersAsync(reader, options.MaxHeaderSize, ct);
+      using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      timeoutCts.CancelAfter(options.HandshakeTimeout);
+
+      string? headersText;
+      try
+      {
+         headersText = await ReadHttpHeadersAsync(reader, options.MaxHeaderSize, timeoutCts.Token);
+      }
+      catch (OperationCanceledException)
+      {
+         TraceLogger.LogServerError("WS Handshake: Failed to read HTTP headers. Handshake timed out.");
+         return null;
+      }
+
       if (headersText == null)
       {
          TraceLogger.LogServerError("WS Handshake: Failed to read HTTP headers from client or headers exceeded limits.");
@@ -75,6 +88,7 @@ public static class WsHandshake
       string? clientKey = null;
       var isUpgrade = false;
       var isConnectionUpgrade = false;
+      string? origin = null;
 
       for (var i = 1; i < lines.Length; i++)
       {
@@ -96,6 +110,37 @@ public static class WsHandshake
          else if (headerName == "sec-websocket-key")
          {
             clientKey = headerValue;
+         }
+         else if (headerName == "origin")
+         {
+            origin = headerValue;
+         }
+      }
+
+      if (options.AllowedOrigins is not null && options.AllowedOrigins.Length > 0)
+      {
+         if (string.IsNullOrEmpty(origin))
+         {
+            TraceLogger.LogServerError("WS Handshake: Server handshake failed: Origin header is missing but AllowedOrigins is configured.");
+            await SendErrorResponseAsync(writer, "400 Bad Request", "Origin header is required.");
+            return null;
+         }
+
+         var matched = false;
+         foreach (var allowed in options.AllowedOrigins)
+         {
+            if (string.Equals(origin, allowed, StringComparison.OrdinalIgnoreCase))
+            {
+               matched = true;
+               break;
+            }
+         }
+
+         if (!matched)
+         {
+            TraceLogger.LogServerError("WS Handshake: Server handshake failed: origin '{0}' is not allowed.", origin);
+            await SendErrorResponseAsync(writer, "403 Forbidden", "Origin is not allowed.");
+            return null;
          }
       }
 
@@ -190,6 +235,12 @@ public static class WsHandshake
             {
                request.Write("Sec-WebSocket-Protocol: ");
                request.Write(options.Subprotocol);
+               request.Write("\r\n");
+            }
+            if (!string.IsNullOrEmpty(options.Origin))
+            {
+               request.Write("Origin: ");
+               request.Write(options.Origin);
                request.Write("\r\n");
             }
             request.Write("\r\n");
