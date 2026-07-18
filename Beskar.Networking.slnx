@@ -14,7 +14,9 @@
     <Project Path="Common/Beskar.Networking.Common/Beskar.Networking.Common.csproj" />
   </Folder>
   <Folder Name="/Documentation/" />
-  <Folder Name="/Documentation/Basics/" />
+  <Folder Name="/Documentation/Basics/">
+    <File Path="Documentation/Basics/Abstractions.md" />
+  </Folder>
   <Folder Name="/Documentation/Mqtt/">
     <File Path="Documentation/Mqtt/Authentication.md" />
     <File Path="Documentation/Mqtt/PubSub.md" />

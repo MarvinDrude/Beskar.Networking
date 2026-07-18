@@ -76,7 +76,10 @@ public sealed class MqttServerClient : IPooledObject
       if (_isDisconnecting || !IsConnected) return;
       _isDisconnecting = true;
 
-      DisconnectOptions = options;
+      if (options is not null)
+      {
+         DisconnectOptions = options;
+      }
 
       if (ProtocolVersion is MqttProtocolVersion.V50
           && options is not null)
