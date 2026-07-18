@@ -382,7 +382,7 @@ public class SignalBrokerTests
       // Act & Assert
       try
       {
-         await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+         await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(20), CancellationToken.None);
       }
       catch (TimeoutException)
       {

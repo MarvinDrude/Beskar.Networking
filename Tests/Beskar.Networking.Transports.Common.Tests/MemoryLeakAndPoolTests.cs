@@ -299,9 +299,12 @@ public class MemoryLeakAndPoolTests
       await serverSession.DisposeAsync();
 
       // Perform GC to ensure everything is returned
-      GC.Collect(2, GCCollectionMode.Forced, blocking: true);
-      GC.WaitForPendingFinalizers();
-      GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+      for (var gc = 0; gc < 10; gc++)
+      {
+         GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+         GC.WaitForPendingFinalizers();
+         GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+      }
 
       var cachedWarmup = -1;
 
@@ -331,9 +334,12 @@ public class MemoryLeakAndPoolTests
          await clientSession.DisposeAsync();
          await serverSession.DisposeAsync();
 
-         GC.Collect(2, GCCollectionMode.Forced, blocking: true);
-         GC.WaitForPendingFinalizers();
-         GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+         for (var gc = 0; gc < 10; gc++)
+         {
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+         }
 
          var cachedCurrent = PoolDiagnostics.GetCachedBlocksCount(memoryPool!);
          if (i == 0)

@@ -509,9 +509,9 @@ public static class Program
        Result<ClientConnectResult, StringError> connectResult;
        try
        {
-          using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-          connectCts.CancelAfter(TimeSpan.FromSeconds(5));
-          connectResult = await client.ConnectAsync(connectOptions, connectCts.Token);
+           using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+           connectCts.CancelAfter(TimeSpan.FromSeconds(15));
+           connectResult = await client.ConnectAsync(connectOptions, connectCts.Token);
        }
        catch (Exception ex)
        {

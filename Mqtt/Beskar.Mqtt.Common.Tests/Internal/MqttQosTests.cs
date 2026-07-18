@@ -1167,13 +1167,13 @@ public class MqttQosTests
          .WithTopicFilter("will/test/delayed"u8, QualityOfServiceType.AtLeastOnce)
          .Build());
 
-      // Client A with Will Delay of 10 seconds
+      // Client A with Will Delay of 30 seconds
       var clientA = MqttClientFactory.CreateTcp();
       var connectOptionsA = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
          .WithClientId("client-a-will-delay")
          .WithCleanSession(false)
          .WithWill("will/test/delayed", "WillDelayPayload"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false)
-         .WithWillDelayInterval(10)
+         .WithWillDelayInterval(30)
          .Build();
 
       await clientA.ConnectAsync(connectOptionsA);
