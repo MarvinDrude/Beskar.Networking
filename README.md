@@ -99,6 +99,11 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
   - [**Common**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Advanced/Beskar.Adv.Chat.Common): Reusable packet serialization and custom packet framing utilities.
   - [**Server**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Advanced/Beskar.Adv.Chat.Server): Integrates a unified `ChatServerBuilder` to listen and accept chat sessions concurrently on TCP (9000), WebSockets (11000), and QUIC (12000).
   - [**Client**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Advanced/Beskar.Adv.Chat.Client): An interactive console application allowing users to connect via their choice of protocol (TCP/WS/QUIC), receive recent chat history, and chat in real-time under a random username.
+- [**MQTT Managed Examples**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt): A set of projects demonstrating the high-level managed MQTT APIs:
+  - [**Simple Publish-Subscribe**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.SimplePubSub): A complete pub-sub flow showing how to spin up an MQTT broker, connect a sensor client (publisher) and dashboard client (subscriber) over TCP using MQTT v5.0.
+  - [**Quality of Service (QoS) Levels**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.QosLevels): Demonstrates publishing and subscribing messages with different QoS levels (QoS 0: At Most Once, QoS 1: At Least Once, QoS 2: Exactly Once) using wildcard topic filters.
+  - [**Authentication (v3 & v5 Challenges)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.Authentication): Highlights both simple username/password validation for MQTT v3.1.1 and advanced challenge-response authentication for MQTT v5.0.
+  - [**Client Reconnection & Event Handling**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.Reconnection): Shows how to register connection status events and implement custom auto-reconnection loops when connections are unexpectedly lost.
 
 ---
 

@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.IO.Pipelines;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -43,6 +44,9 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
       EndPoint endPoint, CancellationToken ct = default)
    {
       Socket? socket = null;
+      Stream? stream = null;
+      IDuplexPipe? connection = null;
+
       try
       {
          TraceLogger.LogClientInfo("TCP ConnectAsync: Initiating socket connection to {0}", endPoint);
@@ -64,7 +68,6 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
          await socket.ConnectAsync(endPoint, ct);
          TraceLogger.LogClientInfo("TCP ConnectAsync: Socket successfully connected to {0} (Local: {1})", socket.RemoteEndPoint, socket.LocalEndPoint);
 
-         Stream? stream = null;
          if (_options.UseSsl)
          {
             TraceLogger.LogClientInfo("TCP ConnectAsync: Starting SSL client authentication for {0}", endPoint);
@@ -88,7 +91,7 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
             stream = new NetworkStream(socket, ownsSocket: true);
          }
 
-         var connection = _ioQueueRegistry.Create(socket, stream);
+         connection = _ioQueueRegistry.Create(socket, stream);
 
          var localEndPoint = socket.LocalEndPoint ?? socket.RemoteEndPoint ?? endPoint;
          var remoteEndPoint = socket.RemoteEndPoint ?? endPoint;
@@ -109,13 +112,37 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
       }
       catch (SocketException ex)
       {
-         socket?.Dispose();
+         if (connection is not null)
+         {
+            await _ioQueueRegistry.ReturnAsync(connection);
+         }
+         else if (stream is not null)
+         {
+            await stream.DisposeAsync();
+         }
+         else
+         {
+            socket?.Dispose();
+         }
+
          TraceLogger.LogClientError("TCP ConnectAsync: Socket error connecting to {0}: {1}", endPoint, ex.Message);
          return new NetworkCodeError(ex.ErrorCode, ex.Message);
       }
       catch (Exception ex)
       {
-         socket?.Dispose();
+         if (connection is not null)
+         {
+            await _ioQueueRegistry.ReturnAsync(connection);
+         }
+         else if (stream is not null)
+         {
+            await stream.DisposeAsync();
+         }
+         else
+         {
+            socket?.Dispose();
+         }
+
          TraceLogger.LogClientError("TCP ConnectAsync: Unexpected error connecting to {0}: {1}", endPoint, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }

@@ -227,7 +227,9 @@ public sealed class TcpNetworkListener(
       CancellationToken token)
    {
       Stream? stream = null;
+      IDuplexPipe? connection = null;
       var success = false;
+
       try
       {
          if (_options.UseSsl)
@@ -251,6 +253,7 @@ public sealed class TcpNetworkListener(
 
             await sslStream.AuthenticateAsServerAsync(sslOptions, handshakeTimeoutCts.Token);
             stream = sslStream;
+
             TraceLogger.LogServerInfo("TCP Listener: SSL server successfully authenticated client {0}", remoteEndPoint);
          }
          else if (_options.ForceStreamBased)
@@ -258,11 +261,12 @@ public sealed class TcpNetworkListener(
             stream = new NetworkStream(socket, ownsSocket: true);
          }
 
-         var connection = _ioQueueRegistry.Create(socket, stream);
+         connection = _ioQueueRegistry.Create(socket, stream);
          var session = new TcpNetworkSession(localEndPoint, remoteEndPoint, connection, _ioQueueRegistry.ReturnAsync);
 
          TraceLogger.LogServerInfo("TCP Listener: Enqueuing network session {0} for client {1}", session.Id, remoteEndPoint);
          Interlocked.Increment(ref _sessionsAccepted);
+
          await _sessionChannel.Writer.WriteAsync(session, token);
          success = true;
       }
@@ -284,7 +288,11 @@ public sealed class TcpNetworkListener(
       {
          if (!success)
          {
-            if (stream is not null)
+            if (connection is not null)
+            {
+               await _ioQueueRegistry.ReturnAsync(connection);
+            }
+            else if (stream is not null)
             {
                await stream.DisposeAsync();
             }

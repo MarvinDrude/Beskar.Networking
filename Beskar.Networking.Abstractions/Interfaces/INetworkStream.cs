@@ -45,4 +45,28 @@ public interface INetworkStream : IAsyncDisposable
    /// <remarks>MUST be disposed after done.</remarks>
    /// </summary>
    public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default);
+
+   /// <summary>
+   /// Atomically increments the number of bytes received and updates the last received timestamp.
+   /// </summary>
+   public void IncrementBytesReceived(long bytes)
+   {
+      var stats = Stats;
+      stats.BytesReceived += bytes;
+      stats.LastReceivedTimestamp = DateTimeOffset.UtcNow;
+
+      Stats = stats;
+   }
+
+   /// <summary>
+   /// Atomically increments the number of bytes sent and updates the last sent timestamp.
+   /// </summary>
+   public void IncrementBytesSent(long bytes)
+   {
+      var stats = Stats;
+      stats.BytesSent += bytes;
+      stats.LastSentTimestamp = DateTimeOffset.UtcNow;
+
+      Stats = stats;
+   }
 }

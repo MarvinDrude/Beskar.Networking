@@ -30,6 +30,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    private readonly Task _writeTask;
    private readonly AsyncLock _writeLock = new();
    private int _disposed;
+   private byte _currentFrameOpcode;
 
    public PipeReader Input => _inputPipe.Reader;
    public PipeWriter Output => _outputPipe.Writer;
@@ -63,6 +64,44 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             {
                if (opcode is (byte)WebSocketOpcode.Binary or (byte)WebSocketOpcode.Text)
                {
+                  if (_currentFrameOpcode != 0)
+                  {
+                     throw new InvalidDataException(
+                        $"Received a new message starting frame (opcode: {opcode}) while an existing fragmented message (opcode: {_currentFrameOpcode}) is still incomplete.");
+                  }
+
+                  if (!isFin)
+                  {
+                     _currentFrameOpcode = opcode;
+                  }
+
+                  if (maskKey != null)
+                  {
+                     UnmaskAndWrite(writer, payload, maskKey);
+                  }
+                  else
+                  {
+                     foreach (var segment in payload)
+                     {
+                        writer.Write(segment.Span);
+                     }
+                  }
+
+                  await writer.FlushAsync(_cts.Token);
+               }
+               else if (opcode == 0) // Continuation Frame
+               {
+                  if (_currentFrameOpcode == 0)
+                  {
+                     throw new InvalidDataException(
+                        "Received an unexpected WebSocket Continuation frame (opcode 0) when no fragmented message was active.");
+                  }
+
+                  if (isFin)
+                  {
+                     _currentFrameOpcode = 0;
+                  }
+
                   if (maskKey != null)
                   {
                      UnmaskAndWrite(writer, payload, maskKey);
@@ -88,6 +127,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                {
                   await _cts.CancelAsync();
                   break;
+               }
+               else
+               {
+                  throw new InvalidDataException($"Received invalid or unsupported WebSocket opcode: {opcode}");
                }
             }
 
@@ -312,20 +355,24 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
        }
     }
 
-    private static void UnmaskAndWrite(PipeWriter writer, ReadOnlySequence<byte> payload, byte[] maskKey)
-    {
-       var payloadIndex = 0;
+     private static void UnmaskAndWrite(PipeWriter writer, ReadOnlySequence<byte> payload, byte[] maskKey)
+     {
+        var payloadIndex = 0;
 
-       foreach (var segment in payload)
-       {
-          var span = segment.Span;
-          var target = writer.GetSpan(span.Length);
+        foreach (var segment in payload)
+        {
+           var remaining = segment.Span;
+           while (!remaining.IsEmpty)
+           {
+              var chunkSize = Math.Min(remaining.Length, 4096);
+              var targetSpan = writer.GetSpan(chunkSize);
 
-          MaskOrUnmask(target[..span.Length], span, maskKey, ref payloadIndex);
-
-          writer.Advance(span.Length);
-       }
-    }
+              MaskOrUnmask(targetSpan[..chunkSize], remaining[..chunkSize], maskKey, ref payloadIndex);
+              writer.Advance(chunkSize);
+              remaining = remaining[chunkSize..];
+           }
+        }
+     }
 
    private static async Task WriteFrameAsync(
       PipeWriter tcpWriter,
@@ -389,17 +436,15 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
          foreach (var segment in payload)
          {
-            var span = segment.Span;
-            var rented = ArrayPool<byte>.Shared.Rent(span.Length);
-            try
+            var remaining = segment.Span;
+            while (!remaining.IsEmpty)
             {
-               MaskOrUnmask(rented.AsSpan(0, span.Length), span, maskKey, ref payloadIndex);
+               var chunkSize = Math.Min(remaining.Length, 4096);
+               var targetSpan = tcpWriter.GetSpan(chunkSize);
 
-               tcpWriter.Write(rented.AsSpan(0, span.Length));
-            }
-            finally
-            {
-               ArrayPool<byte>.Shared.Return(rented);
+               MaskOrUnmask(targetSpan[..chunkSize], remaining[..chunkSize], maskKey, ref payloadIndex);
+               tcpWriter.Advance(chunkSize);
+               remaining = remaining[chunkSize..];
             }
          }
       }
@@ -430,8 +475,6 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          // Ignored
       }
 
-      _cts.Dispose();
-
       try
       {
          await _readTask;
@@ -448,5 +491,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       await _inputPipe.Writer.CompleteAsync();
       await _outputPipe.Reader.CompleteAsync();
       await _outputPipe.Writer.CompleteAsync();
+
+      _cts.Dispose();
    }
 }

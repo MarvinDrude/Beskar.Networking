@@ -42,11 +42,7 @@ public sealed class StatsTrackingDuplexPipe : IDuplexPipe
 
             if (bytesConsumed > 0)
             {
-               var stats = _stream.Stats;
-               stats.BytesReceived += bytesConsumed;
-               stats.LastReceivedTimestamp = DateTimeOffset.UtcNow;
-
-               _stream.Stats = stats;
+               _stream.IncrementBytesReceived(bytesConsumed);
                _lastBuffer = _lastBuffer.Slice(consumed);
             }
          }
@@ -90,11 +86,7 @@ public sealed class StatsTrackingDuplexPipe : IDuplexPipe
 
       public override void Advance(int bytes)
       {
-         var stats = _stream.Stats;
-         stats.BytesSent += bytes;
-         stats.LastSentTimestamp = DateTimeOffset.UtcNow;
-         _stream.Stats = stats;
-
+         _stream.IncrementBytesSent(bytes);
          _inner.Advance(bytes);
       }
 
