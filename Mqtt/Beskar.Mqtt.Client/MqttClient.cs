@@ -462,6 +462,15 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       if (_disposed) return;
       _disposed = true;
 
+      try
+      {
+         await DisconnectInternalAsync(false);
+      }
+      catch
+      {
+         // Ignored
+      }
+
       _signalBroker.Dispose();
       _clientTokenSource.Dispose();
 

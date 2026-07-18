@@ -4,6 +4,7 @@ using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
+using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -51,6 +52,9 @@ public sealed class MqttServerClient : IPooledObject
    private readonly Dictionary<ushort, byte[]> _topicAliases = new(16);
 
    private Channel<IHeapMqttOptions>? _controlPacketChannel;
+   private Channel<PublishPacket>? _outgoingPublishChannel;
+   private Task? _outgoingPublishTask;
+
    private bool _isDisconnecting;
 
    public void Initialize(
@@ -69,6 +73,13 @@ public sealed class MqttServerClient : IPooledObject
          SingleWriter = false,
          SingleReader = false,
       });
+
+      _outgoingPublishChannel = Channel.CreateUnbounded<PublishPacket>(new UnboundedChannelOptions()
+      {
+         SingleWriter = false,
+         SingleReader = true,
+      });
+      _outgoingPublishTask = Task.Run(ProcessOutgoingPublishesAsync, CancellationToken);
    }
 
    internal async Task DisconnectAsync(DisconnectOptions? options = null)
@@ -84,7 +95,15 @@ public sealed class MqttServerClient : IPooledObject
       if (ProtocolVersion is MqttProtocolVersion.V50
           && options is not null)
       {
-         await _stream.Send(options, ProtocolVersion, ct: CancellationToken);
+         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+         try
+         {
+            await _stream.Send(options, ProtocolVersion, ct: timeoutCts.Token);
+         }
+         catch (Exception ex)
+         {
+            TraceLogger.LogServerWarning("MqttServerClient: Failed to send disconnect packet: {0}", ex.Message);
+         }
       }
 
       if (_cancellationTokenSource is not null)
@@ -165,6 +184,46 @@ public sealed class MqttServerClient : IPooledObject
          _controlPacketChannel = null;
       }
 
+      if (_outgoingPublishChannel is not null)
+      {
+         _outgoingPublishChannel.Writer.TryComplete();
+         _outgoingPublishChannel = null;
+      }
+      _outgoingPublishTask = null;
+
       return true;
+   }
+
+   internal void QueueOutgoingPublish(in PublishPacket packet)
+   {
+      _outgoingPublishChannel?.Writer.TryWrite(packet);
+   }
+
+   private async Task ProcessOutgoingPublishesAsync()
+   {
+      var channel = _outgoingPublishChannel;
+      if (channel is null) return;
+
+      var token = CancellationToken;
+      try
+      {
+         var reader = channel.Reader;
+         while (await reader.WaitToReadAsync(token))
+         {
+            while (reader.TryRead(out var packet))
+            {
+               if (_stream is null) break;
+               await _stream.Send(in packet, ProtocolVersion, token);
+            }
+         }
+      }
+      catch (OperationCanceledException)
+      {
+         // Normal shutdown
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogServerError("MqttServerClient: Error in outgoing publish worker: {0}", ex.Message);
+      }
    }
 }
