@@ -4,6 +4,9 @@ using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Results;
+using Beskar.Memory.Results;
+using Beskar.Memory.Results.Errors;
 
 namespace Beskar.Mqtt.ChaosSimulator;
 
@@ -33,7 +36,7 @@ public static class ClientBehaviors
          Program.LogChaos("CLIENT", transport, version, "PUBLISH",
             $"Client '{clientId}' publishing to '{topic}' (QoS {qos}).", ConsoleColor.Yellow);
 
-         var result = await client.PublishAsync(publishOptions, ct);
+         var result = await PublishWithTimeoutAsync(client, publishOptions, ct);
 
          if (!result.Failed)
          {
@@ -82,7 +85,7 @@ public static class ClientBehaviors
 
       Program.LogChaos("CLIENT", transport, version, "SUB", $"Client '{clientId}' subscribing to '{topicFilter}'...",
          ConsoleColor.Cyan);
-      var subResult = await client.SubscribeAsync(subscribeOptions, ct);
+      var subResult = await SubscribeWithTimeoutAsync(client, subscribeOptions, ct);
 
       if (subResult.Failed)
       {
@@ -102,14 +105,8 @@ public static class ClientBehaviors
 
       Program.LogChaos("CLIENT", transport, version, "UNSUB",
          $"Client '{clientId}' unsubscribing from '{topicFilter}'...", ConsoleColor.Cyan);
-      try
-      {
-         await client.UnsubscribeAsync(unsubscribeOptions, ct);
-      }
-      catch
-      {
-         /* Ignored */
-      }
+      
+      await UnsubscribeWithTimeoutAsync(client, unsubscribeOptions, ct);
    }
 
    public static async Task ExecuteKeepAliveBehaviorAsync(
@@ -139,8 +136,18 @@ public static class ClientBehaviors
 
       Program.LogChaos("CLIENT", transport, version, "FLAKY_PUB", $"Client '{clientId}' publishing quick payload...",
          ConsoleColor.Yellow);
-      await client.PublishAsync(publishOptions, ct);
-      Interlocked.Increment(ref Program.ClientPublishesSent);
+      
+      var result = await PublishWithTimeoutAsync(client, publishOptions, ct);
+      if (!result.Failed)
+      {
+         Interlocked.Increment(ref Program.ClientPublishesSent);
+      }
+      else
+      {
+         Interlocked.Increment(ref Program.ClientPublishesFailed);
+         Program.LogChaos("CLIENT", transport, version, "PUB_ERR",
+            $"Client '{clientId}' flaky publish failed: {result.Error.Detail}", ConsoleColor.DarkRed, true);
+      }
 
       await Task.Delay(Random.Shared.Next(100, 500), ct);
    }
@@ -173,7 +180,7 @@ public static class ClientBehaviors
 
       Program.LogChaos("CLIENT", transport, version, "SUB_SLOW",
          $"Client '{clientId}' subscribing to 'sensors/+' as a slow subscriber...", ConsoleColor.Cyan);
-      var subResult = await client.SubscribeAsync(subscribeOptions, ct);
+      var subResult = await SubscribeWithTimeoutAsync(client, subscribeOptions, ct);
 
       if (subResult.Failed)
       {
@@ -199,7 +206,7 @@ public static class ClientBehaviors
       {
          Program.LogChaos("CLIENT", transport, version, "PUB_Q2", $"Client '{clientId}' publishing QoS 2 message...",
             ConsoleColor.Yellow);
-         var result = await client.PublishAsync(pubOptions, ct);
+         var result = await PublishWithTimeoutAsync(client, pubOptions, ct);
          if (!result.Failed)
          {
             Interlocked.Increment(ref Program.ClientPublishesSent);
@@ -234,7 +241,7 @@ public static class ClientBehaviors
 
       Program.LogChaos("CLIENT", transport, version, "SUB_WILD", $"Client '{clientId}' subscribing to wildcard '#'...",
          ConsoleColor.Cyan);
-      var subResult = await client.SubscribeAsync(subscribeOptions, ct);
+      var subResult = await SubscribeWithTimeoutAsync(client, subscribeOptions, ct);
 
       if (subResult.Failed)
       {
@@ -257,8 +264,19 @@ public static class ClientBehaviors
 
       Program.LogChaos("CLIENT", transport, version, "AUTH_ALT",
          $"Client '{clientId}' publishing auth-alternator payload...", ConsoleColor.Yellow);
-      await client.PublishAsync(publishOptions, ct);
-      Interlocked.Increment(ref Program.ClientPublishesSent);
+      
+      var result = await PublishWithTimeoutAsync(client, publishOptions, ct);
+      if (!result.Failed)
+      {
+         Interlocked.Increment(ref Program.ClientPublishesSent);
+      }
+      else
+      {
+         Interlocked.Increment(ref Program.ClientPublishesFailed);
+         Program.LogChaos("CLIENT", transport, version, "PUB_ERR",
+            $"Client '{clientId}' auth alternator publish failed: {result.Error.Detail}", ConsoleColor.DarkRed, true);
+      }
+      
       await Task.Delay(Random.Shared.Next(100, 300), ct);
    }
 
@@ -276,7 +294,7 @@ public static class ClientBehaviors
 
       while (DateTimeOffset.UtcNow < end && !ct.IsCancellationRequested)
       {
-         var result = await client.PublishAsync(pubOptions, ct);
+         var result = await PublishWithTimeoutAsync(client, pubOptions, ct);
          if (!result.Failed)
          {
             Interlocked.Increment(ref Program.ClientPublishesSent);
@@ -291,6 +309,51 @@ public static class ClientBehaviors
          }
 
          await Task.Delay(50, ct);
+      }
+   }
+
+   private static async Task<Result<PublishResult, StringError>> PublishWithTimeoutAsync(
+      IMqttClient client, PublishOptions options, CancellationToken ct)
+   {
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      cts.CancelAfter(TimeSpan.FromSeconds(5));
+      try
+      {
+         return await client.PublishAsync(options, cts.Token);
+      }
+      catch (Exception ex)
+      {
+         return new StringError($"Publish failed or timed out: {ex.Message}");
+      }
+   }
+
+   private static async Task<Result<SubscribeResult, StringError>> SubscribeWithTimeoutAsync(
+      IMqttClient client, SubscribeOptions options, CancellationToken ct)
+   {
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      cts.CancelAfter(TimeSpan.FromSeconds(5));
+      try
+      {
+         return await client.SubscribeAsync(options, cts.Token);
+      }
+      catch (Exception ex)
+      {
+         return new StringError($"Subscribe failed or timed out: {ex.Message}");
+      }
+   }
+
+   private static async Task<Result<UnsubscribeResult, StringError>> UnsubscribeWithTimeoutAsync(
+      IMqttClient client, UnsubscribeOptions options, CancellationToken ct)
+   {
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      cts.CancelAfter(TimeSpan.FromSeconds(5));
+      try
+      {
+         return await client.UnsubscribeAsync(options, cts.Token);
+      }
+      catch (Exception ex)
+      {
+         return new StringError($"Unsubscribe failed or timed out: {ex.Message}");
       }
    }
 }

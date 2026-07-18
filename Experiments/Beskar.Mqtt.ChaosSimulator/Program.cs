@@ -13,6 +13,9 @@ using Beskar.Mqtt.Server.Enums;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Utilities.Console.Rendering;
 using Beskar.Utilities.Tracing;
+using Beskar.Memory.Results;
+using Beskar.Memory.Results.Errors;
+using Beskar.Mqtt.Protocol.Results;
 
 namespace Beskar.Mqtt.ChaosSimulator;
 
@@ -63,7 +66,15 @@ public static class Program
       TargetConcurrentClients = 200;
       StatsIntervalSeconds = 5;
 
-      Console.Clear();
+      try
+      {
+         Console.Clear();
+      }
+      catch (Exception)
+      {
+         // ignored
+      }
+
       ConsoleRender.DrawHeader("BESKAR MQTT CHAOS SIMULATOR",
          "Simulating high load, multiple transports, authentication & random disconnections");
 
@@ -115,7 +126,18 @@ public static class Program
       var reporterTask = Task.Run(() => StatsReporter.RunStatsReporterAsync(cts.Token));
 
       ConsoleRender.Info("Simulator is running. Press Enter to stop...");
-      Console.ReadLine();
+      if (Console.IsInputRedirected)
+      {
+         try
+         {
+            await Task.Delay(15000, cts.Token);
+         }
+         catch (TaskCanceledException) { }
+      }
+      else
+      {
+         Console.ReadLine();
+      }
 
       ConsoleRender.Warning("Shutting down simulator...");
       await cts.CancelAsync();
@@ -484,7 +506,17 @@ public static class Program
       LogChaos("CLIENT", transportStr, versionStr, "CONNECTING",
          $"Client '{clientIdStr}' connecting (Auth scenario: {authScenario})...", ConsoleColor.DarkYellow);
 
-      var connectResult = await client.ConnectAsync(connectOptions, ct);
+       Result<ClientConnectResult, StringError> connectResult;
+       try
+       {
+          using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+          connectCts.CancelAfter(TimeSpan.FromSeconds(5));
+          connectResult = await client.ConnectAsync(connectOptions, connectCts.Token);
+       }
+       catch (Exception ex)
+       {
+          connectResult = new StringError($"Connection timed out or failed: {ex.Message}");
+       }
 
       if (connectResult.Failed)
       {
@@ -571,14 +603,16 @@ public static class Program
          {
             LogChaos("CLIENT", transportStr, versionStr, "DISCONN_G",
                $"Client '{clientIdStr}' disconnecting gracefully...", ConsoleColor.DarkGray);
-            try
-            {
-               await client.DisconnectAsync(new DisconnectOptions(), ct);
-            }
-            catch
-            {
-               /* Ignored */
-            }
+             try
+             {
+                using var disconnectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                disconnectCts.CancelAfter(TimeSpan.FromSeconds(2));
+                await client.DisconnectAsync(new DisconnectOptions(), disconnectCts.Token);
+             }
+             catch
+             {
+                /* Ignored */
+             }
          }
          else
          {
