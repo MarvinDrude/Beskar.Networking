@@ -7,6 +7,12 @@
       <NoWarn>$(NoWarn);CA1416</NoWarn>
    </PropertyGroup>
 
+   <PropertyGroup>
+      <Title>Beskar.Networking.Transports.Quic</Title>
+      <Description>Underlying QUIC Implementation for Beskar.Networking.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
    <ItemGroup>
      <ProjectReference Include="..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
      <ProjectReference Include="..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj" />

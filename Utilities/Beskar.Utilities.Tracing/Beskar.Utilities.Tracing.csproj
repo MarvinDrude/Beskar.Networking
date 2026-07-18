@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
+      <Title>Beskar.Utilities.Tracing</Title>
+      <Description>Tracing, performance profiling, and observability helpers for Beskar.</Description>
+      <IsPackable>true</IsPackable>
    </PropertyGroup>
 
    <ItemGroup>

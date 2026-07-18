@@ -1,6 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
+      <Title>Beskar.Mqtt.Protocol</Title>
+      <Description>MQTT protocol parsing, packets, and framing logic.</Description>
+      <IsPackable>true</IsPackable>
    </PropertyGroup>
 
    <ItemGroup>

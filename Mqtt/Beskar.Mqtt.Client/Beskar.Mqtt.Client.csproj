@@ -1,6 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
+      <Title>Beskar.Mqtt.Client</Title>
+      <Description>Lightweight and efficient MQTT client supporting v3.1.1 and v5.0 over any transport.</Description>
+      <IsPackable>true</IsPackable>
    </PropertyGroup>
 
    <ItemGroup>

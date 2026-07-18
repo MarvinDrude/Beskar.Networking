@@ -1,6 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
+      <Title>Beskar.Networking.Transports.Tcp</Title>
+      <Description>Underlying TCP Implementation for Beskar.Networking.</Description>
+      <IsPackable>true</IsPackable>
    </PropertyGroup>
 
    <ItemGroup>

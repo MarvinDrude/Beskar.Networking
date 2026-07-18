@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
+      <Title>Beskar.Networking.Abstractions</Title>
+      <Description>Abstractions and core interfaces for Beskar.Networking.</Description>
+      <IsPackable>true</IsPackable>
    </PropertyGroup>
 
    <ItemGroup>
