@@ -8,7 +8,9 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 {
    public ushort Identifier { get; private set; } = identifier;
    public Type MessageType { get; } = typeof(TResponseMessage);
+
    public bool IsPending => Volatile.Read(ref _state) == 0;
+   public bool IsCompletedSuccessfully => Volatile.Read(ref _state) == 1;
 
    /// <summary>
    /// Collision resolution (only for packets not supporting ids)

@@ -352,6 +352,13 @@ public sealed partial class MqttServer : IAsyncDisposable
          if (context.ReasonCode is not ConnectReasonCode.Success)
          {
             await streamContext.Stream.Send(in connAck, client.ProtocolVersion, ct);
+
+            try
+            {
+               await streamContext.Stream.Transport.Output.CompleteAsync();
+            }
+            catch { /* ignored */ }
+
             await streamContext.Connection.Session.DisposeAsync();
             return;
          }
@@ -494,9 +501,7 @@ public sealed partial class MqttServer : IAsyncDisposable
                var parser = new PacketParser(streamContext.Stream, packetHandler, client.ProtocolVersion);
                var valueTask = parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct);
 
-               var parseResult = valueTask.IsCompletedSuccessfully
-                  ? valueTask.Result
-                  : await valueTask.ConfigureAwait(false);
+               var parseResult = await valueTask.ConfigureAwait(false);
 
                if (parseResult.Failed || parseResult.Success is PacketDispatchResult.ProtocolError
                       or PacketDispatchResult.InvalidPacketType)

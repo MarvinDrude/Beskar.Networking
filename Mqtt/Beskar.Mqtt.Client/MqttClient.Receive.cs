@@ -34,9 +34,7 @@ public sealed partial class MqttClient
                var parser = new PacketParser(networkStream, _packetHandler, _protocolVersion);
                var valueTask = parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct);
 
-               var parseResult = valueTask.IsCompletedSuccessfully
-                  ? valueTask.Result
-                  : await valueTask.ConfigureAwait(false);
+               var parseResult = await valueTask.ConfigureAwait(false);
 
                if (parseResult.Failed || parseResult.Success is PacketDispatchResult.ProtocolError
                       or PacketDispatchResult.InvalidPacketType)

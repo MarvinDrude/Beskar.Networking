@@ -339,15 +339,20 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Awaiting handshakes (CONNACK or AUTH)...");
          var completedTask = await Task.WhenAny(connAckTask, authTask, _receiveTask);
 
-         if (connAckTask.IsCompleted)
+         if (connAckAwaiter.IsCompletedSuccessfully)
          {
             completedTask = connAckTask;
+         }
+         else if (_receiveTask.IsCompleted)
+         {
+            completedTask = _receiveTask;
          }
 
          if (completedTask == _receiveTask)
          {
             TraceLogger.LogClientError("MqttClient.ConnectInternalAsync: Receiver task exited unexpectedly during handshake.");
             await _receiveTask;
+
             return new StringError("Connection closed unexpectedly during handshake.");
          }
 
