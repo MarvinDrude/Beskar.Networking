@@ -27,7 +27,7 @@ var mqttServer = MqttServerFactory.CreateBuilder()
    .Build();
 
 // Intercept and handle incoming connect requests
-mqttServer.Events.OnConnectIntercept.Add(async ValueTask (ctx, ct) =>
+mqttServer.Events.OnConnectIntercept.Add(async (ctx, ct) =>
 {
    var protocolVersion = ctx.ConnectOptions.ProtocolVersion;
    TraceLogger.LogServerInfo($"Server: Received connect request for protocol: {protocolVersion}");

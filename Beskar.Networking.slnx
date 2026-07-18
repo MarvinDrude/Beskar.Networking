@@ -15,7 +15,9 @@
   </Folder>
   <Folder Name="/Documentation/" />
   <Folder Name="/Documentation/Basics/" />
-  <Folder Name="/Documentation/Mqtt/" />
+  <Folder Name="/Documentation/Mqtt/">
+    <File Path="Documentation/Mqtt/Authentication.md" />
+  </Folder>
   <Folder Name="/Examples/" />
   <Folder Name="/Examples/Advanced/">
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Client/Beskar.Adv.Chat.Client.csproj" />
