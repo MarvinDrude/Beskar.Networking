@@ -39,6 +39,7 @@ public sealed class SignalBroker : IDisposable
                awaitable.Fail(new ObjectDisposedException(nameof(SignalBroker)));
             }
 
+            awaitable.Dispose();
             throw new ObjectDisposedException(nameof(SignalBroker));
          }
 
@@ -58,34 +59,50 @@ public sealed class SignalBroker : IDisposable
 
       lock (_locks[identifier % 1024])
       {
-         var currentHead = _waiters[identifier];
-
-         // Prune dead nodes at the head of the chain
-         while (currentHead is not null && !currentHead.IsPending)
+         while (true)
          {
-            var next = currentHead.Next;
-            _waiters[identifier] = next;
+            var currentHead = _waiters[identifier];
 
-            currentHead.OnPruned();
-            currentHead = next;
+            // Prune dead nodes at the head of the chain
+            while (currentHead is not null && !currentHead.IsPending)
+            {
+               var next = currentHead.Next;
+               _waiters[identifier] = next;
+
+               currentHead.OnPruned();
+               currentHead = next;
+            }
+
+            if (currentHead is null)
+            {
+               return false;
+            }
+
+            if (currentHead.MessageType == msgType)
+            {
+               if (currentHead.TryComplete(in message))
+               {
+                  var next = currentHead.Next;
+                  _waiters[identifier] = next;
+
+                  currentHead.OnPruned();
+                  return true;
+               }
+
+               continue;
+            }
+
+            break;
          }
 
-         if (currentHead is null)
+         var prevHead = _waiters[identifier];
+         if (prevHead is null)
          {
             return false;
          }
 
-         if (currentHead.MessageType == msgType)
-         {
-            var next = currentHead.Next;
-            _waiters[identifier] = next;
-
-            currentHead.OnPruned();
-            return currentHead.TryComplete(in message);
-         }
-
-         var prev = currentHead;
-         var current = currentHead.Next;
+         var prev = prevHead;
+         var current = prev.Next;
 
          while (current is not null)
          {
@@ -107,6 +124,12 @@ public sealed class SignalBroker : IDisposable
                   current.OnPruned();
                   return true;
                }
+
+               prev.Next = current.Next;
+               current.OnPruned();
+
+               current = prev.Next;
+               continue;
             }
 
             prev = current;
@@ -121,6 +144,11 @@ public sealed class SignalBroker : IDisposable
    {
       lock (_locks[identifier % 1024])
       {
+         if (awaiter.IsPruned)
+         {
+            return false;
+         }
+
          return TryRemoveInternal(identifier, awaiter);
       }
    }

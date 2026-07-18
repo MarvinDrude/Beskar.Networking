@@ -11,6 +11,7 @@ public interface ISignalAwaiter : IDisposable
 
    public ushort Identifier { get; }
    public Type MessageType { get; }
+   public bool IsPruned { get; }
 
    public void Fail(Exception exception);
    public void Cancel();

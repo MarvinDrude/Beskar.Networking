@@ -11,6 +11,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    public bool IsPending => Volatile.Read(ref _state) == 0;
    public bool IsCompletedSuccessfully => Volatile.Read(ref _state) == 1;
+   public bool IsPruned => _isPruned;
 
    /// <summary>
    /// Collision resolution (only for packets not supporting ids)

@@ -157,29 +157,22 @@ public sealed class QuicNetworkListener(
       }
    }
 
-   public ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
+   public async ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
    {
       if (_listener is null)
       {
-         return ValueTask.FromResult<Result<INetworkSession, NetworkCodeError>>(
-            new NetworkCodeError(-1, "Listener is not bound. Call BindAsync first."));
+         return new NetworkCodeError(-1, "Listener is not bound. Call BindAsync first.");
       }
 
       try
       {
          return _sessionChannel.Reader.TryRead(out var result)
-            ? ValueTask.FromResult(result)
-            : Awaited();
+            ? result
+            : await _sessionChannel.Reader.ReadAsync(ct);
       }
       catch (ChannelClosedException)
       {
-         return ValueTask.FromResult<Result<INetworkSession, NetworkCodeError>>(
-            new NetworkCodeError(-1, "Listener has been unbound and session channel is closed."));
-      }
-
-      async ValueTask<Result<INetworkSession, NetworkCodeError>> Awaited()
-      {
-         return await _sessionChannel.Reader.ReadAsync(ct);
+         return new NetworkCodeError(-1, "Listener has been unbound and session channel is closed.");
       }
    }
 
