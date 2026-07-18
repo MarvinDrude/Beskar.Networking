@@ -52,6 +52,15 @@ public sealed class MqttKeepAliveService(
 
          while (await timer.WaitForNextTickAsync(ct))
          {
+            try
+            {
+               await _server.ClientSessions.CleanupExpiredSessionsAsync();
+            }
+            catch (Exception err)
+            {
+               TraceLogger.LogServerInfo("Error in MqttKeepAliveService session expiration cleanup: {0}", err.ToString());
+            }
+
             using var clients = await _server.ClientSessions.GetClients();
             var now = DateTimeOffset.UtcNow;
 

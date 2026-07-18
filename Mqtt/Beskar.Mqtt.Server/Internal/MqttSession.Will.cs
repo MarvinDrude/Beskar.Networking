@@ -76,6 +76,10 @@ internal sealed class MqttWillMessageState(
          {
             // Ignored
          }
+         finally
+         {
+            _delayCts?.Dispose();
+         }
       }, token);
    }
 
@@ -84,7 +88,15 @@ internal sealed class MqttWillMessageState(
       if (Interlocked.CompareExchange(ref _publishedOrCancelled, 1, 0) != 0)
          return false;
 
-      _delayCts?.Cancel();
+      try
+      {
+         _delayCts?.Cancel();
+      }
+      catch (ObjectDisposedException)
+      {
+         // Ignored
+      }
+
       clientSessions.RemovePendingWillMessage(ClientId);
 
       _ = Task.Run(async () =>
@@ -115,6 +127,13 @@ internal sealed class MqttWillMessageState(
    public void Cancel()
    {
       Interlocked.Exchange(ref _publishedOrCancelled, 1);
-      _delayCts?.Cancel();
+      try
+      {
+         _delayCts?.Cancel();
+      }
+      catch (ObjectDisposedException)
+      {
+         // Ignored
+      }
    }
 }

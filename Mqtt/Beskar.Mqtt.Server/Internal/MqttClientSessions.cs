@@ -81,6 +81,8 @@ public sealed class MqttClientSessions(MqttServer server)
                   existing = null;
 
                   session.DisconnectionTimestamp = null;
+                  session.IsConnected = true;
+
                   isSessionPresent = true;
                   // any other session recovery
                }
@@ -242,6 +244,7 @@ public sealed class MqttClientSessions(MqttServer server)
 
          session.DisconnectionTimestamp = DateTimeOffset.UtcNow;
          session.Client = null;
+         session.IsConnected = false;
 
          if (session.PendingWillMessage is not null)
          {
@@ -303,6 +306,34 @@ public sealed class MqttClientSessions(MqttServer server)
                /* ignored */
             }
          });
+      }
+   }
+
+   public async Task CleanupExpiredSessionsAsync()
+   {
+      List<MqttSession> expiredSessions;
+
+      using (await _initiateLock.LockAsync())
+      using (_modificationLock.EnterWriteLock())
+      {
+         expiredSessions = _sessions.RemoveAndGetExpiredSessions();
+      }
+
+      if (expiredSessions.Count > 0)
+      {
+         foreach (var session in expiredSessions)
+         {
+            try
+            {
+               _server.SubscriptionRouter.UnsubscribeAll(session);
+               await session.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+               TraceLogger.LogServerWarning("Failed to dispose expired session for client '{0}': {1}",
+                  Encoding.UTF8.GetString(session.ClientIdUtf8Bytes), ex.Message);
+            }
+         }
       }
    }
 }

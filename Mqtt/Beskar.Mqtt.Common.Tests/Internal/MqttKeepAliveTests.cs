@@ -101,6 +101,58 @@ public class MqttKeepAliveTests
       public ValueTask DisposeAsync() => ValueTask.CompletedTask;
    }
 
+   [Test]
+   public async Task Server_ShouldCleanUpExpiredSession_AfterExpiryIntervalPassed()
+   {
+      // Arrange
+      var options = new MqttServerOptions();
+      options.SupportPersistentSessions = true;
+      options.KeepAlive.Interval = TimeSpan.FromMilliseconds(10); // Run check frequently
+
+      await using var server = new MqttServer([], options);
+      await server.StartAsync();
+
+      var serverSession = new KeepAliveMockNetworkSession();
+      var connContext = new NetworkServerConnectionContext(new DummyNetworkListener(), serverSession);
+      var streamContext = new NetworkServerStreamContext(connContext, new MockNetworkStream());
+
+      var client = new MqttServerClient();
+      client.Initialize(streamContext, options);
+      client.ProtocolVersion = MqttProtocolVersion.V50;
+
+      var connectOptions = new ConnectOptions
+      {
+         KeepAlivePeriod = 60,
+         ClientIdUtf8Bytes = "expiry-client"u8.ToArray(),
+         CleanSession = false,
+         SessionExpiryInterval = 1, // 1 second session expiry
+         EndPoint = new IPEndPoint(IPAddress.Loopback, 1883)
+      };
+      client.SetConnectOptions(connectOptions);
+
+      // Create session (cleanSession is false, session starts active and connected)
+      var createResult = await server.ClientSessions.GetOrCreateSession(client, connectOptions, CancellationToken.None);
+      var session = createResult.Session;
+
+      // Disconnect client (session transitions to offline and sets DisconnectionTimestamp)
+      await server.ClientSessions.HandleClientDisconnectAsync(client);
+
+      await Assert.That(session.IsConnected).IsFalse();
+      await Assert.That(session.DisconnectionTimestamp).IsNotNull();
+      await Assert.That(session.IsExpired).IsFalse(); // Not expired immediately
+
+      // Wait 1.5 seconds so session expires and the background task gets a chance to clean it up
+      await Task.Delay(1500);
+
+      // Verify that the registry no longer contains the session
+      var retrieveResult = await server.ClientSessions.GetOrCreateSession(client, connectOptions, CancellationToken.None);
+      
+      // Since it expired and was cleaned up, the registry should have initialized a NEW session
+      // rather than returning the existing one.
+      await Assert.That(retrieveResult.IsSessionPresent).IsFalse();
+      await Assert.That(ReferenceEquals(retrieveResult.Session, session)).IsFalse();
+   }
+
    private class MockDuplexPipe : IDuplexPipe
    {
       public MockDuplexPipe(PipeReader reader, PipeWriter writer)

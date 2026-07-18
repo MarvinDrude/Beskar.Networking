@@ -37,6 +37,32 @@ public sealed class MqttSessionRegistry : IAsyncDisposable
       return alternateLookup.Remove(clientIdUtf8Bytes, out _, out session);
    }
 
+   public List<MqttSession> RemoveAndGetExpiredSessions()
+   {
+      List<MqttSession>? expired = null;
+      var now = DateTimeOffset.UtcNow;
+
+      foreach (var session in _sessions.Values)
+      {
+         if (session is { DisconnectionTimestamp: { } timestamp, ExpiryInterval: not uint.MaxValue }
+             && timestamp.AddSeconds(session.ExpiryInterval) <= now)
+         {
+            expired ??= [];
+            expired.Add(session);
+         }
+      }
+
+      if (expired is not null)
+      {
+         foreach (var session in expired)
+         {
+            _sessions.Remove(session.ClientIdUtf8Bytes);
+         }
+      }
+
+      return expired ?? [];
+   }
+
    public async Task ClearAsync()
    {
       await DisposeAsync();
