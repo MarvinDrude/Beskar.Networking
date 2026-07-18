@@ -48,6 +48,7 @@
     <Project Path="Experiments/Beskar.Networking.Benchmarks/Beskar.Networking.Benchmarks.csproj" />
     <Project Path="Experiments/Beskar.Networking.Connections/Beskar.Networking.Connections.csproj" />
     <Project Path="Experiments/Beskar.Networking.Experiments/Beskar.Networking.Experiments.csproj" />
+    <Project Path="Experiments/Beskar.Mqtt.ChaosSimulator/Beskar.Mqtt.ChaosSimulator.csproj" />
     <Project Path="Experiments/Beskar.Networking.Performance/Beskar.Networking.Performance.csproj" />
   </Folder>
   <Folder Name="/Mqtt/">
