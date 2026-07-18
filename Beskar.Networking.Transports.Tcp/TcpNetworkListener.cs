@@ -207,7 +207,7 @@ public sealed class TcpNetworkListener(
             TraceLogger.LogServerError("TCP Listener: Socket error accepting client: {0}", ex.Message);
             WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, $"Listener acceptance error: {ex.Message}"));
 
-            try { await Task.Delay(100, token); } catch (OperationCanceledException) { break; }
+            try { await Task.Delay(_options.AcceptExceptionDelay, token); } catch (OperationCanceledException) { break; }
          }
          catch (Exception ex)
          {
@@ -219,7 +219,7 @@ public sealed class TcpNetworkListener(
             TraceLogger.LogServerError("TCP Listener: Unexpected error accepting client: {0}", ex.Message);
             WriteToSessionChannel(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
 
-            try { await Task.Delay(100, token); } catch (OperationCanceledException) { break; }
+            try { await Task.Delay(_options.AcceptExceptionDelay, token); } catch (OperationCanceledException) { break; }
          }
       }
    }

@@ -64,4 +64,10 @@ public class TcpTransportOptions
    /// The socket receive buffer size in bytes. Set null to use OS default. Defaults to 512 KB.
    /// </summary>
    public int? ReceiveBufferSize { get; set; } = 512 * 1024;
+
+   /// <summary>
+   /// The delay in milliseconds to wait before retrying to accept a new connection
+   /// after an accept exception occurs to prevent CPU busy spinning. Defaults to 10ms.
+   /// </summary>
+   public int AcceptExceptionDelay { get; set; } = 10;
 }

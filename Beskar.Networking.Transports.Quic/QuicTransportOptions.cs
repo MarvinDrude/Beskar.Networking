@@ -54,4 +54,10 @@ public class QuicTransportOptions
    /// Options for the underlying Stream connections wrapping the QUIC streams.
    /// </summary>
    public StreamTransportOptions StreamOptions { get; set; } = new();
+
+   /// <summary>
+   /// The delay in milliseconds to wait before retrying to accept a new connection
+   /// after an accept exception occurs to prevent CPU busy spinning. Defaults to 10ms.
+   /// </summary>
+   public int AcceptExceptionDelay { get; set; } = 10;
 }
