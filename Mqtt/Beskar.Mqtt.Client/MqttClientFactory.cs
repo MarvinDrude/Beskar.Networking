@@ -20,7 +20,11 @@ public static class MqttClientFactory
    {
       TraceLogger.LogClientInfo("MqttClientFactory: Creating TCP MQTT client.");
 
-      var underlying = new TcpNetworkClient(options ?? new TcpTransportOptions());
+      options ??= new TcpTransportOptions();
+      options.StreamOptions.IoQueueCount = 1;
+      options.SocketOptions.IoQueueCount = 1;
+
+      var underlying = new TcpNetworkClient(options);
       return new MqttClient(underlying);
    }
 
@@ -33,7 +37,11 @@ public static class MqttClientFactory
    {
       TraceLogger.LogClientInfo("MqttClientFactory: Creating WebSocket MQTT client.");
 
-      var underlying = new WsNetworkClient(options ?? new WsTransportOptions());
+      options ??= new WsTransportOptions();
+      options.TcpOptions.StreamOptions.IoQueueCount = 1;
+      options.TcpOptions.SocketOptions.IoQueueCount = 1;
+
+      var underlying = new WsNetworkClient(options);
       return new MqttClient(underlying);
    }
 
@@ -46,7 +54,10 @@ public static class MqttClientFactory
    {
       TraceLogger.LogClientInfo("MqttClientFactory: Creating QUIC MQTT client.");
 
-      var underlying = new QuicNetworkClient(options ?? new QuicTransportOptions());
+      options ??= new QuicTransportOptions();
+      options.StreamOptions.IoQueueCount = 1;
+
+      var underlying = new QuicNetworkClient(options);
       return new MqttClient(underlying);
    }
 }

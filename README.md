@@ -62,6 +62,12 @@ These interfaces provide transport-agnostic handling (supporting TCP, WebSockets
 Because they are low-level, you are responsible for managing execution tasks yourself, such as
 starting your own accept loops, launching read/write tasks, and supervising session lifecycles.
 
+> [!IMPORTANT]
+> **Client Transport Optimization (Low-Level APIs)**  
+> When instantiating `TcpNetworkClient`, `WsNetworkClient`, or `QuicNetworkClient` directly with custom options (`TcpTransportOptions`, `WsTransportOptions`, `QuicTransportOptions`), the default `IoQueueCount` is optimized for servers and defaults to `Math.Min(Environment.ProcessorCount, 24)`.  
+>   
+> For **client-side applications**, you should explicitly configure the option's `IoQueueCount` (e.g. `options.StreamOptions.IoQueueCount = 1` and `options.SocketOptions.IoQueueCount = 1`) to **`1`**. Since a client only manages a single connection, this prevents allocating unnecessary idle memory pools and thread queues, drastically reducing the unmanaged and pinned memory footprint.
+
 For more details, see the [Basics Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Basics).
 
 ### High-Level Managed APIs
