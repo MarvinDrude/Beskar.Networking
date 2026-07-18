@@ -155,6 +155,32 @@ public sealed partial class MqttClient
       {
          TraceLogger.LogClientError("MqttClient: Error waiting for receive task to end: {0}", ex.Message);
       }
+
+      try
+      {
+         var stream = Interlocked.Exchange(ref _controlStream, null);
+         if (stream is not null)
+         {
+            await stream.DisposeAsync();
+         }
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogClientError("MqttClient: Error disposing control stream: {0}", ex.Message);
+      }
+
+      try
+      {
+         var session = Interlocked.Exchange(ref _networkSession, null);
+         if (session is not null)
+         {
+            await session.DisposeAsync();
+         }
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogClientError("MqttClient: Error disposing network session: {0}", ex.Message);
+      }
       finally
       {
          lock (_topicAliases)

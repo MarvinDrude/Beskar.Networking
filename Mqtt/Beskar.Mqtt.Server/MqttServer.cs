@@ -218,9 +218,13 @@ public sealed partial class MqttServer : IAsyncDisposable
 
    private async Task RunClientTask(INetworkListener listener, INetworkSession session, CancellationToken ct)
    {
-      if (ct.IsCancellationRequested) return;
-      if (State is MqttServerState.Stopping or MqttServerState.Stopped) return;
-      if (!OpenToNewConnections) return;
+      if (ct.IsCancellationRequested
+          || State is MqttServerState.Stopping or MqttServerState.Stopped
+          || !OpenToNewConnections)
+      {
+         await session.DisposeAsync();
+         return;
+      }
 
       var controlStream = await session.AcceptStreamAsync(ct);
       if (controlStream.Failed)
