@@ -63,9 +63,9 @@ Because they are low-level, you are responsible for managing execution tasks you
 starting your own accept loops, launching read/write tasks, and supervising session lifecycles.
 
 > [!IMPORTANT]
-> **Client Transport Optimization (Low-Level APIs)**  
-> When instantiating `TcpNetworkClient`, `WsNetworkClient`, or `QuicNetworkClient` directly with custom options (`TcpTransportOptions`, `WsTransportOptions`, `QuicTransportOptions`), the default `IoQueueCount` is optimized for servers and defaults to `Math.Min(Environment.ProcessorCount, 24)`.  
->   
+> **Client Transport Optimization (Low-Level APIs)**
+> When instantiating `TcpNetworkClient`, `WsNetworkClient`, or `QuicNetworkClient` directly with custom options (`TcpTransportOptions`, `WsTransportOptions`, `QuicTransportOptions`), the default `IoQueueCount` is optimized for servers and defaults to `Math.Min(Environment.ProcessorCount, 24)`.
+>
 > For **client-side applications**, you should explicitly configure the option's `IoQueueCount` (e.g. `options.StreamOptions.IoQueueCount = 1` and `options.SocketOptions.IoQueueCount = 1`) to **`1`**. Since a client only manages a single connection, this prevents allocating unnecessary idle memory pools and thread queues, drastically reducing the unmanaged and pinned memory footprint.
 
 For more details, see the [Basics Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Basics).
@@ -88,11 +88,11 @@ For more details, see the [MQTT Documentation](https://github.com/MarvinDrude/Be
 
 | Package / Project | Description                                                                                         | NuGet Link |
 | :--- |:----------------------------------------------------------------------------------------------------| :--- |
-| **Beskar.Mqtt.Server** | High-performance, low-allocation MQTT broker/server support for v3.1.1 and v5.0 over any transport. | *Under development* |
-| **Beskar.Mqtt.Client** | Lightweight and efficient MQTT client supporting v3.1.1 and v5.0 over any transport.                | *Under development* |
-| **Beskar.Networking.Transports.Tcp** | High-performance, native TCP transport implementation supporting TLS.                               | *Under development* |
-| **Beskar.Networking.Transports.Ws** | WebSocket (WS/WSS) transport adapter wrapping custom framed duplex pipelines.                       | *Under development* |
-| **Beskar.Networking.Transports.Quic** | Multiplexed and secure QUIC transport implementation built on native .NET libraries.                | *Under development* |
+| **Beskar.Mqtt.Server** | High-performance, low-allocation MQTT broker/server support for v3.1.1 and v5.0 over any transport. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Mqtt.Server.svg)](https://www.nuget.org/packages/Beskar.Mqtt.Server/) |
+| **Beskar.Mqtt.Client** | Lightweight and efficient MQTT client supporting v3.1.1 and v5.0 over any transport.                | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Mqtt.Client.svg)](https://www.nuget.org/packages/Beskar.Mqtt.Client/) |
+| **Beskar.Networking.Transports.Tcp** | High-performance, native TCP transport implementation supporting TLS.                               | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Tcp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Tcp/) |
+| **Beskar.Networking.Transports.Ws** | WebSocket (WS/WSS) transport adapter wrapping custom framed duplex pipelines.                       | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Ws.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Ws/) |
+| **Beskar.Networking.Transports.Quic** | Multiplexed and secure QUIC transport implementation built on native .NET libraries.                | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Quic.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Quic/) |
 
 ## Examples
 
