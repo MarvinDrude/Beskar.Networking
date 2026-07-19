@@ -103,38 +103,38 @@ public sealed partial class MqttClient
       }
    }
 
-   private ValueTask DisconnectInternalAsync(bool awaitReceiveTask = true)
-   {
-      var beforeConnected = IsConnected;
-
-      // Only disconnect if not already in progress
-      return DisconnectingAlreadyInProcessOrDone()
-         ? ValueTask.CompletedTask
-         : DisconnectRoutineAsync(beforeConnected, awaitReceiveTask);
-   }
-
-   private async ValueTask DisconnectRoutineAsync(bool beforeConnected, bool awaitReceiveTask = true)
-   {
-      TraceLogger.LogClientInfo("MqttClient: Starting disconnect routine (BeforeConnected: {0}).", beforeConnected);
-      await _clientTokenSource.CancelAsync();
-
-      try
-      {
-         await _networkClient.DisconnectAsync();
-      }
-      catch (Exception ex)
-      {
-         TraceLogger.LogClientError("MqttClient: Error disconnecting inner network client: {0}", ex.Message);
-      }
-
-      try
-      {
-         var task = _keepAliveTask;
-         if (task is not null)
-         {
-            await task;
-         }
-      }
+    private ValueTask DisconnectInternalAsync(bool awaitReceiveTask = true, bool awaitKeepAliveTask = true)
+    {
+       var beforeConnected = IsConnected;
+ 
+       // Only disconnect if not already in progress
+       return DisconnectingAlreadyInProcessOrDone()
+          ? ValueTask.CompletedTask
+          : DisconnectRoutineAsync(beforeConnected, awaitReceiveTask, awaitKeepAliveTask);
+    }
+ 
+    private async ValueTask DisconnectRoutineAsync(bool beforeConnected, bool awaitReceiveTask = true, bool awaitKeepAliveTask = true)
+    {
+       TraceLogger.LogClientInfo("MqttClient: Starting disconnect routine (BeforeConnected: {0}).", beforeConnected);
+       await _clientTokenSource.CancelAsync();
+ 
+       try
+       {
+          await _networkClient.DisconnectAsync();
+       }
+       catch (Exception ex)
+       {
+          TraceLogger.LogClientError("MqttClient: Error disconnecting inner network client: {0}", ex.Message);
+       }
+ 
+       try
+       {
+          var task = _keepAliveTask;
+          if (awaitKeepAliveTask && task is not null)
+          {
+             await task;
+          }
+       }
       catch (Exception ex)
       {
          TraceLogger.LogClientError("MqttClient: Error waiting for keep-alive task to end: {0}", ex.Message);

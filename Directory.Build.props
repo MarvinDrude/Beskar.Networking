@@ -5,8 +5,8 @@
       <ImplicitUsings>enable</ImplicitUsings>
       <Nullable>enable</Nullable>
 
-      <Version>1.1.1</Version>
-      <FileVersion>1.1.1</FileVersion>
+      <Version>1.1.2</Version>
+      <FileVersion>1.1.2</FileVersion>
       <AssemblyVersion>1.0.0</AssemblyVersion>
    </PropertyGroup>
 
@@ -23,6 +23,10 @@
       <EmbedUntrackedSources>true</EmbedUntrackedSources>
       <SymbolPackageFormat>snupkg</SymbolPackageFormat>
       <PackageIcon>logo_small.png</PackageIcon>
+   </PropertyGroup>
+
+   <PropertyGroup>
+      <IsPackable Condition="'$(IsPackable)' == ''">false</IsPackable>
    </PropertyGroup>
 
    <ItemGroup Condition="'$(IsPackable)' == 'true'">

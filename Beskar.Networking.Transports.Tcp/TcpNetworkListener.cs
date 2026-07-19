@@ -181,57 +181,70 @@ public sealed class TcpNetworkListener(
                throw;
             }
 
-            if (_options.NoDelay)
+            try
             {
-               clientSocket.NoDelay = true;
-            }
-            if (_options.SendBufferSize.HasValue)
-            {
-               clientSocket.SendBufferSize = _options.SendBufferSize.Value;
-            }
-            if (_options.ReceiveBufferSize.HasValue)
-            {
-               clientSocket.ReceiveBufferSize = _options.ReceiveBufferSize.Value;
-            }
-            if (_options.LingerState is not null)
-            {
-               clientSocket.LingerState = _options.LingerState;
-            }
-
-            var localEndPoint = clientSocket.LocalEndPoint;
-            if (localEndPoint is null)
-            {
-               TraceLogger.LogServerError("TCP Listener: Rejected connection. Failed to get local endpoint.");
-               WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get local endpoint."));
-
-               clientSocket.Dispose();
-               semaphore.Release();
-               continue;
-            }
-
-            var remoteEndPoint = clientSocket.RemoteEndPoint;
-            if (remoteEndPoint is null)
-            {
-               TraceLogger.LogServerError("TCP Listener: Rejected connection. Failed to get remote endpoint.");
-               WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get remote endpoint."));
-
-               clientSocket.Dispose();
-               semaphore.Release();
-               continue;
-            }
-
-            TraceLogger.LogServerInfo("TCP Listener: Accepted connection from client {0}", remoteEndPoint);
-            _ = Task.Run(async () =>
-            {
-               try
+               if (_options.NoDelay)
                {
-                  await HandshakeAndEnqueueAsync(clientSocket, localEndPoint, remoteEndPoint, token);
+                  clientSocket.NoDelay = true;
                }
-               finally
+               if (_options.SendBufferSize.HasValue)
                {
+                  clientSocket.SendBufferSize = _options.SendBufferSize.Value;
+               }
+               if (_options.ReceiveBufferSize.HasValue)
+               {
+                  clientSocket.ReceiveBufferSize = _options.ReceiveBufferSize.Value;
+               }
+               if (_options.LingerState is not null)
+               {
+                  clientSocket.LingerState = _options.LingerState;
+               }
+
+               var localEndPoint = clientSocket.LocalEndPoint;
+               if (localEndPoint is null)
+               {
+                  TraceLogger.LogServerError("TCP Listener: Rejected connection. Failed to get local endpoint.");
+                  WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get local endpoint."));
+
+                  clientSocket.Dispose();
                   semaphore.Release();
+                  continue;
                }
-            }, token);
+
+               var remoteEndPoint = clientSocket.RemoteEndPoint;
+               if (remoteEndPoint is null)
+               {
+                  TraceLogger.LogServerError("TCP Listener: Rejected connection. Failed to get remote endpoint.");
+                  WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get remote endpoint."));
+
+                  clientSocket.Dispose();
+                  semaphore.Release();
+                  continue;
+               }
+
+               TraceLogger.LogServerInfo("TCP Listener: Accepted connection from client {0}", remoteEndPoint);
+               _ = Task.Run(async () =>
+               {
+                  try
+                  {
+                     // ReSharper disable once AccessToDisposedClosure - only runs if no exception happened
+                     await HandshakeAndEnqueueAsync(clientSocket, localEndPoint, remoteEndPoint, token);
+                  }
+                  finally
+                  {
+                     semaphore.Release();
+                  }
+               }, token);
+            }
+            catch (Exception ex)
+            {
+               TraceLogger.LogServerError("TCP Listener: Error configuring accepted socket: {0}", ex.Message);
+
+               clientSocket.Dispose();
+               semaphore.Release();
+
+               throw;
+            }
          }
          catch (OperationCanceledException)
          {
