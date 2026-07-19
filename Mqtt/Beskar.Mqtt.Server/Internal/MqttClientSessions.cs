@@ -24,7 +24,6 @@ public sealed partial class MqttClientSessions(MqttServer server)
 
    private readonly AsyncLock _initiateLock = new();
    private readonly AsyncLock _clientLock = new();
-   private readonly ReadWriteLock _modificationLock = new();
 
    private readonly Dictionary<byte[], MqttServerClient> _clients = new(2048, ByteArrayEqualityComparer.Instance);
    private readonly MqttSessionRegistry _sessions = new();
@@ -55,19 +54,25 @@ public sealed partial class MqttClientSessions(MqttServer server)
       ConnectOptions connectOptions,
       CancellationToken ct)
    {
-      MqttSession session;
+      using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+      using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+      var token = linkedCts.Token;
 
+      MqttSession session;
       var isSessionPresent = false;
       var hasTakeOver = false;
+      var currentStep = "Start";
 
-      using (await _initiateLock.LockAsync(ct))
+      try
       {
-         MqttSession? existing;
-         MqttSession? previousSession;
-         MqttServerClient? takenOverClient;
+         MqttServerClient? takenOverClient = null;
+         MqttSession? existing = null;
+         MqttSession? previousSession = null;
 
-         using (_modificationLock.EnterWriteLock(ct))
+         currentStep = "Acquiring initiate lock";
+         using (await _initiateLock.LockAsync(token))
          {
+            currentStep = "Accessing registry dictionaries";
             existing = _sessions.Get(serverClient.ClientIdUtf8Bytes.Span, out previousSession);
             var cleanSession = connectOptions.CleanSession || !_server.Options.SupportPersistentSessions;
 
@@ -133,7 +138,8 @@ public sealed partial class MqttClientSessions(MqttServer server)
                session.PendingWillMessage = null;
             }
 
-            using (await _clientLock.LockAsync(ct))
+            currentStep = "Acquiring client lock under initiate lock";
+            using (await _clientLock.LockAsync(token))
             {
                var alternateLookup = _clients.GetAlternateLookup<ReadOnlySpan<byte>>();
                if (alternateLookup.TryGetValue(serverClient.ClientIdUtf8Bytes.Span, out takenOverClient))
@@ -143,18 +149,22 @@ public sealed partial class MqttClientSessions(MqttServer server)
 
                alternateLookup[serverClient.ClientIdUtf8Bytes.Span] = serverClient;
             }
-         }
 
-         if (!isSessionPresent && _server.Events.OnNewSession.Count > 0)
-         {
-            await _server.Events.OnNewSession.ExecuteAsync(new MqttNewSessionContext()
+            token.ThrowIfCancellationRequested();
+
+            if (!isSessionPresent && _server.Events.OnNewSession.Count > 0)
             {
-               Session = session
-            }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: ct);
+               currentStep = "Executing OnNewSession hook";
+               await _server.Events.OnNewSession.ExecuteAsync(new MqttNewSessionContext()
+               {
+                  Session = session
+               }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: token);
+            }
          }
 
          if (takenOverClient is not null)
          {
+            currentStep = "Disconnecting taken over client";
             try
             {
                await takenOverClient.DisconnectAsync(new DisconnectOptions()
@@ -169,25 +179,71 @@ public sealed partial class MqttClientSessions(MqttServer server)
 
             if (_server.Events.OnDisconnect.Count > 0)
             {
-               await _server.Events.OnDisconnect.ExecuteAsync(new MqttDisconnectContext()
+               currentStep = "Executing OnDisconnect hook for taken over client";
+               try
                {
-                  Reason = DisconnectReasonCode.SessionTakenOver,
-                  ServerClient = takenOverClient,
-                  DisconnectKind = ClientDisconnectKind.Graceful,
-                  IsSessionTakenOver = true
-               }, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                  await _server.Events.OnDisconnect.ExecuteAsync(new MqttDisconnectContext()
+                  {
+                     Reason = DisconnectReasonCode.SessionTakenOver,
+                     ServerClient = takenOverClient,
+                     DisconnectKind = ClientDisconnectKind.Graceful,
+                     IsSessionTakenOver = true
+                  }, HandlerExecutionStrategy.SequentialContinueOnError);
+               }
+               catch (Exception ex)
+               {
+                  TraceLogger.LogServerWarning("MqttClientSessions: Error executing OnDisconnect for taken over client. Error: {0}", ex.Message);
+               }
             }
          }
 
          if (previousSession is not null)
          {
-            await previousSession.DisposeAsync();
+            currentStep = "Disposing previous session";
+            try
+            {
+               await previousSession.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+               TraceLogger.LogServerWarning("MqttClientSessions: Error disposing previous session. Error: {0}", ex.Message);
+            }
          }
 
          if (existing is not null)
          {
-            await existing.DisposeAsync();
+            currentStep = "Disposing existing session";
+            try
+            {
+               await existing.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+               TraceLogger.LogServerWarning("MqttClientSessions: Error disposing existing session. Error: {0}", ex.Message);
+            }
          }
+      }
+      catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+      {
+         var clientIdStr = Encoding.UTF8.GetString(serverClient.ClientIdUtf8Bytes.Span);
+         var errorMsg = $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff}] GetOrCreateSession timed out for client '{clientIdStr}' (10s elapsed). Last step was: {currentStep}{Environment.NewLine}";
+         try
+         {
+            System.IO.File.AppendAllText("mqtt_hangs.log", errorMsg);
+         }
+         catch (Exception) { }
+
+         Console.WriteLine($"[TESTING] GetOrCreateSession timed out for client '{clientIdStr}' (10s elapsed). Last step was: {currentStep}");
+         TraceLogger.LogServerError("GetOrCreateSession timed out for client '{0}' (10s elapsed). Last step was: {1}", clientIdStr, currentStep);
+         Thread.Sleep(Timeout.Infinite);
+         throw new TimeoutException($"GetOrCreateSession timed out for client '{clientIdStr}' at step: {currentStep}");
+      }
+      catch (OperationCanceledException)
+      {
+         var clientIdStr = Encoding.UTF8.GetString(serverClient.ClientIdUtf8Bytes.Span);
+         Console.WriteLine($"[TESTING] GetOrCreateSession canceled for client '{clientIdStr}'. Last step was: {currentStep}");
+         TraceLogger.LogServerWarning("GetOrCreateSession canceled for client '{0}'. Last step was: {1}", clientIdStr, currentStep);
+         throw;
       }
 
       return new MqttSessionCreateResult()
@@ -213,7 +269,6 @@ public sealed partial class MqttClientSessions(MqttServer server)
       if (session is null) return;
 
       using (await _initiateLock.LockAsync())
-      using (_modificationLock.EnterWriteLock())
       {
          using (await _clientLock.LockAsync())
          {
@@ -267,8 +322,18 @@ public sealed partial class MqttClientSessions(MqttServer server)
          {
             _sessions.TryRemove(client.ClientIdUtf8Bytes.Span, out _);
 
-            _server.SubscriptionRouter.UnsubscribeAll(session);
-            await session.DisposeAsync();
+            _ = Task.Run(async () =>
+            {
+               try
+               {
+                  _server.SubscriptionRouter.UnsubscribeAll(session);
+                  await session.DisposeAsync();
+               }
+               catch (Exception ex)
+               {
+                  TraceLogger.LogServerWarning("MqttClientSessions: Error disposing session. Error: {0}", ex.Message);
+               }
+            });
          }
       }
    }
@@ -276,7 +341,6 @@ public sealed partial class MqttClientSessions(MqttServer server)
    public async Task RemoveSessionAsync(MqttSession session)
    {
       using (await _initiateLock.LockAsync())
-      using (_modificationLock.EnterWriteLock())
       {
          using (await _clientLock.LockAsync())
          {
@@ -286,15 +350,18 @@ public sealed partial class MqttClientSessions(MqttServer server)
 
          _sessions.TryRemove(session.ClientIdUtf8Bytes, out _);
 
-         try
+         _ = Task.Run(async () =>
          {
-            _server.SubscriptionRouter.UnsubscribeAll(session);
-            await session.DisposeAsync();
-         }
-         catch (Exception ex)
-         {
-            TraceLogger.LogServerWarning("MqttClientSessions: Error disposing session. Error: {0}", ex.Message);
-         }
+            try
+            {
+               _server.SubscriptionRouter.UnsubscribeAll(session);
+               await session.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+               TraceLogger.LogServerWarning("MqttClientSessions: Error disposing session. Error: {0}", ex.Message);
+            }
+         });
       }
    }
 
@@ -303,7 +370,6 @@ public sealed partial class MqttClientSessions(MqttServer server)
       List<MqttSession> expiredSessions;
 
       using (await _initiateLock.LockAsync())
-      using (_modificationLock.EnterWriteLock())
       {
          expiredSessions = _sessions.RemoveAndGetExpiredSessions();
       }
