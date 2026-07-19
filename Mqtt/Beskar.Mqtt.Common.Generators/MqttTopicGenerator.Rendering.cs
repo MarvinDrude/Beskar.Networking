@@ -584,10 +584,12 @@ public partial class MqttTopicGenerator
                      {
                         writer.WriteLineInterpolated($"int {paramName}Written;");
                         writer.WriteLineInterpolated(
-                           $"if (System.Buffers.Text.Utf8Formatter.TryFormat({argParam.Name}, writer.AcquireSpan(64, movePosition: false), out {paramName}Written))");
+                           $"if (!System.Buffers.Text.Utf8Formatter.TryFormat({argParam.Name}, writer.AcquireSpan(64, movePosition: false), out {paramName}Written))");
                         writer.OpenBody();
-                        writer.WriteLineInterpolated($"writer.Advance({paramName}Written);");
+                        writer.WriteLineInterpolated(
+                           $"throw new System.InvalidOperationException(\"Failed to UTF-8 format topic parameter '{paramName}'.\");");
                         writer.CloseBody();
+                        writer.WriteLineInterpolated($"writer.Advance({paramName}Written);");
                      }
                   }
                }

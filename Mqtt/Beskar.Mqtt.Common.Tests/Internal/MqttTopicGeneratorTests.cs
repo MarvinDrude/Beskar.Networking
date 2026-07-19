@@ -15,14 +15,14 @@ public partial class MqttTopicGeneratorTests
 {
     [GeneratedMqttTopic("devices/{deviceId}/sensors/{sensorType}")]
     public static partial bool TryParseSensorTopic(
-        ReadOnlySpan<char> topic, 
-        out int deviceId, 
+        ReadOnlySpan<char> topic,
+        out int deviceId,
         out ReadOnlySpan<char> sensorType);
 
     [GeneratedMqttTopic("devices/{deviceId}/sensors/{sensorType}")]
     public static partial bool TryParseSensorTopicBytes(
-        ReadOnlySpan<byte> topic, 
-        out int deviceId, 
+        ReadOnlySpan<byte> topic,
+        out int deviceId,
         out string sensorType);
 
     [GeneratedMqttTopic("alerts/+/critical/#")]
@@ -30,9 +30,9 @@ public partial class MqttTopicGeneratorTests
 
     [GeneratedMqttTopic("devices/{deviceId}/sensors/{sensorType}")]
     public static partial bool TryFormatSensorTopic(
-        Span<char> destination, 
-        int deviceId, 
-        ReadOnlySpan<char> sensorType, 
+        Span<char> destination,
+        int deviceId,
+        ReadOnlySpan<char> sensorType,
         out int charsWritten);
 
     [GeneratedMqttTopic("alerts/{deviceId}/{alertId}/{isCritical}/{severity}")]
@@ -145,7 +145,7 @@ public partial class MqttTopicGeneratorTests
     public async Task GeneratedFormatterHelpers_ShouldFormatExpandedTypesCorrectly()
     {
         var guid = Guid.Parse("d3b07384-d113-4956-b51b-4861bc99d520");
-        
+
         var formattedString = FormatAlertTopic(9876543210L, guid, true, SeverityEnum.High);
         await Assert.That(formattedString).IsEqualTo("alerts/9876543210/d3b07384-d113-4956-b51b-4861bc99d520/True/High");
 
@@ -168,5 +168,31 @@ public partial class MqttTopicGeneratorTests
         var result = TryParseEscapedTopic("devices/\"quote\"\\slash/status/true", out var isOk);
         await Assert.That(result).IsTrue();
         await Assert.That(isOk).IsTrue();
+    }
+
+    [Test]
+    public async Task FormatAlertTopicToBytes_ShouldCompileWithThrowInstruction()
+    {
+        var method = typeof(MqttTopicGeneratorTests).GetMethod("FormatAlertTopicToBytes");
+        await Assert.That(method).IsNotNull();
+
+        var body = method!.GetMethodBody();
+        await Assert.That(body).IsNotNull();
+
+        var ilBytes = body!.GetILAsByteArray();
+        await Assert.That(ilBytes).IsNotNull();
+
+        // Check if the IL contains the throw instruction (opcode 0x7a)
+        var hasThrowOpcode = false;
+        foreach (var op in ilBytes)
+        {
+            if (op == 0x7a) // throw opcode
+            {
+                hasThrowOpcode = true;
+                break;
+            }
+        }
+
+        await Assert.That(hasThrowOpcode).IsTrue();
     }
 }
