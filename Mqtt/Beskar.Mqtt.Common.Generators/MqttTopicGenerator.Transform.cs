@@ -61,12 +61,15 @@ public partial class MqttTopicGenerator
 
       var nestingTypes = new List<NestingModel>();
       var currentType = containingType;
+
       while (currentType is not null)
       {
          var typeKind = currentType.IsRecord ? "record" : currentType.IsValueType ? "struct" : "class";
-         nestingTypes.Insert(0, new NestingModel(currentType.Name, typeKind));
+         nestingTypes.Add(new NestingModel(currentType.Name, typeKind));
          currentType = currentType.ContainingType;
       }
+
+      nestingTypes.Reverse();
 
       var parameters = new List<ParameterModel>();
       foreach (var p in methodSymbol.Parameters)
@@ -135,6 +138,8 @@ public partial class MqttTopicGenerator
          writer.WriteLine("using System;");
          writer.WriteLine("using System.Text;");
          writer.WriteLine("using System.Buffers.Text;");
+         writer.WriteLine("using Beskar.Memory.Code;");
+         writer.WriteLine("using Beskar.Memory.Writers;");
          writer.WriteLine();
 
          var hasNamespace = !string.IsNullOrEmpty(model.NamespaceName);
