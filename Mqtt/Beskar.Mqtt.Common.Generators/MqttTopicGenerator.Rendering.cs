@@ -1,3 +1,4 @@
+using System.Text;
 using Beskar.Memory.Code;
 
 namespace Beskar.Mqtt.Common.Generators;
@@ -130,11 +131,13 @@ public partial class MqttTopicGenerator
                {
                   if (isByteSpan)
                   {
-                     writer.WriteLineInterpolated($"if (!System.Enum.TryParse(System.Text.Encoding.UTF8.GetString(rawVal_{i}.ToArray()), out {name})) return false;");
+                     writer.WriteLineInterpolated(
+                        $"if (!System.Enum.TryParse(System.Text.Encoding.UTF8.GetString(rawVal_{i}.ToArray()), out {name})) return false;");
                   }
                   else
                   {
-                     writer.WriteLineInterpolated($"if (!System.Enum.TryParse(rawVal_{i}.ToString(), out {name})) return false;");
+                     writer.WriteLineInterpolated(
+                        $"if (!System.Enum.TryParse(rawVal_{i}.ToString(), out {name})) return false;");
                   }
                }
                else if (outParamType == "string")
@@ -177,11 +180,13 @@ public partial class MqttTopicGenerator
                {
                   if (isByteSpan)
                   {
-                     writer.WriteLineInterpolated($"if (!Utf8Parser.TryParse(rawVal_{i}, out {name}, out _)) return false;");
+                     writer.WriteLineInterpolated(
+                        $"if (!Utf8Parser.TryParse(rawVal_{i}, out {name}, out _)) return false;");
                   }
                   else
                   {
-                     writer.WriteLineInterpolated($"if (!{outParamType}.TryParse(rawVal_{i}, out {name})) return false;");
+                     writer.WriteLineInterpolated(
+                        $"if (!{outParamType}.TryParse(rawVal_{i}, out {name})) return false;");
                   }
                }
 
@@ -210,19 +215,22 @@ public partial class MqttTopicGenerator
                }
                else
                {
-                  writer.WriteLineInterpolated($"if (remaining.Equals(\"{segment}\", StringComparison.Ordinal)) return true;");
+                  writer.WriteLineInterpolated(
+                     $"if (remaining.Equals(\"{segment}\", StringComparison.Ordinal)) return true;");
                   writer.WriteLineInterpolated(
                      $"if (!remaining.StartsWith(\"{segment}/\", StringComparison.Ordinal)) return false;");
                }
 
-               writer.WriteLineInterpolated($"remaining = remaining.Slice({segment.Length + 1});");
+               var sliceLength = isByteSpan ? Encoding.UTF8.GetByteCount(segment) + 1 : segment.Length + 1;
+               writer.WriteLineInterpolated($"remaining = remaining.Slice({sliceLength});");
             }
             else
             {
                if (isByteSpan)
                {
+                  var sliceLength = Encoding.UTF8.GetByteCount(segment) + 1;
                   writer.WriteLineInterpolated($"if (!remaining.StartsWith(\"{segment}/\"u8)) return false;");
-                  writer.WriteLineInterpolated($"remaining = remaining.Slice({segment.Length + 1});");
+                  writer.WriteLineInterpolated($"remaining = remaining.Slice({sliceLength});");
                }
                else
                {
@@ -341,7 +349,8 @@ public partial class MqttTopicGenerator
                         {
                            var accessExpr = argType == "string" ? $"{argParam.Name}.AsSpan()" : argParam.Name;
                            writer.WriteLineInterpolated($"if (!{accessExpr}.TryCopyTo(remainingDest)) return false;");
-                           writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({argParam.Name}.Length);");
+                           writer.WriteLineInterpolated(
+                              $"remainingDest = remainingDest.Slice({argParam.Name}.Length);");
                            if (charsWrittenParam.Name is not null)
                               writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {argParam.Name}.Length;");
                         }
@@ -350,8 +359,10 @@ public partial class MqttTopicGenerator
                      {
                         if (isByteSpan)
                         {
-                           writer.WriteLineInterpolated($"if (!{argParam.Name}.TryCopyTo(remainingDest)) return false;");
-                           writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({argParam.Name}.Length);");
+                           writer.WriteLineInterpolated(
+                              $"if (!{argParam.Name}.TryCopyTo(remainingDest)) return false;");
+                           writer.WriteLineInterpolated(
+                              $"remainingDest = remainingDest.Slice({argParam.Name}.Length);");
                            if (charsWrittenParam.Name is not null)
                               writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {argParam.Name}.Length;");
                         }
@@ -402,7 +413,7 @@ public partial class MqttTopicGenerator
                            if (charsWrittenParam.Name is not null)
                               writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {paramName}Written;");
                         }
-                      }
+                     }
                   }
                }
                else
@@ -414,7 +425,8 @@ public partial class MqttTopicGenerator
                   }
                   else
                   {
-                     writer.WriteLineInterpolated($"if (!\"{literalText}\".AsSpan().TryCopyTo(remainingDest)) return false;");
+                     writer.WriteLineInterpolated(
+                        $"if (!\"{literalText}\".AsSpan().TryCopyTo(remainingDest)) return false;");
                   }
 
                   writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({literalText.Length});");
@@ -438,12 +450,12 @@ public partial class MqttTopicGenerator
          }
 
          writer.CloseBody();
-         
+
          // Generate additional helpers returning string and byte[] utilizing TextWriterIndentSlim and BufferWriter<byte>
          if (isSpanDest)
          {
             writer.WriteLine();
-            
+
             var helperMethodName = model.MethodName;
             if (helperMethodName.StartsWith("TryFormat", StringComparison.OrdinalIgnoreCase))
             {
@@ -457,12 +469,12 @@ public partial class MqttTopicGenerator
             {
                helperMethodName = "Format" + helperMethodName;
             }
-            
+
             var bytesMethodName = helperMethodName + "ToBytes";
-            
+
             var charsWrittenParam = model.Parameters.LastOrDefault(p => p.RefKind == "out" && p.Type.Contains("int"));
             var helperParams = model.Parameters.Skip(1).Where(p => p != charsWrittenParam).ToList();
-            
+
             var helperParamsList = string.Join(", ", helperParams.Select(p =>
             {
                var refKind = p.RefKind switch
@@ -474,17 +486,18 @@ public partial class MqttTopicGenerator
                };
                return $"{refKind}{p.Type} {p.Name}";
             }));
-            
+
             var helperModifiers = modifiers.Replace("partial", "").Trim();
-            
+
             // 1. Helper returning string using TextWriterIndentSlim
             writer.WriteLineInterpolated($"{helperModifiers} string {helperMethodName}({helperParamsList})");
             writer.OpenBody();
             writer.WriteLine("Span<char> initialBuffer = stackalloc char[256];");
-            writer.WriteLine("var writer = new Beskar.Memory.Writers.TextWriterIndentSlim(initialBuffer, stackalloc char[16]);");
+            writer.WriteLine(
+               "var writer = new Beskar.Memory.Writers.TextWriterIndentSlim(initialBuffer, stackalloc char[16]);");
             writer.WriteLine("try");
             writer.OpenBody();
-            
+
             var formatParts = new List<string>();
             foreach (var segment in segments)
             {
@@ -500,6 +513,7 @@ public partial class MqttTopicGenerator
                   formatParts.Add(segment);
                }
             }
+
             var formatString = string.Join("/", formatParts);
             writer.WriteLineInterpolated($"writer.WriteInterpolated($\"{formatString}\");");
             writer.WriteLine("return writer.ToString();");
@@ -509,9 +523,9 @@ public partial class MqttTopicGenerator
             writer.WriteLine("writer.Dispose();");
             writer.CloseBody();
             writer.CloseBody();
-            
+
             writer.WriteLine();
-            
+
             // 2. Helper returning byte[] using BufferWriter<byte>
             writer.WriteLineInterpolated($"{helperModifiers} byte[] {bytesMethodName}({helperParamsList})");
             writer.OpenBody();
@@ -540,8 +554,10 @@ public partial class MqttTopicGenerator
                      var argType = argParam.Type;
                      if (argType == "string" || argType.Contains("System.ReadOnlySpan<char>"))
                      {
-                        writer.WriteLineInterpolated($"int {paramName}ByteCount = System.Text.Encoding.UTF8.GetByteCount({argParam.Name});");
-                        writer.WriteLineInterpolated($"System.Text.Encoding.UTF8.GetBytes({argParam.Name}, writer.AcquireSpan({paramName}ByteCount));");
+                        writer.WriteLineInterpolated(
+                           $"int {paramName}ByteCount = System.Text.Encoding.UTF8.GetByteCount({argParam.Name});");
+                        writer.WriteLineInterpolated(
+                           $"System.Text.Encoding.UTF8.GetBytes({argParam.Name}, writer.AcquireSpan({paramName}ByteCount));");
                      }
                      else if (argType.Contains("System.ReadOnlySpan<byte>"))
                      {
@@ -549,13 +565,16 @@ public partial class MqttTopicGenerator
                      }
                      else if (argParam.IsEnum)
                      {
-                        writer.WriteLineInterpolated($"int {paramName}ByteCount = System.Text.Encoding.UTF8.GetByteCount({argParam.Name}.ToString());");
-                        writer.WriteLineInterpolated($"System.Text.Encoding.UTF8.GetBytes({argParam.Name}.ToString(), writer.AcquireSpan({paramName}ByteCount));");
+                        writer.WriteLineInterpolated(
+                           $"int {paramName}ByteCount = System.Text.Encoding.UTF8.GetByteCount({argParam.Name}.ToString());");
+                        writer.WriteLineInterpolated(
+                           $"System.Text.Encoding.UTF8.GetBytes({argParam.Name}.ToString(), writer.AcquireSpan({paramName}ByteCount));");
                      }
                      else
                      {
                         writer.WriteLineInterpolated($"int {paramName}Written;");
-                        writer.WriteLineInterpolated($"if (System.Buffers.Text.Utf8Formatter.TryFormat({argParam.Name}, writer.AcquireSpan(64, movePosition: false), out {paramName}Written))");
+                        writer.WriteLineInterpolated(
+                           $"if (System.Buffers.Text.Utf8Formatter.TryFormat({argParam.Name}, writer.AcquireSpan(64, movePosition: false), out {paramName}Written))");
                         writer.OpenBody();
                         writer.WriteLineInterpolated($"writer.Advance({paramName}Written);");
                         writer.CloseBody();
@@ -582,7 +601,7 @@ public partial class MqttTopicGenerator
             writer.CloseBody();
             writer.CloseBody();
          }
-         
+
          return writer.ToString();
       }
       finally

@@ -7,24 +7,13 @@
    </PropertyGroup>
 
    <ItemGroup>
-     <ProjectReference Include="..\Beskar.Mqtt.Client\Beskar.Mqtt.Client.csproj" />
-     <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
-     <ProjectReference Include="..\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
-     <ProjectReference Include="..\Beskar.Mqtt.Common.Generators\Beskar.Mqtt.Common.Generators.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
+      <ProjectReference Include="..\Beskar.Mqtt.Client\Beskar.Mqtt.Client.csproj" />
+      <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
+      <ProjectReference Include="..\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
    </ItemGroup>
    
    <ItemGroup>
       <InternalsVisibleTo Include="Beskar.Mqtt.Common.Tests" />
    </ItemGroup>
-
-   <PropertyGroup>
-      <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackAnalyzer</TargetsForTfmSpecificContentInPackage>
-   </PropertyGroup>
-
-   <Target Name="PackAnalyzer">
-      <ItemGroup>
-         <TfmSpecificPackageFile Include="..\Beskar.Mqtt.Common.Generators\bin\$(Configuration)\netstandard2.0\Beskar.Mqtt.Common.Generators.dll" PackagePath="analyzers/dotnet/cs" />
-      </ItemGroup>
-   </Target>
 
 </Project>

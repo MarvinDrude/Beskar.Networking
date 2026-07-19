@@ -7,25 +7,14 @@
    </PropertyGroup>
 
    <ItemGroup>
-     <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
-     <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj" />
-     <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj" />
-     <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
-     <ProjectReference Include="..\Beskar.Mqtt.Common.Generators\Beskar.Mqtt.Common.Generators.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" />
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj" />
+      <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
    </ItemGroup>
 
    <ItemGroup>
       <InternalsVisibleTo Include="Beskar.Mqtt.Common.Tests" />
    </ItemGroup>
-
-   <PropertyGroup>
-      <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackAnalyzer</TargetsForTfmSpecificContentInPackage>
-   </PropertyGroup>
-
-   <Target Name="PackAnalyzer">
-      <ItemGroup>
-         <TfmSpecificPackageFile Include="..\Beskar.Mqtt.Common.Generators\bin\$(Configuration)\netstandard2.0\Beskar.Mqtt.Common.Generators.dll" PackagePath="analyzers/dotnet/cs" />
-      </ItemGroup>
-   </Target>
 
 </Project>

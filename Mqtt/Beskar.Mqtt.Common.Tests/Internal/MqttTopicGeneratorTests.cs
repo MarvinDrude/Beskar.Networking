@@ -52,6 +52,11 @@ public partial class MqttTopicGeneratorTests
         SeverityEnum severity,
         out int charsWritten);
 
+    [GeneratedMqttTopic("devices/äöü/status/{isOk}")]
+    public static partial bool TryParseNonAsciiTopic(
+        ReadOnlySpan<byte> topic,
+        out bool isOk);
+
     [Test]
     public async Task TryParseSensorTopic_ShouldParseCorrectly()
     {
@@ -142,5 +147,13 @@ public partial class MqttTopicGeneratorTests
         var formattedBytes = FormatAlertTopicToBytes(9876543210L, guid, true, SeverityEnum.High);
         var decodedString = Encoding.UTF8.GetString(formattedBytes);
         await Assert.That(decodedString).IsEqualTo("alerts/9876543210/d3b07384-d113-4956-b51b-4861bc99d520/True/High");
+    }
+
+    [Test]
+    public async Task TryParseNonAsciiTopic_ShouldParseCorrectly()
+    {
+        var result = TryParseNonAsciiTopic("devices/äöü/status/true"u8, out var isOk);
+        await Assert.That(result).IsTrue();
+        await Assert.That(isOk).IsTrue();
     }
 }
