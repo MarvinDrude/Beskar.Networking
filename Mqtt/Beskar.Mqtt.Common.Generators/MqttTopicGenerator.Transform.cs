@@ -82,7 +82,8 @@ public partial class MqttTopicGenerator
             _ => ""
          };
 
-         parameters.Add(new ParameterModel(p.Name, p.Type.ToDisplayString(), refKindStr));
+         var isEnum = p.Type.TypeKind == TypeKind.Enum;
+         parameters.Add(new ParameterModel(p.Name, p.Type.ToDisplayString(), refKindStr, isEnum));
       }
 
       var modifiers = string.Join(" ", methodDeclaration.Modifiers.Select(m => m.Text));

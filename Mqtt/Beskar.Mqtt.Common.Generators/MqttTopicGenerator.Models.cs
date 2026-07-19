@@ -13,7 +13,8 @@ public partial class MqttTopicGenerator
    public readonly record struct ParameterModel(
       string Name,
       string Type,
-      string RefKind);
+      string RefKind,
+      bool IsEnum);
 
    public readonly record struct LocationModel(
       string FilePath,
