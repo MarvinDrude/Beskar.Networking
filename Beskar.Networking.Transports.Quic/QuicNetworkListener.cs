@@ -196,15 +196,21 @@ public sealed class QuicNetworkListener(
    {
       while (!token.IsCancellationRequested)
       {
+         QuicConnection? quicConnection = null;
+         QuicNetworkSession? session = null;
+         var success = false;
+
          try
          {
-            var quicConnection = await listener.AcceptConnectionAsync(token);
+            quicConnection = await listener.AcceptConnectionAsync(token);
             TraceLogger.LogServerInfo("QUIC Listener: Accepted connection from client {0}", quicConnection.RemoteEndPoint);
-            var session = new QuicNetworkSession(quicConnection, _options, _ioQueueRegistry);
+            session = new QuicNetworkSession(quicConnection, _options, _ioQueueRegistry);
 
             TraceLogger.LogServerInfo("QUIC Listener: Enqueuing network session {0} for client {1}", session.Id, quicConnection.RemoteEndPoint);
             Interlocked.Increment(ref _sessionsAccepted);
             await _sessionChannel.Writer.WriteAsync(session, token);
+
+            success = true;
          }
          catch (OperationCanceledException)
          {
@@ -231,6 +237,20 @@ public sealed class QuicNetworkListener(
             WriteToSessionChannel(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
 
             try { await Task.Delay(_options.AcceptExceptionDelay, token); } catch (OperationCanceledException) { break; }
+         }
+         finally
+         {
+            if (!success)
+            {
+               if (session is not null)
+               {
+                  await session.DisposeAsync();
+               }
+               else if (quicConnection is not null)
+               {
+                  await quicConnection.DisposeAsync();
+               }
+            }
          }
       }
    }
