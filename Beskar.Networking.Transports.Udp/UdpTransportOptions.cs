@@ -25,12 +25,36 @@ public class UdpTransportOptions
    public int MaxPendingConnections { get; set; } = 1024;
 
    /// <summary>
-   /// The socket send buffer size in bytes. Set null to use OS default. Defaults to 512 KB.
+   /// The socket send buffer size in bytes. Set null to use OS default. Defaults to 8 MB.
    /// </summary>
-   public int? SendBufferSize { get; set; } = 512 * 1024;
+   public int? SendBufferSize { get; set; } = 8 * 1024 * 1024;
 
    /// <summary>
-   /// The socket receive buffer size in bytes. Set null to use OS default. Defaults to 512 KB.
+   /// The socket receive buffer size in bytes. Set null to use OS default. Defaults to 8 MB.
    /// </summary>
-   public int? ReceiveBufferSize { get; set; } = 512 * 1024;
+   public int? ReceiveBufferSize { get; set; } = 8 * 1024 * 1024;
+
+   /// <summary>
+   /// The pause threshold in bytes for the incoming session pipe.
+   /// Defaults to 1 MB.
+   /// </summary>
+   public long IncomingPipePauseThreshold { get; set; } = 1024 * 1024;
+
+   /// <summary>
+   /// The resume threshold in bytes for the incoming session pipe.
+   /// Defaults to 512 KB.
+   /// </summary>
+   public long IncomingPipeResumeThreshold { get; set; } = 512 * 1024;
+
+   /// <summary>
+   /// The pause threshold in bytes for the outgoing session pipe.
+   /// Defaults to 1 MB.
+   /// </summary>
+   public long OutgoingPipePauseThreshold { get; set; } = 1024 * 1024;
+
+   /// <summary>
+   /// The resume threshold in bytes for the outgoing session pipe.
+   /// Defaults to 512 KB.
+   /// </summary>
+   public long OutgoingPipeResumeThreshold { get; set; } = 512 * 1024;
 }

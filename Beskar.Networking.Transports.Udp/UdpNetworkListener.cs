@@ -45,6 +45,9 @@ public sealed class UdpNetworkListener(
    private Task? _receiveLoopTask;
    private Task? _cleanupLoopTask;
 
+   private EndPoint? _lastRemoteEP;
+   private UdpNetworkSession? _lastSession;
+
    private bool _disposed;
 
    private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
@@ -69,6 +72,12 @@ public sealed class UdpNetworkListener(
 
          TraceLogger.LogServerInfo("UDP Listener: Binding socket to address {0}", LocalAddress);
          var socket = new Socket(LocalAddress.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
+
+         if (OperatingSystem.IsWindows())
+         {
+            const int SIO_UDP_CONNRESET = -1744830452;
+            socket.IOControl(SIO_UDP_CONNRESET, [.. "\0\0\0\0"u8], null);
+         }
 
          socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
          socket.Bind(LocalAddress);
@@ -222,7 +231,24 @@ public sealed class UdpNetworkListener(
 
             var senderEP = result.RemoteEndPoint;
 
-            if (_sessions.TryGetValue(senderEP, out var session))
+            var lastEP = Volatile.Read(ref _lastRemoteEP);
+            var lastSession = Volatile.Read(ref _lastSession);
+            UdpNetworkSession? session = null;
+
+            if (senderEP.Equals(lastEP))
+            {
+               session = lastSession;
+            }
+            else
+            {
+               if (_sessions.TryGetValue(senderEP, out session))
+               {
+                  Volatile.Write(ref _lastRemoteEP, senderEP);
+                  Volatile.Write(ref _lastSession, session);
+               }
+            }
+
+            if (session is not null)
             {
                await session.PushIncomingDataAsync(buffer.AsMemory(0, result.ReceivedBytes));
             }
@@ -240,6 +266,10 @@ public sealed class UdpNetworkListener(
                if (_sessions.TryAdd(senderEP, newSession))
                {
                   Interlocked.Increment(ref _sessionsAccepted);
+
+                  Volatile.Write(ref _lastRemoteEP, senderEP);
+                  Volatile.Write(ref _lastSession, newSession);
+
                   await _sessionChannel.Writer.WriteAsync(newSession, token);
                   await newSession.PushIncomingDataAsync(buffer.AsMemory(0, result.ReceivedBytes));
                }
@@ -248,6 +278,9 @@ public sealed class UdpNetworkListener(
                   // Race condition: another thread created it
                   if (_sessions.TryGetValue(senderEP, out var existingSession))
                   {
+                     Volatile.Write(ref _lastRemoteEP, senderEP);
+                     Volatile.Write(ref _lastSession, existingSession);
+
                      await existingSession.PushIncomingDataAsync(buffer.AsMemory(0, result.ReceivedBytes));
                   }
                   await newSession.DisposeAsync();
@@ -267,6 +300,13 @@ public sealed class UdpNetworkListener(
             if (token.IsCancellationRequested || _listenerSocket is null)
             {
                break;
+            }
+
+            // ConnectionReset (10054) and MessageSize (10040) are transient packet-level errors in UDP
+            if (ex.SocketErrorCode is SocketError.ConnectionReset or SocketError.MessageSize)
+            {
+               TraceLogger.LogServerWarning("UDP Listener: Transient socket error receiving packet: {0}", ex.Message);
+               continue;
             }
 
             TraceLogger.LogServerError("UDP Listener: Socket error accepting client: {0}", ex.Message);
@@ -333,6 +373,14 @@ public sealed class UdpNetworkListener(
    private ValueTask RemoveSessionAsync(UdpNetworkSession session)
    {
       _sessions.TryRemove(session.RemoteAddress, out _);
+      var lastEP = Volatile.Read(ref _lastRemoteEP);
+
+      if (session.RemoteAddress.Equals(lastEP))
+      {
+         Volatile.Write(ref _lastRemoteEP, null);
+         Volatile.Write(ref _lastSession, null);
+      }
+
       return ValueTask.CompletedTask;
    }
 

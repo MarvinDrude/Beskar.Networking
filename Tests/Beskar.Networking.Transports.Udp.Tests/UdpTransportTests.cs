@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
+using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Udp;
 
 namespace Beskar.Networking.Transports.Udp.Tests;
@@ -297,18 +298,43 @@ public class UdpTransportTests
       var sSessionA = serverSessionA.Success!;
       var sSessionB = serverSessionB.Success!;
 
+      // Resolve non-deterministic UDP packet arrival order by matching remote ports
+      var clientAPort = ((IPEndPoint)sessionA.LocalAddress).Port;
+      INetworkSession activeServerSession;
+      INetworkSession idleServerSession;
+
+      if (((IPEndPoint)sSessionA.RemoteAddress).Port == clientAPort)
+      {
+         activeServerSession = sSessionA;
+         idleServerSession = sSessionB;
+      }
+      else
+      {
+         activeServerSession = sSessionB;
+         idleServerSession = sSessionA;
+      }
+
       // Keep Client A active, Client B idle
-      for (int i = 0; i < 5; i++)
+      for (var i = 0; i < 5; i++)
       {
          await Task.Delay(200);
          await streamA.Transport.Output.WriteAsync("KeepAlive"u8.ToArray());
          await streamA.Transport.Output.FlushAsync();
       }
 
-      // At this point, Client B should have timed out (> 1000ms idle)
-      // Client A should still be active because we sent messages every 200ms
-      await Assert.That(sSessionB.SessionClosedToken.IsCancellationRequested).IsTrue();
-      await Assert.That(sSessionA.SessionClosedToken.IsCancellationRequested).IsFalse();
+      // Wait for client B's session to be cancelled by the cleanup task
+      var timedOutB = false;
+      for (var i = 0; i < 30; i++)
+      {
+         if (idleServerSession.SessionClosedToken.IsCancellationRequested)
+         {
+            timedOutB = true;
+            break;
+         }
+         await Task.Delay(100);
+      }
+      await Assert.That(timedOutB).IsTrue();
+      await Assert.That(activeServerSession.SessionClosedToken.IsCancellationRequested).IsFalse();
 
       await clientA.DisconnectAsync();
       await clientB.DisconnectAsync();

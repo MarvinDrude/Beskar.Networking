@@ -63,6 +63,7 @@ public sealed class UdpNetworkSession : INetworkSession
    private long _lastActivityTicks;
    public long LastActivityTicks => Volatile.Read(ref _lastActivityTicks);
 
+   private int _isWriterPaused;
    private int _disposed;
 
    public UdpNetworkSession(
@@ -78,8 +79,15 @@ public sealed class UdpNetworkSession : INetworkSession
       _onDisposeAsync = onDisposeAsync;
       _sessionClosedToken = _cts.Token;
 
-      _incomingPipe = new Pipe(new PipeOptions(useSynchronizationContext: false));
-      _outgoingPipe = new Pipe(new PipeOptions(useSynchronizationContext: false));
+      _incomingPipe = new Pipe(new PipeOptions(
+         pauseWriterThreshold: options.IncomingPipePauseThreshold,
+         resumeWriterThreshold: options.IncomingPipeResumeThreshold,
+         useSynchronizationContext: false));
+
+      _outgoingPipe = new Pipe(new PipeOptions(
+         pauseWriterThreshold: options.OutgoingPipePauseThreshold,
+         resumeWriterThreshold: options.OutgoingPipeResumeThreshold,
+         useSynchronizationContext: false));
 
       IDuplexPipe sessionPipe = new DuplexPipe(_incomingPipe.Reader, _outgoingPipe.Writer);
       _stream = new UdpNetworkStream(this, sessionPipe);
@@ -103,8 +111,15 @@ public sealed class UdpNetworkSession : INetworkSession
       _onDisposeAsync = onDisposeAsync;
       _sessionClosedToken = _cts.Token;
 
-      _incomingPipe = new Pipe(new PipeOptions(useSynchronizationContext: false));
-      _outgoingPipe = new Pipe(new PipeOptions(useSynchronizationContext: false));
+      _incomingPipe = new Pipe(new PipeOptions(
+         pauseWriterThreshold: options.IncomingPipePauseThreshold,
+         resumeWriterThreshold: options.IncomingPipeResumeThreshold,
+         useSynchronizationContext: false));
+
+      _outgoingPipe = new Pipe(new PipeOptions(
+         pauseWriterThreshold: options.OutgoingPipePauseThreshold,
+         resumeWriterThreshold: options.OutgoingPipeResumeThreshold,
+         useSynchronizationContext: false));
 
       IDuplexPipe sessionPipe = new DuplexPipe(_incomingPipe.Reader, _outgoingPipe.Writer);
       _stream = new UdpNetworkStream(this, sessionPipe);
@@ -128,14 +143,43 @@ public sealed class UdpNetworkSession : INetworkSession
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
    }
 
-   public async ValueTask PushIncomingDataAsync(ReadOnlyMemory<byte> data)
+   public ValueTask PushIncomingDataAsync(ReadOnlyMemory<byte> data)
    {
       Volatile.Write(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
+
+      if (Volatile.Read(ref _isWriterPaused) == 1)
+      {
+         // Drop packet since the session pipe is full
+         return ValueTask.CompletedTask;
+      }
 
       var writer = _incomingPipe.Writer;
       writer.Write(data.Span);
 
-      await writer.FlushAsync(_cts.Token);
+      var flushTask = writer.FlushAsync(_cts.Token);
+      if (!flushTask.IsCompleted)
+      {
+         Volatile.Write(ref _isWriterPaused, 1);
+         _ = ObserveFlushAsync(flushTask);
+      }
+
+      return ValueTask.CompletedTask;
+
+      async Task ObserveFlushAsync(ValueTask<FlushResult> task)
+      {
+         try
+         {
+            await task;
+         }
+         catch
+         {
+            // Ignored
+         }
+         finally
+         {
+            Volatile.Write(ref _isWriterPaused, 0);
+         }
+      }
    }
 
    private async Task ProcessReceiveLoopClientAsync()

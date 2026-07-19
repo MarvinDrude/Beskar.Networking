@@ -47,6 +47,13 @@ public sealed class UdpNetworkClient(UdpTransportOptions options) : INetworkClie
          TraceLogger.LogClientInfo("UDP ConnectAsync: Initiating UDP socket connection to {0}", endPoint);
          socket = new Socket(endPoint.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
 
+         if (OperatingSystem.IsWindows())
+         {
+            // workaround for windows for now
+            const int SIO_UDP_CONNRESET = -1744830452;
+            socket.IOControl(SIO_UDP_CONNRESET, [.. "\0\0\0\0"u8], null);
+         }
+
          if (_options.SendBufferSize.HasValue)
          {
             socket.SendBufferSize = _options.SendBufferSize.Value;
