@@ -139,14 +139,14 @@ public sealed partial class MqttClientSessions(MqttServer server)
 
             alternateLookup[serverClient.ClientIdUtf8Bytes.Span] = serverClient;
          }
+      }
 
-         if (!isSessionPresent && _server.Events.OnNewSession.Count > 0)
+      if (!isSessionPresent && _server.Events.OnNewSession.Count > 0)
+      {
+         await _server.Events.OnNewSession.ExecuteAsync(new MqttNewSessionContext()
          {
-            await _server.Events.OnNewSession.ExecuteAsync(new MqttNewSessionContext()
-            {
-               Session = session
-            }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: ct);
-         }
+            Session = session
+         }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: ct);
       }
 
       if (takenOverClient is not null)
