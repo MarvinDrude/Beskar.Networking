@@ -25,6 +25,10 @@
       <PackageIcon>logo_small.png</PackageIcon>
    </PropertyGroup>
 
+   <PropertyGroup>
+      <IsPackable Condition="'$(IsPackable)' == ''">false</IsPackable>
+   </PropertyGroup>
+
    <ItemGroup Condition="'$(IsPackable)' == 'true'">
       <None Include="$(MSBuildThisFileDirectory)Resources\logo_small.png" Pack="true" PackagePath="\" Visible="false"/>
       <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false"/>
