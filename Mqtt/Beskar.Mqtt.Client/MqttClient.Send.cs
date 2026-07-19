@@ -277,16 +277,15 @@ public sealed partial class MqttClient
             ResetKeepAliveTimestamp();
 
             lockToken.Dispose();
-            return AwaitAck(signalAwaiter, ct);
          }
          catch (Exception error)
          {
             TraceLogger.LogClientError("MqttClient.SendAndAck: Error writing packet '{0}': {1}", typeof(TPacket).Name, error.Message);
             lockToken.Dispose();
             signalAwaiter.Fail(error);
-
-            return AwaitAck(signalAwaiter, ct);
          }
+
+         return AwaitAck(signalAwaiter, ct);
       }
       catch (Exception error)
       {
@@ -340,16 +339,15 @@ public sealed partial class MqttClient
             ResetKeepAliveTimestamp();
 
             lockToken.Dispose();
-            return AwaitAck(signalAwaiter, ct);
          }
          catch (Exception error)
          {
             TraceLogger.LogClientError("MqttClient.SendAndAck: Error writing options '{0}': {1}", typeof(TOptions).Name, error.Message);
             lockToken.Dispose();
             signalAwaiter.Fail(error);
-
-            return AwaitAck(signalAwaiter, ct);
          }
+
+         return AwaitAck(signalAwaiter, ct);
       }
       catch (Exception error)
       {

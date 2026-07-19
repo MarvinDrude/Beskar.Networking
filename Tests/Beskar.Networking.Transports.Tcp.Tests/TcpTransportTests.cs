@@ -541,4 +541,39 @@ public class TcpTransportTests
       await clientSession.DisposeAsync();
       await serverSession.DisposeAsync();
    }
+
+   [Test]
+   public async Task TcpListener_SocketOptionException_DoesNotLeakSemaphoreOrSocket()
+   {
+      var options = new TcpTransportOptions
+      {
+         SendBufferSize = -1, // This invalid value will force an exception inside AcceptLoopAsync
+         MaxConcurrentHandshakes = 2
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      // Verify initial semaphore count is 1 (2 minus the 1 permit acquired by the active accept loop)
+      var semaphoreField = typeof(TcpNetworkListener).GetField("_handshakeSemaphore", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+      var semaphore = (SemaphoreSlim)semaphoreField!.GetValue(listener)!;
+      await Assert.That(semaphore.CurrentCount).IsEqualTo(1);
+
+      // Connect client to trigger AcceptLoopAsync connection processing and the subsequent exception
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
+      using (var clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+      {
+         await clientSocket.ConnectAsync(IPAddress.Loopback, actualPort);
+         
+         // Give the server accept loop a moment to accept connection and throw exception
+         await Task.Delay(200);
+      }
+
+      // Verify that the semaphore count is STILL 1 (not leaked)
+      await Assert.That(semaphore.CurrentCount).IsEqualTo(1);
+
+      await listener.UnbindAsync();
+   }
 }
+
