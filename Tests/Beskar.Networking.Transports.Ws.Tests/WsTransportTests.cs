@@ -675,4 +675,37 @@ public class WsTransportTests
       await clientSession.DisposeAsync();
       await serverSession.DisposeAsync();
    }
+
+   [Test]
+   public async Task WsHandshake_SendErrorResponse_HasCorrectSeparator()
+   {
+      var options = new WsTransportOptions
+      {
+         Path = "/chat"
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, actualPort);
+      await using var stream = tcpClient.GetStream();
+
+      // Send bad request to trigger SendErrorResponseAsync
+      var request = "INVALID_REQUEST\r\n\r\n";
+      await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(request));
+      await stream.FlushAsync();
+
+      var buffer = new byte[1024];
+      var read = await stream.ReadAsync(buffer);
+      var responseText = System.Text.Encoding.ASCII.GetString(buffer, 0, read);
+      
+      // The response must contain "\r\n\r\n" separating headers and body
+      await Assert.That(responseText).Contains("\r\n\r\nOnly GET requests are allowed.");
+
+      await listener.UnbindAsync();
+   }
 }
+

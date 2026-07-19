@@ -54,7 +54,7 @@ public sealed partial class MqttClient
             return;
          }
 
-         await DisconnectInternalAsync();
+         await DisconnectInternalAsync(awaitReceiveTask: true, awaitKeepAliveTask: false);
       }
    }
 }

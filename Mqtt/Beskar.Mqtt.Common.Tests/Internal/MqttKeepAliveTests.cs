@@ -1,6 +1,7 @@
 using System.Net;
 using System.IO.Pipelines;
 using Beskar.Memory.Results;
+using Beskar.Mqtt.Client;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Protocol.Enums;
@@ -176,5 +177,56 @@ public class MqttKeepAliveTests
       public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
       public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default) => _lock.LockAsync(cancellationToken);
       public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+   }
+
+   [Test]
+   public async Task Client_KeepAliveFailure_ShouldTransitionToDisconnectedWithoutDeadlock()
+   {
+      // Start server
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(0)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
+
+      // Create client with a very short keep alive (1 second)
+      var client = (MqttClient)MqttClientFactory.CreateTcp();
+
+      var connectOptions = new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         CleanSession = true,
+         ClientIdUtf8Bytes = "keepalive-deadlock-client"u8.ToArray(),
+         KeepAlivePeriod = 1
+      };
+
+      var connectResult = await client.ConnectAsync(connectOptions);
+      await Assert.That(connectResult.Failed).IsFalse();
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Now shut down the server connection abruptly to cause next ping to fail
+      await server.StopAsync();
+
+      // Wait for keep-alive task to run its next ping (in 1 second), fail, and trigger disconnection.
+      // We put a timeout of 5 seconds on the check loop.
+      var timeout = DateTimeOffset.UtcNow.AddSeconds(5);
+      while (client.IsConnected && DateTimeOffset.UtcNow < timeout)
+      {
+         await Task.Delay(100);
+      }
+
+      // Allow a brief moment for the disconnection to process
+      await Task.Delay(500);
+
+      // Check if it transitioned to Disconnected (1)
+      var stateField = typeof(MqttClient).GetField("_state", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+      var state = (int)stateField!.GetValue(client)!;
+
+      // 1 = Disconnected, 0 = Disconnecting (stuck in deadlock)
+      await Assert.That(state).IsEqualTo(1);
    }
 }

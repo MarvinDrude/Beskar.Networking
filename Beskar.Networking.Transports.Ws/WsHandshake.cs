@@ -383,7 +383,7 @@ public static class WsHandshake
 
    private static async Task SendErrorResponseAsync(PipeWriter writer, string status, string message)
    {
-      var totalCharsLength = 56 + status.Length + message.Length;
+      var totalCharsLength = 58 + status.Length + message.Length;
 
       {
          using var charOwner = totalCharsLength < 256
@@ -398,7 +398,7 @@ public static class WsHandshake
          written += status.Length;
 
          "\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n".AsSpan().CopyTo(charSpan[written..]);
-         written += 47;
+         written += 49;
 
          message.AsSpan().CopyTo(charSpan[written..]);
 
