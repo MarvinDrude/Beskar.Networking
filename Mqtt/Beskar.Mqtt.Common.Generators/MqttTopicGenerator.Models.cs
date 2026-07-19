@@ -1,5 +1,4 @@
-using System;
-using Beskar.Generators.Common;
+using Beskar.Memory.Collections;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 

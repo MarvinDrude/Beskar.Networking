@@ -16,15 +16,15 @@
    <ItemGroup>
       <Compile Include="..\..\Generators\Beskar.Generators.Common\**\*.cs"
                Exclude="..\..\Generators\Beskar.Generators.Common\bin\**\*;..\..\Generators\Beskar.Generators.Common\obj\**\*"
-               Link="Common\%(RecursiveDir)%(Filename)%(Extension)" />
+               Link="Common\%(RecursiveDir)%(Filename)%(Extension)"/>
    </ItemGroup>
 
    <ItemGroup>
       <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all"/>
       <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all"/>
-      <PackageReference Include="PolySharp" PrivateAssets="all" />
-      <PackageReference Include="System.Memory" />
-      <PackageReference Include="Microsoft.Bcl.HashCode" />
+      <PackageReference Include="PolySharp" PrivateAssets="all"/>
+      <PackageReference Include="System.Memory"/>
+      <PackageReference Include="Microsoft.Bcl.HashCode"/>
    </ItemGroup>
 
    <PropertyGroup>
@@ -33,7 +33,7 @@
 
    <Target Name="GetDependencyTargetPaths">
       <ItemGroup>
-         <TargetPathWithTargetPlatformMoniker Include="$(TargetDir)*.dll" Exclude="$(TargetPath)" IncludeRuntimeDependency="false" />
+         <TargetPathWithTargetPlatformMoniker Include="$(TargetDir)*.dll" Exclude="$(TargetPath)" IncludeRuntimeDependency="false"/>
       </ItemGroup>
    </Target>
 
