@@ -11,6 +11,7 @@
       <NoWarn>$(NoWarn);RS2008</NoWarn>
       <PolySharpUsePublicAccessibilityForGeneratedTypes>true</PolySharpUsePublicAccessibilityForGeneratedTypes>
       <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
    </PropertyGroup>
 
    <ItemGroup>

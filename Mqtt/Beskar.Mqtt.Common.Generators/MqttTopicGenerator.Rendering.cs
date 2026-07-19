@@ -1,0 +1,387 @@
+using Beskar.Memory.Code;
+
+namespace Beskar.Mqtt.Common.Generators;
+
+public partial class MqttTopicGenerator
+{
+   private static string GenerateParserMethod(GeneratedMethodModel model)
+   {
+      if (model.Parameters.Count == 0) return "";
+
+      var firstParam = model.Parameters[0];
+      var firstParamType = firstParam.Type;
+
+      var isByteSpan = firstParamType.Contains("System.ReadOnlySpan<byte>");
+      var isCharSpan = firstParamType.Contains("System.ReadOnlySpan<char>");
+      var isString = firstParamType == "string";
+
+      if (!isByteSpan && !isCharSpan && !isString)
+         return "";
+
+      Span<char> initialBuffer = stackalloc char[2048];
+      var writer = new CodeTextWriter(initialBuffer, stackalloc char[64]);
+
+      try
+      {
+         var modifiers = model.MethodModifiers;
+         var paramsList = string.Join(", ", model.Parameters.Select(p =>
+         {
+            var refKind = p.RefKind switch
+            {
+               "out" => "out ",
+               "ref" => "ref ",
+               "in" => "in ",
+               _ => ""
+            };
+            return $"{refKind}{p.Type} {p.Name}";
+         }));
+
+         writer.WriteLine($"{modifiers} {model.ReturnType} {model.MethodName}({paramsList})");
+         writer.OpenBody();
+
+         foreach (var param in model.Parameters.Skip(1))
+            if (param.RefKind == "out")
+               writer.WriteLine($"{param.Name} = default!;");
+
+         writer.WriteLine();
+
+         writer.WriteLine($"if ({firstParam.Name}.IsEmpty) return false;");
+         writer.WriteLine();
+
+         writer.WriteLine(isString
+            ? $"ReadOnlySpan<char> remaining = {firstParam.Name}.AsSpan();"
+            : $"var remaining = {firstParam.Name};");
+
+         var segments = model.Pattern.Split('/');
+         var totalSegments = segments.Length;
+
+         for (var i = 0; i < totalSegments; i++)
+         {
+            var segment = segments[i];
+            var isLast = i == totalSegments - 1;
+            var nextIsWildcardHash = !isLast && segments[i + 1] == "#";
+
+            if (segment == "#")
+            {
+               writer.WriteLine("return true;");
+               break;
+            }
+
+            if (segment == "+")
+            {
+               if (isLast)
+               {
+                  writer.WriteLine(isByteSpan
+                     ? "return !remaining.IsEmpty && remaining.IndexOf((byte)'/') < 0;"
+                     : "return !remaining.IsEmpty && remaining.IndexOf('/') < 0;");
+               }
+               else
+               {
+                  writer.WriteLine(isByteSpan
+                     ? $"int nextSlash_{i} = remaining.IndexOf((byte)'/');"
+                     : $"int nextSlash_{i} = remaining.IndexOf('/');");
+
+                  writer.WriteLine($"if (nextSlash_{i} < 0) return false;");
+                  writer.WriteLine($"remaining = remaining.Slice(nextSlash_{i} + 1);");
+               }
+
+               continue;
+            }
+
+            if (segment.StartsWith("{") && segment.EndsWith("}"))
+            {
+               var placeholder = segment.Substring(1, segment.Length - 2);
+               var colonIndex = placeholder.IndexOf(':');
+               var paramName = colonIndex >= 0 ? placeholder[..colonIndex] : placeholder;
+
+               var (name, outParamType, _) = model.Parameters
+                  .FirstOrDefault(p =>
+                     p.RefKind == "out" && string.Equals(p.Name, paramName, StringComparison.OrdinalIgnoreCase));
+
+               if (name is null)
+                  continue;
+
+               writer.WriteLine($"// Extract dynamic segment for {{{paramName}}}");
+               if (isLast)
+               {
+                  writer.WriteLine(isByteSpan
+                     ? "if (remaining.IsEmpty || remaining.IndexOf((byte)'/') >= 0) return false;"
+                     : "if (remaining.IsEmpty || remaining.IndexOf('/') >= 0) return false;");
+
+                  writer.WriteLine($"var rawVal_{i} = remaining;");
+               }
+               else
+               {
+                  if (isByteSpan)
+                     writer.WriteLine($"int nextSlash_{i} = remaining.IndexOf((byte)'/');");
+                  else
+                     writer.WriteLine($"int nextSlash_{i} = remaining.IndexOf('/');");
+
+                  writer.WriteLine($"if (nextSlash_{i} <= 0) return false;");
+                  writer.WriteLine($"var rawVal_{i} = remaining.Slice(0, nextSlash_{i});");
+                  writer.WriteLine($"remaining = remaining.Slice(nextSlash_{i} + 1);");
+               }
+
+               if (outParamType == "string")
+               {
+                  writer.WriteLine(isByteSpan
+                     ? $"{name} = Encoding.UTF8.GetString(rawVal_{i}.ToArray());"
+                     : $"{name} = new string(rawVal_{i});");
+               }
+               else if (outParamType.Contains("System.ReadOnlySpan<char>"))
+               {
+                  if (isByteSpan)
+                  {
+                     writer.WriteLine(
+                        "// Warning: allocating string to convert ReadOnlySpan<byte> to ReadOnlySpan<char>");
+                     writer.WriteLine($"{name} = Encoding.UTF8.GetString(rawVal_{i}.ToArray()).AsSpan();");
+                  }
+                  else
+                  {
+                     writer.WriteLine($"{name} = rawVal_{i};");
+                  }
+               }
+               else if (outParamType.Contains("System.ReadOnlySpan<byte>"))
+               {
+                  if (isByteSpan)
+                  {
+                     writer.WriteLine($"{name} = rawVal_{i};");
+                  }
+                  else
+                  {
+                     writer.WriteLine("// Warning: allocating UTF8 bytes from ReadOnlySpan<char>");
+                     writer.WriteLine($"{name} = Encoding.UTF8.GetBytes(rawVal_{i}.ToArray());");
+                  }
+               }
+               else
+               {
+                  writer.WriteLine(isByteSpan
+                     ? $"if (!Utf8Parser.TryParse(rawVal_{i}, out {name}, out _)) return false;"
+                     : $"if (!{outParamType}.TryParse(rawVal_{i}, null, out {name})) return false;");
+               }
+
+               if (isLast) writer.WriteLine("return true;");
+               continue;
+            }
+
+            writer.WriteLine($"// Match literal segment: \"{segment}\"");
+            if (isLast)
+            {
+               writer.WriteLine(isByteSpan
+                  ? $"return remaining.SequenceEqual(\"{segment}\"u8);"
+                  : $"return remaining.Equals(\"{segment}\", StringComparison.Ordinal);");
+            }
+            else if (nextIsWildcardHash)
+            {
+               if (isByteSpan)
+               {
+                  writer.WriteLine($"if (remaining.SequenceEqual(\"{segment}\"u8)) return true;");
+                  writer.WriteLine($"if (!remaining.StartsWith(\"{segment}/\"u8)) return false;");
+               }
+               else
+               {
+                  writer.WriteLine($"if (remaining.Equals(\"{segment}\", StringComparison.Ordinal)) return true;");
+                  writer.WriteLine(
+                     $"if (!remaining.StartsWith(\"{segment}/\", StringComparison.Ordinal)) return false;");
+               }
+
+               writer.WriteLine($"remaining = remaining.Slice({segment.Length + 1});");
+            }
+            else
+            {
+               if (isByteSpan)
+               {
+                  writer.WriteLine($"if (!remaining.StartsWith(\"{segment}/\"u8)) return false;");
+                  writer.WriteLine($"remaining = remaining.Slice({segment.Length + 1});");
+               }
+               else
+               {
+                  writer.WriteLine(
+                     $"if (!remaining.StartsWith(\"{segment}/\", StringComparison.Ordinal)) return false;");
+                  writer.WriteLine($"remaining = remaining.Slice({segment.Length + 1});");
+               }
+            }
+         }
+
+         writer.WriteLine("return false;");
+         writer.CloseBody();
+
+         return writer.ToString();
+      }
+      finally
+      {
+         writer.Dispose();
+      }
+   }
+
+   private static string GenerateFormatterMethod(GeneratedMethodModel model)
+   {
+      if (model.Parameters.Count == 0) return "";
+
+      var firstParam = model.Parameters[0];
+      var firstParamType = firstParam.Type;
+
+      var isSpanDest = firstParamType.Contains("System.Span<char>") || firstParamType.Contains("System.Span<byte>");
+      var isStringReturn = model.ReturnType == "string";
+
+      Span<char> initialBuffer = stackalloc char[2048];
+      using var writer = new CodeTextWriter(initialBuffer, 4);
+
+      var modifiers = model.MethodModifiers;
+
+      var paramsList = string.Join(", ", model.Parameters.Select(p =>
+      {
+         var refKind = p.RefKind switch
+         {
+            "out" => "out ",
+            "ref" => "ref ",
+            "in" => "in ",
+            _ => ""
+         };
+         return $"{refKind}{p.Type} {p.Name}";
+      }));
+
+      writer.WriteLine($"{modifiers} {model.ReturnType} {model.MethodName}({paramsList})");
+      writer.OpenBody();
+
+      var segments = model.Pattern.Split('/');
+
+      if (isStringReturn)
+      {
+         var formatParts = new List<string>();
+         foreach (var segment in segments)
+         {
+            if (segment.StartsWith("{") && segment.EndsWith("}"))
+            {
+               var placeholder = segment.Substring(1, segment.Length - 2);
+               var colonIndex = placeholder.IndexOf(':');
+               var paramName = colonIndex >= 0 ? placeholder.Substring(0, colonIndex) : placeholder;
+               formatParts.Add($"{{{paramName}}}");
+            }
+            else
+            {
+               formatParts.Add(segment);
+            }
+         }
+
+         var formatString = string.Join("/", formatParts);
+         writer.WriteLine($"return $\"{formatString}\";");
+      }
+      else if (isSpanDest)
+      {
+         var isByteSpan = firstParamType.Contains("System.Span<byte>");
+         var charsWrittenParam = model.Parameters.LastOrDefault(p => p.RefKind == "out" && p.Type.Contains("int"));
+
+         if (charsWrittenParam.Name is not null) writer.WriteLine($"{charsWrittenParam.Name} = 0;");
+         writer.WriteLine($"var remainingDest = {firstParam.Name};");
+         writer.WriteLine();
+
+         for (var i = 0; i < segments.Length; i++)
+         {
+            var segment = segments[i];
+            var isLast = i == segments.Length - 1;
+            var suffix = isLast ? "" : "/";
+
+            if (segment.StartsWith("{") && segment.EndsWith("}"))
+            {
+               var placeholder = segment.Substring(1, segment.Length - 2);
+               var colonIndex = placeholder.IndexOf(':');
+               var paramName = colonIndex >= 0 ? placeholder.Substring(0, colonIndex) : placeholder;
+
+               var argParam = model.Parameters.FirstOrDefault(p =>
+                  string.Equals(p.Name, paramName, StringComparison.OrdinalIgnoreCase));
+
+               if (argParam.Name is not null)
+               {
+                  var argType = argParam.Type;
+                  if (argType == "string" || argType.Contains("System.ReadOnlySpan<char>"))
+                  {
+                     if (isByteSpan)
+                     {
+                        writer.WriteLine("// Convert string/span to UTF8 bytes");
+                        writer.WriteLine(
+                           $"int {paramName}Bytes = Encoding.UTF8.GetBytes({argParam.Name}, remainingDest);");
+                        writer.WriteLine($"remainingDest = remainingDest.Slice({paramName}Bytes);");
+                        if (charsWrittenParam.Name is not null)
+                           writer.WriteLine($"{charsWrittenParam.Name} += {paramName}Bytes;");
+                     }
+                     else
+                     {
+                        var accessExpr = argType == "string" ? $"{argParam.Name}.AsSpan()" : argParam.Name;
+                        writer.WriteLine($"if (!{accessExpr}.TryCopyTo(remainingDest)) return false;");
+                        writer.WriteLine($"remainingDest = remainingDest.Slice({argParam.Name}.Length);");
+                        if (charsWrittenParam.Name is not null)
+                           writer.WriteLine($"{charsWrittenParam.Name} += {argParam.Name}.Length;");
+                     }
+                  }
+                  else if (argType.Contains("System.ReadOnlySpan<byte>"))
+                  {
+                     if (isByteSpan)
+                     {
+                        writer.WriteLine($"if (!{argParam.Name}.TryCopyTo(remainingDest)) return false;");
+                        writer.WriteLine($"remainingDest = remainingDest.Slice({argParam.Name}.Length);");
+                        if (charsWrittenParam.Name is not null)
+                           writer.WriteLine($"{charsWrittenParam.Name} += {argParam.Name}.Length;");
+                     }
+                     else
+                     {
+                        writer.WriteLine("// Warning: converting ReadOnlySpan<byte> to chars in formatting");
+                        writer.WriteLine(
+                           $"int {paramName}Chars = Encoding.UTF8.GetChars({argParam.Name}, remainingDest);");
+                        writer.WriteLine($"remainingDest = remainingDest.Slice({paramName}Chars);");
+                        if (charsWrittenParam.Name is not null)
+                           writer.WriteLine($"{charsWrittenParam.Name} += {paramName}Chars;");
+                     }
+                  }
+                  else
+                  {
+                     if (isByteSpan)
+                     {
+                        writer.WriteLine(
+                           $"if (!Utf8Formatter.TryFormat({argParam.Name}, remainingDest, out int {paramName}Written)) return false;");
+                        writer.WriteLine($"remainingDest = remainingDest.Slice({paramName}Written);");
+                        if (charsWrittenParam.Name is not null)
+                           writer.WriteLine($"{charsWrittenParam.Name} += {paramName}Written;");
+                     }
+                     else
+                     {
+                        writer.WriteLine(
+                           $"if (!{argParam.Name}.TryFormat(remainingDest, out int {paramName}Written)) return false;");
+                        writer.WriteLine($"remainingDest = remainingDest.Slice({paramName}Written);");
+                        if (charsWrittenParam.Name is not null)
+                           writer.WriteLine($"{charsWrittenParam.Name} += {paramName}Written;");
+                     }
+                  }
+               }
+            }
+            else
+            {
+               var literalText = segment + suffix;
+               writer.WriteLine(isByteSpan
+                  ? $"if (!\"{literalText}\"u8.TryCopyTo(remainingDest)) return false;"
+                  : $"if (!\"{literalText}\".AsSpan().TryCopyTo(remainingDest)) return false;");
+
+               writer.WriteLine($"remainingDest = remainingDest.Slice({literalText.Length});");
+
+               if (charsWrittenParam.Name is not null)
+                  writer.WriteLine($"{charsWrittenParam.Name} += {literalText.Length};");
+            }
+
+            if (!isLast && segment.StartsWith("{") && segment.EndsWith("}"))
+            {
+               writer.WriteLine("if (remainingDest.IsEmpty) return false;");
+               writer.WriteLine(isByteSpan ? "remainingDest[0] = (byte)'/';" : "remainingDest[0] = '/';");
+               writer.WriteLine("remainingDest = remainingDest.Slice(1);");
+
+               if (charsWrittenParam.Name is not null)
+                  writer.WriteLine($"{charsWrittenParam.Name} += 1;");
+            }
+         }
+
+         writer.WriteLine("return true;");
+      }
+
+      writer.CloseBody();
+      return writer.ToString();
+   }
+}
