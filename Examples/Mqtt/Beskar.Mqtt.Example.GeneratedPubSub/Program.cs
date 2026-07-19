@@ -130,8 +130,8 @@ public static class Program
       // 5. Subscribe Dashboard Client using wildcards
       TraceLogger.LogInfo("\n--- Subscribing Dashboard ---");
       var subscribeOptions = SubscribeOptions.Create()
-         .WithTopicFilter("devices/+/status/+", QualityOfServiceType.AtLeastOnce)
-         .WithTopicFilter("devices/+/telemetry/+/+", QualityOfServiceType.AtLeastOnce)
+         .WithTopicFilter("devices/+/status/+"u8, QualityOfServiceType.AtLeastOnce)
+         .WithTopicFilter("devices/+/telemetry/+/+"u8, QualityOfServiceType.AtLeastOnce)
          .Build();
 
       var subResult = await subscriberClient.SubscribeAsync(subscribeOptions);
