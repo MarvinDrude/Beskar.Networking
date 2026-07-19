@@ -116,19 +116,25 @@ public sealed class QuicNetworkSession(
 
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
+      QuicStream? quicStream = null;
+      StreamConnection? connection = null;
+      var success = false;
+
       try
       {
          TraceLogger.LogServerInfo("QUIC Session {0}: Accepting incoming stream...", Id);
          using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
-         var quicStream = await _connection.AcceptInboundStreamAsync(linkedCts.Token);
+         quicStream = await _connection.AcceptInboundStreamAsync(linkedCts.Token);
 
-         var connection = _ioQueueRegistry.Create(quicStream);
+         connection = _ioQueueRegistry.Create(quicStream);
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
          _activeStreams.TryAdd(newStream.StreamId, newStream);
          Interlocked.Increment(ref _streamsAccepted);
 
          TraceLogger.LogServerInfo("QUIC Session {0}: Successfully accepted inbound {1} stream {2}", Id, newStream.Direction, newStream.StreamId);
+         success = true;
+
          return newStream;
       }
       catch (QuicException ex)
@@ -153,12 +159,30 @@ public sealed class QuicNetworkSession(
          TraceLogger.LogServerError("QUIC Session {0}: Unexpected exception accepting inbound stream: {1}", Id, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }
+      finally
+      {
+         if (!success)
+         {
+            if (connection is not null)
+            {
+               await _ioQueueRegistry.ReturnAsync(connection);
+            }
+            else if (quicStream is not null)
+            {
+               await quicStream.DisposeAsync();
+            }
+         }
+      }
    }
 
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> OpenStreamAsync(
       NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
       CancellationToken ct = default)
    {
+      QuicStream? quicStream = null;
+      StreamConnection? connection = null;
+      var success = false;
+
       try
       {
          TraceLogger.LogClientInfo("QUIC Session {0}: Opening outbound stream (Direction: {1})...", Id, direction);
@@ -167,14 +191,15 @@ public sealed class QuicNetworkSession(
             ? QuicStreamType.Bidirectional
             : QuicStreamType.Unidirectional;
 
-         var quicStream = await _connection.OpenOutboundStreamAsync(quicStreamType, linkedCts.Token);
-         var connection = _ioQueueRegistry.Create(quicStream);
+         quicStream = await _connection.OpenOutboundStreamAsync(quicStreamType, linkedCts.Token);
+         connection = _ioQueueRegistry.Create(quicStream);
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
          _activeStreams.TryAdd(newStream.StreamId, newStream);
          Interlocked.Increment(ref _streamsOpened);
 
          TraceLogger.LogClientInfo("QUIC Session {0}: Successfully opened outbound {1} stream {2}", Id, newStream.Direction, newStream.StreamId);
+         success = true;
          return newStream;
       }
       catch (QuicException ex)
@@ -191,6 +216,20 @@ public sealed class QuicNetworkSession(
       {
          TraceLogger.LogClientError("QUIC Session {0}: Unexpected exception opening outbound stream: {1}", Id, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
+      }
+      finally
+      {
+         if (!success)
+         {
+            if (connection is not null)
+            {
+               await _ioQueueRegistry.ReturnAsync(connection);
+            }
+            else if (quicStream is not null)
+            {
+               await quicStream.DisposeAsync();
+            }
+         }
       }
    }
 

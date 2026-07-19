@@ -879,7 +879,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          var propertiesBuffer = new byte[128];
          while (client.IsConnected && !ct.IsCancellationRequested)
          {
-            if (session.GetUnacknowledgedPublishes().Count >= session.ClientReceiveMaximum)
+            if (session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum)
             {
                break;
             }
