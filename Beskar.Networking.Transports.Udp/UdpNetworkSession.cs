@@ -197,7 +197,7 @@ public sealed class UdpNetworkSession : INetworkSession
             var bytesReceived = await socket.ReceiveAsync(buffer, SocketFlags.None, _cts.Token);
             if (bytesReceived == 0)
             {
-               break;
+               continue;
             }
 
             Volatile.Write(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
@@ -221,6 +221,15 @@ public sealed class UdpNetworkSession : INetworkSession
       finally
       {
          await writer.CompleteAsync();
+
+         try
+         {
+            await _cts.CancelAsync();
+         }
+         catch (ObjectDisposedException)
+         {
+            // Already disposed
+         }
       }
    }
 
@@ -266,6 +275,15 @@ public sealed class UdpNetworkSession : INetworkSession
       finally
       {
          await reader.CompleteAsync();
+
+         try
+         {
+            await _cts.CancelAsync();
+         }
+         catch (ObjectDisposedException)
+         {
+            // Already disposed
+         }
       }
    }
 
@@ -311,6 +329,15 @@ public sealed class UdpNetworkSession : INetworkSession
       finally
       {
          await reader.CompleteAsync();
+
+         try
+         {
+            await _cts.CancelAsync();
+         }
+         catch (ObjectDisposedException)
+         {
+            // Already disposed
+         }
       }
    }
 

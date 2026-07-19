@@ -265,13 +265,20 @@ public sealed class UdpNetworkListener(
 
                if (_sessions.TryAdd(senderEP, newSession))
                {
-                  Interlocked.Increment(ref _sessionsAccepted);
+                  if (_sessionChannel.Writer.TryWrite(newSession))
+                  {
+                     Interlocked.Increment(ref _sessionsAccepted);
 
-                  Volatile.Write(ref _lastRemoteEP, senderEP);
-                  Volatile.Write(ref _lastSession, newSession);
+                     Volatile.Write(ref _lastRemoteEP, senderEP);
+                     Volatile.Write(ref _lastSession, newSession);
 
-                  await _sessionChannel.Writer.WriteAsync(newSession, token);
-                  await newSession.PushIncomingDataAsync(buffer.AsMemory(0, result.ReceivedBytes));
+                     await newSession.PushIncomingDataAsync(buffer.AsMemory(0, result.ReceivedBytes));
+                  }
+                  else
+                  {
+                     TraceLogger.LogServerWarning("UDP Listener: Session channel is full. Dropping new session from {0}", senderEP);
+                     await newSession.DisposeAsync();
+                  }
                }
                else
                {
@@ -343,9 +350,16 @@ public sealed class UdpNetworkListener(
 
             foreach (var session in _sessions.Values)
             {
-               if (nowTicks - session.LastActivityTicks > idleTimeoutTicks)
+               if (session.SessionClosedToken.IsCancellationRequested || nowTicks - session.LastActivityTicks > idleTimeoutTicks)
                {
-                  TraceLogger.LogServerInfo("UDP Listener: Client session {0} ({1}) idle timeout reached. Disconnecting.", session.Id, session.RemoteAddress);
+                  if (session.SessionClosedToken.IsCancellationRequested)
+                  {
+                     TraceLogger.LogServerInfo("UDP Listener: Client session {0} ({1}) was cancelled/closed. Disconnecting and cleaning up.", session.Id, session.RemoteAddress);
+                  }
+                  else
+                  {
+                     TraceLogger.LogServerInfo("UDP Listener: Client session {0} ({1}) idle timeout reached. Disconnecting.", session.Id, session.RemoteAddress);
+                  }
                   await session.DisposeAsync();
                }
             }
