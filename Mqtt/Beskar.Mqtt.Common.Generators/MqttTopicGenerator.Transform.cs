@@ -140,13 +140,13 @@ public partial class MqttTopicGenerator
          var hasNamespace = !string.IsNullOrEmpty(model.NamespaceName);
          if (hasNamespace)
          {
-            writer.WriteLine($"namespace {model.NamespaceName}");
+            writer.WriteLineInterpolated($"namespace {model.NamespaceName}");
             writer.OpenBody();
          }
 
          foreach (var type in model.NestingTypes)
          {
-            writer.WriteLine($"partial {type.TypeKind} {type.Name}");
+            writer.WriteLineInterpolated($"partial {type.TypeKind} {type.Name}");
             writer.OpenBody();
          }
 

@@ -1,6 +1,4 @@
 #pragma warning disable CS8500
-
-using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -8,21 +6,22 @@ using System.Runtime.InteropServices;
 namespace Beskar.Memory.Code;
 
 /// <summary>
-/// Provides extension methods for writing interpolated strings to a <see cref="CodeTextWriter"/>.
+///    Provides extension methods for writing interpolated strings to a <see cref="CodeTextWriter" />.
 /// </summary>
 public static class CodeTextWriterInterpolatedStringHandlerExtensions
 {
    /// <summary>
-   /// Writes an interpolated string with a format provider.
+   ///    Writes an interpolated string with a format provider.
    /// </summary>
    [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public static void WriteInterpolated(this ref CodeTextWriter writer, IFormatProvider? provider,
       [InterpolatedStringHandlerArgument(nameof(writer), nameof(provider))]
       scoped ref CodeTextWriterInterpolatedStringHandler handler)
-   { }
+   {
+   }
 
    /// <summary>
-   /// Writes an interpolated string with a format provider followed by a new line.
+   ///    Writes an interpolated string with a format provider followed by a new line.
    /// </summary>
    [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public static void WriteLineInterpolated(this ref CodeTextWriter writer, IFormatProvider? provider,
@@ -33,16 +32,17 @@ public static class CodeTextWriterInterpolatedStringHandlerExtensions
    }
 
    /// <summary>
-   /// Writes an interpolated string.
+   ///    Writes an interpolated string.
    /// </summary>
    [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public static void WriteInterpolated(this ref CodeTextWriter writer,
       [InterpolatedStringHandlerArgument(nameof(writer))]
       scoped ref CodeTextWriterInterpolatedStringHandler handler)
-   { }
+   {
+   }
 
    /// <summary>
-   /// Writes an interpolated string followed by a new line.
+   ///    Writes an interpolated string followed by a new line.
    /// </summary>
    [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public static void WriteLineInterpolated(this ref CodeTextWriter writer,
@@ -54,7 +54,7 @@ public static class CodeTextWriterInterpolatedStringHandlerExtensions
 }
 
 /// <summary>
-/// A high-performance, non-allocating ref struct interpolated string handler for <see cref="CodeTextWriter"/>.
+///    A high-performance, non-allocating ref struct interpolated string handler for <see cref="CodeTextWriter" />.
 /// </summary>
 [InterpolatedStringHandler]
 [EditorBrowsable(EditorBrowsableState.Never)]
@@ -62,6 +62,7 @@ public static class CodeTextWriterInterpolatedStringHandlerExtensions
 public unsafe ref struct CodeTextWriterInterpolatedStringHandler
 {
    private readonly nint _writerPointer;
+
    private ref CodeTextWriter Writer
    {
       [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -69,14 +70,14 @@ public unsafe ref struct CodeTextWriterInterpolatedStringHandler
    }
 
    /// <summary>
-   /// Gets the number of characters written.
+   ///    Gets the number of characters written.
    /// </summary>
    public int Count { get; private set; }
 
    private readonly IFormatProvider? _provider;
 
    /// <summary>
-   /// Initializes a new instance of the <see cref="CodeTextWriterInterpolatedStringHandler"/> struct.
+   ///    Initializes a new instance of the <see cref="CodeTextWriterInterpolatedStringHandler" /> struct.
    /// </summary>
    public CodeTextWriterInterpolatedStringHandler(
       int literalLength,
@@ -88,12 +89,13 @@ public unsafe ref struct CodeTextWriterInterpolatedStringHandler
       {
          _writerPointer = (nint)p;
       }
+
       _provider = provider;
       Count = 0;
    }
 
    /// <summary>
-   /// Appends a literal string value.
+   ///    Appends a literal string value.
    /// </summary>
    [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public void AppendLiteral(string? value)
@@ -103,7 +105,7 @@ public unsafe ref struct CodeTextWriterInterpolatedStringHandler
    }
 
    /// <summary>
-   /// Appends a formatted string value.
+   ///    Appends a formatted string value.
    /// </summary>
    [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public void AppendFormatted(string value)
@@ -112,16 +114,16 @@ public unsafe ref struct CodeTextWriterInterpolatedStringHandler
    }
 
    /// <summary>
-   /// Appends a formatted span of characters.
+   ///    Appends a formatted span of characters.
    /// </summary>
-   public void AppendFormatted(scoped ReadOnlySpan<char> value)
+   public void AppendFormatted(ReadOnlySpan<char> value)
    {
       Writer.Write(value);
       Count += value.Length;
    }
 
    /// <summary>
-   /// Appends a formatted generic value.
+   ///    Appends a formatted generic value.
    /// </summary>
    public void AppendFormatted<T>(T value, string? format = null)
    {
@@ -151,7 +153,7 @@ public unsafe ref struct CodeTextWriterInterpolatedStringHandler
 
       return charsWrittenFallback;
 
-      static int Write(scoped ref CodeTextWriter writer, scoped ReadOnlySpan<char> chars)
+      static int Write(ref CodeTextWriter writer, ReadOnlySpan<char> chars)
       {
          writer.Write(chars);
          return chars.Length;
@@ -159,7 +161,10 @@ public unsafe ref struct CodeTextWriterInterpolatedStringHandler
    }
 
    /// <summary>
-   /// Returns a string representation of the written buffer content.
+   ///    Returns a string representation of the written buffer content.
    /// </summary>
-   public override string ToString() => Writer.WrittenSpan.ToString();
+   public override string ToString()
+   {
+      return Writer.WrittenSpan.ToString();
+   }
 }
