@@ -43,6 +43,7 @@
   <Folder Name="/Experiments/">
     <Project Path="Experiments/Beskar.Mqtt.Benchmark/Beskar.Mqtt.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Tcp.Benchmark/Beskar.Tcp.Benchmark.csproj" />
+    <Project Path="Experiments/Beskar.Udp.Benchmark/Beskar.Udp.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Ws.Benchmark/Beskar.Ws.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Quic.Benchmark/Beskar.Quic.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Networking.Benchmarks.Common/Beskar.Networking.Benchmarks.Common.csproj" />
@@ -69,6 +70,7 @@
   <Folder Name="/Tests/">
     <Project Path="Tests/Beskar.Networking.Transports.Common.Tests/Beskar.Networking.Transports.Common.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Transports.Tcp.Tests/Beskar.Networking.Transports.Tcp.Tests.csproj" />
+    <Project Path="Tests/Beskar.Networking.Transports.Udp.Tests/Beskar.Networking.Transports.Udp.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Transports.Quic.Tests/Beskar.Networking.Transports.Quic.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Transports.Ws.Tests/Beskar.Networking.Transports.Ws.Tests.csproj" />
   </Folder>
@@ -80,5 +82,6 @@
   <Project Path="Beskar.Networking.Transports.Common/Beskar.Networking.Transports.Common.csproj" />
   <Project Path="Beskar.Networking.Transports.Quic/Beskar.Networking.Transports.Quic.csproj" />
   <Project Path="Beskar.Networking.Transports.Tcp/Beskar.Networking.Transports.Tcp.csproj" />
+  <Project Path="Beskar.Networking.Transports.Udp/Beskar.Networking.Transports.Udp.csproj" />
   <Project Path="Beskar.Networking.Transports.Ws/Beskar.Networking.Transports.Ws.csproj" />
 </Solution>
