@@ -54,196 +54,156 @@ public sealed partial class MqttClientSessions(MqttServer server)
       ConnectOptions connectOptions,
       CancellationToken ct)
    {
-      using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-      using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-      var token = linkedCts.Token;
-
       MqttSession session;
       var isSessionPresent = false;
       var hasTakeOver = false;
-      var currentStep = "Start";
 
-      try
+      MqttServerClient? takenOverClient = null;
+      MqttSession? existing = null;
+      MqttSession? previousSession = null;
+
+      using (await _initiateLock.LockAsync(ct))
       {
-         MqttServerClient? takenOverClient = null;
-         MqttSession? existing = null;
-         MqttSession? previousSession = null;
-
-         currentStep = "Acquiring initiate lock";
-         using (await _initiateLock.LockAsync(token))
-         {
-            currentStep = "Accessing registry dictionaries";
-            existing = _sessions.Get(serverClient.ClientIdUtf8Bytes.Span, out previousSession);
-            var cleanSession = connectOptions.CleanSession || !_server.Options.SupportPersistentSessions;
-
-            if (existing is not null)
-            {
-               if (cleanSession)
-               {
-                  session = InitializeNewSession(serverClient, connectOptions);
-               }
-               else
-               {
-                  session = existing;
-                  existing = null;
-
-                  session.DisconnectionTimestamp = null;
-                  session.IsConnected = true;
-
-                  isSessionPresent = true;
-                  // any other session recovery
-               }
-            }
-            else
-            {
-               session = InitializeNewSession(serverClient, connectOptions);
-            }
-
-            _sessions.Update(serverClient.ClientIdUtf8Bytes.Span, session);
-            serverClient.MqttSession = session;
-            session.Client = serverClient;
-
-            var willAlternateLookup = _pendingWillMessages.GetAlternateLookup<ReadOnlySpan<byte>>();
-            if (willAlternateLookup.TryRemove(serverClient.ClientIdUtf8Bytes.Span, out var oldWill))
-            {
-               oldWill.Cancel();
-            }
-
-            if (connectOptions.HasWill)
-            {
-               var willTopic = Encoding.UTF8.GetString(connectOptions.WillTopicUtf8Bytes.Span);
-               var willState = new MqttWillMessageState(
-                  serverClient.ClientIdUtf8Bytes.ToArray(),
-                  willTopic,
-                  connectOptions.WillPayload.ToArray(),
-                  connectOptions.WillQualityOfService,
-                  connectOptions.WillRetain,
-                  connectOptions.WillMessageExpiryInterval ?? 0,
-                  connectOptions.WillPayloadFormatIndicator,
-                  connectOptions.WillContentTypeUtf8Bytes.IsEmpty
-                     ? null : Encoding.UTF8.GetString(connectOptions.WillContentTypeUtf8Bytes.Span),
-                  connectOptions.WillResponseTopicUtf8Bytes.IsEmpty
-                     ? null : Encoding.UTF8.GetString(connectOptions.WillResponseTopicUtf8Bytes.Span),
-                  connectOptions.WillCorrelationDataBytes.IsEmpty
-                     ? null : connectOptions.WillCorrelationDataBytes.ToArray(),
-                  UserPropertyCollection.Create(connectOptions.WillUserProperties.WrittenMemory),
-                  connectOptions.WillDelayInterval ?? 0
-               );
-
-               willAlternateLookup[serverClient.ClientIdUtf8Bytes.Span] = willState;
-               session.PendingWillMessage = willState;
-            }
-            else
-            {
-               session.PendingWillMessage = null;
-            }
-
-            currentStep = "Acquiring client lock under initiate lock";
-            using (await _clientLock.LockAsync(token))
-            {
-               var alternateLookup = _clients.GetAlternateLookup<ReadOnlySpan<byte>>();
-               if (alternateLookup.TryGetValue(serverClient.ClientIdUtf8Bytes.Span, out takenOverClient))
-               {
-                  hasTakeOver = true;
-               }
-
-               alternateLookup[serverClient.ClientIdUtf8Bytes.Span] = serverClient;
-            }
-
-            token.ThrowIfCancellationRequested();
-
-            if (!isSessionPresent && _server.Events.OnNewSession.Count > 0)
-            {
-               currentStep = "Executing OnNewSession hook";
-               await _server.Events.OnNewSession.ExecuteAsync(new MqttNewSessionContext()
-               {
-                  Session = session
-               }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: token);
-            }
-         }
-
-         if (takenOverClient is not null)
-         {
-            currentStep = "Disconnecting taken over client";
-            try
-            {
-               await takenOverClient.DisconnectAsync(new DisconnectOptions()
-               {
-                  ReasonCode = DisconnectReasonCode.SessionTakenOver,
-               });
-            }
-            catch (Exception ex)
-            {
-               TraceLogger.LogServerWarning("MqttClientSessions: Failed to send session taken over disconnect packet to old client. Error: {0}", ex.Message);
-            }
-
-            if (_server.Events.OnDisconnect.Count > 0)
-            {
-               currentStep = "Executing OnDisconnect hook for taken over client";
-               try
-               {
-                  await _server.Events.OnDisconnect.ExecuteAsync(new MqttDisconnectContext()
-                  {
-                     Reason = DisconnectReasonCode.SessionTakenOver,
-                     ServerClient = takenOverClient,
-                     DisconnectKind = ClientDisconnectKind.Graceful,
-                     IsSessionTakenOver = true
-                  }, HandlerExecutionStrategy.SequentialContinueOnError);
-               }
-               catch (Exception ex)
-               {
-                  TraceLogger.LogServerWarning("MqttClientSessions: Error executing OnDisconnect for taken over client. Error: {0}", ex.Message);
-               }
-            }
-         }
-
-         if (previousSession is not null)
-         {
-            currentStep = "Disposing previous session";
-            try
-            {
-               await previousSession.DisposeAsync();
-            }
-            catch (Exception ex)
-            {
-               TraceLogger.LogServerWarning("MqttClientSessions: Error disposing previous session. Error: {0}", ex.Message);
-            }
-         }
+         existing = _sessions.Get(serverClient.ClientIdUtf8Bytes.Span, out previousSession);
+         var cleanSession = connectOptions.CleanSession || !_server.Options.SupportPersistentSessions;
 
          if (existing is not null)
          {
-            currentStep = "Disposing existing session";
+            if (cleanSession)
+            {
+               session = InitializeNewSession(serverClient, connectOptions);
+            }
+            else
+            {
+               session = existing;
+               existing = null;
+
+               session.DisconnectionTimestamp = null;
+               session.IsConnected = true;
+
+               isSessionPresent = true;
+               // any other session recovery
+            }
+         }
+         else
+         {
+            session = InitializeNewSession(serverClient, connectOptions);
+         }
+
+         _sessions.Update(serverClient.ClientIdUtf8Bytes.Span, session);
+         serverClient.MqttSession = session;
+         session.Client = serverClient;
+
+         var willAlternateLookup = _pendingWillMessages.GetAlternateLookup<ReadOnlySpan<byte>>();
+         if (willAlternateLookup.TryRemove(serverClient.ClientIdUtf8Bytes.Span, out var oldWill))
+         {
+            oldWill.Cancel();
+         }
+
+         if (connectOptions.HasWill)
+         {
+            var willTopic = Encoding.UTF8.GetString(connectOptions.WillTopicUtf8Bytes.Span);
+            var willState = new MqttWillMessageState(
+               serverClient.ClientIdUtf8Bytes.ToArray(),
+               willTopic,
+               connectOptions.WillPayload.ToArray(),
+               connectOptions.WillQualityOfService,
+               connectOptions.WillRetain,
+               connectOptions.WillMessageExpiryInterval ?? 0,
+               connectOptions.WillPayloadFormatIndicator,
+               connectOptions.WillContentTypeUtf8Bytes.IsEmpty
+                  ? null : Encoding.UTF8.GetString(connectOptions.WillContentTypeUtf8Bytes.Span),
+               connectOptions.WillResponseTopicUtf8Bytes.IsEmpty
+                  ? null : Encoding.UTF8.GetString(connectOptions.WillResponseTopicUtf8Bytes.Span),
+               connectOptions.WillCorrelationDataBytes.IsEmpty
+                  ? null : connectOptions.WillCorrelationDataBytes.ToArray(),
+               UserPropertyCollection.Create(connectOptions.WillUserProperties.WrittenMemory),
+               connectOptions.WillDelayInterval ?? 0
+            );
+
+            willAlternateLookup[serverClient.ClientIdUtf8Bytes.Span] = willState;
+            session.PendingWillMessage = willState;
+         }
+         else
+         {
+            session.PendingWillMessage = null;
+         }
+
+         using (await _clientLock.LockAsync(ct))
+         {
+            var alternateLookup = _clients.GetAlternateLookup<ReadOnlySpan<byte>>();
+            if (alternateLookup.TryGetValue(serverClient.ClientIdUtf8Bytes.Span, out takenOverClient))
+            {
+               hasTakeOver = true;
+            }
+
+            alternateLookup[serverClient.ClientIdUtf8Bytes.Span] = serverClient;
+         }
+
+         if (!isSessionPresent && _server.Events.OnNewSession.Count > 0)
+         {
+            await _server.Events.OnNewSession.ExecuteAsync(new MqttNewSessionContext()
+            {
+               Session = session
+            }, HandlerExecutionStrategy.SequentialContinueOnError, cancellationToken: ct);
+         }
+      }
+
+      if (takenOverClient is not null)
+      {
+         try
+         {
+            await takenOverClient.DisconnectAsync(new DisconnectOptions()
+            {
+               ReasonCode = DisconnectReasonCode.SessionTakenOver,
+            });
+         }
+         catch (Exception ex)
+         {
+            TraceLogger.LogServerWarning("MqttClientSessions: Failed to send session taken over disconnect packet to old client. Error: {0}", ex.Message);
+         }
+
+         if (_server.Events.OnDisconnect.Count > 0)
+         {
             try
             {
-               await existing.DisposeAsync();
+               await _server.Events.OnDisconnect.ExecuteAsync(new MqttDisconnectContext()
+               {
+                  Reason = DisconnectReasonCode.SessionTakenOver,
+                  ServerClient = takenOverClient,
+                  DisconnectKind = ClientDisconnectKind.Graceful,
+                  IsSessionTakenOver = true
+               }, HandlerExecutionStrategy.SequentialContinueOnError);
             }
             catch (Exception ex)
             {
-               TraceLogger.LogServerWarning("MqttClientSessions: Error disposing existing session. Error: {0}", ex.Message);
+               TraceLogger.LogServerWarning("MqttClientSessions: Error executing OnDisconnect for taken over client. Error: {0}", ex.Message);
             }
          }
       }
-      catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+
+      if (previousSession is not null)
       {
-         var clientIdStr = Encoding.UTF8.GetString(serverClient.ClientIdUtf8Bytes.Span);
-         var errorMsg = $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff}] GetOrCreateSession timed out for client '{clientIdStr}' (10s elapsed). Last step was: {currentStep}{Environment.NewLine}";
          try
          {
-            System.IO.File.AppendAllText("mqtt_hangs.log", errorMsg);
+            await previousSession.DisposeAsync();
          }
-         catch (Exception) { }
-
-         Console.WriteLine($"[TESTING] GetOrCreateSession timed out for client '{clientIdStr}' (10s elapsed). Last step was: {currentStep}");
-         TraceLogger.LogServerError("GetOrCreateSession timed out for client '{0}' (10s elapsed). Last step was: {1}", clientIdStr, currentStep);
-         Thread.Sleep(Timeout.Infinite);
-         throw new TimeoutException($"GetOrCreateSession timed out for client '{clientIdStr}' at step: {currentStep}");
+         catch (Exception ex)
+         {
+            TraceLogger.LogServerWarning("MqttClientSessions: Error disposing previous session. Error: {0}", ex.Message);
+         }
       }
-      catch (OperationCanceledException)
+
+      if (existing is not null)
       {
-         var clientIdStr = Encoding.UTF8.GetString(serverClient.ClientIdUtf8Bytes.Span);
-         Console.WriteLine($"[TESTING] GetOrCreateSession canceled for client '{clientIdStr}'. Last step was: {currentStep}");
-         TraceLogger.LogServerWarning("GetOrCreateSession canceled for client '{0}'. Last step was: {1}", clientIdStr, currentStep);
-         throw;
+         try
+         {
+            await existing.DisposeAsync();
+         }
+         catch (Exception ex)
+         {
+            TraceLogger.LogServerWarning("MqttClientSessions: Error disposing existing session. Error: {0}", ex.Message);
+         }
       }
 
       return new MqttSessionCreateResult()
