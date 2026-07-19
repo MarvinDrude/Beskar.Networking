@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>Exe</OutputType>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Udp\Beskar.Networking.Transports.Udp.csproj"/>
+      <ProjectReference Include="..\Beskar.Networking.Benchmarks.Common\Beskar.Networking.Benchmarks.Common.csproj"/>
+   </ItemGroup>
+
+</Project>

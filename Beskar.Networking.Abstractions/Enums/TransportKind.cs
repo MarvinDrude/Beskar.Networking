@@ -23,5 +23,10 @@ public enum TransportKind
    /// <summary>
    /// QUIC - Quick UDP Internet Connection
    /// </summary>
-   Quic = 3
+   Quic = 3,
+
+   /// <summary>
+   /// UDP - User Datagram Protocol
+   /// </summary>
+   Udp = 4
 }

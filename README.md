@@ -8,7 +8,7 @@
 </h1>
 <p align="center">
    Fast, <code>.NET</code> native, high-performance, low-allocation networking library.<br/>
-   Built for modern <code>.NET</code> using <code>C#</code> includes TCP, WebSockets, QUIC, and MQTT.<br/>
+   Built for modern <code>.NET</code> using <code>C#</code> includes TCP, WebSockets, QUIC, UDP, and MQTT.<br/>
    No external runtime dependencies besides <b>Beskar</b>.<br/><br/>
    <a href="#about">About</a>
    ·
@@ -55,6 +55,7 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 | **Beskar.Networking.Transports.Tcp** | High-performance, native TCP transport implementation supporting TLS.                               | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Tcp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Tcp/) |
 | **Beskar.Networking.Transports.Ws** | WebSocket (WS/WSS) transport adapter wrapping custom framed duplex pipelines.                       | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Ws.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Ws/) |
 | **Beskar.Networking.Transports.Quic** | Multiplexed and secure QUIC transport implementation built on native .NET libraries.                | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Quic.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Quic/) |
+| **Beskar.Networking.Transports.Udp** | High-performance, virtualized session-multiplexed UDP transport implementation.                     | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Udp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Udp/) |
 
 ---
 
@@ -68,9 +69,9 @@ The core library features protocol-agnostic, low-level interfaces:
 * `INetworkListener` - The Server listener that accepts incoming connections and manages sessions.
 * `INetworkClient` - The client that initiates connections and manages sessions.
 * `INetworkSession` - Represents a single connection between a client and server.
-* `INetworkStream` - Provides transport-agnostic handling (supporting TCP, WebSockets, or QUIC).
+* `INetworkStream` - Provides transport-agnostic handling (supporting TCP, WebSockets, QUIC, or UDP).
 
-These interfaces provide transport-agnostic handling (supporting TCP, WebSockets, or QUIC).
+These interfaces provide transport-agnostic handling (supporting TCP, WebSockets, QUIC, or UDP).
 Because they are low-level, you are responsible for managing execution tasks yourself, such as
 starting your own accept loops, launching read/write tasks, and supervising session lifecycles.
 
@@ -141,6 +142,8 @@ Engineered from the ground up for maximum throughput and minimum allocation over
 | **QUIC** | 20 | 512 bytes | 954,711 packets/s | 466.17 MB/s |
 | **MQTT** (TCP - No TLS) | 20 | 128 bytes | 918,794.17 msg/s | 112.16 MB/s |
 | **MQTT** (TCP - No TLS) | 20 | 512 bytes | 674,086.45 msg/s | 329.14 MB/s |
+| **UDP** | 20 | 128 bytes | 3,480,517 packets/s | 424.87 MB/s |
+| **UDP** | 20 | 512 bytes | 801,432 packets/s | 391.32 MB/s |
 
 ---
 
@@ -150,7 +153,7 @@ Engineered from the ground up for maximum throughput and minimum allocation over
 It provides a unified, pipe-based interface abstraction (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`)
 for building extremely fast network applications across multiple transport protocols.
 
-- **Unified Abstractions**: Write your network layer once and swap between TCP, WebSockets, or QUIC etc. dynamically.
+- **Unified Abstractions**: Write your network layer once and swap between TCP, WebSockets, QUIC, or UDP dynamically.
 - **Modern .NET 10 Stack**: Heavily leverages `System.IO.Pipelines` (decoupling IO thread queues from application processing), `Span<T>`, `ReadOnlySpan<T>`, and direct memory pooling to achieve zero/near-zero allocations.
 - **TLS/SSL Encryption**: Full native SSL/TLS wrapping for TCP and WebSocket transports out of the box.
 - **Non-blocking IO Queueing**: Highly-optimized custom IO queues (like `TcpIoQueueRegistry` / `TcpIoQueue`) to handle asynchronous reading and writing concurrently.

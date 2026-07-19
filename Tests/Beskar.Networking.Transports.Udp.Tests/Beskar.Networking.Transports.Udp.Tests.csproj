@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <Title>Beskar.Networking.Transports.Udp.Tests</Title>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <PackageReference Include="TUnit" />
+   </ItemGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Udp\Beskar.Networking.Transports.Udp.csproj" />
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
+   </ItemGroup>
+
+</Project>
