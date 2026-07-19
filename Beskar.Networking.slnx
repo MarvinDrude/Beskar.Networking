@@ -33,6 +33,7 @@
   <Folder Name="/Examples/Mqtt/">
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.Authentication/Beskar.Mqtt.Example.Authentication.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.SimplePubSub/Beskar.Mqtt.Example.SimplePubSub.csproj" />
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.GeneratedPubSub/Beskar.Mqtt.Example.GeneratedPubSub.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.QosLevels/Beskar.Mqtt.Example.QosLevels.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.Reconnection/Beskar.Mqtt.Example.Reconnection.csproj" />
   </Folder>
