@@ -11,5 +11,10 @@
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="TUnit" Version="1.58.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.16.0-preview.1" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
+    <PackageVersion Include="PolySharp" Version="1.14.1" />
+    <PackageVersion Include="System.Memory" Version="4.5.5" />
+    <PackageVersion Include="Microsoft.Bcl.HashCode" Version="1.1.1" />
   </ItemGroup>
 </Project>

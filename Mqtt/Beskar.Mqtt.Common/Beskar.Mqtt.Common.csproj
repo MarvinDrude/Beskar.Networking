@@ -10,6 +10,7 @@
      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
      <ProjectReference Include="..\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+     <ProjectReference Include="..\Beskar.Mqtt.Common.Generators\Beskar.Mqtt.Common.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
    </ItemGroup>
 
    <ItemGroup>

@@ -58,6 +58,12 @@
     <Project Path="Mqtt/Beskar.Mqtt.Protocol/Beskar.Mqtt.Protocol.csproj" />
     <Project Path="Mqtt/Beskar.Mqtt.Server/Beskar.Mqtt.Server.csproj" />
   </Folder>
+  <Folder Name="/Generators/">
+    <Project Path="Generators/Beskar.Generators.Common/Beskar.Generators.Common.csproj" />
+  </Folder>
+  <Folder Name="/Mqtt/Generators/">
+    <Project Path="Mqtt/Beskar.Mqtt.Common.Generators/Beskar.Mqtt.Common.Generators.csproj" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/Beskar.Networking.Transports.Common.Tests/Beskar.Networking.Transports.Common.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Transports.Tcp.Tests/Beskar.Networking.Transports.Tcp.Tests.csproj" />

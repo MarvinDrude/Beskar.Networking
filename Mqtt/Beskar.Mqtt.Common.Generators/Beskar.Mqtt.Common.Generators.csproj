@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <TargetFramework>netstandard2.0</TargetFramework>
+      <LangVersion>preview</LangVersion>
+      <ImplicitUsings>enable</ImplicitUsings>
+      <Nullable>enable</Nullable>
+      <IsPackable>true</IsPackable>
+      <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+      <IncludeBuildOutput>false</IncludeBuildOutput>
+      <NoWarn>$(NoWarn);RS2008</NoWarn>
+      <PolySharpUsePublicAccessibilityForGeneratedTypes>true</PolySharpUsePublicAccessibilityForGeneratedTypes>
+      <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <Compile Include="..\..\Generators\Beskar.Generators.Common\**\*.cs"
+               Exclude="..\..\Generators\Beskar.Generators.Common\bin\**\*;..\..\Generators\Beskar.Generators.Common\obj\**\*"
+               Link="Common\%(RecursiveDir)%(Filename)%(Extension)" />
+   </ItemGroup>
+
+   <ItemGroup>
+      <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all"/>
+      <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all"/>
+      <PackageReference Include="PolySharp" PrivateAssets="all" />
+      <PackageReference Include="System.Memory" />
+      <PackageReference Include="Microsoft.Bcl.HashCode" />
+   </ItemGroup>
+
+   <PropertyGroup>
+      <GetTargetPathDependsOn>$(GetTargetPathDependsOn);GetDependencyTargetPaths</GetTargetPathDependsOn>
+   </PropertyGroup>
+
+   <Target Name="GetDependencyTargetPaths">
+      <ItemGroup>
+         <TargetPathWithTargetPlatformMoniker Include="$(TargetDir)*.dll" Exclude="$(TargetPath)" IncludeRuntimeDependency="false" />
+      </ItemGroup>
+   </Target>
+
+</Project>
