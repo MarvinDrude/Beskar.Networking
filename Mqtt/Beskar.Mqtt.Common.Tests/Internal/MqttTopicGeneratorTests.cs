@@ -57,6 +57,11 @@ public partial class MqttTopicGeneratorTests
         ReadOnlySpan<byte> topic,
         out bool isOk);
 
+    [GeneratedMqttTopic("devices/äöü/status")]
+    public static partial bool TryFormatNonAsciiTopicBytes(
+        Span<byte> destination,
+        out int bytesWritten);
+
     [GeneratedMqttTopic("devices/\"quote\"\\slash/status/{isOk}")]
     public static partial bool TryParseEscapedTopic(
         ReadOnlySpan<char> topic,
@@ -184,7 +189,7 @@ public partial class MqttTopicGeneratorTests
 
         // Check if the IL contains the throw instruction (opcode 0x7a)
         var hasThrowOpcode = false;
-        foreach (var op in ilBytes)
+        foreach (var op in ilBytes!)
         {
             if (op == 0x7a) // throw opcode
             {
@@ -194,5 +199,17 @@ public partial class MqttTopicGeneratorTests
         }
 
         await Assert.That(hasThrowOpcode).IsTrue();
+    }
+
+    [Test]
+    public async Task TryFormatNonAsciiTopicBytes_ShouldFormatCorrectly()
+    {
+        var buffer = new byte[100];
+        var result = TryFormatNonAsciiTopicBytes(buffer, out var bytesWritten);
+        await Assert.That(result).IsTrue();
+        await Assert.That(bytesWritten).IsEqualTo(Encoding.UTF8.GetByteCount("devices/äöü/status"));
+
+        var formatted = Encoding.UTF8.GetString(buffer, 0, bytesWritten);
+        await Assert.That(formatted).IsEqualTo("devices/äöü/status");
     }
 }
