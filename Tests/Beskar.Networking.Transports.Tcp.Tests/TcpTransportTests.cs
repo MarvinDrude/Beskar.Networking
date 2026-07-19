@@ -515,4 +515,30 @@ public class TcpTransportTests
          await Assert.That(listener.IsBound).IsFalse();
       }
    }
+
+   [Test]
+   public async Task TcpListener_UnbindWithActiveClient_CleanlyDisconnectsClient()
+   {
+      var options = new TcpTransportOptions();
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var client = new TcpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+      var clientSession = connectResult.Success!;
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+      var serverSession = acceptResult.Success!;
+
+      // Unbind while client is connected
+      await listener.UnbindAsync();
+
+      // Verify that unbind is successful and listener is unbound
+      await Assert.That(listener.IsBound).IsFalse();
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+   }
 }

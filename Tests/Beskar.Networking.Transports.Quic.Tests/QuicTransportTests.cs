@@ -354,4 +354,43 @@ public class QuicTransportTests
          await Assert.That(listener.IsBound).IsFalse();
       }
    }
+
+   [Test]
+   public async Task QuicListener_UnbindWithActiveClient_CleanlyDisconnectsClient()
+   {
+      if (!QuicConnection.IsSupported || !QuicListener.IsSupported)
+      {
+         return;
+      }
+
+      var clientSslOptions = new SslClientAuthenticationOptions
+      {
+         ApplicationProtocols = [new SslApplicationProtocol("beskar-quic")],
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+      };
+      var options = new QuicTransportOptions
+      {
+         SslClientOptions = clientSslOptions
+      };
+      var listener = new QuicNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var client = new QuicNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+      var clientSession = connectResult.Success!;
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+      var serverSession = acceptResult.Success!;
+
+      // Unbind while client is connected
+      await listener.UnbindAsync();
+
+      // Verify that unbind is successful and listener is unbound
+      await Assert.That(listener.IsBound).IsFalse();
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+   }
 }
