@@ -234,7 +234,7 @@ public class QuicTransportTests
       await Assert.That(bindResult.Failed).IsFalse();
 
       var client = new QuicNetworkClient(options);
-      
+
       // Verify initial client state
       await Assert.That(client.Session).IsNull();
       await Assert.That(client.LocalAddress).IsNull();
@@ -323,5 +323,35 @@ public class QuicTransportTests
       await clientSession.DisposeAsync();
       await serverSession.DisposeAsync();
       await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task QuicListener_BindUnbindBindUnbind_SuccessiveCallsWork()
+   {
+      if (!QuicConnection.IsSupported || !QuicListener.IsSupported)
+      {
+         return;
+      }
+
+      var clientSslOptions = new SslClientAuthenticationOptions
+      {
+         ApplicationProtocols = [new SslApplicationProtocol("beskar-quic")],
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+      };
+      var options = new QuicTransportOptions
+      {
+         SslClientOptions = clientSslOptions
+      };
+      var listener = new QuicNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+
+      for (var i = 0; i < 3; i++)
+      {
+         var bindResult = await listener.BindAsync();
+         await Assert.That(bindResult.Failed).IsFalse();
+         await Assert.That(listener.IsBound).IsTrue();
+
+         await listener.UnbindAsync();
+         await Assert.That(listener.IsBound).IsFalse();
+      }
    }
 }
