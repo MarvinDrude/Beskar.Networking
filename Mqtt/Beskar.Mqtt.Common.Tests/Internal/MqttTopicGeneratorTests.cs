@@ -57,6 +57,11 @@ public partial class MqttTopicGeneratorTests
         ReadOnlySpan<byte> topic,
         out bool isOk);
 
+    [GeneratedMqttTopic("devices/\"quote\"\\slash/status/{isOk}")]
+    public static partial bool TryParseEscapedTopic(
+        ReadOnlySpan<char> topic,
+        out bool isOk);
+
     [Test]
     public async Task TryParseSensorTopic_ShouldParseCorrectly()
     {
@@ -153,6 +158,14 @@ public partial class MqttTopicGeneratorTests
     public async Task TryParseNonAsciiTopic_ShouldParseCorrectly()
     {
         var result = TryParseNonAsciiTopic("devices/äöü/status/true"u8, out var isOk);
+        await Assert.That(result).IsTrue();
+        await Assert.That(isOk).IsTrue();
+    }
+
+    [Test]
+    public async Task TryParseEscapedTopic_ShouldParseCorrectly()
+    {
+        var result = TryParseEscapedTopic("devices/\"quote\"\\slash/status/true", out var isOk);
         await Assert.That(result).IsTrue();
         await Assert.That(isOk).IsTrue();
     }

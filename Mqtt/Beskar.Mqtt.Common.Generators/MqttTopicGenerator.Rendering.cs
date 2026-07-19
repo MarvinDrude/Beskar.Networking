@@ -1,5 +1,6 @@
 using System.Text;
 using Beskar.Memory.Code;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace Beskar.Mqtt.Common.Generators;
 
@@ -194,48 +195,51 @@ public partial class MqttTopicGenerator
                continue;
             }
 
-            writer.WriteLineInterpolated($"// Match literal segment: \"{segment}\"");
+            var escapedSegment = SymbolDisplay.FormatLiteral(segment, true);
+            writer.WriteLineInterpolated($"// Match literal segment: {escapedSegment}");
             if (isLast)
             {
                if (isByteSpan)
                {
-                  writer.WriteLineInterpolated($"return remaining.SequenceEqual(\"{segment}\"u8);");
+                  writer.WriteLineInterpolated($"return remaining.SequenceEqual({escapedSegment}u8);");
                }
                else
                {
-                  writer.WriteLineInterpolated($"return remaining.Equals(\"{segment}\", StringComparison.Ordinal);");
+                  writer.WriteLineInterpolated($"return remaining.Equals({escapedSegment}, StringComparison.Ordinal);");
                }
             }
             else if (nextIsWildcardHash)
             {
+               var escapedSegmentSlash = SymbolDisplay.FormatLiteral(segment + "/", true);
                if (isByteSpan)
                {
-                  writer.WriteLineInterpolated($"if (remaining.SequenceEqual(\"{segment}\"u8)) return true;");
-                  writer.WriteLineInterpolated($"if (!remaining.StartsWith(\"{segment}/\"u8)) return false;");
+                  writer.WriteLineInterpolated($"if (remaining.SequenceEqual({escapedSegment}u8)) return true;");
+                  writer.WriteLineInterpolated($"if (!remaining.StartsWith({escapedSegmentSlash}u8)) return false;");
                }
                else
                {
                   writer.WriteLineInterpolated(
-                     $"if (remaining.Equals(\"{segment}\", StringComparison.Ordinal)) return true;");
+                     $"if (remaining.Equals({escapedSegment}, StringComparison.Ordinal)) return true;");
                   writer.WriteLineInterpolated(
-                     $"if (!remaining.StartsWith(\"{segment}/\", StringComparison.Ordinal)) return false;");
+                     $"if (!remaining.StartsWith({escapedSegmentSlash}, StringComparison.Ordinal)) return false;");
                }
 
-               var sliceLength = isByteSpan ? Encoding.UTF8.GetByteCount(segment) + 1 : segment.Length + 1;
+               var sliceLength = isByteSpan ? System.Text.Encoding.UTF8.GetByteCount(segment) + 1 : segment.Length + 1;
                writer.WriteLineInterpolated($"remaining = remaining.Slice({sliceLength});");
             }
             else
             {
+               var escapedSegmentSlash = SymbolDisplay.FormatLiteral(segment + "/", true);
                if (isByteSpan)
                {
-                  var sliceLength = Encoding.UTF8.GetByteCount(segment) + 1;
-                  writer.WriteLineInterpolated($"if (!remaining.StartsWith(\"{segment}/\"u8)) return false;");
+                  var sliceLength = System.Text.Encoding.UTF8.GetByteCount(segment) + 1;
+                  writer.WriteLineInterpolated($"if (!remaining.StartsWith({escapedSegmentSlash}u8)) return false;");
                   writer.WriteLineInterpolated($"remaining = remaining.Slice({sliceLength});");
                }
                else
                {
                   writer.WriteLineInterpolated(
-                     $"if (!remaining.StartsWith(\"{segment}/\", StringComparison.Ordinal)) return false;");
+                     $"if (!remaining.StartsWith({escapedSegmentSlash}, StringComparison.Ordinal)) return false;");
                   writer.WriteLineInterpolated($"remaining = remaining.Slice({segment.Length + 1});");
                }
             }
@@ -300,7 +304,8 @@ public partial class MqttTopicGenerator
                }
                else
                {
-                  formatParts.Add(segment);
+                  var escapedSegment = segment.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                  formatParts.Add(escapedSegment);
                }
             }
 
@@ -400,7 +405,7 @@ public partial class MqttTopicGenerator
                         if (isByteSpan)
                         {
                            writer.WriteLineInterpolated(
-                              $"if (!Utf8Formatter.TryFormat({argParam.Name}, remainingDest, out int {paramName}Written)) return false;");
+                              $"if (!System.Buffers.Text.Utf8Formatter.TryFormat({argParam.Name}, remainingDest, out int {paramName}Written)) return false;");
                            writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({paramName}Written);");
                            if (charsWrittenParam.Name is not null)
                               writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {paramName}Written;");
@@ -419,20 +424,24 @@ public partial class MqttTopicGenerator
                else
                {
                   var literalText = segment + suffix;
+                  var escapedLiteralText = SymbolDisplay.FormatLiteral(literalText, true);
+                  var literalLength = isByteSpan ? Encoding.UTF8.GetByteCount(literalText) : literalText.Length;
+
                   if (isByteSpan)
                   {
-                     writer.WriteLineInterpolated($"if (!\"{literalText}\"u8.TryCopyTo(remainingDest)) return false;");
+                     writer.WriteLineInterpolated(
+                        $"if (!{escapedLiteralText}u8.TryCopyTo(remainingDest)) return false;");
                   }
                   else
                   {
                      writer.WriteLineInterpolated(
-                        $"if (!\"{literalText}\".AsSpan().TryCopyTo(remainingDest)) return false;");
+                        $"if (!{escapedLiteralText}.AsSpan().TryCopyTo(remainingDest)) return false;");
                   }
 
-                  writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({literalText.Length});");
+                  writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({literalLength});");
 
                   if (charsWrittenParam.Name is not null)
-                     writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {literalText.Length};");
+                     writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {literalLength};");
                }
 
                if (!isLast && segment.StartsWith("{") && segment.EndsWith("}"))
@@ -510,7 +519,8 @@ public partial class MqttTopicGenerator
                }
                else
                {
-                  formatParts.Add(segment);
+                  var escapedSegment = segment.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                  formatParts.Add(escapedSegment);
                }
             }
 
@@ -584,7 +594,8 @@ public partial class MqttTopicGenerator
                else
                {
                   var literalText = segment + suffix;
-                  writer.WriteLineInterpolated($"writer.Write(\"{literalText}\"u8);");
+                  var escapedLiteralText = SymbolDisplay.FormatLiteral(literalText, true);
+                  writer.WriteLineInterpolated($"writer.Write({escapedLiteralText}u8);");
                }
 
                if (!isLast && segment.StartsWith("{") && segment.EndsWith("}"))
