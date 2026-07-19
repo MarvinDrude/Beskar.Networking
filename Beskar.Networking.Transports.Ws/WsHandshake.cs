@@ -24,6 +24,12 @@ public static class WsHandshake
    /// </summary>
    public static string ComputeAcceptKey(string secWebSocketKey)
    {
+      ArgumentException.ThrowIfNullOrEmpty(secWebSocketKey);
+      if (secWebSocketKey.Length > 128)
+      {
+         throw new ArgumentException("Key cannot be longer than 128 characters.", nameof(secWebSocketKey));
+      }
+
       Span<char> combined = stackalloc char[secWebSocketKey.Length + 36];
       secWebSocketKey.AsSpan().CopyTo(combined);
       MagicGuid.AsSpan().CopyTo(combined[secWebSocketKey.Length..]);
@@ -144,9 +150,9 @@ public static class WsHandshake
          }
       }
 
-      if (!isUpgrade || !isConnectionUpgrade || string.IsNullOrEmpty(clientKey))
+      if (!isUpgrade || !isConnectionUpgrade || string.IsNullOrEmpty(clientKey) || clientKey.Length > 128)
       {
-         TraceLogger.LogServerError("WS Handshake: Server handshake failed: missing or invalid WebSocket upgrade headers.");
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: missing, invalid, or too long WebSocket upgrade headers.");
          await SendErrorResponseAsync(writer, "400 Bad Request", "Invalid WebSocket upgrade headers.");
          return null;
       }
