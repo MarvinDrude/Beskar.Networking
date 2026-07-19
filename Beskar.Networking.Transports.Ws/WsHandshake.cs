@@ -19,6 +19,9 @@ public static class WsHandshake
    private const string MagicGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
    private static readonly byte[] EndOfHeadersSequence = "\r\n\r\n"u8.ToArray();
 
+   private const string HttpVersionPrefix = "HTTP/1.1 ";
+   private const string ErrorResponseHeaders = "\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
+
    /// <summary>
    /// Computes the Sec-WebSocket-Accept key response for a given client key.
    /// </summary>
@@ -383,7 +386,7 @@ public static class WsHandshake
 
    private static async Task SendErrorResponseAsync(PipeWriter writer, string status, string message)
    {
-      var totalCharsLength = 58 + status.Length + message.Length;
+      var totalCharsLength = HttpVersionPrefix.Length + ErrorResponseHeaders.Length + status.Length + message.Length;
 
       {
          using var charOwner = totalCharsLength < 256
@@ -391,14 +394,14 @@ public static class WsHandshake
             : new SpanOwner<char>(totalCharsLength);
 
          var charSpan = charOwner.Span;
-         "HTTP/1.1 ".AsSpan().CopyTo(charSpan);
-         var written = 9;
+         HttpVersionPrefix.AsSpan().CopyTo(charSpan);
+         var written = HttpVersionPrefix.Length;
 
          status.AsSpan().CopyTo(charSpan[written..]);
          written += status.Length;
 
-         "\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n".AsSpan().CopyTo(charSpan[written..]);
-         written += 49;
+         ErrorResponseHeaders.AsSpan().CopyTo(charSpan[written..]);
+         written += ErrorResponseHeaders.Length;
 
          message.AsSpan().CopyTo(charSpan[written..]);
 
