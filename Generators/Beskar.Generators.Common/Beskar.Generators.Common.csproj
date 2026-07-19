@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <TargetFramework>netstandard2.0</TargetFramework>
+      <LangVersion>latest</LangVersion>
+      <NoWarn>$(NoWarn)</NoWarn>
+      <ImplicitUsings>enable</ImplicitUsings>
+      <Nullable>enable</Nullable>
+      <PolySharpUsePublicAccessibilityForGeneratedTypes>true</PolySharpUsePublicAccessibilityForGeneratedTypes>
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <PackageReference Include="PolySharp" PrivateAssets="all"/>
+      <PackageReference Include="System.Memory"/>
+      <PackageReference Include="Microsoft.Bcl.HashCode"/>
+   </ItemGroup>
+
+</Project>

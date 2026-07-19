@@ -299,7 +299,7 @@ public class TcpTransportTests
       await Assert.That(bindResult.Failed).IsFalse();
 
       var client = new TcpNetworkClient(options);
-      
+
       // Verify initial client state
       await Assert.That(client.Session).IsNull();
       await Assert.That(client.LocalAddress).IsNull();
@@ -389,7 +389,7 @@ public class TcpTransportTests
       // Client 1 is stuck in the handshake, occupying the 1 semaphore slot.
       // Client 2's socket is established at the OS level, but the listener accept loop should be blocked
       // on the semaphore and should NOT have accepted Client 2's socket yet.
-      
+
       // Let's close Client 1. This will cause its handshake to fail/abort, releasing the semaphore slot.
       clientSocket1.Close();
       await Task.Delay(150);
@@ -497,5 +497,48 @@ public class TcpTransportTests
       await Assert.That(readBytes).IsEqualTo(0); // connection closed by server
 
       await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task TcpListener_BindUnbindBindUnbind_SuccessiveCallsWork()
+   {
+      var options = new TcpTransportOptions();
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+
+      for (var i = 0; i < 3; i++)
+      {
+         var bindResult = await listener.BindAsync();
+         await Assert.That(bindResult.Failed).IsFalse();
+         await Assert.That(listener.IsBound).IsTrue();
+
+         await listener.UnbindAsync();
+         await Assert.That(listener.IsBound).IsFalse();
+      }
+   }
+
+   [Test]
+   public async Task TcpListener_UnbindWithActiveClient_CleanlyDisconnectsClient()
+   {
+      var options = new TcpTransportOptions();
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var client = new TcpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+      var clientSession = connectResult.Success!;
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+      var serverSession = acceptResult.Success!;
+
+      // Unbind while client is connected
+      await listener.UnbindAsync();
+
+      // Verify that unbind is successful and listener is unbound
+      await Assert.That(listener.IsBound).IsFalse();
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
    }
 }

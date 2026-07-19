@@ -9,7 +9,7 @@
    <PropertyGroup>
       <Title>Beskar.Networking.Common</Title>
       <Description>Common helper classes and core utilities for Beskar.Networking.</Description>
-      <IsPackable>true</IsPackable>
+      <IsPackable>false</IsPackable>
    </PropertyGroup>
 
    <ItemGroup>

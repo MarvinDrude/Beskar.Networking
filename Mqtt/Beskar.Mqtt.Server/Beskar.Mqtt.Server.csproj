@@ -7,9 +7,9 @@
    </PropertyGroup>
 
    <ItemGroup>
-     <ProjectReference Include="..\Beskar.Mqtt.Client\Beskar.Mqtt.Client.csproj" />
-     <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
-     <ProjectReference Include="..\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
+      <ProjectReference Include="..\Beskar.Mqtt.Client\Beskar.Mqtt.Client.csproj" />
+      <ProjectReference Include="..\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
+      <ProjectReference Include="..\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
    </ItemGroup>
    
    <ItemGroup>

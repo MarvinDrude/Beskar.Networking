@@ -133,6 +133,7 @@ public class MqttClientTopicAliasTests
       var disconnectReasonField = typeof(MqttClient).GetField("_disconnectReason", BindingFlags.NonPublic | BindingFlags.Instance);
       var reason = (MqttClientDisconnectReason?)disconnectReasonField?.GetValue(client);
       await Assert.That(reason).IsNotNull();
+      if (reason is null) return;
       await Assert.That(reason.Value.ReasonCode).IsEqualTo((int)DisconnectReasonCode.TopicAliasInvalid);
    }
 
@@ -168,6 +169,7 @@ public class MqttClientTopicAliasTests
       var disconnectReasonField = typeof(MqttClient).GetField("_disconnectReason", BindingFlags.NonPublic | BindingFlags.Instance);
       var reason = (MqttClientDisconnectReason?)disconnectReasonField?.GetValue(client);
       await Assert.That(reason).IsNotNull();
+      if (reason is null) return;
       await Assert.That(reason.Value.ReasonCode).IsEqualTo((int)DisconnectReasonCode.TopicAliasInvalid);
    }
 

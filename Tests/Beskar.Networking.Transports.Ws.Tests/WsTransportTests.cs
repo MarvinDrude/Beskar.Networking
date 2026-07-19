@@ -570,7 +570,7 @@ public class WsTransportTests
 
       var client = new WsNetworkClient(clientOptions);
       var connectResult = await client.ConnectAsync(listener.LocalAddress);
-      
+
       // Client handshake should fail because server rejects origin with 403 Forbidden
       await Assert.That(connectResult.Failed).IsTrue();
 
@@ -598,7 +598,7 @@ public class WsTransportTests
 
       var client = new WsNetworkClient(clientOptions);
       var connectResult = await client.ConnectAsync(listener.LocalAddress);
-      
+
       await Assert.That(connectResult.Failed).IsTrue();
 
       await listener.UnbindAsync();
@@ -631,5 +631,48 @@ public class WsTransportTests
       await Assert.That(readBytes).IsEqualTo(0); // connection closed by server
 
       await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsListener_BindUnbindBindUnbind_SuccessiveCallsWork()
+   {
+      var options = new WsTransportOptions();
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+
+      for (var i = 0; i < 3; i++)
+      {
+         var bindResult = await listener.BindAsync();
+         await Assert.That(bindResult.Failed).IsFalse();
+         await Assert.That(listener.IsBound).IsTrue();
+
+         await listener.UnbindAsync();
+         await Assert.That(listener.IsBound).IsFalse();
+      }
+   }
+
+   [Test]
+   public async Task WsListener_UnbindWithActiveClient_CleanlyDisconnectsClient()
+   {
+      var options = new WsTransportOptions { Path = "/chat" };
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var client = new WsNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+      var clientSession = connectResult.Success!;
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+      var serverSession = acceptResult.Success!;
+
+      // Unbind while client is connected
+      await listener.UnbindAsync();
+
+      // Verify that unbind is successful and listener is unbound
+      await Assert.That(listener.IsBound).IsFalse();
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
    }
 }

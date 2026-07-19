@@ -1,0 +1,206 @@
+using System.Text;
+using Beskar.Memory.Code;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
+
+namespace Beskar.Mqtt.Common.Generators;
+
+public partial class MqttTopicGenerator
+{
+   private static GeneratedMethodModel? GetSemanticTargetForGeneration(GeneratorSyntaxContext context,
+      CancellationToken cancellationToken)
+   {
+      var methodDeclaration = (MethodDeclarationSyntax)context.Node;
+      IMethodSymbol? methodSymbol = null;
+      AttributeData? attributeData = null;
+
+      foreach (var attributeList in methodDeclaration.AttributeLists)
+      {
+         foreach (var attribute in attributeList.Attributes)
+         {
+            var symbol = context.SemanticModel.GetSymbolInfo(attribute, cancellationToken).Symbol;
+            if (symbol is IMethodSymbol attribMethodSymbol &&
+                attribMethodSymbol.ContainingType.IsGeneratedMqttTopicAttribute())
+            {
+               methodSymbol = context.SemanticModel.GetDeclaredSymbol(methodDeclaration, cancellationToken);
+               attributeData = methodSymbol?.GetAttributes()
+                  .FirstOrDefault(ad => ad.AttributeClass.IsGeneratedMqttTopicAttribute());
+
+               break;
+            }
+         }
+
+         if (methodSymbol is not null) break;
+      }
+
+      if (methodSymbol is null || attributeData is null || attributeData.ConstructorArguments.Length == 0) return null;
+
+      var patternValue = attributeData.ConstructorArguments[0].Value as string;
+      if (string.IsNullOrEmpty(patternValue)) return null;
+
+      var containingType = methodSymbol.ContainingType;
+      if (containingType is null) return null;
+
+      var isPartial = containingType.DeclaringSyntaxReferences
+         .Select(r => r.GetSyntax(cancellationToken))
+         .OfType<TypeDeclarationSyntax>()
+         .Any(t => t.Modifiers.Any(SyntaxKind.PartialKeyword));
+
+      var loc = methodDeclaration.Identifier.GetLocation();
+      var methodLocation = new LocationModel(
+         loc.SourceTree?.FilePath ?? "",
+         loc.SourceSpan.Start,
+         loc.SourceSpan.Length
+      );
+
+      var namespaceName = containingType.ContainingNamespace.IsGlobalNamespace
+         ? ""
+         : containingType.ContainingNamespace.ToDisplayString();
+
+      var nestingTypes = new List<NestingModel>();
+      var currentType = containingType;
+
+      while (currentType is not null)
+      {
+         var typeKind = currentType.IsRecord ? "record" : currentType.IsValueType ? "struct" : "class";
+         nestingTypes.Add(new NestingModel(currentType.Name, typeKind));
+         currentType = currentType.ContainingType;
+      }
+
+      nestingTypes.Reverse();
+
+      var parameters = new List<ParameterModel>();
+      foreach (var p in methodSymbol.Parameters)
+      {
+         var refKindStr = p.RefKind switch
+         {
+            RefKind.Out => "out",
+            RefKind.Ref => "ref",
+            RefKind.In => "in",
+            _ => ""
+         };
+
+         var isEnum = p.Type.TypeKind == TypeKind.Enum;
+         parameters.Add(new ParameterModel(p.Name, p.Type.ToDisplayString(), refKindStr, isEnum));
+      }
+
+      var modifiers = string.Join(" ", methodDeclaration.Modifiers.Select(m => m.Text));
+      if (string.IsNullOrEmpty(modifiers)) modifiers = "public static partial";
+
+      var isFormatter = methodSymbol.Name.StartsWith("Format", StringComparison.OrdinalIgnoreCase) ||
+                        methodSymbol.Name.StartsWith("TryFormat", StringComparison.OrdinalIgnoreCase) ||
+                        methodSymbol.Name.EndsWith("Formatter", StringComparison.OrdinalIgnoreCase);
+
+      return new GeneratedMethodModel(
+         modifiers,
+         methodSymbol.Name,
+         methodSymbol.ReturnType.ToDisplayString(),
+         namespaceName,
+         [.. nestingTypes],
+         [.. parameters],
+         patternValue!,
+         isFormatter,
+         methodLocation,
+         !isPartial,
+         containingType.Name
+      );
+   }
+
+   private static void GenerateSourceForMethod(SourceProductionContext spc, GeneratedMethodModel model)
+   {
+      if (model.IsErrorContainingTypeNotPartial)
+      {
+         spc.ReportDiagnostic(Diagnostic.Create(
+            ContainingTypeMustBePartial,
+            model.MethodLocation.ToLocation(),
+            model.ErrorContainingTypeName,
+            model.MethodName));
+         return;
+      }
+
+      if (!ValidatePattern(spc, model.MethodLocation, model.Pattern)) return;
+
+      var generatedSource = model.IsFormatter
+         ? GenerateFormatterMethod(model)
+         : GenerateParserMethod(model);
+
+      if (string.IsNullOrEmpty(generatedSource)) return;
+
+      Span<char> initialBuffer = stackalloc char[512];
+      var writer = new CodeTextWriter(initialBuffer, stackalloc char[64]);
+
+      try
+      {
+         writer.WriteLine("// <auto-generated/>");
+         writer.WriteLine("#nullable enable");
+         writer.WriteLine("#pragma warning disable CS0162 // Unreachable code detected");
+         writer.WriteLine("using System;");
+         writer.WriteLine("using System.Text;");
+         writer.WriteLine("using System.Buffers.Text;");
+         writer.WriteLine("using Beskar.Memory.Code;");
+         writer.WriteLine("using Beskar.Memory.Writers;");
+         writer.WriteLine();
+
+         var hasNamespace = !string.IsNullOrEmpty(model.NamespaceName);
+         if (hasNamespace)
+         {
+            writer.WriteLineInterpolated($"namespace {model.NamespaceName}");
+            writer.OpenBody();
+         }
+
+         foreach (var type in model.NestingTypes)
+         {
+            writer.WriteLineInterpolated($"partial {type.TypeKind} {type.Name}");
+            writer.OpenBody();
+         }
+
+         writer.Write(generatedSource, true);
+
+         for (var i = 0; i < model.NestingTypes.Length; i++) writer.CloseBody();
+
+         if (hasNamespace) writer.CloseBody();
+
+         var typePrefix = string.Join("_", model.NestingTypes.Select(t => t.Name));
+         var hintName = $"{typePrefix}_{model.MethodName}.g.cs";
+
+         spc.AddSource(hintName, SourceText.From(writer.ToString(), Encoding.UTF8));
+      }
+      finally
+      {
+         writer.Dispose();
+      }
+   }
+
+   private static bool ValidatePattern(SourceProductionContext spc, LocationModel location, string pattern)
+   {
+      var segments = pattern.Split('/');
+
+      for (var i = 0; i < segments.Length; i++)
+      {
+         var seg = segments[i];
+         if (seg.Contains('#'))
+            // Multi-level wildcard must be the last segment and be exactly '#'
+            if (seg != "#" || i != segments.Length - 1)
+            {
+               spc.ReportDiagnostic(Diagnostic.Create(
+                  InvalidMultiLevelWildcard,
+                  location.ToLocation()));
+               return false;
+            }
+
+         if (seg.Contains('+'))
+            // Single-level wildcard must stand alone
+            if (seg != "+")
+            {
+               spc.ReportDiagnostic(Diagnostic.Create(
+                  InvalidSingleLevelWildcard,
+                  location.ToLocation()));
+               return false;
+            }
+      }
+
+      return true;
+   }
+}

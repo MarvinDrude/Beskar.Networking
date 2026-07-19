@@ -18,6 +18,8 @@ using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Threading;
+using Beskar.Networking.Transports.Tcp;
+using Beskar.Mqtt.Client;
 
 namespace Beskar.Mqtt.Common.Tests.Internal;
 
@@ -473,7 +475,7 @@ public class MqttServerEventsTests
       };
       await handlerA.ExecuteAsync(streamA, pubPacket);
       await retainedChangedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
- 
+
       // 4. Client B subscribes to the topic filter
       var filter = new TopicFilter(new ReadOnlySequence<byte>("combined/#"u8.ToArray()),
          QualityOfServiceType.AtLeastOnce);
@@ -629,5 +631,55 @@ public class MqttServerEventsTests
       {
          return ValueTask.CompletedTask;
       }
+   }
+
+   [Test]
+   public async Task MqttServer_StartStopStartStop_SuccessiveCallsWork()
+   {
+      var options = new MqttServerOptions();
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), new TcpTransportOptions());
+      await using var server = new MqttServer([listener], options);
+
+      for (var i = 0; i < 3; i++)
+      {
+         var startResult = await server.StartAsync();
+         await Assert.That(startResult.Failed).IsFalse();
+         await Assert.That(server.State).IsEqualTo(MqttServerState.Running);
+
+         var stopResult = await server.StopAsync();
+         await Assert.That(stopResult.Failed).IsFalse();
+         await Assert.That(server.State).IsEqualTo(MqttServerState.Stopped);
+      }
+   }
+
+   [Test]
+   public async Task MqttServer_StopWithActiveClient_DisconnectsClientCleanly()
+   {
+      var options = new MqttServerOptions();
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), new TcpTransportOptions());
+      await using var server = new MqttServer([listener], options);
+      await server.StartAsync();
+
+      var client = MqttClientFactory.CreateTcp();
+      var connectResult = await client.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = (IPEndPoint)listener.LocalAddress,
+         ClientIdUtf8Bytes = "test_client"u8.ToArray()
+      });
+      await Assert.That(connectResult.Failed).IsFalse();
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Stop server while client is connected
+      var stopResult = await server.StopAsync();
+      await Assert.That(stopResult.Failed).IsFalse();
+      await Assert.That(server.State).IsEqualTo(MqttServerState.Stopped);
+
+      // Wait a moment for client to detect disconnect
+      await Task.Delay(100);
+
+      // Verify client is disconnected
+      await Assert.That(client.IsConnected).IsFalse();
+
+      await client.DisposeAsync();
    }
 }

@@ -18,7 +18,7 @@ using Beskar.Mqtt.Common.Handlers;
 
 namespace Beskar.Mqtt.Server.Internal;
 
-public sealed partial class MqttClientSessions(MqttServer server)
+public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDisposable
 {
    private readonly MqttServer _server = server;
 
@@ -350,5 +350,34 @@ public sealed partial class MqttClientSessions(MqttServer server)
             }
          }
       }
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      MqttServerClient[] activeClients;
+      using (await _clientLock.LockAsync())
+      {
+         activeClients = [.. _clients.Values];
+         _clients.Clear();
+      }
+
+      foreach (var client in activeClients)
+      {
+         try
+         {
+            await client.DisconnectAsync();
+         }
+         catch (Exception ex)
+         {
+            TraceLogger.LogServerWarning("MqttClientSessions: Error disconnecting client during dispose. Error: {0}", ex.Message);
+         }
+      }
+
+      await _sessions.DisposeAsync();
+
+      _pendingWillMessages.Clear();
+
+      _initiateLock.Dispose();
+      _clientLock.Dispose();
    }
 }

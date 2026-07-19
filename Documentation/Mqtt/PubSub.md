@@ -62,12 +62,18 @@ if (subResult.Failed)
 To publish messages from a client, build a `PublishOptions` instance
 using `PublishOptions.Create()`, and call `PublishAsync()`.
 
+> [!IMPORTANT]
+> **Use the Topic Source Generator for Maximum Performance**
+> Instead of manually constructing topic strings, it is highly recommended to use
+> the [MQTT Topic Source Generator](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/TopicGenerator.md). The generator outputs strongly-typed formatter
+> helper methods (like `FormatTopicToBytes(...)`) that compile to allocation-free UTF-8 byte arrays, which can be passed directly to `WithTopic` for zero-allocation publishing.
+
 ```csharp
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Protocol.Enums;
 
 var publishOptions = PublishOptions.Create()
-   .WithTopic("iot/devices/temperature")
+   .WithTopic("iot/devices/temperature"u8)
    .WithPayload("{ \"temp\": 24.2, \"status\": \"Warning\" }")
    .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
    .Build();
@@ -91,7 +97,7 @@ using Beskar.Mqtt.Common.Builders.Disconnecting;
 
 // Unsubscribe
 var unsubscribeOptions = UnsubscribeOptions.Create()
-   .WithTopicFilter("iot/devices/temperature")
+   .WithTopicFilter("iot/devices/temperature"u8)
    .Build();
 
 await subscriberClient.UnsubscribeAsync(unsubscribeOptions);

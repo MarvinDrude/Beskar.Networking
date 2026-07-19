@@ -80,8 +80,6 @@ client connections, and subscription actions, eliminating the need to write cust
 
 In the future, additional managed APIs for other application protocols will be added here.
 
-For more details, see the [MQTT Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Mqtt).
-
 ---
 
 ## NuGet packages overview
@@ -107,6 +105,7 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
   - [**Client**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Advanced/Beskar.Adv.Chat.Client): An interactive console application allowing users to connect via their choice of protocol (TCP/WS/QUIC), receive recent chat history, and chat in real-time under a random username.
 - [**MQTT Managed Examples**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt): A set of projects demonstrating the high-level managed MQTT APIs:
   - [**Simple Publish-Subscribe**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.SimplePubSub): A complete pub-sub flow showing how to spin up an MQTT broker, connect a sensor client (publisher) and dashboard client (subscriber) over TCP using MQTT v5.0.
+  - [**Generated Pub-Sub (Source Generator)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.GeneratedPubSub): Showcases how to use the high-performance MQTT Topic Source Generator to define compile-time validated topics and perform zero-allocation publishing using the generated `byte[]` format overloads.
   - [**Quality of Service (QoS) Levels**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.QosLevels): Demonstrates publishing and subscribing messages with different QoS levels (QoS 0: At Most Once, QoS 1: At Least Once, QoS 2: Exactly Once) using wildcard topic filters.
   - [**Authentication (v3 & v5 Challenges)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.Authentication): Highlights both simple username/password validation for MQTT v3.1.1 and advanced challenge-response authentication for MQTT v5.0.
   - [**Client Reconnection & Event Handling**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.Reconnection): Shows how to register connection status events and implement custom auto-reconnection loops when connections are unexpectedly lost.
