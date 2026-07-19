@@ -8,7 +8,8 @@
       <IsPackable>true</IsPackable>
       <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
       <IncludeBuildOutput>false</IncludeBuildOutput>
-      <NoWarn>$(NoWarn);RS2008</NoWarn>
+      <NoWarn>$(NoWarn);RS2008;NU5128</NoWarn>
+      <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
       <PolySharpUsePublicAccessibilityForGeneratedTypes>true</PolySharpUsePublicAccessibilityForGeneratedTypes>
       <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
       <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
