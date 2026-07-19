@@ -955,6 +955,8 @@ public sealed partial class MqttServer : IAsyncDisposable
          await listener.DisposeAsync();
       }
 
+      await ClientSessions.DisposeAsync();
+
       SubscriptionRouter.Dispose();
       RetainedMessages.Dispose();
    }

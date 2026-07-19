@@ -28,6 +28,7 @@ public sealed class MqttKeepAliveService(
       if (_cancellationTokenSource is not null)
       {
          await _cancellationTokenSource.CancelAsync();
+         _cancellationTokenSource.Dispose();
          _cancellationTokenSource = null;
       }
 
