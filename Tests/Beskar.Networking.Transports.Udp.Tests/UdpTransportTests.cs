@@ -1,8 +1,10 @@
 using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
+using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Udp;
+using Beskar.Networking.Transports.Udp.Extensions;
 
 namespace Beskar.Networking.Transports.Udp.Tests;
 
@@ -488,4 +490,36 @@ public class UdpTransportTests
       await serverSession2.DisposeAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task UdpExtensions_RegisterCorrectly()
+   {
+      // Test ServerBuilder extension
+      var builder = new MockServerBuilder();
+      builder.UseUdp(12345);
+
+      await Assert.That(builder.Listener).IsNotNull();
+      await Assert.That(builder.Listener!.Transport).IsEqualTo(TransportKind.Udp);
+
+      // Test ClientFactory extension
+      var client = MockClientFactory.UseUdp<MockClientFactory, INetworkClient>();
+      await Assert.That(client).IsNotNull();
+      await Assert.That(client.Transport).IsEqualTo(TransportKind.Udp);
+   }
+}
+
+public class MockServerBuilder : IServerBuilder<MockServerBuilder>
+{
+   public INetworkListener? Listener { get; private set; }
+
+   public MockServerBuilder Use(INetworkListener listener)
+   {
+      Listener = listener;
+      return this;
+   }
+}
+
+public class MockClientFactory : IClientFactory<INetworkClient>
+{
+   public static INetworkClient Create(INetworkClient client) => client;
 }

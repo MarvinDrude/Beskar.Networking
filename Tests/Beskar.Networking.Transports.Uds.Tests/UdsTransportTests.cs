@@ -1,7 +1,10 @@
 using System.Buffers;
+using System.Net;
 using System.Net.Sockets;
+using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Uds;
+using Beskar.Networking.Transports.Uds.Extensions;
 
 namespace Beskar.Networking.Transports.Uds.Tests;
 
@@ -317,4 +320,36 @@ public class UdsTransportTests
       await Assert.That(connectResult.Failed).IsTrue();
       await Assert.That(connectResult.Error!.Message).Contains("exceeds the maximum allowed length of 104 characters");
    }
+
+   [Test]
+   public async Task UdsExtensions_RegisterCorrectly()
+   {
+      // Test ServerBuilder extension
+      var builder = new MockServerBuilder();
+      builder.UseUds(12345);
+
+      await Assert.That(builder.Listener).IsNotNull();
+      await Assert.That(builder.Listener!.Transport).IsEqualTo(TransportKind.UnixDomainSocket);
+
+      // Test ClientFactory extension
+      var client = MockClientFactory.UseUds<MockClientFactory, INetworkClient>();
+      await Assert.That(client).IsNotNull();
+      await Assert.That(client.Transport).IsEqualTo(TransportKind.UnixDomainSocket);
+   }
+}
+
+public class MockServerBuilder : IServerBuilder<MockServerBuilder>
+{
+   public INetworkListener? Listener { get; private set; }
+
+   public MockServerBuilder Use(INetworkListener listener)
+   {
+      Listener = listener;
+      return this;
+   }
+}
+
+public class MockClientFactory : IClientFactory<INetworkClient>
+{
+   public static INetworkClient Create(INetworkClient client) => client;
 }
