@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>Exe</OutputType>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <PackageReference Include="TUnit"/>
+   </ItemGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Uds\Beskar.Networking.Transports.Uds.csproj"/>
+   </ItemGroup>
+
+</Project>
