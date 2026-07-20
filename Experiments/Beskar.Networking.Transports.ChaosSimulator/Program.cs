@@ -156,7 +156,7 @@ public static class Program
             listenerAddress = new UnixDomainSocketEndPoint(tempUdsFile);
             break;
          case 6: // Named Pipes
-            listenerAddress = new NamedPipeEndPoint(".", $"chaos-pipe-{Guid.NewGuid():N}");
+            listenerAddress = new NamedPipeEndPoint($"chaos-pipe-{Guid.NewGuid():N}", ".");
             break;
          case 7: // Memory
             listenerAddress = new MemoryEndPoint($"chaos-mem-{Guid.NewGuid():N}");
