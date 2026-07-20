@@ -8,7 +8,7 @@
 </h1>
 <p align="center">
    Fast, <code>.NET</code> native, high-performance, low-allocation networking library.<br/>
-   Built for modern <code>.NET</code> using <code>C#</code> includes TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, and MQTT.<br/>
+   Built for modern <code>C#</code> includes TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, Memory, and MQTT.<br/>
    No external runtime dependencies besides <b>Beskar</b>.<br/><br/>
    <a href="#about">About</a>
    ·
@@ -58,6 +58,7 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 | **Beskar.Networking.Transports.Udp** | High-performance, virtualized session-multiplexed UDP transport implementation.                     | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Udp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Udp/) |
 | **Beskar.Networking.Transports.Uds** | Native Unix Domain Sockets (UDS) local transport implementation.                                    | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Uds.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Uds/) |
 | **Beskar.Networking.Transports.NamedPipes** | Native local Inter-Process Communication (IPC) Named Pipes transport implementation.                 | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.NamedPipes.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.NamedPipes/) |
+| **Beskar.Networking.Transports.Memory** | Fast, zero-allocation local in-memory transport implementation for tests and local IPC.            | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Memory.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Memory/) |
 
 ---
 
@@ -71,9 +72,9 @@ The core library features protocol-agnostic, low-level interfaces:
 * `INetworkListener` - The Server listener that accepts incoming connections and manages sessions.
 * `INetworkClient` - The client that initiates connections and manages sessions.
 * `INetworkSession` - Represents a single connection between a client and server.
-* `INetworkStream` - Provides transport-agnostic handling (supporting TCP, WebSockets, QUIC, UDP, UDS, or Named Pipes).
+* `INetworkStream` - Provides transport-agnostic handling (supporting TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, or Memory).
 
-These interfaces provide transport-agnostic handling (supporting TCP, WebSockets, QUIC, UDP, UDS, or Named Pipes).
+These interfaces provide transport-agnostic handling (supporting TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, or Memory).
 Because they are low-level, you are responsible for managing execution tasks yourself, such as
 starting your own accept loops, launching read/write tasks, and supervising session lifecycles.
 
@@ -150,6 +151,8 @@ Engineered from the ground up for maximum throughput and minimum allocation over
 | **Unix Domain Sockets (UDS)** | 20 | 512 bytes | 9,487,101 packets/s | 4,632.37 MB/s |
 | **Named Pipes** | 20 | 128 bytes | 12,777,198 packets/s | 1,559.72 MB/s |
 | **Named Pipes** | 20 | 512 bytes | 5,739,487 packets/s | 2,802.48 MB/s |
+| **Memory** | 20 | 128 bytes | 8,388,522 packets/s | 1,023.99 MB/s |
+| **Memory** | 20 | 512 bytes | 7,728,970 packets/s | 3,773.91 MB/s |
 
 ---
 
@@ -159,7 +162,7 @@ Engineered from the ground up for maximum throughput and minimum allocation over
 It provides a unified, pipe-based interface abstraction (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`)
 for building extremely fast network applications across multiple transport protocols.
 
-- **Unified Abstractions**: Write your network layer once and swap between TCP, WebSockets, QUIC, or UDP dynamically.
+- **Unified Abstractions**: Write your network layer once and swap between TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, or Memory dynamically.
 - **Modern .NET 10 Stack**: Heavily leverages `System.IO.Pipelines` (decoupling IO thread queues from application processing), `Span<T>`, `ReadOnlySpan<T>`, and direct memory pooling to achieve zero/near-zero allocations.
 - **TLS/SSL Encryption**: Full native SSL/TLS wrapping for TCP and WebSocket transports out of the box.
 - **Non-blocking IO Queueing**: Highly-optimized custom IO queues (like `TcpIoQueueRegistry` / `TcpIoQueue`) to handle asynchronous reading and writing concurrently.

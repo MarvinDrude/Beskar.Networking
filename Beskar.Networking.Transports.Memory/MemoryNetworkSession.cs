@@ -12,12 +12,14 @@ namespace Beskar.Networking.Transports.Memory;
 /// <summary>
 /// An in-memory implementation of <see cref="INetworkSession"/>.
 /// </summary>
-public sealed class MemoryNetworkSession : INetworkSession
+public sealed class MemoryNetworkSession(
+   EndPoint localAddress, EndPoint remoteAddress, IDuplexPipe connection)
+   : INetworkSession
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 
-   public EndPoint RemoteAddress { get; }
-   public EndPoint LocalAddress { get; }
+   public EndPoint RemoteAddress { get; } = remoteAddress;
+   public EndPoint LocalAddress { get; } = localAddress;
 
    public bool IsSupportingMultiplexing => false;
    public bool IsSupportingUnidirectional => false;
@@ -46,19 +48,12 @@ public sealed class MemoryNetworkSession : INetworkSession
 
    public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
 
-   private readonly IDuplexPipe _connection;
+   private readonly IDuplexPipe _connection = connection;
    private readonly CancellationTokenSource _cts = new();
 
    private MemoryNetworkStream? _stream;
    private MemoryNetworkSession? _peerSession;
    private int _disposed;
-
-   public MemoryNetworkSession(EndPoint localAddress, EndPoint remoteAddress, IDuplexPipe connection)
-   {
-      LocalAddress = localAddress;
-      RemoteAddress = remoteAddress;
-      _connection = connection;
-   }
 
    internal void SetPeer(MemoryNetworkSession peer)
    {

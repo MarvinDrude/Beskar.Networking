@@ -48,6 +48,7 @@
     <Project Path="Experiments/Beskar.Quic.Benchmark/Beskar.Quic.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Uds.Benchmark/Beskar.Uds.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.NamedPipes.Benchmark/Beskar.NamedPipes.Benchmark.csproj" />
+    <Project Path="Experiments/Beskar.Memory.Benchmark/Beskar.Memory.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Networking.Benchmarks.Common/Beskar.Networking.Benchmarks.Common.csproj" />
     <Project Path="Experiments/Beskar.Networking.Benchmarks/Beskar.Networking.Benchmarks.csproj" />
     <Project Path="Experiments/Beskar.Networking.Connections/Beskar.Networking.Connections.csproj" />
