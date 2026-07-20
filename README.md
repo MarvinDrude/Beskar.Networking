@@ -144,6 +144,10 @@ Engineered from the ground up for maximum throughput and minimum allocation over
 | **MQTT** (TCP - No TLS) | 20 | 512 bytes | 674,086.45 msg/s | 329.14 MB/s |
 | **UDP** | 20 | 128 bytes | 3,480,517 packets/s | 424.87 MB/s |
 | **UDP** | 20 | 512 bytes | 801,432 packets/s | 391.32 MB/s |
+| **Unix Domain Sockets (UDS)** | 20 | 128 bytes | 11,993,784 packets/s | 1,464.08 MB/s |
+| **Unix Domain Sockets (UDS)** | 20 | 512 bytes | 9,487,101 packets/s | 4,632.37 MB/s |
+| **Named Pipes** | 20 | 128 bytes | 12,777,198 packets/s | 1,559.72 MB/s |
+| **Named Pipes** | 20 | 512 bytes | 5,739,487 packets/s | 2,802.48 MB/s |
 
 ---
 
