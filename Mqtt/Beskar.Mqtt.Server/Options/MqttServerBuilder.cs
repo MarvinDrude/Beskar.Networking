@@ -7,7 +7,7 @@ using Beskar.Networking.Transports.Ws;
 
 namespace Beskar.Mqtt.Server.Options;
 
-public sealed class MqttServerBuilder(MqttServerOptions? options = null)
+public sealed class MqttServerBuilder(MqttServerOptions? options = null) : IServerBuilder<MqttServerBuilder>
 {
    private readonly MqttServerOptions _options = options ?? new MqttServerOptions();
    private readonly List<INetworkListener> _listeners = [];
@@ -20,6 +20,12 @@ public sealed class MqttServerBuilder(MqttServerOptions? options = null)
       _registerClientIdGenerator?.Invoke(server);
 
       return server;
+   }
+
+   public MqttServerBuilder Use(INetworkListener listener)
+   {
+      _listeners.Add(listener);
+      return this;
    }
 
    /// <summary>
