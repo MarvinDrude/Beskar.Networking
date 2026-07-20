@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <Title>Beskar.Networking.Transports.Uds</Title>
+      <Description>Underlying Unix Domain Sockets (UDS) Implementation for Beskar.Networking.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+      <ProjectReference Include="..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj" />
+      <ProjectReference Include="..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
+   </ItemGroup>
+
+</Project>

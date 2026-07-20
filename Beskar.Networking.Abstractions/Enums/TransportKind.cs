@@ -28,5 +28,15 @@ public enum TransportKind
    /// <summary>
    /// UDP - User Datagram Protocol
    /// </summary>
-   Udp = 4
+   Udp = 4,
+
+   /// <summary>
+   /// NamedPipe - Windows / Unix Named Pipe
+   /// </summary>
+   NamedPipe = 5,
+
+   /// <summary>
+   /// UnixDomainSocket - Unix Domain Socket
+   /// </summary>
+   UnixDomainSocket = 6
 }

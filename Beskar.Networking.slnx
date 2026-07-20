@@ -46,6 +46,8 @@
     <Project Path="Experiments/Beskar.Udp.Benchmark/Beskar.Udp.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Ws.Benchmark/Beskar.Ws.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Quic.Benchmark/Beskar.Quic.Benchmark.csproj" />
+    <Project Path="Experiments/Beskar.Uds.Benchmark/Beskar.Uds.Benchmark.csproj" />
+    <Project Path="Experiments/Beskar.NamedPipes.Benchmark/Beskar.NamedPipes.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Networking.Benchmarks.Common/Beskar.Networking.Benchmarks.Common.csproj" />
     <Project Path="Experiments/Beskar.Networking.Benchmarks/Beskar.Networking.Benchmarks.csproj" />
     <Project Path="Experiments/Beskar.Networking.Connections/Beskar.Networking.Connections.csproj" />
@@ -73,6 +75,8 @@
     <Project Path="Tests/Beskar.Networking.Transports.Udp.Tests/Beskar.Networking.Transports.Udp.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Transports.Quic.Tests/Beskar.Networking.Transports.Quic.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Transports.Ws.Tests/Beskar.Networking.Transports.Ws.Tests.csproj" />
+    <Project Path="Tests/Beskar.Networking.Transports.Uds.Tests/Beskar.Networking.Transports.Uds.Tests.csproj" />
+    <Project Path="Tests/Beskar.Networking.Transports.NamedPipes.Tests/Beskar.Networking.Transports.NamedPipes.Tests.csproj" />
   </Folder>
   <Folder Name="/Utilities/">
     <Project Path="Utilities/Beskar.Utilities.Console/Beskar.Utilities.Console.csproj" />
@@ -84,4 +88,6 @@
   <Project Path="Beskar.Networking.Transports.Tcp/Beskar.Networking.Transports.Tcp.csproj" />
   <Project Path="Beskar.Networking.Transports.Udp/Beskar.Networking.Transports.Udp.csproj" />
   <Project Path="Beskar.Networking.Transports.Ws/Beskar.Networking.Transports.Ws.csproj" />
+  <Project Path="Beskar.Networking.Transports.Uds/Beskar.Networking.Transports.Uds.csproj" />
+  <Project Path="Beskar.Networking.Transports.NamedPipes/Beskar.Networking.Transports.NamedPipes.csproj" />
 </Solution>
