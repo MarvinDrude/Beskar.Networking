@@ -1,6 +1,8 @@
 using System.Buffers;
+using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.NamedPipes;
+using Beskar.Networking.Transports.NamedPipes.Extensions;
 
 namespace Beskar.Networking.Transports.NamedPipes.Tests;
 
@@ -299,4 +301,36 @@ public class  NamedPipeTransportTests
       var endPoint2 = new NamedPipeEndPoint($@"\\localhost\pipe\{rawName}");
       await Assert.That(endPoint2.PipeName).IsEqualTo(rawName);
    }
+
+   [Test]
+   public async Task NamedPipeExtensions_RegisterCorrectly()
+   {
+      // Test ServerBuilder extension
+      var builder = new MockServerBuilder();
+      builder.UseNamedPipes("test-pipe-name");
+
+      await Assert.That(builder.Listener).IsNotNull();
+      await Assert.That(builder.Listener!.Transport).IsEqualTo(TransportKind.NamedPipe);
+
+      // Test ClientFactory extension
+      var client = MockClientFactory.UseNamedPipes<MockClientFactory, INetworkClient>();
+      await Assert.That(client).IsNotNull();
+      await Assert.That(client.Transport).IsEqualTo(TransportKind.NamedPipe);
+   }
+}
+
+public class MockServerBuilder : IServerBuilder<MockServerBuilder>
+{
+   public INetworkListener? Listener { get; private set; }
+
+   public MockServerBuilder Use(INetworkListener listener)
+   {
+      Listener = listener;
+      return this;
+   }
+}
+
+public class MockClientFactory : IClientFactory<INetworkClient>
+{
+   public static INetworkClient Create(INetworkClient client) => client;
 }

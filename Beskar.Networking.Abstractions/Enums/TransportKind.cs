@@ -38,5 +38,10 @@ public enum TransportKind
    /// <summary>
    /// UnixDomainSocket - Unix Domain Socket
    /// </summary>
-   UnixDomainSocket = 6
+   UnixDomainSocket = 6,
+
+   /// <summary>
+   /// Memory - In-memory channel
+   /// </summary>
+   Memory = 7
 }

@@ -1,4 +1,5 @@
 using Beskar.Mqtt.Common.Interfaces;
+using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Transports.Quic;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Ws;
@@ -9,8 +10,25 @@ namespace Beskar.Mqtt.Client;
 /// <summary>
 /// A factory for creating instances of <see cref="IMqttClient"/> configured with various transport types.
 /// </summary>
-public static class MqttClientFactory
+public abstract class MqttClientFactory : IClientFactory<IMqttClient>
 {
+   protected MqttClientFactory()
+   {
+   }
+
+   /// <summary>
+   /// Creates a MQTT client instance given a network client.
+   /// If you don't know what a network client is, you can use one of the factory methods to create one or
+   /// use CreateTcp, CreateWs, or CreateQuic to create a mqtt client.
+   /// </summary>
+   /// <param name="networkClient"></param>
+   /// <returns></returns>
+   public static IMqttClient Create(INetworkClient networkClient)
+   {
+      TraceLogger.LogClientInfo("MqttClientFactory: Creating Custom MQTT client.");
+      return new MqttClient(networkClient);
+   }
+
    /// <summary>
    /// Creates an MQTT client instance that communicates over a standard TCP connection.
    /// </summary>

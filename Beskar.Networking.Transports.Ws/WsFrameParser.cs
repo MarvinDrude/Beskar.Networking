@@ -47,6 +47,18 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       _expectMask = !maskOutgoing;
       _keepAliveInterval = options.KeepAliveInterval;
 
+      _tcpSession.SessionClosedToken.Register(() =>
+      {
+         try
+         {
+            _cts.Cancel();
+         }
+         catch
+         {
+            // Ignored
+         }
+      });
+
       _readTask = Task.Run(ReadLoopAsync);
       _writeTask = Task.Run(WriteLoopAsync);
       _pingTask = _keepAliveInterval > TimeSpan.Zero ? Task.Run(PingLoopAsync) : null;

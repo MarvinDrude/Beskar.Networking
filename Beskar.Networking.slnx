@@ -48,11 +48,13 @@
     <Project Path="Experiments/Beskar.Quic.Benchmark/Beskar.Quic.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Uds.Benchmark/Beskar.Uds.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.NamedPipes.Benchmark/Beskar.NamedPipes.Benchmark.csproj" />
+    <Project Path="Experiments/Beskar.Memory.Benchmark/Beskar.Memory.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Networking.Benchmarks.Common/Beskar.Networking.Benchmarks.Common.csproj" />
     <Project Path="Experiments/Beskar.Networking.Benchmarks/Beskar.Networking.Benchmarks.csproj" />
     <Project Path="Experiments/Beskar.Networking.Connections/Beskar.Networking.Connections.csproj" />
     <Project Path="Experiments/Beskar.Networking.Experiments/Beskar.Networking.Experiments.csproj" />
     <Project Path="Experiments/Beskar.Mqtt.ChaosSimulator/Beskar.Mqtt.ChaosSimulator.csproj" />
+    <Project Path="Experiments/Beskar.Networking.Transports.ChaosSimulator/Beskar.Networking.Transports.ChaosSimulator.csproj" />
     <Project Path="Experiments/Beskar.Networking.Performance/Beskar.Networking.Performance.csproj" />
     <Project Path="Experiments/Beskar.Networking.Clients/Beskar.Networking.Clients.csproj" />
   </Folder>
@@ -77,6 +79,7 @@
     <Project Path="Tests/Beskar.Networking.Transports.Ws.Tests/Beskar.Networking.Transports.Ws.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Transports.Uds.Tests/Beskar.Networking.Transports.Uds.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Transports.NamedPipes.Tests/Beskar.Networking.Transports.NamedPipes.Tests.csproj" />
+    <Project Path="Tests/Beskar.Networking.Transports.Memory.Tests/Beskar.Networking.Transports.Memory.Tests.csproj" />
   </Folder>
   <Folder Name="/Utilities/">
     <Project Path="Utilities/Beskar.Utilities.Console/Beskar.Utilities.Console.csproj" />
@@ -90,4 +93,5 @@
   <Project Path="Beskar.Networking.Transports.Ws/Beskar.Networking.Transports.Ws.csproj" />
   <Project Path="Beskar.Networking.Transports.Uds/Beskar.Networking.Transports.Uds.csproj" />
   <Project Path="Beskar.Networking.Transports.NamedPipes/Beskar.Networking.Transports.NamedPipes.csproj" />
+  <Project Path="Beskar.Networking.Transports.Memory/Beskar.Networking.Transports.Memory.csproj" />
 </Solution>
