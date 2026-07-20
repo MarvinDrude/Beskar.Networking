@@ -15,6 +15,15 @@ public sealed class NamedPipeEndPoint : EndPoint
       ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
       ArgumentException.ThrowIfNullOrWhiteSpace(serverName);
 
+      if (pipeName.StartsWith(@"\\.\pipe\", StringComparison.OrdinalIgnoreCase))
+      {
+         pipeName = pipeName[@"\\.\pipe\".Length..];
+      }
+      else if (pipeName.StartsWith(@"\\localhost\pipe\", StringComparison.OrdinalIgnoreCase))
+      {
+         pipeName = pipeName[@"\\localhost\pipe\".Length..];
+      }
+
       PipeName = pipeName;
       ServerName = serverName;
    }

@@ -292,4 +292,29 @@ public class UdsTransportTests
       await serverSession2.DisposeAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task UdsClientServer_PathExceedsLengthLimit_ReturnsFailedResult()
+   {
+      var baseTempPath = Path.GetTempPath();
+      var remainingLength = 106 - baseTempPath.Length;
+      if (remainingLength < 5)
+      {
+         return;
+      }
+      var longSocketPath = baseTempPath + new string('a', remainingLength);
+      
+      var localEndPoint = new UnixDomainSocketEndPoint(longSocketPath);
+      var options = new UdsTransportOptions();
+      var listener = new UdsNetworkListener(localEndPoint, options);
+
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsTrue();
+      await Assert.That(bindResult.Error!.Message).Contains("exceeds the maximum allowed length of 104 characters");
+
+      var client = new UdsNetworkClient(options);
+      var connectResult = await client.ConnectAsync(localEndPoint);
+      await Assert.That(connectResult.Failed).IsTrue();
+      await Assert.That(connectResult.Error!.Message).Contains("exceeds the maximum allowed length of 104 characters");
+   }
 }

@@ -287,4 +287,16 @@ public class  NamedPipeTransportTests
       await serverSession2.DisposeAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task NamedPipeEndPoint_FullPipePathPassed_SanitizesSuccessfully()
+   {
+      var rawName = "my-benchmark-pipe";
+      
+      var endPoint1 = new NamedPipeEndPoint($@"\\.\pipe\{rawName}");
+      await Assert.That(endPoint1.PipeName).IsEqualTo(rawName);
+
+      var endPoint2 = new NamedPipeEndPoint($@"\\localhost\pipe\{rawName}");
+      await Assert.That(endPoint2.PipeName).IsEqualTo(rawName);
+   }
 }

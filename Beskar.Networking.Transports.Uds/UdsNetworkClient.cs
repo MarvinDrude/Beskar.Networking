@@ -49,9 +49,15 @@ public sealed class UdsNetworkClient(UdsTransportOptions options)
       {
          TraceLogger.LogClientInfo("UDS ConnectAsync: Initiating UDS socket connection to {0}", endPoint);
          
-         if (endPoint is not UnixDomainSocketEndPoint)
+         if (endPoint is not UnixDomainSocketEndPoint udsEndPoint)
          {
             return new NetworkCodeError(-1, "EndPoint must be a UnixDomainSocketEndPoint.");
+         }
+
+         var socketPath = udsEndPoint.ToString();
+         if (socketPath.Length > 104)
+         {
+            throw new ArgumentException($"Unix Domain Socket path '{socketPath}' exceeds the maximum allowed length of 104 characters (path length: {socketPath.Length}).");
          }
 
          socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
