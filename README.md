@@ -8,7 +8,7 @@
 </h1>
 <p align="center">
    Fast, <code>.NET</code> native, high-performance, low-allocation networking library.<br/>
-   Built for modern <code>.NET</code> using <code>C#</code> includes TCP, WebSockets, QUIC, UDP, and MQTT.<br/>
+   Built for modern <code>.NET</code> using <code>C#</code> includes TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, and MQTT.<br/>
    No external runtime dependencies besides <b>Beskar</b>.<br/><br/>
    <a href="#about">About</a>
    ·
@@ -56,6 +56,8 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 | **Beskar.Networking.Transports.Ws** | WebSocket (WS/WSS) transport adapter wrapping custom framed duplex pipelines.                       | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Ws.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Ws/) |
 | **Beskar.Networking.Transports.Quic** | Multiplexed and secure QUIC transport implementation built on native .NET libraries.                | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Quic.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Quic/) |
 | **Beskar.Networking.Transports.Udp** | High-performance, virtualized session-multiplexed UDP transport implementation.                     | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Udp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Udp/) |
+| **Beskar.Networking.Transports.Uds** | Native Unix Domain Sockets (UDS) local transport implementation.                                    | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Uds.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Uds/) |
+| **Beskar.Networking.Transports.NamedPipes** | Native local Inter-Process Communication (IPC) Named Pipes transport implementation.                 | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.NamedPipes.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.NamedPipes/) |
 
 ---
 
@@ -69,15 +71,15 @@ The core library features protocol-agnostic, low-level interfaces:
 * `INetworkListener` - The Server listener that accepts incoming connections and manages sessions.
 * `INetworkClient` - The client that initiates connections and manages sessions.
 * `INetworkSession` - Represents a single connection between a client and server.
-* `INetworkStream` - Provides transport-agnostic handling (supporting TCP, WebSockets, QUIC, or UDP).
+* `INetworkStream` - Provides transport-agnostic handling (supporting TCP, WebSockets, QUIC, UDP, UDS, or Named Pipes).
 
-These interfaces provide transport-agnostic handling (supporting TCP, WebSockets, QUIC, or UDP).
+These interfaces provide transport-agnostic handling (supporting TCP, WebSockets, QUIC, UDP, UDS, or Named Pipes).
 Because they are low-level, you are responsible for managing execution tasks yourself, such as
 starting your own accept loops, launching read/write tasks, and supervising session lifecycles.
 
 > [!IMPORTANT]
 > **Client Transport Optimization (Low-Level APIs)**
-> When instantiating `TcpNetworkClient`, `WsNetworkClient`, or `QuicNetworkClient` directly with custom options (`TcpTransportOptions`, `WsTransportOptions`, `QuicTransportOptions`), the default `IoQueueCount` is optimized for servers and defaults to `Math.Min(Environment.ProcessorCount, 24)`.
+> When instantiating `TcpNetworkClient`, `WsNetworkClient`, `QuicNetworkClient`, `UdsNetworkClient`, or `NamedPipeNetworkClient` directly with custom options (`TcpTransportOptions`, `WsTransportOptions`, `QuicTransportOptions`, `UdsTransportOptions`, `NamedPipeTransportOptions`), the default `IoQueueCount` is optimized for servers and defaults to `Math.Min(Environment.ProcessorCount, 24)`.
 >
 > For **client-side applications**, you should explicitly configure the option's `IoQueueCount` (e.g. `options.StreamOptions.IoQueueCount = 1` and `options.SocketOptions.IoQueueCount = 1`) to **`1`**. Since a client only manages a single connection, this prevents allocating unnecessary idle memory pools and thread queues, drastically reducing the unmanaged and pinned memory footprint.
 
