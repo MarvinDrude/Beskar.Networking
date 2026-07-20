@@ -194,6 +194,7 @@ public static class Program
                quicCert = CertificateUtility.GenerateSelfSignedCertificate();
                var quicOptions = new QuicTransportOptions
                {
+                  AlpnProtocol = "chaos-quic",
                   SslServerOptions = new System.Net.Security.SslServerAuthenticationOptions
                   {
                      ServerCertificate = quicCert,
@@ -549,6 +550,7 @@ public static class Program
          3 => new UdpNetworkClient(new UdpTransportOptions()),
          4 => new QuicNetworkClient(new QuicTransportOptions
          {
+            AlpnProtocol = "chaos-quic",
             SslClientOptions = new System.Net.Security.SslClientAuthenticationOptions
             {
                ApplicationProtocols = [new SslApplicationProtocol("chaos-quic")],
