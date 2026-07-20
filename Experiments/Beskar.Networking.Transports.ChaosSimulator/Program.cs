@@ -46,7 +46,7 @@ public static class Program
    private static long _bytesTransferred;
 
    private static int _activeServerSessions;
-   private static bool _clientIsConnected;
+   private static int _activeClientConnections;
 
    private static readonly Lock LogLock = new();
 
@@ -62,20 +62,25 @@ public static class Program
 
       var transportOption = 1;
       var chaosOption = 6; // Default to Total Chaos in automated runs
+      var concurrentClients = 1;
 
       if (args.Length >= 2 && int.TryParse(args[0], out var tArg) && int.TryParse(args[1], out var cArg))
       {
          transportOption = tArg;
          chaosOption = cArg;
+         if (args.Length >= 3 && int.TryParse(args[2], out var ccArg))
+         {
+            concurrentClients = ccArg;
+         }
       }
       else if (Console.IsInputRedirected)
       {
          transportOption = 1; // TCP
          chaosOption = 6;     // Total Chaos
+         concurrentClients = 3; // Default 3 in automated runs
       }
       else
       {
-         // 1. Select Transport
          ConsoleRender.Info("Choose the underlying transport to test:");
          Console.WriteLine("  1. Transmission Control Protocol (TCP)");
          Console.WriteLine("  2. WebSocket (WS)");
@@ -91,7 +96,6 @@ public static class Program
             transportOption = opt;
          }
 
-         // Check QUIC compatibility if selected
          if (transportOption == 4 && !QuicConnection.IsSupported)
          {
             ConsoleRender.Error("QUIC is not supported on this platform/OS. Falling back to TCP.");
@@ -99,7 +103,6 @@ public static class Program
             await Task.Delay(1500);
          }
 
-         // 2. Select Chaos Configuration Mode
          SafeClear();
          ConsoleRender.DrawHeader("BESKAR TRANSPORT CHAOS SIMULATOR", "Choose Chaos Profile");
          Console.WriteLine("  1. Clean Link (No injected failures/baseline)");
@@ -113,6 +116,15 @@ public static class Program
          if (int.TryParse(chaosInput, out var cOpt) && cOpt >= 1 && cOpt <= 6)
          {
             chaosOption = cOpt;
+         }
+
+         SafeClear();
+         ConsoleRender.DrawHeader("BESKAR TRANSPORT CHAOS SIMULATOR", "Choose Concurrency");
+         Console.Write("Enter number of concurrent clients to run (default 1): ");
+         var ccInput = Console.ReadLine();
+         if (int.TryParse(ccInput, out var ccVal) && ccVal > 0)
+         {
+            concurrentClients = ccVal;
          }
       }
 
@@ -151,9 +163,8 @@ public static class Program
             break;
       }
 
-      // Create raw inner client & listener
+      // Create raw inner listener
       INetworkListener rawListener;
-      INetworkClient rawClient;
 
       X509Certificate2? quicCert = null;
 
@@ -164,19 +175,16 @@ public static class Program
             case 1: // TCP
                var tcpOptions = new TcpTransportOptions();
                rawListener = new TcpNetworkListener(listenerAddress, tcpOptions);
-               rawClient = new TcpNetworkClient(tcpOptions);
                break;
 
             case 2: // WS
                var wsOptions = new WsTransportOptions();
                rawListener = new WsNetworkListener(listenerAddress, wsOptions);
-               rawClient = new WsNetworkClient(wsOptions);
                break;
 
             case 3: // UDP
                var udpOptions = new UdpTransportOptions();
                rawListener = new UdpNetworkListener(listenerAddress, udpOptions);
-               rawClient = new UdpNetworkClient(udpOptions);
                break;
 
             case 4: // QUIC
@@ -195,25 +203,21 @@ public static class Program
                   }
                };
                rawListener = new QuicNetworkListener(listenerAddress, quicOptions);
-               rawClient = new QuicNetworkClient(quicOptions);
                break;
 
             case 5: // UDS
                var udsOptions = new UdsTransportOptions();
                rawListener = new UdsNetworkListener(listenerAddress, udsOptions);
-               rawClient = new UdsNetworkClient(udsOptions);
                break;
 
             case 6: // Named Pipes
                var npOptions = new NamedPipeTransportOptions();
                rawListener = new NamedPipeNetworkListener(listenerAddress, npOptions);
-               rawClient = new NamedPipeNetworkClient(npOptions);
                break;
 
             case 7: // Memory
                var memOptions = new MemoryTransportOptions();
                rawListener = new MemoryNetworkListener((MemoryEndPoint)listenerAddress, memOptions);
-               rawClient = new MemoryNetworkClient(memOptions);
                break;
 
             default:
@@ -228,9 +232,8 @@ public static class Program
          return;
       }
 
-      // Wrap them in our Chaos Decorators
+      // Wrap listener in our Chaos Decorator
       var listener = new ChaosNetworkListener(rawListener, options);
-      var client = new ChaosNetworkClient(rawClient, options);
 
       using var cts = new CancellationTokenSource();
 
@@ -249,11 +252,16 @@ public static class Program
       // Start accepted sessions loop
       var serverTask = Task.Run(() => ServerAcceptLoopAsync(listener, cts.Token));
 
-      // Start active client scenario loop
-      var clientTask = Task.Run(() => ClientScenarioLoopAsync(client, listener.LocalAddress, cts.Token));
+      // Start active client scenario loops
+      var clientTasks = new List<Task>();
+      for (var i = 0; i < concurrentClients; i++)
+      {
+         var clientIndex = i;
+         clientTasks.Add(Task.Run(() => ClientScenarioLoopAsync(clientIndex, transportOption, options, listener.LocalAddress, cts.Token)));
+      }
 
       // Start statistics dashboard loop
-      var statsTask = Task.Run(() => DisplayDashboardLoopAsync(options, cts.Token));
+      var statsTask = Task.Run(() => DisplayDashboardLoopAsync(options, concurrentClients, cts.Token));
 
       if (Console.IsInputRedirected)
       {
@@ -275,7 +283,8 @@ public static class Program
 
       try
       {
-         await Task.WhenAll(serverTask, clientTask, statsTask);
+         await Task.WhenAll(serverTask, statsTask);
+         await Task.WhenAll(clientTasks);
       }
       catch
       {
@@ -283,7 +292,6 @@ public static class Program
       }
 
       // Cleanup
-      await client.DisposeAsync();
       await listener.DisposeAsync();
       quicCert?.Dispose();
 
@@ -430,7 +438,7 @@ public static class Program
       }
    }
 
-   private static async Task ClientScenarioLoopAsync(INetworkClient client, EndPoint endPoint, CancellationToken ct)
+   private static async Task ClientScenarioLoopAsync(int clientIndex, int transportOption, ChaosOptions chaosOpts, EndPoint endPoint, CancellationToken ct)
    {
       var currentSeq = 0;
       var payload = new byte[512];
@@ -439,56 +447,68 @@ public static class Program
       while (!ct.IsCancellationRequested)
       {
          Interlocked.Increment(ref _clientConnectionAttempts);
-         _clientIsConnected = false;
+         var client = CreateClient(transportOption, chaosOpts);
 
-         var connectResult = await client.ConnectAsync(endPoint, ct);
-         if (connectResult.Failed)
-         {
-            Interlocked.Increment(ref _clientConnectionFailures);
-            LogChaosEvent("CLIENT", "CONN_FAIL", $"Failed to connect: {connectResult.Error.Message}", ConsoleColor.DarkGray);
-            await Task.Delay(1000, ct);
-            continue;
-         }
-
-         Interlocked.Increment(ref _clientConnectionsEstablished);
-         _clientIsConnected = true;
-         LogChaosEvent("CLIENT", "CONN_OK", "Established connection successfully.", ConsoleColor.Green);
-
-         var session = connectResult.Success;
          try
          {
-            var streamResult = await session.OpenStreamAsync(NetworkStreamDirection.Bidirectional, ct);
-            if (streamResult.Failed)
+            var connectResult = await client.ConnectAsync(endPoint, ct);
+            if (connectResult.Failed)
             {
-               LogChaosEvent("CLIENT", "STRM_FAIL", $"Failed to open stream: {streamResult.Error.Message}", ConsoleColor.Red);
-               throw new InvalidOperationException();
+               Interlocked.Increment(ref _clientConnectionFailures);
+               LogChaosEvent($"CLIENT-{clientIndex}", "CONN_FAIL", $"Failed to connect: {connectResult.Error.Message}", ConsoleColor.DarkGray);
+               await client.DisposeAsync();
+               await Task.Delay(1000, ct);
+               continue;
             }
 
-            var stream = streamResult.Success;
-            await using (stream)
+            Interlocked.Increment(ref _clientConnectionsEstablished);
+            Interlocked.Increment(ref _activeClientConnections);
+            LogChaosEvent($"CLIENT-{clientIndex}", "CONN_OK", "Established connection successfully.", ConsoleColor.Green);
+
+            var session = connectResult.Success;
+            try
             {
-               while (!ct.IsCancellationRequested && !session.SessionClosedToken.IsCancellationRequested)
+               var streamResult = await session.OpenStreamAsync(NetworkStreamDirection.Bidirectional, ct);
+               if (streamResult.Failed)
                {
-                  // Send framed packet
-                  await ChaosPacket.WriteAsync(stream.Transport.Output, currentSeq, payload, ct);
-                  Interlocked.Increment(ref _packetsSent);
-
-                  currentSeq++;
-
-                  // Random delay between sends
-                  await Task.Delay(Random.Shared.Next(50, 150), ct);
+                  LogChaosEvent($"CLIENT-{clientIndex}", "STRM_FAIL", $"Failed to open stream: {streamResult.Error.Message}", ConsoleColor.Red);
+                  throw new InvalidOperationException();
                }
+
+               var stream = streamResult.Success;
+               await using (stream)
+               {
+                  while (!ct.IsCancellationRequested && !session.SessionClosedToken.IsCancellationRequested)
+                  {
+                     // Send framed packet
+                     await ChaosPacket.WriteAsync(stream.Transport.Output, currentSeq, payload, ct);
+                     Interlocked.Increment(ref _packetsSent);
+
+                     currentSeq++;
+
+                     // Random delay between sends
+                     await Task.Delay(Random.Shared.Next(50, 150), ct);
+                  }
+               }
+            }
+            catch (Exception ex)
+            {
+               Interlocked.Increment(ref _clientConnectionsLost);
+               LogChaosEvent($"CLIENT-{clientIndex}", "CONN_LOST", $"Session dropped: {ex.Message}", ConsoleColor.Red);
+            }
+            finally
+            {
+               Interlocked.Decrement(ref _activeClientConnections);
+               await session.DisposeAsync();
             }
          }
          catch (Exception ex)
          {
-            Interlocked.Increment(ref _clientConnectionsLost);
-            _clientIsConnected = false;
-            LogChaosEvent("CLIENT", "CONN_LOST", $"Session dropped: {ex.Message}", ConsoleColor.Red);
+            LogChaosEvent($"CLIENT-{clientIndex}", "CONN_ERR", $"Connection error: {ex.Message}", ConsoleColor.Red);
          }
          finally
          {
-            await session.DisposeAsync();
+            await client.DisposeAsync();
          }
 
          // Wait briefly before reconnecting
@@ -496,7 +516,30 @@ public static class Program
       }
    }
 
-   private static async Task DisplayDashboardLoopAsync(ChaosOptions options, CancellationToken ct)
+   private static INetworkClient CreateClient(int transportOption, ChaosOptions chaosOpts)
+   {
+      INetworkClient rawClient = transportOption switch
+      {
+         1 => new TcpNetworkClient(new TcpTransportOptions()),
+         2 => new WsNetworkClient(new WsTransportOptions()),
+         3 => new UdpNetworkClient(new UdpTransportOptions()),
+         4 => new QuicNetworkClient(new QuicTransportOptions
+         {
+            SslClientOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+               ApplicationProtocols = [new SslApplicationProtocol("chaos-quic")],
+               RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+            }
+         }),
+         5 => new UdsNetworkClient(new UdsTransportOptions()),
+         6 => new NamedPipeNetworkClient(new NamedPipeTransportOptions()),
+         7 => new MemoryNetworkClient(new MemoryTransportOptions()),
+         _ => throw new InvalidOperationException("Invalid transport selection.")
+      };
+      return new ChaosNetworkClient(rawClient, chaosOpts);
+   }
+
+   private static async Task DisplayDashboardLoopAsync(ChaosOptions options, int totalClients, CancellationToken ct)
    {
       while (!ct.IsCancellationRequested)
       {
@@ -515,7 +558,7 @@ public static class Program
          {
             Console.WriteLine("\n[--- CHAOS SIMULATOR LIVE DASHBOARD ---]");
             Console.WriteLine($"Profile:            {options.ProfileName}");
-            Console.WriteLine($"Client State:       {(Volatile.Read(ref _clientIsConnected) ? "CONNECTED" : "DISCONNECTED")}");
+            Console.WriteLine($"Client State:       {Volatile.Read(ref _activeClientConnections)} / {totalClients} Connected");
             Console.WriteLine($"Active Server Sess: {Volatile.Read(ref _activeServerSessions)}");
             Console.WriteLine($"Connection Stats:   Attempts={Volatile.Read(ref _clientConnectionAttempts)} Failures={Volatile.Read(ref _clientConnectionFailures)} Established={Volatile.Read(ref _clientConnectionsEstablished)} Lost={Volatile.Read(ref _clientConnectionsLost)}");
             Console.WriteLine($"Data Sent/Recv:     Sent={Volatile.Read(ref _packetsSent)} Recv={Volatile.Read(ref _packetsReceived)} Speed={speedKB:F1} KB/s");
