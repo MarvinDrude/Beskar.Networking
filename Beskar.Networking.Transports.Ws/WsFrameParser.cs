@@ -140,6 +140,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                      await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Pong, payload, _maskOutgoing, _cts.Token);
                   }
                }
+               else if (opcode == (byte)WebSocketOpcode.Pong)
+               {
+                  // Pong frame received in response to client/server ping. No action needed.
+               }
                else if (opcode == (byte)WebSocketOpcode.Close)
                {
                   await _cts.CancelAsync();
