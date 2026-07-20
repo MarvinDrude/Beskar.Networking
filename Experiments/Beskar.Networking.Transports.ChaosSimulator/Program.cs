@@ -479,6 +479,27 @@ public static class Program
                }
 
                var stream = streamResult.Success;
+               using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct, session.SessionClosedToken);
+               _ = Task.Run(async () =>
+               {
+                  try
+                  {
+                     while (!readCts.Token.IsCancellationRequested)
+                     {
+                        var readResult = await stream.Transport.Input.ReadAsync(readCts.Token);
+                        if (readResult.IsCompleted && readResult.Buffer.IsEmpty)
+                        {
+                           break;
+                        }
+                        stream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+                     }
+                  }
+                  catch
+                  {
+                     // Ignored
+                  }
+               }, readCts.Token);
+
                await using (stream)
                {
                   while (!ct.IsCancellationRequested && !session.SessionClosedToken.IsCancellationRequested)

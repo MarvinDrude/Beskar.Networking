@@ -58,6 +58,18 @@ public sealed class WsNetworkSession : INetworkSession
       _wsPipe = wsPipe;
 
       _stream = new WsNetworkStream(this, wsPipe);
+
+      _tcpSession.SessionClosedToken.Register(() =>
+      {
+         try
+         {
+            _cts.Cancel();
+         }
+         catch
+         {
+            // Ignored
+         }
+      });
    }
 
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
