@@ -47,6 +47,7 @@ public static class Program
 
    private static int _activeServerSessions;
    private static int _activeClientConnections;
+   private static int _concurrentClients;
 
    private static readonly Lock LogLock = new();
 
@@ -127,6 +128,8 @@ public static class Program
             concurrentClients = ccVal;
          }
       }
+
+      _concurrentClients = concurrentClients;
 
       var options = chaosOption switch
       {
@@ -571,6 +574,10 @@ public static class Program
 
    private static void LogChaosEvent(string source, string type, string message, ConsoleColor color)
    {
+      if (_concurrentClients > 1)
+      {
+         return;
+      }
       lock (LogLock)
       {
          var tagColorName = color.ToString();

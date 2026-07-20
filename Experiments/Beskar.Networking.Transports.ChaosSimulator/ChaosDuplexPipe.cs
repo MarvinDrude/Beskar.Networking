@@ -48,6 +48,7 @@ public sealed class ChaosDuplexPipe : IDuplexPipe, IAsyncDisposable
             if (buffer.IsEmpty && result.IsCompleted)
             {
                await _readPipe.Writer.CompleteAsync();
+               await _readPipe.Reader.CompleteAsync();
                break;
             }
 
@@ -88,6 +89,7 @@ public sealed class ChaosDuplexPipe : IDuplexPipe, IAsyncDisposable
             if (result.IsCompleted)
             {
                await _readPipe.Writer.CompleteAsync();
+               await _readPipe.Reader.CompleteAsync();
                break;
             }
          }
@@ -95,10 +97,12 @@ public sealed class ChaosDuplexPipe : IDuplexPipe, IAsyncDisposable
       catch (OperationCanceledException)
       {
          await _readPipe.Writer.CompleteAsync();
+         await _readPipe.Reader.CompleteAsync();
       }
       catch (Exception ex)
       {
          await _readPipe.Writer.CompleteAsync(ex);
+         await _readPipe.Reader.CompleteAsync(ex);
       }
    }
 
@@ -114,6 +118,8 @@ public sealed class ChaosDuplexPipe : IDuplexPipe, IAsyncDisposable
             if (buffer.IsEmpty && result.IsCompleted)
             {
                await _inner.Output.CompleteAsync();
+               await _writePipe.Reader.CompleteAsync();
+               await _writePipe.Writer.CompleteAsync();
                break;
             }
 
@@ -154,6 +160,8 @@ public sealed class ChaosDuplexPipe : IDuplexPipe, IAsyncDisposable
             if (result.IsCompleted)
             {
                await _inner.Output.CompleteAsync();
+               await _writePipe.Reader.CompleteAsync();
+               await _writePipe.Writer.CompleteAsync();
                break;
             }
          }
@@ -161,10 +169,14 @@ public sealed class ChaosDuplexPipe : IDuplexPipe, IAsyncDisposable
       catch (OperationCanceledException)
       {
          await _inner.Output.CompleteAsync();
+         await _writePipe.Reader.CompleteAsync();
+         await _writePipe.Writer.CompleteAsync();
       }
       catch (Exception ex)
       {
          await _inner.Output.CompleteAsync(ex);
+         await _writePipe.Reader.CompleteAsync(ex);
+         await _writePipe.Writer.CompleteAsync(ex);
       }
    }
 
