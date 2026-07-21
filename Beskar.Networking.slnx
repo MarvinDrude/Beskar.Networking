@@ -12,6 +12,9 @@
   </Folder>
   <Folder Name="/Common/">
     <Project Path="Common/Beskar.Networking.Common/Beskar.Networking.Common.csproj" />
+    <Project Path="Common/Beskar.Networking.Resilient.Client/Beskar.Networking.Resilient.Client.csproj" />
+    <Project Path="Common/Beskar.Networking.Resilient.Common/Beskar.Networking.Resilient.Common.csproj" />
+    <Project Path="Common/Beskar.Networking.Resilient.Server/Beskar.Networking.Resilient.Server.csproj" />
   </Folder>
   <Folder Name="/Documentation/" />
   <Folder Name="/Documentation/Basics/">

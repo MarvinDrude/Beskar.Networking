@@ -1,0 +1,9 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <Title>Beskar.Networking.Resilient.Server</Title>
+      <Description>High-performance, low-allocation event-driven highly-customizable Server over any transport.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+</Project>
