@@ -76,7 +76,7 @@ public class MqttServerCompatibilityTests
          await Assert.That(receivedMessages[0].Payload).IsEqualTo("Hello from MQTTnet standard client!");
 
          // Disconnect MQTTnet client
-         await mqttClient.DisconnectAsync(cancellationToken: timeoutToken);
+         await mqttClient.DisconnectAsync(new MqttClientDisconnectOptions(), cancellationToken: timeoutToken);
       }
       catch (Exception err)
       {
