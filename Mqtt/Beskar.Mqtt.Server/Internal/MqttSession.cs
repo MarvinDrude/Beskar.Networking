@@ -44,6 +44,9 @@ public sealed partial class MqttSession : IAsyncDisposable
       = new(ByteArrayEqualityComparer.Instance);
 
    private readonly Lock _subscriptionsLock = new();
+   private readonly Lock _incomingQos2PacketsLock = new();
+   private readonly Lock _offlineQueueLock = new();
+   private readonly Lock _unacknowledgedPublishesLock = new();
    private int _incomingInFlightCount;
 
    private readonly HashSet<ushort> _incomingQos2Packets = [];
@@ -55,7 +58,7 @@ public sealed partial class MqttSession : IAsyncDisposable
    {
       get
       {
-         lock (_unacknowledgedPublishes)
+         lock (_unacknowledgedPublishesLock)
          {
             return _unacknowledgedPublishes.Count > 0;
          }
@@ -116,7 +119,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    public bool TryAddQos2Packet(ushort packetIdentifier)
    {
-      lock (_incomingQos2Packets)
+      lock (_incomingQos2PacketsLock)
       {
          return _incomingQos2Packets.Add(packetIdentifier);
       }
@@ -124,7 +127,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    public void RemoveQos2Packet(ushort packetIdentifier)
    {
-      lock (_incomingQos2Packets)
+      lock (_incomingQos2PacketsLock)
       {
          _incomingQos2Packets.Remove(packetIdentifier);
       }
@@ -134,7 +137,7 @@ public sealed partial class MqttSession : IAsyncDisposable
    {
       get
       {
-         lock (_offlineQueue)
+         lock (_offlineQueueLock)
          {
             return _offlineQueue.Count;
          }
@@ -143,7 +146,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal void EnqueueOfflineMessage(MqttQueuedMessage message)
    {
-      lock (_offlineQueue)
+      lock (_offlineQueueLock)
       {
          var max = Server.Options.MaxPendingMessagesPerConnection;
          if (max > 0 && _offlineQueue.Count >= max)
@@ -161,7 +164,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal bool TryDequeueOfflineMessage([NotNullWhen(true)] out MqttQueuedMessage? message)
    {
-      lock (_offlineQueue)
+      lock (_offlineQueueLock)
       {
          return _offlineQueue.TryDequeue(out message);
       }
@@ -169,7 +172,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal void AddUnacknowledgedPublish(MqttPendingPublish pendingPublish)
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          _unacknowledgedPublishes.Add(pendingPublish);
       }
@@ -177,7 +180,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal MqttPendingPublish? AcknowledgePublish(ushort packetIdentifier)
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          var found = _unacknowledgedPublishes.Find(p => p.PacketIdentifier == packetIdentifier);
          if (found is not null)
@@ -191,7 +194,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal MqttPendingPublish? PeekUnacknowledgedPublish(ushort packetIdentifier)
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          return _unacknowledgedPublishes.Find(p => p.PacketIdentifier == packetIdentifier);
       }
@@ -199,7 +202,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal int GetUnacknowledgedPublishCount()
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          return _unacknowledgedPublishes.Count;
       }
@@ -207,7 +210,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal List<MqttPendingPublish> GetUnacknowledgedPublishes()
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          return [.. _unacknowledgedPublishes];
       }
@@ -215,7 +218,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
    {
-      lock (_incomingQos2Packets)
+      lock (_incomingQos2PacketsLock)
       {
          current = _incomingInFlightCount;
          if (receiveMaximum > 0 && current >= receiveMaximum)
@@ -230,7 +233,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal void DecrementIncomingInFlight()
    {
-      lock (_incomingQos2Packets)
+      lock (_incomingQos2PacketsLock)
       {
          if (_incomingInFlightCount > 0)
          {

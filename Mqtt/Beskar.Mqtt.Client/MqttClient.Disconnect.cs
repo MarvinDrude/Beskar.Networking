@@ -106,18 +106,18 @@ public sealed partial class MqttClient
     private ValueTask DisconnectInternalAsync(bool awaitReceiveTask = true, bool awaitKeepAliveTask = true)
     {
        var beforeConnected = IsConnected;
- 
+
        // Only disconnect if not already in progress
        return DisconnectingAlreadyInProcessOrDone()
           ? ValueTask.CompletedTask
           : DisconnectRoutineAsync(beforeConnected, awaitReceiveTask, awaitKeepAliveTask);
     }
- 
+
     private async ValueTask DisconnectRoutineAsync(bool beforeConnected, bool awaitReceiveTask = true, bool awaitKeepAliveTask = true)
     {
        TraceLogger.LogClientInfo("MqttClient: Starting disconnect routine (BeforeConnected: {0}).", beforeConnected);
        await _clientTokenSource.CancelAsync();
- 
+
        try
        {
           await _networkClient.DisconnectAsync();
@@ -126,7 +126,7 @@ public sealed partial class MqttClient
        {
           TraceLogger.LogClientError("MqttClient: Error disconnecting inner network client: {0}", ex.Message);
        }
- 
+
        try
        {
           var task = _keepAliveTask;
@@ -183,7 +183,7 @@ public sealed partial class MqttClient
       }
       finally
       {
-         lock (_topicAliases)
+         lock (_topicAliasesLock)
          {
             _topicAliases.Clear();
          }

@@ -71,11 +71,11 @@ public sealed partial class MqttSession
 
        Server.SubscriptionRouter.UnsubscribeAll(this);
 
-       lock (_incomingQos2Packets)
+       lock (_incomingQos2PacketsLock)
        {
           _incomingQos2Packets.Clear();
        }
-       lock (_offlineQueue)
+       lock (_offlineQueueLock)
        {
           _offlineQueue.Clear();
        }

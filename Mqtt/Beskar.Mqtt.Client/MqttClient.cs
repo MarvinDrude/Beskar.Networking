@@ -69,11 +69,17 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private DateTimeOffset _lastKeepAliveTimestamp;
 
    private ConnectOptions _connectOptions = new() { EndPoint = new IPEndPoint(0, 0) };
+
    private readonly Dictionary<ushort, byte[]> _topicAliases = new(16);
+   private readonly Lock _topicAliasesLock = new();
 
    private SemaphoreSlim? _inFlightSemaphore;
    private int _incomingInFlightCount;
 
+   /// <summary>
+   /// Initializes a new instance of the <see cref="MqttClient"/> class using the specified network client transport.
+   /// </summary>
+   /// <param name="networkClient">The underlying network client transport (e.g. TCP, WebSockets, or QUIC).</param>
    public MqttClient(INetworkClient networkClient)
    {
       _networkClient = networkClient;
@@ -179,7 +185,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          if (receiveMax == 0) receiveMax = 65535;
 
          _inFlightSemaphore = new SemaphoreSlim(receiveMax, receiveMax);
-         lock (_topicAliases)
+         lock (_topicAliasesLock)
          {
             _incomingInFlightCount = 0;
          }
@@ -209,7 +215,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    internal bool TryGetTopicAlias(ushort alias, [NotNullWhen(true)] out byte[]? topic)
    {
-      lock (_topicAliases)
+      lock (_topicAliasesLock)
       {
          return _topicAliases.TryGetValue(alias, out topic);
       }
@@ -217,7 +223,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    internal void SetTopicAlias(ushort alias, byte[] topic)
    {
-      lock (_topicAliases)
+      lock (_topicAliasesLock)
       {
          _topicAliases[alias] = topic;
       }
@@ -225,7 +231,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    internal bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
    {
-      lock (_topicAliases)
+      lock (_topicAliasesLock)
       {
          current = _incomingInFlightCount;
          if (receiveMaximum > 0 && current >= receiveMaximum)
@@ -240,7 +246,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    internal void DecrementIncomingInFlight()
    {
-      lock (_topicAliases)
+      lock (_topicAliasesLock)
       {
          if (_incomingInFlightCount > 0)
          {

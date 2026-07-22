@@ -7,6 +7,10 @@ using Beskar.Networking.Transports.Ws;
 
 namespace Beskar.Mqtt.Server.Options;
 
+/// <summary>
+/// A builder for constructing and configuring an <see cref="MqttServer"/> instance.
+/// </summary>
+/// <param name="options">The optional configuration options for the MQTT server.</param>
 public sealed class MqttServerBuilder(MqttServerOptions? options = null) : IServerBuilder<MqttServerBuilder>
 {
    private readonly MqttServerOptions _options = options ?? new MqttServerOptions();
@@ -14,6 +18,10 @@ public sealed class MqttServerBuilder(MqttServerOptions? options = null) : IServ
 
    private Action<MqttServer>? _registerClientIdGenerator;
 
+   /// <summary>
+   /// Builds and returns the configured <see cref="MqttServer"/> instance.
+   /// </summary>
+   /// <returns>A configured <see cref="MqttServer"/> instance.</returns>
    public MqttServer Build()
    {
       var server = new MqttServer([.. _listeners], _options);
@@ -22,6 +30,11 @@ public sealed class MqttServerBuilder(MqttServerOptions? options = null) : IServ
       return server;
    }
 
+   /// <summary>
+   /// Configures the server to use the specified network listener.
+   /// </summary>
+   /// <param name="listener">The network listener to register with the server.</param>
+   /// <returns>The builder instance for chaining calls.</returns>
    public MqttServerBuilder Use(INetworkListener listener)
    {
       _listeners.Add(listener);
