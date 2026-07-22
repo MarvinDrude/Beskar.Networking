@@ -5,22 +5,67 @@ using Beskar.Networking.Abstractions.Comparers;
 
 namespace Beskar.Mqtt.Server.Internal;
 
+/// <summary>
+/// Represents a session for an MQTT client connection on the server side.
+/// Encapsulates state data, such as subscriptions, unacknowledged messages,
+/// and offline message queue related to the session.
+/// </summary>
 public sealed partial class MqttSession : IAsyncDisposable
 {
+   /// <summary>
+   /// Gets the timestamp at which the client session was disconnected.
+   /// </summary>
+   /// <remarks>
+   /// The <c>DisconnectionTimestamp</c> property represents the exact time when the session transitioned
+   /// to an offline state. If the session is still connected, this property will be <c>null</c>.
+   /// This property is primarily used for session management, expiring offline sessions, and cleaning
+   /// up resources in accordance with the configured session expiry interval.
+   /// </remarks>
    public DateTimeOffset? DisconnectionTimestamp { get; internal set; }
 
+   /// <summary>
+   /// Indicates whether the session has expired based on its disconnection timestamp and expiry interval.
+   /// </summary>
+   /// <remarks>
+   /// The <c>IsExpired</c> property evaluates to <c>true</c> if the session's disconnection timestamp is set
+   /// and enough time has elapsed based on the configured <c>ExpiryInterval</c>. This determination is made
+   /// by comparing the timestamp, adjusted by the expiry interval, against the current UTC time.
+   /// A session with an <c>ExpiryInterval</c> set to <c>uint.MaxValue</c> will never be marked as expired.
+   /// This property is used to manage session lifecycle events and resource cleanup in scenarios
+   /// such as offline message queuing.
+   /// </remarks>
    public bool IsExpired => DisconnectionTimestamp is { } timestamp
        && ExpiryInterval != uint.MaxValue
        && timestamp.AddSeconds(ExpiryInterval) <= DateTimeOffset.UtcNow;
 
    internal MqttServer Server { get; }
 
-   public Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; }
+   private Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; }
       = new(ByteArrayEqualityComparer.Instance);
 
-   private readonly object _subscriptionsLock = new();
+   private readonly Lock _subscriptionsLock = new();
+   private readonly Lock _incomingQos2PacketsLock = new();
+   private readonly Lock _offlineQueueLock = new();
+   private readonly Lock _unacknowledgedPublishesLock = new();
+   private int _incomingInFlightCount;
 
-   public bool HasSubscription(ReadOnlySpan<byte> topicFilter)
+   private readonly HashSet<ushort> _incomingQos2Packets = [];
+   private readonly PacketIdentifierGenerator _packetIdGenerator = new();
+   private readonly Queue<MqttQueuedMessage> _offlineQueue = new();
+   private readonly List<MqttPendingPublish> _unacknowledgedPublishes = [];
+
+   internal bool HasUnacknowledgedPublishes
+   {
+      get
+      {
+         lock (_unacknowledgedPublishesLock)
+         {
+            return _unacknowledgedPublishes.Count > 0;
+         }
+      }
+   }
+
+   internal bool HasSubscription(ReadOnlySpan<byte> topicFilter)
    {
       lock (_subscriptionsLock)
       {
@@ -29,7 +74,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public void AddOrUpdateSubscription(byte[] topicFilter, MqttSessionSubscription subscription)
+   internal void AddOrUpdateSubscription(byte[] topicFilter, MqttSessionSubscription subscription)
    {
       lock (_subscriptionsLock)
       {
@@ -37,7 +82,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public bool RemoveSubscription(ReadOnlySpan<byte> topicFilter)
+   internal bool RemoveSubscription(ReadOnlySpan<byte> topicFilter)
    {
       lock (_subscriptionsLock)
       {
@@ -46,7 +91,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public int GetSubscriptionsCount()
+   internal int GetSubscriptionsCount()
    {
       lock (_subscriptionsLock)
       {
@@ -54,7 +99,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public List<byte[]> GetSubscriptionKeys()
+   internal List<byte[]> GetSubscriptionKeys()
    {
       lock (_subscriptionsLock)
       {
@@ -62,7 +107,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public void ClearSubscriptions()
+   internal void ClearSubscriptions()
    {
       lock (_subscriptionsLock)
       {
@@ -70,45 +115,29 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   private readonly HashSet<ushort> _incomingQos2Packets = [];
-   private readonly PacketIdentifierGenerator _packetIdGenerator = new();
-   private readonly Queue<MqttQueuedMessage> _offlineQueue = new();
-   private readonly List<MqttPendingPublish> _unacknowledgedPublishes = [];
+   internal ushort GenerateNextPacketIdentifier() => _packetIdGenerator.GenerateNextIdentifier();
 
-   public bool HasUnacknowledgedPublishes
+   internal bool TryAddQos2Packet(ushort packetIdentifier)
    {
-      get
-      {
-         lock (_unacknowledgedPublishes)
-         {
-            return _unacknowledgedPublishes.Count > 0;
-         }
-      }
-   }
-
-   public ushort GenerateNextPacketIdentifier() => _packetIdGenerator.GenerateNextIdentifier();
-
-   public bool TryAddQos2Packet(ushort packetIdentifier)
-   {
-      lock (_incomingQos2Packets)
+      lock (_incomingQos2PacketsLock)
       {
          return _incomingQos2Packets.Add(packetIdentifier);
       }
    }
 
-   public void RemoveQos2Packet(ushort packetIdentifier)
+   internal void RemoveQos2Packet(ushort packetIdentifier)
    {
-      lock (_incomingQos2Packets)
+      lock (_incomingQos2PacketsLock)
       {
          _incomingQos2Packets.Remove(packetIdentifier);
       }
    }
 
-   public int OfflineQueueCount
+   internal int OfflineQueueCount
    {
       get
       {
-         lock (_offlineQueue)
+         lock (_offlineQueueLock)
          {
             return _offlineQueue.Count;
          }
@@ -117,7 +146,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal void EnqueueOfflineMessage(MqttQueuedMessage message)
    {
-      lock (_offlineQueue)
+      lock (_offlineQueueLock)
       {
          var max = Server.Options.MaxPendingMessagesPerConnection;
          if (max > 0 && _offlineQueue.Count >= max)
@@ -135,7 +164,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal bool TryDequeueOfflineMessage([NotNullWhen(true)] out MqttQueuedMessage? message)
    {
-      lock (_offlineQueue)
+      lock (_offlineQueueLock)
       {
          return _offlineQueue.TryDequeue(out message);
       }
@@ -143,7 +172,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal void AddUnacknowledgedPublish(MqttPendingPublish pendingPublish)
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          _unacknowledgedPublishes.Add(pendingPublish);
       }
@@ -151,7 +180,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal MqttPendingPublish? AcknowledgePublish(ushort packetIdentifier)
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          var found = _unacknowledgedPublishes.Find(p => p.PacketIdentifier == packetIdentifier);
          if (found is not null)
@@ -165,7 +194,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal MqttPendingPublish? PeekUnacknowledgedPublish(ushort packetIdentifier)
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          return _unacknowledgedPublishes.Find(p => p.PacketIdentifier == packetIdentifier);
       }
@@ -173,7 +202,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal int GetUnacknowledgedPublishCount()
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          return _unacknowledgedPublishes.Count;
       }
@@ -181,19 +210,15 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal List<MqttPendingPublish> GetUnacknowledgedPublishes()
    {
-      lock (_unacknowledgedPublishes)
+      lock (_unacknowledgedPublishesLock)
       {
          return [.. _unacknowledgedPublishes];
       }
    }
 
-   public ushort ClientReceiveMaximum { get; internal set; } = 65535;
-
-   private int _incomingInFlightCount;
-
-   public bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
+   internal bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
    {
-      lock (_incomingQos2Packets)
+      lock (_incomingQos2PacketsLock)
       {
          current = _incomingInFlightCount;
          if (receiveMaximum > 0 && current >= receiveMaximum)
@@ -206,9 +231,9 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public void DecrementIncomingInFlight()
+   internal void DecrementIncomingInFlight()
    {
-      lock (_incomingQos2Packets)
+      lock (_incomingQos2PacketsLock)
       {
          if (_incomingInFlightCount > 0)
          {

@@ -4,7 +4,7 @@ using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Server.Internal;
 
-public sealed class MqttKeepAliveService(
+internal sealed class MqttKeepAliveService(
    MqttServer server)
 {
    private readonly MqttServer _server = server;

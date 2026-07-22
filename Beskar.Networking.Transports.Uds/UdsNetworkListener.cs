@@ -44,7 +44,7 @@ public sealed class UdsNetworkListener(
    private CancellationTokenSource? _acceptCts;
    private SemaphoreSlim? _handshakeSemaphore;
 
-   private bool _disposed;
+   private int _disposedState; // 0 = active, 1 = disposed
 
    private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
       Channel.CreateBounded<Result<INetworkSession, NetworkCodeError>>(new BoundedChannelOptions(1024)
@@ -352,8 +352,7 @@ public sealed class UdsNetworkListener(
 
    public async ValueTask DisposeAsync()
    {
-      if (_disposed) return;
-      _disposed = true;
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
       await UnbindAsync();
 

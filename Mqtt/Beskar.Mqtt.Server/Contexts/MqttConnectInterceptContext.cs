@@ -11,8 +11,15 @@ using Beskar.Networking.Abstractions.Interfaces;
 
 namespace Beskar.Mqtt.Server.Contexts;
 
+/// <summary>
+/// Event context for intercepting a client connection request before processing it.
+/// </summary>
+/// <param name="client">The server client that is connecting.</param>
 public sealed class MqttConnectInterceptContext(MqttServerClient client)
 {
+   /// <summary>
+   /// Gets the server client instance attempting to connect.
+   /// </summary>
    public MqttServerClient Client { get; } = client;
 
    /// <summary>

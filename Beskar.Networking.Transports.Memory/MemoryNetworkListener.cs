@@ -37,7 +37,7 @@ public sealed class MemoryNetworkListener(
 
    private readonly MemoryTransportOptions _options = options;
    private Channel<Result<INetworkSession, NetworkCodeError>>? _sessionChannel;
-   private bool _disposed;
+   private int _disposedState; // 0 = active, 1 = disposed
 
    public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
    {
@@ -136,8 +136,7 @@ public sealed class MemoryNetworkListener(
 
    public async ValueTask DisposeAsync()
    {
-      if (_disposed) return;
-      _disposed = true;
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
       await UnbindAsync();
    }

@@ -20,6 +20,9 @@ namespace Beskar.Mqtt.Server.Internal;
 /// </summary>
 public sealed class MqttServerClient
 {
+   /// <summary>
+   /// Gets a value indicating whether the client is currently connected to the server.
+   /// </summary>
    [MemberNotNullWhen(true,
       nameof(Listener), nameof(_listener),
       nameof(Session), nameof(_session),
@@ -27,17 +30,44 @@ public sealed class MqttServerClient
       nameof(_serverOptions), nameof(_controlPacketChannel))]
    public bool IsConnected => _session is not null && !_isDisconnecting;
 
+   /// <summary>
+   /// Gets the network listener that accepted the client connection.
+   /// </summary>
    public INetworkListener Listener => _listener ?? throw new InvalidOperationException("Listener has not been initialized.");
+   
+   /// <summary>
+   /// Gets the underlying network session for the client connection.
+   /// </summary>
    public INetworkSession Session => _session ?? throw new InvalidOperationException("Session has not been initialized.");
+   
+   /// <summary>
+   /// Gets the main network stream associated with the client.
+   /// </summary>
    public INetworkStream Stream => _stream ?? throw new InvalidOperationException("Stream has not been initialized.");
 
+   /// <summary>
+   /// Gets the client identifier represented as a UTF-8 encoded byte array.
+   /// </summary>
    public ReadOnlyMemory<byte> ClientIdUtf8Bytes => ConnectOptions?.ClientIdUtf8Bytes ?? ReadOnlyMemory<byte>.Empty;
 
+   /// <summary>
+   /// Gets a token that is canceled when the client connection is disconnected.
+   /// </summary>
    public CancellationToken CancellationToken => _cancellationTokenSource?.Token ?? CancellationToken.None;
+   
+   /// <summary>
+   /// Gets the MQTT protocol version used by the client.
+   /// </summary>
    public MqttProtocolVersion ProtocolVersion { get; internal set; } = MqttProtocolVersion.Unknown;
 
+   /// <summary>
+   /// Gets the client disconnect options, populated if the client sent a DISCONNECT packet.
+   /// </summary>
    public DisconnectOptions? DisconnectOptions { get; internal set; }
 
+   /// <summary>
+   /// Gets the server session state associated with this client.
+   /// </summary>
    public MqttSession? MqttSession { get; internal set; }
 
    internal ConnectOptions? ConnectOptions { get; set; }
@@ -57,6 +87,11 @@ public sealed class MqttServerClient
 
    private bool _isDisconnecting;
 
+   /// <summary>
+   /// Initializes the client instance with the specified network stream context and server options.
+   /// </summary>
+   /// <param name="context">The stream context for the accepted client connection.</param>
+   /// <param name="serverOptions">The MQTT server options.</param>
    public void Initialize(
       NetworkServerStreamContext context,
       MqttServerOptions serverOptions)
@@ -167,8 +202,6 @@ public sealed class MqttServerClient
    {
       return _controlPacketChannel?.Writer.TryWrite(packet) ?? false;
    }
-
-
 
    internal void QueueOutgoingPublish(in PublishPacket packet)
    {
