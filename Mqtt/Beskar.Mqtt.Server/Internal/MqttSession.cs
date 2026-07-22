@@ -5,20 +5,62 @@ using Beskar.Networking.Abstractions.Comparers;
 
 namespace Beskar.Mqtt.Server.Internal;
 
+/// <summary>
+/// Represents a session for an MQTT client connection on the server side.
+/// Encapsulates state data, such as subscriptions, unacknowledged messages,
+/// and offline message queue related to the session.
+/// </summary>
 public sealed partial class MqttSession : IAsyncDisposable
 {
+   /// <summary>
+   /// Gets the timestamp at which the client session was disconnected.
+   /// </summary>
+   /// <remarks>
+   /// The <c>DisconnectionTimestamp</c> property represents the exact time when the session transitioned
+   /// to an offline state. If the session is still connected, this property will be <c>null</c>.
+   /// This property is primarily used for session management, expiring offline sessions, and cleaning
+   /// up resources in accordance with the configured session expiry interval.
+   /// </remarks>
    public DateTimeOffset? DisconnectionTimestamp { get; internal set; }
 
+   /// <summary>
+   /// Indicates whether the session has expired based on its disconnection timestamp and expiry interval.
+   /// </summary>
+   /// <remarks>
+   /// The <c>IsExpired</c> property evaluates to <c>true</c> if the session's disconnection timestamp is set
+   /// and enough time has elapsed based on the configured <c>ExpiryInterval</c>. This determination is made
+   /// by comparing the timestamp, adjusted by the expiry interval, against the current UTC time.
+   /// A session with an <c>ExpiryInterval</c> set to <c>uint.MaxValue</c> will never be marked as expired.
+   /// This property is used to manage session lifecycle events and resource cleanup in scenarios
+   /// such as offline message queuing.
+   /// </remarks>
    public bool IsExpired => DisconnectionTimestamp is { } timestamp
        && ExpiryInterval != uint.MaxValue
        && timestamp.AddSeconds(ExpiryInterval) <= DateTimeOffset.UtcNow;
 
    internal MqttServer Server { get; }
 
-   public Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; }
+   private Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; }
       = new(ByteArrayEqualityComparer.Instance);
 
-   private readonly object _subscriptionsLock = new();
+   private readonly Lock _subscriptionsLock = new();
+   private int _incomingInFlightCount;
+
+   private readonly HashSet<ushort> _incomingQos2Packets = [];
+   private readonly PacketIdentifierGenerator _packetIdGenerator = new();
+   private readonly Queue<MqttQueuedMessage> _offlineQueue = new();
+   private readonly List<MqttPendingPublish> _unacknowledgedPublishes = [];
+
+   public bool HasUnacknowledgedPublishes
+   {
+      get
+      {
+         lock (_unacknowledgedPublishes)
+         {
+            return _unacknowledgedPublishes.Count > 0;
+         }
+      }
+   }
 
    public bool HasSubscription(ReadOnlySpan<byte> topicFilter)
    {
@@ -67,22 +109,6 @@ public sealed partial class MqttSession : IAsyncDisposable
       lock (_subscriptionsLock)
       {
          Subscriptions.Clear();
-      }
-   }
-
-   private readonly HashSet<ushort> _incomingQos2Packets = [];
-   private readonly PacketIdentifierGenerator _packetIdGenerator = new();
-   private readonly Queue<MqttQueuedMessage> _offlineQueue = new();
-   private readonly List<MqttPendingPublish> _unacknowledgedPublishes = [];
-
-   public bool HasUnacknowledgedPublishes
-   {
-      get
-      {
-         lock (_unacknowledgedPublishes)
-         {
-            return _unacknowledgedPublishes.Count > 0;
-         }
       }
    }
 
@@ -187,11 +213,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public ushort ClientReceiveMaximum { get; internal set; } = 65535;
-
-   private int _incomingInFlightCount;
-
-   public bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
+   internal bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
    {
       lock (_incomingQos2Packets)
       {
@@ -206,7 +228,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public void DecrementIncomingInFlight()
+   internal void DecrementIncomingInFlight()
    {
       lock (_incomingQos2Packets)
       {
