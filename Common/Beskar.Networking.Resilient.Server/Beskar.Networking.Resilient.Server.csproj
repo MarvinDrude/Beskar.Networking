@@ -6,4 +6,13 @@
       <IsPackable>true</IsPackable>
    </PropertyGroup>
 
+   <ItemGroup>
+     <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+     <ProjectReference Include="..\Beskar.Networking.Resilient.Common\Beskar.Networking.Resilient.Common.csproj" />
+   </ItemGroup>
+
+   <ItemGroup>
+     <Folder Include="Events\" />
+   </ItemGroup>
+
 </Project>
