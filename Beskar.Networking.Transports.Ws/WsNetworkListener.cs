@@ -37,7 +37,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
    private CancellationTokenSource? _acceptCts;
    private Task? _acceptLoopTask;
 
-   private bool _disposed;
+   private int _disposedState; // 0 = active, 1 = disposed
 
    private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
       Channel.CreateUnbounded<Result<INetworkSession, NetworkCodeError>>(new UnboundedChannelOptions
@@ -221,8 +221,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
    public async ValueTask DisposeAsync()
    {
-      if (_disposed) return;
-      _disposed = true;
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
       await UnbindAsync();
       await _tcpListener.DisposeAsync();

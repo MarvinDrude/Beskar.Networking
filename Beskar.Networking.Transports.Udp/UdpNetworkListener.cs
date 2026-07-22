@@ -48,7 +48,7 @@ public sealed class UdpNetworkListener(
    private EndPoint? _lastRemoteEP;
    private UdpNetworkSession? _lastSession;
 
-   private bool _disposed;
+   private int _disposedState; // 0 = active, 1 = disposed
 
    private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
       Channel.CreateBounded<Result<INetworkSession, NetworkCodeError>>(new BoundedChannelOptions(1024)
@@ -400,8 +400,7 @@ public sealed class UdpNetworkListener(
 
    public async ValueTask DisposeAsync()
    {
-      if (_disposed) return;
-      _disposed = true;
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
       await UnbindAsync();
    }
