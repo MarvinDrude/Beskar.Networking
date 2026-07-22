@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <Title>Beskar.Networking.Protocol</Title>
+      <Description>High-performance, low-allocation source generated way of creating protocol framing and it's writing and reading logic.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+     <PackageReference Include="Beskar.Memory" />
+   </ItemGroup>
+
+</Project>
