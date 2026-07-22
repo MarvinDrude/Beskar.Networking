@@ -50,7 +50,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private readonly SignalBroker _signalBroker = new();
    private readonly PacketIdentifierGenerator _identifierGenerator = new();
 
-   private volatile bool _disposed;
+   private int _disposedState; // 0 = active, 1 = disposed
    private volatile bool _firstConnect = true;
    private volatile int _state = (int)MqttClientConnectionState.Disconnected;
 
@@ -449,7 +449,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    [MethodImpl(MethodImplOptions.AggressiveInlining)]
    private VoidResult<StringError> ValidateDisposed()
    {
-      if (_disposed)
+      if (Volatile.Read(ref _disposedState) == 1)
          return new StringError("Client is already disposed.");
 
       return true;
@@ -465,8 +465,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    public async ValueTask DisposeAsync()
    {
-      if (_disposed) return;
-      _disposed = true;
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
       try
       {

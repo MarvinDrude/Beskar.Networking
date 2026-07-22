@@ -20,7 +20,7 @@ public sealed partial class MqttSession
    public bool IsConnected { get; internal set; }
 
    private MqttServerClient? _serverClient;
-   private volatile bool _disposed;
+   private int _disposedState; // 0 = active, 1 = disposed
 
    /// <summary>
    /// Represents the client associated with the current MQTT session.
@@ -52,8 +52,7 @@ public sealed partial class MqttSession
 
     public async ValueTask DisposeAsync()
     {
-       if (_disposed) return;
-       _disposed = true;
+       if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
        if (PendingWillMessage is not null)
        {
