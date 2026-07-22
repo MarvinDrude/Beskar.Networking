@@ -54,7 +54,7 @@ public sealed partial class MqttSession : IAsyncDisposable
    private readonly Queue<MqttQueuedMessage> _offlineQueue = new();
    private readonly List<MqttPendingPublish> _unacknowledgedPublishes = [];
 
-   public bool HasUnacknowledgedPublishes
+   internal bool HasUnacknowledgedPublishes
    {
       get
       {
@@ -65,7 +65,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public bool HasSubscription(ReadOnlySpan<byte> topicFilter)
+   internal bool HasSubscription(ReadOnlySpan<byte> topicFilter)
    {
       lock (_subscriptionsLock)
       {
@@ -74,7 +74,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public void AddOrUpdateSubscription(byte[] topicFilter, MqttSessionSubscription subscription)
+   internal void AddOrUpdateSubscription(byte[] topicFilter, MqttSessionSubscription subscription)
    {
       lock (_subscriptionsLock)
       {
@@ -82,7 +82,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public bool RemoveSubscription(ReadOnlySpan<byte> topicFilter)
+   internal bool RemoveSubscription(ReadOnlySpan<byte> topicFilter)
    {
       lock (_subscriptionsLock)
       {
@@ -91,7 +91,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public int GetSubscriptionsCount()
+   internal int GetSubscriptionsCount()
    {
       lock (_subscriptionsLock)
       {
@@ -99,7 +99,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public List<byte[]> GetSubscriptionKeys()
+   internal List<byte[]> GetSubscriptionKeys()
    {
       lock (_subscriptionsLock)
       {
@@ -107,7 +107,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public void ClearSubscriptions()
+   internal void ClearSubscriptions()
    {
       lock (_subscriptionsLock)
       {
@@ -115,9 +115,9 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public ushort GenerateNextPacketIdentifier() => _packetIdGenerator.GenerateNextIdentifier();
+   internal ushort GenerateNextPacketIdentifier() => _packetIdGenerator.GenerateNextIdentifier();
 
-   public bool TryAddQos2Packet(ushort packetIdentifier)
+   internal bool TryAddQos2Packet(ushort packetIdentifier)
    {
       lock (_incomingQos2PacketsLock)
       {
@@ -125,7 +125,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public void RemoveQos2Packet(ushort packetIdentifier)
+   internal void RemoveQos2Packet(ushort packetIdentifier)
    {
       lock (_incomingQos2PacketsLock)
       {
@@ -133,7 +133,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   public int OfflineQueueCount
+   internal int OfflineQueueCount
    {
       get
       {
