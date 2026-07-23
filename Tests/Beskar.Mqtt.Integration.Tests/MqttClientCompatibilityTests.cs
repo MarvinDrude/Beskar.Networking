@@ -28,9 +28,9 @@ public class MqttClientCompatibilityTests
             .WithResourceMapping(configBytes, "/mosquitto/config/mosquitto.conf")
             .Build();
       }
-      catch (ArgumentException ex) when (ex.Message.Contains("Docker is either not running"))
+      catch (Exception ex) when (ex.GetType().Name.Contains("Docker") || ex.Message.Contains("Docker") || ex.Message.Contains("docker_engine"))
       {
-         Console.WriteLine("Docker is not running. Skipping Client_CanConnectPublishAndSubscribe_AgainstMosquittoContainer integration test.");
+         Console.WriteLine("Docker is not running or unavailable. Skipping Client_CanConnectPublishAndSubscribe_AgainstMosquittoContainer integration test.");
          return;
       }
 

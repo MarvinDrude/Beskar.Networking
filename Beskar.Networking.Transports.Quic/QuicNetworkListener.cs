@@ -44,7 +44,7 @@ public sealed class QuicNetworkListener(
    private QuicListener? _listener;
    private CancellationTokenSource? _acceptCts;
 
-   private bool _disposed;
+   private int _disposedState; // 0 = active, 1 = disposed
 
    private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
       Channel.CreateBounded<Result<INetworkSession, NetworkCodeError>>(new BoundedChannelOptions(1024)
@@ -262,8 +262,7 @@ public sealed class QuicNetworkListener(
 
    public async ValueTask DisposeAsync()
    {
-      if (_disposed) return;
-      _disposed = true;
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
       await UnbindAsync();
       await _ioQueueRegistry.DisposeAsync();

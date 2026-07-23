@@ -70,7 +70,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    internal MqttClientSessions ClientSessions { get; }
    internal MqttServerOptions Options { get; }
 
-   private volatile bool _disposed;
+   private int _disposedState; // 0 = active, 1 = disposed
    private volatile int _state = (int)MqttServerState.Stopped;
 
    private readonly INetworkListener[] _listeners;
@@ -98,7 +98,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    /// </returns>
    public async Task<VoidResult<StringError>> StartAsync()
    {
-      if (_disposed)
+      if (Volatile.Read(ref _disposedState) == 1)
          return new StringError("Already disposed server.");
 
       if (State is not MqttServerState.Stopped)
@@ -183,7 +183,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    /// </returns>
    public async Task<VoidResult<StringError>> StopAsync(DisconnectOptions? options = null)
    {
-      if (_disposed)
+      if (Volatile.Read(ref _disposedState) == 1)
          return new StringError("Already disposed server.");
 
       if (State is not MqttServerState.Running)
@@ -978,8 +978,7 @@ public sealed partial class MqttServer : IAsyncDisposable
 
    public async ValueTask DisposeAsync()
    {
-      if (_disposed) return;
-      _disposed = true;
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
       await StopAsync();
 
