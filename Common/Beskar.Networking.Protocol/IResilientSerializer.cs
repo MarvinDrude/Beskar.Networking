@@ -1,4 +1,5 @@
 using System.Buffers;
+using Beskar.Networking.Protocol.Utilities;
 
 namespace Beskar.Networking.Protocol;
 
@@ -22,8 +23,9 @@ public interface IResilientSerializer
    /// </summary>
    bool TrySerialize<T>(T value, Span<byte> destination, out int bytesWritten)
    {
-      var writer = new ArrayBufferWriter<byte>(destination.Length);
+      using var writer = new PooledBufferWriter(destination.Length);
       Serialize(value, writer);
+
       if (writer.WrittenCount > destination.Length)
       {
          bytesWritten = 0;

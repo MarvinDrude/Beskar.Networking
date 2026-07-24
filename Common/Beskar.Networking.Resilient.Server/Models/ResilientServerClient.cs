@@ -7,6 +7,7 @@ using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Protocol;
 using Beskar.Networking.Protocol.Payloads;
+using Beskar.Networking.Protocol.Utilities;
 
 namespace Beskar.Networking.Resilient.Server.Models;
 
@@ -140,6 +141,7 @@ public sealed class ResilientServerClient<TFrame>(
 
    /// <summary>
    /// Asynchronously serializes and sends a generic payload on the main control stream using the configured or provided serializer.
+   /// Uses PooledBufferWriter backed by ArrayPool<byte>.Shared for zero-allocation performance.
    /// </summary>
    public ValueTask SendAsync<TPayload>(
       TPayload payload,
@@ -152,6 +154,7 @@ public sealed class ResilientServerClient<TFrame>(
 
    /// <summary>
    /// Asynchronously serializes and sends a generic payload on a specific stream using the configured or provided serializer.
+   /// Uses PooledBufferWriter backed by ArrayPool<byte>.Shared for zero-allocation performance.
    /// </summary>
    public async ValueTask SendAsync<TPayload>(
       TPayload payload,
@@ -166,7 +169,7 @@ public sealed class ResilientServerClient<TFrame>(
          throw new InvalidOperationException("No IResilientSerializer provided or configured on ResilientServerOptions.");
       }
 
-      var writer = new ArrayBufferWriter<byte>();
+      using var writer = new PooledBufferWriter();
       s.Serialize(payload, writer);
 
       var frame = TFrame.CreateFrame(kind, new ReadOnlySequence<byte>(writer.WrittenMemory));
