@@ -151,11 +151,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          _controlStream = streamResult.Success;
 
          // Start background listen task on control stream
-         _ = Task.Run(() => RunClientListenTask(_controlStream, ct), ct);
+         _ = Task.Run(() => RunClientListenTask(_controlStream, _connectionCts!.Token), _connectionCts!.Token);
 
          if (session.IsSupportingMultiplexing)
          {
-            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(ct), ct);
+            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(_connectionCts!.Token), _connectionCts!.Token);
          }
 
          // Send Connect frame payload

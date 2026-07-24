@@ -13,7 +13,8 @@ public static class ClientBehaviors
    public static async Task ExecuteSenderBehaviorAsync(
       ResilientClient<BeskarPacket> client, string clientId, string transport, CancellationToken ct)
    {
-      var sendCount = Random.Shared.Next(5, 12);
+      var isHighThroughput = Program.Profile == 2;
+      var sendCount = isHighThroughput ? Random.Shared.Next(100, 500) : Random.Shared.Next(5, 12);
 
       for (var i = 0; i < sendCount && !ct.IsCancellationRequested; i++)
       {
@@ -36,7 +37,7 @@ public static class ClientBehaviors
                $"Client '{clientId}' send failed: {result.Error.Detail}", ConsoleColor.DarkRed, true);
          }
 
-         await Task.Delay(Random.Shared.Next(800, 2000), ct);
+         await Task.Delay(isHighThroughput ? Random.Shared.Next(50, 200) : Random.Shared.Next(800, 2000), ct);
       }
    }
 
@@ -56,7 +57,8 @@ public static class ClientBehaviors
          return ValueTask.CompletedTask;
       });
 
-      var sendCount = Random.Shared.Next(5, 10);
+      var isHighThroughput = Program.Profile == 2;
+      var sendCount = isHighThroughput ? Random.Shared.Next(100, 400) : Random.Shared.Next(5, 10);
       for (var i = 0; i < sendCount && !ct.IsCancellationRequested; i++)
       {
          var payloadStr = $"echo-val-{Random.Shared.Next(1000)}";
@@ -78,7 +80,7 @@ public static class ClientBehaviors
                $"Client '{clientId}' echo send failed: {result.Error.Detail}", ConsoleColor.Red, true);
          }
 
-         await Task.Delay(Random.Shared.Next(1000, 2500), ct);
+         await Task.Delay(isHighThroughput ? Random.Shared.Next(100, 500) : Random.Shared.Next(1000, 2500), ct);
       }
    }
 
@@ -156,7 +158,8 @@ public static class ClientBehaviors
       Program.LogChaos("CLIENT", transport, "CONGEST",
          $"Client '{clientId}' starting high-speed message congestor...", ConsoleColor.Yellow);
       
-      var end = DateTimeOffset.UtcNow.AddSeconds(10);
+      var isHighThroughput = Program.Profile == 2;
+      var end = DateTimeOffset.UtcNow.AddSeconds(isHighThroughput ? 30 : 10);
       var payloadStr = "CONGESTION-FIREHOSE-DATA-PACKET-12345";
       var payloadBytes = Encoding.UTF8.GetBytes(payloadStr);
       var frame = BeskarPacket.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>(payloadBytes));
@@ -174,7 +177,7 @@ public static class ClientBehaviors
                $"Client '{clientId}' congestor send failed: {result.Error.Detail}", ConsoleColor.DarkRed, true);
          }
 
-         await Task.Delay(50, ct);
+         await Task.Delay(isHighThroughput ? 10 : 50, ct);
       }
    }
 

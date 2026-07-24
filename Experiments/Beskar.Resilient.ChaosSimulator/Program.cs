@@ -39,16 +39,15 @@ public static class Program
 
    internal static readonly Lock LogLock = new();
    internal static bool IsQuietMode { get; set; }
-   internal static int TargetConcurrentClients { get; set; } = 20;
-   internal static int StatsIntervalSeconds { get; set; } = 10;
+   internal static int Profile { get; set; } = 1; // 1 = Standard Chaos, 2 = High Throughput / Stable
+   internal static int TargetConcurrentClients { get; set; } = 100;
+   internal static int StatsIntervalSeconds { get; set; } = 5;
 
    public static async Task Main(string[] args)
    {
       TraceLogger.IsEnabled = false;
 
       IsQuietMode = true;
-      TargetConcurrentClients = 500;
-      StatsIntervalSeconds = 5;
 
       try
       {
@@ -62,9 +61,19 @@ public static class Program
       ConsoleRender.DrawHeader("BESKAR RESILIENT CHAOS SIMULATOR",
          "Simulating high load, multiple transports, and random client disconnects");
 
+      Console.WriteLine("Select Simulator Profile:");
+      Console.WriteLine("  1. Standard Chaos (Mixed roles, frequent disconnects)");
+      Console.WriteLine("  2. High Throughput / Low Disconnects (Stable high-speed transmission)");
+      Profile = PromptInt("Profile", Profile);
+      TargetConcurrentClients = PromptInt("Number of clients", TargetConcurrentClients);
+      StatsIntervalSeconds = PromptInt("Stats reporting interval (seconds)", StatsIntervalSeconds);
+
+      Console.WriteLine();
+
       if (IsQuietMode)
          ConsoleRender.Success(
             "Quiet Mode enabled. Only logging exceptions/errors and periodic ASCII stats dashboard.");
+      ConsoleRender.Info($"Selected Profile: {(Profile == 2 ? "High Throughput / Low Disconnects" : "Standard Chaos")}");
       ConsoleRender.Info($"Configured target concurrent clients: {TargetConcurrentClients}");
       ConsoleRender.Info($"Configured stats reporting interval: {StatsIntervalSeconds}s");
 
@@ -238,16 +247,30 @@ public static class Program
       var transport = transports[Random.Shared.Next(transports.Count)];
 
       // Select Client Role:
-      var roleRoll = Random.Shared.Next(100);
-      var role = roleRoll switch
+      ClientRole role;
+      if (Profile == 2)
       {
-         < 25 => ClientRole.Sender,
-         < 50 => ClientRole.Echoer,
-         < 65 => ClientRole.KeepAliveOnly,
-         < 80 => ClientRole.Flaky,
-         < 90 => ClientRole.SlowReceiver,
-         _ => ClientRole.ChannelCongestor
-      };
+         var roll = Random.Shared.Next(100);
+         role = roll switch
+         {
+            < 40 => ClientRole.Sender,
+            < 80 => ClientRole.Echoer,
+            _ => ClientRole.ChannelCongestor
+         };
+      }
+      else
+      {
+         var roleRoll = Random.Shared.Next(100);
+         role = roleRoll switch
+         {
+            < 25 => ClientRole.Sender,
+            < 50 => ClientRole.Echoer,
+            < 65 => ClientRole.KeepAliveOnly,
+            < 80 => ClientRole.Flaky,
+            < 90 => ClientRole.SlowReceiver,
+            _ => ClientRole.ChannelCongestor
+         };
+      }
 
       var clientIdStr = $"chaos-{role.ToString().ToLower()}-{clientIndex}";
 
@@ -351,7 +374,8 @@ public static class Program
       finally
       {
          // Disconnect (Decide Graceful vs Abrupt)
-         var disconnectGraceful = Random.Shared.Next(100) < 85;
+         var gracefulChance = Profile == 2 ? 98 : 85;
+         var disconnectGraceful = Random.Shared.Next(100) < gracefulChance;
 
          if (disconnectGraceful)
          {
@@ -395,5 +419,19 @@ public static class Program
             $"[darkgray][{DateTime.Now:HH:mm:ss}][/] [[{tagColorName}]{source,-6}[/]] [[cyan]{transport,-5}[/]] [[yellow]{eventName,-10}[/]] {message}";
          ConsoleRender.WriteMarkupLine(markup);
       }
+   }
+
+   private static int PromptInt(string prompt, int defaultValue)
+   {
+      Console.Write($"{prompt} [default: {defaultValue}]: ");
+      var input = Console.ReadLine();
+      if (string.IsNullOrWhiteSpace(input)) return defaultValue;
+
+      if (int.TryParse(input, out var value)) return value;
+
+      Console.ForegroundColor = ConsoleColor.Red;
+      Console.WriteLine($"Invalid input, using default value: {defaultValue}");
+      Console.ResetColor();
+      return defaultValue;
    }
 }
