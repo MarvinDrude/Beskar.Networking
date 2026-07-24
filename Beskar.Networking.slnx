@@ -31,7 +31,12 @@
     <File Path="Documentation/Mqtt/QosLevels.md" />
     <File Path="Documentation/Mqtt/Reconnection.md" />
   </Folder>
-  <Folder Name="/Documentation/Resilient/" />
+  <Folder Name="/Documentation/Resilient/">
+    <File Path="Documentation/Resilient/Authentication.md" />
+    <File Path="Documentation/Resilient/CustomFraming.md" />
+    <File Path="Documentation/Resilient/Events.md" />
+    <File Path="Documentation/Resilient/Overview.md" />
+  </Folder>
   <Folder Name="/Examples/" />
   <Folder Name="/Examples/Advanced/">
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Client/Beskar.Adv.Chat.Client.csproj" />

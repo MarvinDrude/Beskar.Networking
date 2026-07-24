@@ -35,6 +35,7 @@ public static class ClientBehaviors
          {
             Program.LogChaos("CLIENT", transport, "SEND_ERR",
                $"Client '{clientId}' send failed: {result.Error.Detail}", ConsoleColor.DarkRed, true);
+            break;
          }
 
          await Task.Delay(isHighThroughput ? Random.Shared.Next(50, 200) : Random.Shared.Next(800, 2000), ct);
@@ -78,6 +79,7 @@ public static class ClientBehaviors
          {
             Program.LogChaos("CLIENT", transport, "SEND_ERR",
                $"Client '{clientId}' echo send failed: {result.Error.Detail}", ConsoleColor.Red, true);
+            break;
          }
 
          await Task.Delay(isHighThroughput ? Random.Shared.Next(100, 500) : Random.Shared.Next(1000, 2500), ct);
@@ -175,6 +177,7 @@ public static class ClientBehaviors
          {
             Program.LogChaos("CLIENT", transport, "SEND_ERR",
                $"Client '{clientId}' congestor send failed: {result.Error.Detail}", ConsoleColor.DarkRed, true);
+            break;
          }
 
          await Task.Delay(isHighThroughput ? 10 : 50, ct);
