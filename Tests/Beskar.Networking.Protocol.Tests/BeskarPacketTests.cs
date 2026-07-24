@@ -1,4 +1,3 @@
-using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using Beskar.Memory.Flags;
@@ -12,31 +11,25 @@ namespace Beskar.Networking.Protocol.Tests;
 [GenerateFramingProtocol]
 public partial struct PacketWithFlags8
 {
-   [MagicBytes(0x12, Order = 0)]
-   public partial bool Magic { get; }
+   [MagicBytes(0x12, Order = 0)] public partial bool Magic { get; }
 
-   [FlagsField(Order = 1)]
-   public PackedBools8 Flags { get; set; }
+   [FlagsField(Order = 1)] public PackedBools8 Flags { get; set; }
 }
 
 [GenerateFramingProtocol]
 public partial struct PacketWithFlags32
 {
-   [MagicBytes(0x34, Order = 0)]
-   public partial bool Magic { get; }
+   [MagicBytes(0x34, Order = 0)] public partial bool Magic { get; }
 
-   [FlagsField(Order = 1)]
-   public PackedBools32 Flags { get; set; }
+   [FlagsField(Order = 1)] public PackedBools32 Flags { get; set; }
 }
 
 [GenerateFramingProtocol]
 public partial struct PacketWithFlags64
 {
-   [MagicBytes(0x56, Order = 0)]
-   public partial bool Magic { get; }
+   [MagicBytes(0x56, Order = 0)] public partial bool Magic { get; }
 
-   [FlagsField(Order = 1)]
-   public PackedBools64 Flags { get; set; }
+   [FlagsField(Order = 1)] public PackedBools64 Flags { get; set; }
 }
 
 public partial class OuterClass
@@ -44,50 +37,41 @@ public partial class OuterClass
    [GenerateFramingProtocol]
    public partial struct NestedPacket
    {
-      [MagicBytes(0xAA, 0xBB, Order = 0)]
-      public partial bool Magic { get; }
+      [MagicBytes(0xAA, 0xBB, Order = 0)] public partial bool Magic { get; }
 
-      [VarNumberField(Order = 1)]
-      public ulong Id { get; set; }
+      [VarNumberField(Order = 1)] public ulong Id { get; set; }
    }
 }
 
 [GenerateFramingProtocol]
 public partial struct VarNumberTypesPacket
 {
-   [MagicBytes(0x99, Order = 0)]
-   public partial bool Magic { get; }
+   [MagicBytes(0x99, Order = 0)] public partial bool Magic { get; }
 
-   [VarNumberField(Order = 1)]
-   public ulong ULongVal { get; set; }
+   [VarNumberField(Order = 1)] public ulong ULongVal { get; set; }
 
-   [VarNumberField(Order = 2)]
-   public long LongVal { get; set; }
+   [VarNumberField(Order = 2)] public long LongVal { get; set; }
 
-   [VarNumberField(Order = 3)]
-   public uint UIntVal { get; set; }
+   [VarNumberField(Order = 3)] public uint UIntVal { get; set; }
 
-   [VarNumberField(Order = 4)]
-   public int IntVal { get; set; }
+   [VarNumberField(Order = 4)] public int IntVal { get; set; }
 }
 
 [GenerateFramingProtocol]
 public partial struct PacketWithSafeCopy
 {
-   [VarNumberField(Order = 0)]
-   public int Length { get; set; }
+   [VarNumberField(Order = 0)] public int Length { get; set; }
 
-   [ByteSequenceField(nameof(Length), safeCopyData: true, Order = 1)]
+   [ByteSequenceField(nameof(Length), true, Order = 1)]
    public ReadOnlySequence<byte> Payload { get; set; }
 }
 
 [GenerateFramingProtocol]
 public partial struct PacketWithUnsafeCopy
 {
-   [VarNumberField(Order = 0)]
-   public int Length { get; set; }
+   [VarNumberField(Order = 0)] public int Length { get; set; }
 
-   [ByteSequenceField(nameof(Length), safeCopyData: false, Order = 1)]
+   [ByteSequenceField(nameof(Length), false, Order = 1)]
    public ReadOnlySequence<byte> Payload { get; set; }
 }
 
@@ -399,7 +383,7 @@ public class BeskarPacketTests
       packet.TryWrite(buffer, out _);
 
       // Truncate buffer to various incomplete lengths
-      for (int i = 0; i < buffer.Length - 1; i++)
+      for (var i = 0; i < buffer.Length - 1; i++)
       {
          var truncatedSlice = new ReadOnlySequence<byte>(buffer, 0, i);
          var reader = new SequenceReader<byte>(truncatedSlice);
@@ -460,7 +444,7 @@ public class BeskarPacketTests
       await Assert.That(Unsafe.As<PackedBools32, uint>(ref flags32Copy)).IsEqualTo(0x12345678U);
 
       // Flags64
-      ulong raw64 = 0x123456789ABCDEF0UL;
+      var raw64 = 0x123456789ABCDEF0UL;
       var pkt64 = new PacketWithFlags64 { Flags = Unsafe.As<ulong, PackedBools64>(ref raw64) };
 
       var buf64 = new byte[pkt64.GetEncodedLength()];
@@ -512,7 +496,7 @@ public class BeskarPacketTests
    public async Task VarNumber_Direct_BoundaryValues_ShouldRoundtrip()
    {
       ulong[] testValues = [0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455, 268435456, ulong.MaxValue];
-      byte[] tempBuffer = new byte[16];
+      var tempBuffer = new byte[16];
 
       foreach (var val in testValues)
       {

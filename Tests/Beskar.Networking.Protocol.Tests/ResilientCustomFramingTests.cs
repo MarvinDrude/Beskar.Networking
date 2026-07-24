@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Net;
-using Beskar.Networking.Protocol;
+using System.Text;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Client;
 using Beskar.Networking.Resilient.Server;
@@ -15,11 +15,20 @@ public struct CustomMagicPacket : IFramingProtocol<CustomMagicPacket>
    public ResilientFrameKind Kind { get; set; }
    public ReadOnlySequence<byte> Payload { get; set; }
 
-   public ResilientFrameKind GetFrameKind() => Kind;
+   public ResilientFrameKind GetFrameKind()
+   {
+      return Kind;
+   }
 
-   public ReadOnlySequence<byte> GetPayloadSequence() => Payload;
+   public ReadOnlySequence<byte> GetPayloadSequence()
+   {
+      return Payload;
+   }
 
-   public int GetEncodedLength() => 5 + (int)Payload.Length;
+   public int GetEncodedLength()
+   {
+      return 5 + (int)Payload.Length;
+   }
 
    public bool TryWrite(Span<byte> destination, out int bytesWritten)
    {
@@ -34,10 +43,7 @@ public struct CustomMagicPacket : IFramingProtocol<CustomMagicPacket>
       destination[2] = (byte)Kind;
       BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(3, 2), (ushort)Payload.Length);
 
-      if (!Payload.IsEmpty)
-      {
-         Payload.CopyTo(destination[5..]);
-      }
+      if (!Payload.IsEmpty) Payload.CopyTo(destination[5..]);
 
       bytesWritten = totalLen;
       return true;
@@ -95,7 +101,7 @@ public struct CustomMagicPacket : IFramingProtocol<CustomMagicPacket>
          return false;
       }
 
-      if (!reader.TryRead(out byte kindByte))
+      if (!reader.TryRead(out var kindByte))
       {
          reader.Rewind(reader.Consumed - initialConsumed);
          return false;
@@ -132,10 +138,7 @@ public struct CustomMagicPacket : IFramingProtocol<CustomMagicPacket>
    {
       var totalLen = GetEncodedLength();
       var span = writer.GetSpan(totalLen);
-      if (TryWrite(span, out var written))
-      {
-         writer.Advance(written);
-      }
+      if (TryWrite(span, out var written)) writer.Advance(written);
    }
 
    public static CustomMagicPacket CreateFrame(ResilientFrameKind kind)
@@ -171,7 +174,7 @@ public class ResilientCustomFramingTests
 
       server.Events.FrameReceived.Add((ctx, _) =>
       {
-         var text = System.Text.Encoding.UTF8.GetString(ctx.Frame.Payload.ToArray());
+         var text = Encoding.UTF8.GetString(ctx.Frame.Payload.ToArray());
          serverReceivedTcs.TrySetResult(text);
          return ValueTask.CompletedTask;
       });

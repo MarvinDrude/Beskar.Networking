@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Net;
 using System.Text.Json;
-using Beskar.Networking.Protocol;
 using Beskar.Networking.Protocol.Frames;
 using Beskar.Networking.Resilient.Client;
 using Beskar.Networking.Resilient.Server;
@@ -10,23 +9,6 @@ namespace Beskar.Networking.Protocol.Tests;
 
 public class ResilientSerializationTests
 {
-   private sealed class JsonResilientSerializer : IResilientSerializer
-   {
-      public void Serialize<T>(T value, IBufferWriter<byte> writer)
-      {
-         using var jsonWriter = new Utf8JsonWriter(writer);
-         JsonSerializer.Serialize(jsonWriter, value);
-      }
-
-      public T? Deserialize<T>(in ReadOnlySequence<byte> sequence)
-      {
-         var reader = new Utf8JsonReader(sequence);
-         return JsonSerializer.Deserialize<T>(ref reader);
-      }
-   }
-
-   public record TestUserPayload(int Id, string Username, string Email, DateTime CreatedAt);
-
    [Test]
    public async Task SendPayloadAsync_WithCustomJsonSerializer_ShouldRoundtripObject()
    {
@@ -47,10 +29,7 @@ public class ResilientSerializationTests
       server.Events.FrameReceived.Add((ctx, _) =>
       {
          var user = ctx.Client.DeserializePayload<TestUserPayload>(ctx.Frame);
-         if (user != null)
-         {
-            serverReceivedTcs.TrySetResult(user);
-         }
+         if (user != null) serverReceivedTcs.TrySetResult(user);
          return ValueTask.CompletedTask;
       });
 
@@ -89,7 +68,8 @@ public class ResilientSerializationTests
       var listenerEndPoint = new IPEndPoint(IPAddress.Loopback, 0);
       var serializer = new JsonResilientSerializer();
 
-      var server = ResilientServerFactory.CreateBuilder<BeskarPacket>(new ResilientServerOptions { Serializer = serializer })
+      var server = ResilientServerFactory
+         .CreateBuilder<BeskarPacket>(new ResilientServerOptions { Serializer = serializer })
          .UseTcp(listenerEndPoint)
          .Build();
 
@@ -98,10 +78,7 @@ public class ResilientSerializationTests
       server.Events.FrameReceived.Add((ctx, _) =>
       {
          var data = ctx.Client.DeserializePayload<byte[]>(ctx.Frame);
-         if (data != null)
-         {
-            serverReceivedTcs.TrySetResult(data);
-         }
+         if (data != null) serverReceivedTcs.TrySetResult(data);
          return ValueTask.CompletedTask;
       });
 
@@ -131,4 +108,21 @@ public class ResilientSerializationTests
       await client.DisposeAsync();
       await server.DisposeAsync();
    }
+
+   private sealed class JsonResilientSerializer : IResilientSerializer
+   {
+      public void Serialize<T>(T value, IBufferWriter<byte> writer)
+      {
+         using var jsonWriter = new Utf8JsonWriter(writer);
+         JsonSerializer.Serialize(jsonWriter, value);
+      }
+
+      public T? Deserialize<T>(in ReadOnlySequence<byte> sequence)
+      {
+         var reader = new Utf8JsonReader(sequence);
+         return JsonSerializer.Deserialize<T>(ref reader);
+      }
+   }
+
+   public record TestUserPayload(int Id, string Username, string Email, DateTime CreatedAt);
 }

@@ -17,6 +17,7 @@ public class ResilientEventLifecycleTests
          if (condition()) return true;
          await Task.Delay(10);
       }
+
       return condition();
    }
 
@@ -74,6 +75,7 @@ public class ResilientEventLifecycleTests
          {
             receivedKinds.Add(ctx.Frame.GetFrameKind());
          }
+
          return ValueTask.CompletedTask;
       });
 
@@ -87,7 +89,8 @@ public class ResilientEventLifecycleTests
 
       await client.ConnectAsync(boundEndPoint);
 
-      var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>("TestMessage"u8.ToArray()));
+      var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message,
+         new ReadOnlySequence<byte>("TestMessage"u8.ToArray()));
       await client.SendAsync(msgFrame);
 
       var pingFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Ping);
@@ -95,7 +98,10 @@ public class ResilientEventLifecycleTests
 
       var conditionMet = await SpinWaitUntilAsync(() =>
       {
-         lock (lockObj) { return receivedKinds.Contains(ResilientFrameKind.Ping); }
+         lock (lockObj)
+         {
+            return receivedKinds.Contains(ResilientFrameKind.Ping);
+         }
       }, TimeSpan.FromSeconds(3));
 
       await Assert.That(conditionMet).IsTrue();
@@ -127,10 +133,7 @@ public class ResilientEventLifecycleTests
 
       client.Events.OnDisconnected.Add((ctx, _) =>
       {
-         if (ctx.DisconnectPayload != null)
-         {
-            disconnectTcs.TrySetResult(ctx.DisconnectPayload);
-         }
+         if (ctx.DisconnectPayload != null) disconnectTcs.TrySetResult(ctx.DisconnectPayload);
          return ValueTask.CompletedTask;
       });
 

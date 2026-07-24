@@ -1,5 +1,5 @@
 using System.Buffers;
-using System.Net;
+using System.Text;
 using Beskar.Networking.Protocol.Frames;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Client;
@@ -45,7 +45,7 @@ public class ResilientClientServerIntegrationTests
 
       server.Events.FrameReceived.Add((ctx, _) =>
       {
-         var text = System.Text.Encoding.UTF8.GetString(ctx.Frame.Payload.ToArray());
+         var text = Encoding.UTF8.GetString(ctx.Frame.Payload.ToArray());
          receivedTcs.TrySetResult(text);
          return ValueTask.CompletedTask;
       });
@@ -79,10 +79,7 @@ public class ResilientClientServerIntegrationTests
 
       server.Events.ClientDisconnected.Add((ctx, _) =>
       {
-         if (ctx.Client.DisconnectPayload != null)
-         {
-            disconnectTcs.TrySetResult(ctx.Client.DisconnectPayload);
-         }
+         if (ctx.Client.DisconnectPayload != null) disconnectTcs.TrySetResult(ctx.Client.DisconnectPayload);
          return ValueTask.CompletedTask;
       });
 
