@@ -218,7 +218,10 @@ public sealed class ResilientServerClient<TFrame>(
    /// </summary>
    public async ValueTask DisconnectAsync(DisconnectPacketPayload? disconnectPayload = null)
    {
-      if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
+      if (Volatile.Read(ref _disposedState) == 1)
+      {
+         return;
+      }
 
       if (disconnectPayload != null)
       {
@@ -240,6 +243,11 @@ public sealed class ResilientServerClient<TFrame>(
          {
             // ignored if send fails during disconnect
          }
+      }
+
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1)
+      {
+         return;
       }
 
       try

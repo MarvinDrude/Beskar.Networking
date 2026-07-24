@@ -696,6 +696,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       {
          await _connectionCts.CancelAsync();
       }
+
       _connectionCts?.Dispose();
 
       await DisconnectInternalAsync(null);
