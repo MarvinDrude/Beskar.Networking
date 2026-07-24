@@ -8,6 +8,7 @@
 
    <ItemGroup>
      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+     <ProjectReference Include="..\Beskar.Networking.Protocol\Beskar.Networking.Protocol.csproj" />
    </ItemGroup>
 
 </Project>

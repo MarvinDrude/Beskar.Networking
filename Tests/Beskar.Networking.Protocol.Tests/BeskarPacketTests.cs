@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using Beskar.Memory.Flags;
 using Beskar.Networking.Protocol.Attributes;
 using Beskar.Networking.Protocol.Frames;
+using Beskar.Networking.Protocol.Utilities;
 
 namespace Beskar.Networking.Protocol.Tests;
 
@@ -35,6 +36,38 @@ public partial struct PacketWithFlags64
 
    [FlagsField(Order = 1)]
    public PackedBools64 Flags { get; set; }
+}
+
+public partial class OuterClass
+{
+   [GenerateFramingProtocol]
+   public partial struct NestedPacket
+   {
+      [MagicBytes(0xAA, 0xBB, Order = 0)]
+      public partial bool Magic { get; }
+
+      [VarNumberField(Order = 1)]
+      public ulong Id { get; set; }
+   }
+}
+
+[GenerateFramingProtocol]
+public partial struct VarNumberTypesPacket
+{
+   [MagicBytes(0x99, Order = 0)]
+   public partial bool Magic { get; }
+
+   [VarNumberField(Order = 1)]
+   public ulong ULongVal { get; set; }
+
+   [VarNumberField(Order = 2)]
+   public long LongVal { get; set; }
+
+   [VarNumberField(Order = 3)]
+   public uint UIntVal { get; set; }
+
+   [VarNumberField(Order = 4)]
+   public int IntVal { get; set; }
 }
 
 public class BeskarPacketTests
@@ -86,6 +119,137 @@ public class BeskarPacketTests
    }
 
    [Test]
+   public async Task BeskarPacket_EmptyPayload_ShouldRoundtrip()
+   {
+      var original = new BeskarPacket
+      {
+         Version = 1,
+         PacketType = BeskarPacketType.Ping,
+         Flags = default,
+         PayloadLength = 0,
+         Payload = ReadOnlySequence<byte>.Empty
+      };
+
+      var buffer = new byte[original.GetEncodedLength()];
+      await Assert.That(original.TryWrite(buffer, out var written)).IsTrue();
+      await Assert.That(written).IsEqualTo(8); // 2 magic + 1 ver + 2 ptype + 2 flags + 1 varint(0)
+
+      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(buffer));
+      await Assert.That(BeskarPacket.TryRead(ref reader, out var readPkt)).IsTrue();
+      await Assert.That(readPkt.PayloadLength).IsEqualTo(0);
+      await Assert.That(readPkt.Payload.IsEmpty).IsTrue();
+   }
+
+   [Test]
+   public async Task BeskarPacket_LargePayload_ShouldRoundtrip()
+   {
+      var largeBuffer = new byte[65536];
+      new Random(42).NextBytes(largeBuffer);
+
+      var original = new BeskarPacket
+      {
+         Version = 1,
+         PacketType = BeskarPacketType.Message,
+         Flags = default,
+         PayloadLength = largeBuffer.Length,
+         Payload = new ReadOnlySequence<byte>(largeBuffer)
+      };
+
+      var buffer = new byte[original.GetEncodedLength()];
+      await Assert.That(original.TryWrite(buffer, out var written)).IsTrue();
+
+      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(buffer));
+      await Assert.That(BeskarPacket.TryRead(ref reader, out var readPkt)).IsTrue();
+      await Assert.That(readPkt.PayloadLength).IsEqualTo(largeBuffer.Length);
+      await Assert.That(readPkt.Payload.ToArray()).IsEquivalentTo(largeBuffer);
+   }
+
+   [Test]
+   public async Task BeskarPacket_BufferTooSmall_ShouldReturnFalse()
+   {
+      var packet = new BeskarPacket
+      {
+         Version = 1,
+         PacketType = BeskarPacketType.Connect,
+         PayloadLength = 10,
+         Payload = new ReadOnlySequence<byte>(new byte[10])
+      };
+
+      var tooSmallBuffer = new byte[5];
+      var success = packet.TryWrite(tooSmallBuffer, out var written);
+      await Assert.That(success).IsFalse();
+      await Assert.That(written).IsEqualTo(0);
+   }
+
+   [Test]
+   public async Task BeskarPacket_InvalidMagicBytes_ShouldReturnFalse()
+   {
+      var packet = new BeskarPacket
+      {
+         Version = 1,
+         PacketType = BeskarPacketType.Connect,
+         PayloadLength = 0,
+         Payload = ReadOnlySequence<byte>.Empty
+      };
+
+      var buffer = new byte[packet.GetEncodedLength()];
+      packet.TryWrite(buffer, out _);
+      buffer[0] = 0x00; // Corrupt magic byte
+
+      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(buffer));
+      var success = BeskarPacket.TryRead(ref reader, out _);
+      await Assert.That(success).IsFalse();
+   }
+
+   [Test]
+   public async Task BeskarPacket_TruncatedBuffer_ShouldReturnFalse()
+   {
+      var packet = new BeskarPacket
+      {
+         Version = 1,
+         PacketType = BeskarPacketType.Connect,
+         PayloadLength = 10,
+         Payload = new ReadOnlySequence<byte>(new byte[10])
+      };
+
+      var buffer = new byte[packet.GetEncodedLength()];
+      packet.TryWrite(buffer, out _);
+
+      // Truncate buffer to various incomplete lengths
+      for (int i = 0; i < buffer.Length - 1; i++)
+      {
+         var truncatedSlice = new ReadOnlySequence<byte>(buffer, 0, i);
+         var reader = new SequenceReader<byte>(truncatedSlice);
+         var success = BeskarPacket.TryRead(ref reader, out _);
+         await Assert.That(success).IsFalse();
+      }
+   }
+
+   [Test]
+   public async Task BeskarPacket_WriteTo_BufferWriter_ShouldWriteCompletePacket()
+   {
+      var payload = "ArrayBufferWriterTest"u8.ToArray();
+      var original = new BeskarPacket
+      {
+         Version = 3,
+         PacketType = BeskarPacketType.Disconnect,
+         PayloadLength = payload.Length,
+         Payload = new ReadOnlySequence<byte>(payload)
+      };
+
+      var writer = new ArrayBufferWriter<byte>();
+      original.WriteTo(writer);
+
+      await Assert.That(writer.WrittenCount).IsEqualTo(original.GetEncodedLength());
+
+      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(writer.WrittenSpan.ToArray()));
+      await Assert.That(BeskarPacket.TryRead(ref reader, out var readPkt)).IsTrue();
+      await Assert.That(readPkt.Version).IsEqualTo((byte)3);
+      await Assert.That(readPkt.PacketType).IsEqualTo(BeskarPacketType.Disconnect);
+      await Assert.That(readPkt.Payload.ToArray()).IsEquivalentTo(payload);
+   }
+
+   [Test]
    public async Task FlagsField_AllSizes_ShouldRoundtrip()
    {
       // Flags8
@@ -123,5 +287,62 @@ public class BeskarPacketTests
       await Assert.That(PacketWithFlags64.TryRead(ref r64, out var res64)).IsTrue();
       var flags64Copy = res64.Flags;
       await Assert.That(Unsafe.As<PackedBools64, ulong>(ref flags64Copy)).IsEqualTo(0x123456789ABCDEF0UL);
+   }
+
+   [Test]
+   public async Task NestedPacket_ShouldGenerateAndRoundtrip()
+   {
+      var original = new OuterClass.NestedPacket { Id = 9876543210UL };
+      var buffer = new byte[original.GetEncodedLength()];
+
+      await Assert.That(original.TryWrite(buffer, out var written)).IsTrue();
+      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(buffer));
+      await Assert.That(OuterClass.NestedPacket.TryRead(ref reader, out var readPkt)).IsTrue();
+      await Assert.That(readPkt.Magic).IsTrue();
+      await Assert.That(readPkt.Id).IsEqualTo(9876543210UL);
+   }
+
+   [Test]
+   public async Task VarNumberTypesPacket_AllPrimitiveIntTypes_ShouldRoundtrip()
+   {
+      var original = new VarNumberTypesPacket
+      {
+         ULongVal = 123456789012345UL,
+         LongVal = 9876543210L,
+         UIntVal = 4000000000U,
+         IntVal = 1234567
+      };
+
+      var buffer = new byte[original.GetEncodedLength()];
+      await Assert.That(original.TryWrite(buffer, out var written)).IsTrue();
+
+      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(buffer));
+      await Assert.That(VarNumberTypesPacket.TryRead(ref reader, out var readPkt)).IsTrue();
+
+      await Assert.That(readPkt.ULongVal).IsEqualTo(123456789012345UL);
+      await Assert.That(readPkt.LongVal).IsEqualTo(9876543210L);
+      await Assert.That(readPkt.UIntVal).IsEqualTo(4000000000U);
+      await Assert.That(readPkt.IntVal).IsEqualTo(1234567);
+   }
+
+   [Test]
+   public async Task VarNumber_Direct_BoundaryValues_ShouldRoundtrip()
+   {
+      ulong[] testValues = [0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455, 268435456, ulong.MaxValue];
+      var tempBuffer = new byte[16];
+
+      foreach (var val in testValues)
+      {
+         var expectedLen = VarNumber.GetEncodedLength(val);
+         var written = VarNumber.Write(tempBuffer, val);
+
+         await Assert.That(written).IsEqualTo(expectedLen);
+
+         var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(tempBuffer, 0, written));
+         var success = VarNumber.TryRead(ref reader, out ulong readVal);
+
+         await Assert.That(success).IsTrue();
+         await Assert.That(readVal).IsEqualTo(val);
+      }
    }
 }
