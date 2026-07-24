@@ -1,10 +1,13 @@
+using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Writers;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Protocol;
 using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Common.Interfaces;
+using Beskar.Networking.Resilient.Server.Models;
 using Beskar.Networking.Resilient.Server.Services;
 
 namespace Beskar.Networking.Resilient.Server;
@@ -26,6 +29,8 @@ public sealed class ResilientServer<TFrame>
       => _listeners;
 
    public ResilientServerOptions Options { get; }
+
+   public ResilientServerClients<TFrame> Clients { get; } = new();
 
    private int _disposedState; // 0 = not disposed, 1 = disposed
    private volatile int _state = (int)ResilientServerState.Stopped;
@@ -132,6 +137,7 @@ public sealed class ResilientServer<TFrame>
          await listener.UnbindAsync();
       }
 
+      await Clients.DisconnectAllAsync();
       State = ResilientServerState.Stopped;
 
       return true;
@@ -139,7 +145,130 @@ public sealed class ResilientServer<TFrame>
 
    private async Task RunAcceptTask(INetworkListener listener, CancellationToken ct)
    {
+      while (!ct.IsCancellationRequested)
+      {
+         try
+         {
+            var sessionResult = await listener.AcceptSessionAsync(ct);
+            if (sessionResult.Failed) continue;
 
+            if (!Options.OpenToNewConnections ||
+                (Options.MaxConnections > 0 && Clients.Count >= Options.MaxConnections))
+            {
+               await sessionResult.Success.DisposeAsync();
+               continue;
+            }
+
+            _ = Task.Factory.StartNew(
+               () => RunClientTask(listener, sessionResult.Success, ct),
+               TaskCreationOptions.PreferFairness);
+         }
+         catch (OperationCanceledException)
+         {
+            break;
+         }
+         catch (Exception)
+         {
+            // listener loop protection
+         }
+      }
+   }
+
+   private async Task RunClientTask(INetworkListener listener, INetworkSession session, CancellationToken ct)
+   {
+      if (ct.IsCancellationRequested || State is not ResilientServerState.Running)
+      {
+         await session.DisposeAsync();
+         return;
+      }
+
+      ResilientServerClient<TFrame>? client = null;
+      try
+      {
+         var controlStreamResult = await session.AcceptStreamAsync(ct);
+         if (controlStreamResult.Failed)
+         {
+            await session.DisposeAsync();
+            return;
+         }
+
+         var connectionContext = new NetworkServerConnectionContext(listener, session);
+         var streamContext = new NetworkServerStreamContext(connectionContext, controlStreamResult.Success);
+
+         client = new ResilientServerClient<TFrame>(streamContext);
+         if (!Clients.TryAdd(client))
+         {
+            await client.DisposeAsync();
+            return;
+         }
+
+         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+         await RunClientListenTask(client, streamContext, combinedCts.Token);
+      }
+      catch (Exception)
+      {
+         // client connection dropped or failed
+      }
+      finally
+      {
+         if (client != null)
+         {
+            Clients.TryRemove(client.Id, out _);
+            await client.DisposeAsync();
+         }
+      }
+   }
+
+   private static async Task RunClientListenTask(
+      ResilientServerClient<TFrame> client,
+      NetworkServerStreamContext streamContext,
+      CancellationToken ct)
+   {
+      try
+      {
+         var reader = streamContext.Stream.Transport.Input;
+
+         while (!ct.IsCancellationRequested)
+         {
+            var result = await reader.ReadAsync(ct);
+            var buffer = result.Buffer;
+
+            if (result.IsCanceled) break;
+            if (buffer.IsEmpty && result.IsCompleted) break;
+
+            var consumed = buffer.Start;
+            var examined = buffer.End;
+
+            while (!buffer.IsEmpty)
+            {
+               var sequenceReader = new SequenceReader<byte>(buffer);
+               if (!TFrame.TryRead(ref sequenceReader, out var frame))
+               {
+                  // Incomplete frame in buffer, wait for more data from stream
+                  break;
+               }
+
+               client.TouchActivity();
+
+               // Successfully parsed complete frame!
+               _ = frame; // Ready for processing / handling
+
+               consumed = sequenceReader.Position;
+               buffer = buffer.Slice(consumed);
+            }
+
+            reader.AdvanceTo(consumed, examined);
+            if (result.IsCompleted && buffer.IsEmpty) break;
+         }
+      }
+      catch (OperationCanceledException)
+      {
+         // client cancelled or disconnected
+      }
+      catch (Exception)
+      {
+         // transport read exception
+      }
    }
 
    public async ValueTask DisposeAsync()
