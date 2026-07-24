@@ -6,9 +6,9 @@ using Beskar.Memory.Writers;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Protocol;
+using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Common.Interfaces;
-using Beskar.Networking.Resilient.Common.Packets;
 using Beskar.Networking.Resilient.Server.Contexts;
 using Beskar.Networking.Resilient.Server.Models;
 using Beskar.Networking.Resilient.Server.Services;
@@ -390,22 +390,41 @@ public sealed class ResilientServer<TFrame>
                }
                else if (frameKind is ResilientFrameKind.Disconnect)
                {
-                  client.DisconnectPayload = new DisconnectPacketPayload();
+                  if (frame.TryGetPayload<DisconnectPacketPayload>(out var disconnectPayload) && disconnectPayload != null)
+                  {
+                     client.DisconnectPayload = disconnectPayload;
+                  }
+                  else
+                  {
+                     client.DisconnectPayload = new DisconnectPacketPayload();
+                  }
                   await client.DisconnectAsync();
                   break;
                }
                else if (frameKind is ResilientFrameKind.Connect)
                {
-                  var connectPayload = new ConnectPacketPayload();
-                  client.ControlPayloadChannel.Writer.TryWrite(connectPayload);
+                  if (frame.TryGetPayload<ConnectPacketPayload>(out var connectPayload) && connectPayload != null)
+                  {
+                     client.ControlPayloadChannel.Writer.TryWrite(connectPayload);
+                  }
+                  else
+                  {
+                     client.ControlPayloadChannel.Writer.TryWrite(new ConnectPacketPayload());
+                  }
                }
                else if (frameKind is ResilientFrameKind.Authenticate)
                {
-                  var authPayload = new AuthenticatePacketPayload();
-                  client.ControlPayloadChannel.Writer.TryWrite(authPayload);
+                  if (frame.TryGetPayload<AuthenticatePacketPayload>(out var authPayload) && authPayload != null)
+                  {
+                     client.ControlPayloadChannel.Writer.TryWrite(authPayload);
+                  }
+                  else
+                  {
+                     client.ControlPayloadChannel.Writer.TryWrite(new AuthenticatePacketPayload());
+                  }
                }
 
-               if (Options.FrameReceivedAllPackets || frameKind == ResilientFrameKind.Message)
+               if (Options.FrameReceivedAllPackets || frameKind is ResilientFrameKind.Message)
                {
                   if (Events.FrameReceived.Count > 0)
                   {

@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using Beskar.Memory.Flags;
 using Beskar.Networking.Protocol.Attributes;
 using Beskar.Networking.Protocol.Frames;
+using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Protocol.Utilities;
 
 namespace Beskar.Networking.Protocol.Tests;
@@ -142,6 +143,79 @@ public class BeskarPacketTests
       var disconnectPkt = BeskarPacket.CreateFrame(ResilientFrameKind.Disconnect);
       await Assert.That(disconnectPkt.PacketType).IsEqualTo(BeskarPacketType.Disconnect);
       await Assert.That(disconnectPkt.GetFrameKind()).IsEqualTo(ResilientFrameKind.Disconnect);
+   }
+
+   [Test]
+   public async Task ControlPayloads_FastBinarySerialization_And_BeskarPacket_TryGetPayload_ShouldRoundtrip()
+   {
+      // ConnectPacketPayload
+      var connectOriginal = new ConnectPacketPayload
+      {
+         ClientId = "TestClient123",
+         KeepAliveSeconds = 60,
+         CleanSession = true
+      };
+
+      var connectBuffer = new byte[connectOriginal.GetEncodedLength()];
+      await Assert.That(connectOriginal.TryWrite(connectBuffer, out var writtenConnect)).IsTrue();
+      await Assert.That(writtenConnect).IsEqualTo(connectBuffer.Length);
+
+      var connectPacket = new BeskarPacket
+      {
+         PacketType = BeskarPacketType.Connect,
+         PayloadLength = connectBuffer.Length,
+         Payload = new ReadOnlySequence<byte>(connectBuffer)
+      };
+
+      await Assert.That(connectPacket.TryGetPayload<ConnectPacketPayload>(out var connectRead)).IsTrue();
+      await Assert.That(connectRead).IsNotEqualTo(null);
+      await Assert.That(connectRead!.ClientId).IsEqualTo("TestClient123");
+      await Assert.That(connectRead.KeepAliveSeconds).IsEqualTo((ushort)60);
+      await Assert.That(connectRead.CleanSession).IsTrue();
+
+      // DisconnectPacketPayload
+      var disconnectOriginal = new DisconnectPacketPayload
+      {
+         ReasonCode = 0x80,
+         ReasonString = "Normal Shutdown"
+      };
+
+      var disconnectBuffer = new byte[disconnectOriginal.GetEncodedLength()];
+      await Assert.That(disconnectOriginal.TryWrite(disconnectBuffer, out var writtenDisconnect)).IsTrue();
+
+      var disconnectPacket = new BeskarPacket
+      {
+         PacketType = BeskarPacketType.Disconnect,
+         PayloadLength = disconnectBuffer.Length,
+         Payload = new ReadOnlySequence<byte>(disconnectBuffer)
+      };
+
+      await Assert.That(disconnectPacket.TryGetPayload<DisconnectPacketPayload>(out var disconnectRead)).IsTrue();
+      await Assert.That(disconnectRead).IsNotEqualTo(null);
+      await Assert.That(disconnectRead!.ReasonCode).IsEqualTo((byte)0x80);
+      await Assert.That(disconnectRead.ReasonString).IsEqualTo("Normal Shutdown");
+
+      // AuthenticatePacketPayload
+      var authOriginal = new AuthenticatePacketPayload
+      {
+         AuthMethod = "PLAIN",
+         AuthData = "SecretData"u8.ToArray()
+      };
+
+      var authBuffer = new byte[authOriginal.GetEncodedLength()];
+      await Assert.That(authOriginal.TryWrite(authBuffer, out var writtenAuth)).IsTrue();
+
+      var authPacket = new BeskarPacket
+      {
+         PacketType = BeskarPacketType.Authenticate,
+         PayloadLength = authBuffer.Length,
+         Payload = new ReadOnlySequence<byte>(authBuffer)
+      };
+
+      await Assert.That(authPacket.TryGetPayload<AuthenticatePacketPayload>(out var authRead)).IsTrue();
+      await Assert.That(authRead).IsNotEqualTo(null);
+      await Assert.That(authRead!.AuthMethod).IsEqualTo("PLAIN");
+      await Assert.That(authRead.AuthData).IsEquivalentTo("SecretData"u8.ToArray());
    }
 
    [Test]

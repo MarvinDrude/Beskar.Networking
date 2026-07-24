@@ -5,8 +5,7 @@ using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Protocol;
-using Beskar.Networking.Resilient.Common.Interfaces;
-using Beskar.Networking.Resilient.Common.Packets;
+using Beskar.Networking.Protocol.Payloads;
 
 namespace Beskar.Networking.Resilient.Server.Models;
 

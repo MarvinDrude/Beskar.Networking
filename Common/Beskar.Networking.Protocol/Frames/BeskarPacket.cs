@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Diagnostics;
 using Beskar.Memory.Flags;
 using Beskar.Networking.Protocol.Attributes;
+using Beskar.Networking.Protocol.Payloads;
 
 namespace Beskar.Networking.Protocol.Frames;
 
@@ -78,5 +79,40 @@ public partial struct BeskarPacket
       };
 
       return new BeskarPacket { PacketType = packetType };
+   }
+
+   public readonly bool TryGetPayload<TPayload>(out TPayload? payload) where TPayload : class, IResilientPayload
+   {
+      payload = null;
+      if (Payload.IsEmpty) return false;
+
+      var reader = new SequenceReader<byte>(Payload);
+
+      if (typeof(TPayload) == typeof(ConnectPacketPayload))
+      {
+         if (ConnectPacketPayload.TryRead(ref reader, out var connectPayload))
+         {
+            payload = connectPayload as TPayload;
+            return true;
+         }
+      }
+      else if (typeof(TPayload) == typeof(DisconnectPacketPayload))
+      {
+         if (DisconnectPacketPayload.TryRead(ref reader, out var disconnectPayload))
+         {
+            payload = disconnectPayload as TPayload;
+            return true;
+         }
+      }
+      else if (typeof(TPayload) == typeof(AuthenticatePacketPayload))
+      {
+         if (AuthenticatePacketPayload.TryRead(ref reader, out var authPayload))
+         {
+            payload = authPayload as TPayload;
+            return true;
+         }
+      }
+
+      return false;
    }
 }

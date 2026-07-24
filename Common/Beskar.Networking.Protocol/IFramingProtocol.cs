@@ -1,4 +1,5 @@
 using System.Buffers;
+using Beskar.Networking.Protocol.Payloads;
 
 namespace Beskar.Networking.Protocol;
 
@@ -38,4 +39,13 @@ public interface IFramingProtocol<TSelf> where TSelf : struct, IFramingProtocol<
    /// Optionally creates a protocol frame instance of the specified kind.
    /// </summary>
    static virtual TSelf CreateFrame(ResilientFrameKind kind) => default;
+
+   /// <summary>
+   /// Attempts to deserialize or extract a control payload out of the frame.
+   /// </summary>
+   bool TryGetPayload<TPayload>(out TPayload? payload) where TPayload : class, IResilientPayload
+   {
+      payload = null;
+      return false;
+   }
 }

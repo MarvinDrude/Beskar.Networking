@@ -1,5 +1,5 @@
 using Beskar.Networking.Protocol;
-using Beskar.Networking.Resilient.Common.Packets;
+using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Server.Models;
 
 namespace Beskar.Networking.Resilient.Server.Contexts;
