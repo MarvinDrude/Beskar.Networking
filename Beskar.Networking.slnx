@@ -31,6 +31,7 @@
     <File Path="Documentation/Mqtt/QosLevels.md" />
     <File Path="Documentation/Mqtt/Reconnection.md" />
   </Folder>
+  <Folder Name="/Documentation/Resilient/" />
   <Folder Name="/Examples/" />
   <Folder Name="/Examples/Advanced/">
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Client/Beskar.Adv.Chat.Client.csproj" />
@@ -44,6 +45,7 @@
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.QosLevels/Beskar.Mqtt.Example.QosLevels.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.Reconnection/Beskar.Mqtt.Example.Reconnection.csproj" />
   </Folder>
+  <Folder Name="/Examples/Resilient/" />
   <Folder Name="/Examples/Simple/">
     <Project Path="Examples/Simple/Beskar.Bare.PingPongMessage/Beskar.Bare.PingPongMessage.csproj" />
   </Folder>

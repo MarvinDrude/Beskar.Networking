@@ -62,7 +62,15 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
 
          foreach (var client in clients)
          {
-            var timeout = (client.ConnectPayload != null && client.ConnectPayload.KeepAliveSeconds > 0)
+            if (options.Mode is ResilientServerKeepAliveMode.ClientConfigured &&
+                client.ConnectPayload is { KeepAliveSeconds: 0 })
+            {
+               // Client explicitly disabled keep-alive
+               continue;
+            }
+
+            var timeout = options.Mode is ResilientServerKeepAliveMode.ClientConfigured
+               && client.ConnectPayload is { KeepAliveSeconds: > 0 }
                ? TimeSpan.FromSeconds(client.ConnectPayload.KeepAliveSeconds)
                : options.DefaultKeepAliveTime;
 

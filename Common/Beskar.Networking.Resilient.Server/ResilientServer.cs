@@ -291,6 +291,27 @@ public sealed class ResilientServer<TFrame>
          {
             Clients.TryRemove(client.Id, out _);
             await client.DisposeAsync();
+
+            if (Events.ClientDisconnected.Count > 0)
+            {
+               var disconnectContext = new ResilientClientDisconnectedContext<TFrame>
+               {
+                  Client = client
+               };
+
+               _ = Task.Run(async () =>
+               {
+                  try
+                  {
+                     await Events.ClientDisconnected.ExecuteAsync(
+                        disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                  }
+                  catch
+                  {
+                     // background exception protection
+                  }
+               }, ct);
+            }
          }
       }
    }

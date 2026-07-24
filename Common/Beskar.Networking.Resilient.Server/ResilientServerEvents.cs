@@ -37,4 +37,9 @@ public sealed class ResilientServerEvents<TFrame>
    /// Pipeline fired when a framing protocol frame is received from a client.
    /// </summary>
    public readonly HandlerPipeline<ResilientFrameReceivedContext<TFrame>> FrameReceived = new();
+
+   /// <summary>
+   /// Pipeline fired asynchronously via Task.Run when a client disconnects from the server.
+   /// </summary>
+   public readonly HandlerPipeline<ResilientClientDisconnectedContext<TFrame>> ClientDisconnected = new();
 }
