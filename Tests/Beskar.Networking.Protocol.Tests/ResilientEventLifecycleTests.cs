@@ -159,4 +159,51 @@ public class ResilientEventLifecycleTests
       await client.DisposeAsync();
       await server.DisposeAsync();
    }
+
+   [Test]
+   public async Task Client_AutoReconnect_ShouldTriggerReconnectingEventAndReconnect()
+   {
+      var listenerEndPoint = new IPEndPoint(IPAddress.Loopback, 0);
+      var server = ResilientServerFactory.CreateBuilder<BeskarPacket>()
+         .UseTcp(listenerEndPoint)
+         .Build();
+
+      await server.StartAsync();
+      var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
+
+      var reconnectingFired = false;
+      var client = ResilientClientFactory.CreateTcp<BeskarPacket>(clientOptions: new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            RetryInterval = TimeSpan.FromMilliseconds(50),
+            MaxRetries = 3
+         }
+      });
+
+      client.Events.OnReconnecting.Add((_, _) =>
+      {
+         reconnectingFired = true;
+         return ValueTask.CompletedTask;
+      });
+
+      var connectResult = await client.ConnectAsync(boundEndPoint);
+      await Assert.That(connectResult.Failed).IsFalse();
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Abruptly close the server side session to trigger client disconnect & auto-reconnect
+      var serverClient = server.Clients.GetAll().First();
+      await serverClient.ControlStream.Transport.Output.CompleteAsync();
+      await serverClient.Session.DisposeAsync();
+
+      var conditionMet = await SpinWaitUntilAsync(() => reconnectingFired, TimeSpan.FromSeconds(3));
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+
+      await Assert.That(conditionMet).IsTrue();
+   }
 }

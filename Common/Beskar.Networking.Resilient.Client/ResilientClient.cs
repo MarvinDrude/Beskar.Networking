@@ -525,7 +525,6 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
             var buffer = result.Buffer;
 
             if (result.IsCanceled) break;
-            if (buffer.IsEmpty && result.IsCompleted) break;
 
             var consumed = buffer.Start;
             var examined = buffer.End;
@@ -603,7 +602,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
             reader.AdvanceTo(consumed, examined);
             if (result.IsCompleted && buffer.IsEmpty)
             {
-               if (State is ResilientClientState.Connected or ResilientClientState.Reconnecting)
+               if (stream == ControlStream && State is ResilientClientState.Connected or ResilientClientState.Reconnecting)
                {
                   _ = TriggerAutoReconnectAsync(null);
                }
@@ -618,14 +617,17 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
       catch (Exception ex)
       {
-         if (State is ResilientClientState.Connected or ResilientClientState.Reconnecting)
+         if (stream == ControlStream && State is ResilientClientState.Connected or ResilientClientState.Reconnecting)
          {
             _ = TriggerAutoReconnectAsync(ex);
          }
       }
       finally
       {
-         _handshakeChannel.Writer.TryComplete();
+         if (stream == ControlStream)
+         {
+            _handshakeChannel.Writer.TryComplete();
+         }
          await stream.DisposeAsync();
       }
    }
@@ -645,10 +647,14 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       State = ResilientClientState.Reconnecting;
       await DisconnectInternalAsync(null);
 
+      _connectionCts?.Dispose();
+      _connectionCts = new CancellationTokenSource();
+      var reconnectCt = _connectionCts.Token;
+
       var attempt = 0;
       var maxRetries = Options.Reconnecting.MaxRetries;
 
-      while (!(_connectionCts?.IsCancellationRequested ?? false))
+      while (!reconnectCt.IsCancellationRequested)
       {
          attempt++;
          if (maxRetries > 0 && attempt > maxRetries)
@@ -672,17 +678,14 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
          try
          {
-            await Task.Delay(Options.Reconnecting.RetryInterval);
+            await Task.Delay(Options.Reconnecting.RetryInterval, reconnectCt);
          }
          catch (OperationCanceledException)
          {
             break;
          }
 
-         _connectionCts = new CancellationTokenSource();
-         var ct = _connectionCts.Token;
-
-         var result = await ConnectInternalAsync(_remoteEndPoint, ct);
+         var result = await ConnectInternalAsync(_remoteEndPoint, reconnectCt);
          if (!result.Failed)
          {
             break; // Reconnect successful!
