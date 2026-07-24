@@ -50,6 +50,8 @@
     <Project Path="Examples/Simple/Beskar.Bare.PingPongMessage/Beskar.Bare.PingPongMessage.csproj" />
   </Folder>
   <Folder Name="/Experiments/">
+    <Project Path="Experiments/Beskar.Resilient.ChaosSimulator/Beskar.Resilient.ChaosSimulator.csproj" />
+    <Project Path="Experiments/Beskar.Resilient.Benchmark/Beskar.Resilient.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Mqtt.Benchmark/Beskar.Mqtt.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Tcp.Benchmark/Beskar.Tcp.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Udp.Benchmark/Beskar.Udp.Benchmark.csproj" />
