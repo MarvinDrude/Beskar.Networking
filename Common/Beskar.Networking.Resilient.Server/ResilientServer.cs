@@ -201,6 +201,25 @@ public sealed class ResilientServer<TFrame>
          return;
       }
 
+      if (Events.OnPreHandshake.Count > 0)
+      {
+         var preHandshakeContext = new ResilientPreHandshakeContext<TFrame>
+         {
+            Listener = listener,
+            Session = session,
+            CancellationToken = ct
+         };
+
+         await Events.OnPreHandshake.ExecuteAsync(
+            preHandshakeContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+
+         if (preHandshakeContext.IsDenied)
+         {
+            await session.DisposeAsync();
+            return;
+         }
+      }
+
       ResilientServerClient<TFrame>? client = null;
       try
       {

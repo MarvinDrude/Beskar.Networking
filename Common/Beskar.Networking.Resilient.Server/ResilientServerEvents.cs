@@ -22,6 +22,12 @@ public sealed class ResilientServerEvents<TFrame>
    public readonly HandlerPipeline<ResilientServerStopContext<TFrame>> OnStop = new();
 
    /// <summary>
+   /// Pipeline fired when a new client connection is accepted before handshake or registration.
+   /// Allows inspecting the session and optionally denying/disconnecting the client.
+   /// </summary>
+   public readonly HandlerPipeline<ResilientPreHandshakeContext<TFrame>> OnPreHandshake = new();
+
+   /// <summary>
    /// Pipeline fired when a framing protocol frame is received from a client.
    /// </summary>
    public readonly HandlerPipeline<ResilientFrameReceivedContext<TFrame>> FrameReceived = new();
