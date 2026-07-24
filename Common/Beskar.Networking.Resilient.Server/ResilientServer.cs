@@ -249,7 +249,18 @@ public sealed class ResilientServer<TFrame>
             _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(client, connectionContext, combinedToken), combinedToken);
          }
 
-         var listenTask = Task.Run(() => RunClientListenTask(client, controlStreamContext, combinedToken), combinedToken);
+         var listenTask = Task.Run(async () =>
+         {
+            try
+            {
+               await RunClientListenTask(client, controlStreamContext, combinedToken);
+            }
+            finally
+            {
+               // ReSharper disable once AccessToDisposedClosure
+               await combinedCts.CancelAsync();
+            }
+         }, combinedToken);
 
          var connectPayload = await ReadConnectPayloadAsync(client, combinedToken);
          if (connectPayload != null)
@@ -482,6 +493,7 @@ public sealed class ResilientServer<TFrame>
       }
       finally
       {
+         client.ControlPayloadChannel.Writer.TryComplete();
          await streamContext.Stream.DisposeAsync();
       }
    }

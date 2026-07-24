@@ -71,10 +71,12 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
                continue;
             }
 
-            var timeout = options.Mode is ResilientServerKeepAliveMode.ClientConfigured
+            var baseTimeout = options.Mode is ResilientServerKeepAliveMode.ClientConfigured
                && client.ConnectPayload is { KeepAliveSeconds: > 0 }
                ? TimeSpan.FromSeconds(client.ConnectPayload.KeepAliveSeconds)
                : options.DefaultKeepAliveTime;
+
+            var timeout = baseTimeout * 1.5;
 
             if (now - client.LastActivityAt > timeout)
             {
