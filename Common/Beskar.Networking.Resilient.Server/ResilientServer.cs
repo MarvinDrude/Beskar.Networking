@@ -8,6 +8,7 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Protocol;
 using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Common.Interfaces;
+using Beskar.Networking.Resilient.Common.Packets;
 using Beskar.Networking.Resilient.Server.Contexts;
 using Beskar.Networking.Resilient.Server.Models;
 using Beskar.Networking.Resilient.Server.Services;
@@ -248,7 +249,35 @@ public sealed class ResilientServer<TFrame>
             _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(client, connectionContext, combinedToken), combinedToken);
          }
 
-         await RunClientListenTask(client, controlStreamContext, combinedToken);
+         var listenTask = Task.Run(() => RunClientListenTask(client, controlStreamContext, combinedToken), combinedToken);
+
+         var connectPayload = await ReadConnectPayloadAsync(client, combinedToken);
+         if (connectPayload != null)
+         {
+            if (Events.OnConnect.Count > 0)
+            {
+               var connectContext = new ResilientClientConnectContext<TFrame>
+               {
+                  Client = client,
+                  ConnectPayload = connectPayload,
+                  CancellationToken = combinedToken
+               };
+
+               await Events.OnConnect.ExecuteAsync(
+                  connectContext, HandlerExecutionStrategy.SequentialContinueOnError, combinedToken);
+
+               if (connectContext.IsDenied)
+               {
+                  await client.DisconnectAsync();
+                  return;
+               }
+            }
+
+            var connectAckFrame = TFrame.CreateFrame(ResilientFrameKind.ConnectAcknowledged);
+            await client.SendAsync(connectAckFrame, combinedToken);
+         }
+
+         await listenTask;
       }
       catch (Exception)
       {
@@ -262,6 +291,32 @@ public sealed class ResilientServer<TFrame>
             await client.DisposeAsync();
          }
       }
+   }
+
+   private static async ValueTask<ConnectPacketPayload?> ReadConnectPayloadAsync(
+      ResilientServerClient<TFrame> client,
+      CancellationToken ct)
+   {
+      try
+      {
+         var reader = client.ControlPayloadChannel.Reader;
+         while (await reader.WaitToReadAsync(ct))
+         {
+            while (reader.TryRead(out var payload))
+            {
+               if (payload is ConnectPacketPayload connectPayload)
+               {
+                  return connectPayload;
+               }
+            }
+         }
+      }
+      catch
+      {
+         // ignored
+      }
+
+      return null;
    }
 
    private async Task RunAcceptMultiplexedStreamsTask(
@@ -326,17 +381,44 @@ public sealed class ResilientServer<TFrame>
                buffer = buffer.Slice(consumedPos);
                consumed = consumedPos;
 
-               if (Events.FrameReceived.Count > 0)
-               {
-                  var eventContext = new ResilientFrameReceivedContext<TFrame>
-                  {
-                     Client = client,
-                     Stream = streamContext.Stream,
-                     Frame = frame
-                  };
+               var frameKind = frame.GetFrameKind();
 
-                  await Events.FrameReceived.ExecuteAsync(
-                     eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+               if (frameKind is ResilientFrameKind.Ping)
+               {
+                  var pongFrame = TFrame.CreateFrame(ResilientFrameKind.Pong);
+                  await client.SendAsync(pongFrame, ct);
+               }
+               else if (frameKind is ResilientFrameKind.Disconnect)
+               {
+                  client.DisconnectPayload = new DisconnectPacketPayload();
+                  await client.DisconnectAsync();
+                  break;
+               }
+               else if (frameKind is ResilientFrameKind.Connect)
+               {
+                  var connectPayload = new ConnectPacketPayload();
+                  client.ControlPayloadChannel.Writer.TryWrite(connectPayload);
+               }
+               else if (frameKind is ResilientFrameKind.Authenticate)
+               {
+                  var authPayload = new AuthenticatePacketPayload();
+                  client.ControlPayloadChannel.Writer.TryWrite(authPayload);
+               }
+
+               if (Options.FrameReceivedAllPackets || frameKind == ResilientFrameKind.Message)
+               {
+                  if (Events.FrameReceived.Count > 0)
+                  {
+                     var eventContext = new ResilientFrameReceivedContext<TFrame>
+                     {
+                        Client = client,
+                        Stream = streamContext.Stream,
+                        Frame = frame
+                     };
+
+                     await Events.FrameReceived.ExecuteAsync(
+                        eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                  }
                }
             }
 

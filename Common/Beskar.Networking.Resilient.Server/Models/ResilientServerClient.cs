@@ -1,9 +1,12 @@
+using System.Threading.Channels;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Protocol;
+using Beskar.Networking.Resilient.Common.Interfaces;
+using Beskar.Networking.Resilient.Common.Packets;
 
 namespace Beskar.Networking.Resilient.Server.Models;
 
@@ -54,6 +57,22 @@ public sealed class ResilientServerClient<TFrame>(NetworkServerStreamContext con
    /// Gets all active streams currently open on this client's session.
    /// </summary>
    public IReadOnlyCollection<INetworkStream> ActiveStreams => Session.ActiveStreams;
+
+   /// <summary>
+   /// Gets the payload received from a Disconnect frame, if any.
+   /// </summary>
+   public DisconnectPacketPayload? DisconnectPayload { get; internal set; }
+
+   /// <summary>
+   /// Bounded channel holding control payloads (Connect, Authenticate, etc.).
+   /// </summary>
+   public Channel<IResilientPayload> ControlPayloadChannel { get; } = Channel.CreateBounded<IResilientPayload>(
+      new BoundedChannelOptions(1024)
+      {
+         FullMode = BoundedChannelFullMode.DropOldest,
+         SingleWriter = false,
+         SingleReader = false
+      });
 
    private DateTimeOffset _lastActivityAt = DateTimeOffset.UtcNow;
    private int _disposedState;

@@ -28,6 +28,12 @@ public sealed class ResilientServerEvents<TFrame>
    public readonly HandlerPipeline<ResilientPreHandshakeContext<TFrame>> OnPreHandshake = new();
 
    /// <summary>
+   /// Pipeline fired when a client sends a Connect packet payload to initiate connection handshake.
+   /// Allows inspecting connect options, performing authentication challenges, or denying the connection.
+   /// </summary>
+   public readonly HandlerPipeline<ResilientClientConnectContext<TFrame>> OnConnect = new();
+
+   /// <summary>
    /// Pipeline fired when a framing protocol frame is received from a client.
    /// </summary>
    public readonly HandlerPipeline<ResilientFrameReceivedContext<TFrame>> FrameReceived = new();
