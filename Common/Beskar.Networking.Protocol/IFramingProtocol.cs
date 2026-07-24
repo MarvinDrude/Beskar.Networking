@@ -41,6 +41,17 @@ public interface IFramingProtocol<TSelf> where TSelf : struct, IFramingProtocol<
    static virtual TSelf CreateFrame(ResilientFrameKind kind) => default;
 
    /// <summary>
+   /// Optionally creates a protocol frame instance of the specified kind with a payload sequence.
+   /// </summary>
+   static virtual TSelf CreateFrame(ResilientFrameKind kind, ReadOnlySequence<byte> payload) => TSelf.CreateFrame(kind);
+
+   /// <summary>
+   /// Gets the payload byte sequence of this frame if available.
+   /// Defaults to empty sequence.
+   /// </summary>
+   ReadOnlySequence<byte> GetPayloadSequence() => ReadOnlySequence<byte>.Empty;
+
+   /// <summary>
    /// Attempts to deserialize or extract a control payload out of the frame.
    /// </summary>
    bool TryGetPayload<TPayload>(out TPayload? payload) where TPayload : class, IResilientPayload

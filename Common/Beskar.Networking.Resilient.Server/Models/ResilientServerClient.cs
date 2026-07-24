@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Threading.Channels;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
@@ -13,7 +14,9 @@ namespace Beskar.Networking.Resilient.Server.Models;
 /// Represents a connected client in the resilient server.
 /// </summary>
 /// <typeparam name="TFrame">The protocol framing struct type.</typeparam>
-public sealed class ResilientServerClient<TFrame>(NetworkServerStreamContext controlStreamContext)
+public sealed class ResilientServerClient<TFrame>(
+   NetworkServerStreamContext controlStreamContext,
+   ResilientServerOptions? options = null)
    : IAsyncDisposable
    where TFrame : struct, IFramingProtocol<TFrame>
 {
@@ -21,6 +24,11 @@ public sealed class ResilientServerClient<TFrame>(NetworkServerStreamContext con
    /// Unique identifier for this connected client.
    /// </summary>
    public Guid Id => Session.Id;
+
+   /// <summary>
+   /// The server options associated with this client's server, if available.
+   /// </summary>
+   public ResilientServerOptions? Options { get; } = options;
 
    /// <summary>
    /// The primary control stream context for this client.
@@ -128,6 +136,58 @@ public sealed class ResilientServerClient<TFrame>(NetworkServerStreamContext con
       }
 
       return ValueTask.CompletedTask;
+   }
+
+   /// <summary>
+   /// Asynchronously serializes and sends a generic payload on the main control stream using the configured or provided serializer.
+   /// </summary>
+   public ValueTask SendAsync<TPayload>(
+      TPayload payload,
+      ResilientFrameKind kind = ResilientFrameKind.Message,
+      IResilientSerializer? serializer = null,
+      CancellationToken cancellationToken = default)
+   {
+      return SendAsync(payload, ControlStream, kind, serializer, cancellationToken);
+   }
+
+   /// <summary>
+   /// Asynchronously serializes and sends a generic payload on a specific stream using the configured or provided serializer.
+   /// </summary>
+   public async ValueTask SendAsync<TPayload>(
+      TPayload payload,
+      INetworkStream stream,
+      ResilientFrameKind kind = ResilientFrameKind.Message,
+      IResilientSerializer? serializer = null,
+      CancellationToken cancellationToken = default)
+   {
+      var s = serializer ?? Options?.Serializer;
+      if (s == null)
+      {
+         throw new InvalidOperationException("No IResilientSerializer provided or configured on ResilientServerOptions.");
+      }
+
+      var writer = new ArrayBufferWriter<byte>();
+      s.Serialize(payload, writer);
+
+      var frame = TFrame.CreateFrame(kind, new ReadOnlySequence<byte>(writer.WrittenMemory));
+      await SendAsync(frame, stream, cancellationToken);
+   }
+
+   /// <summary>
+   /// Deserializes a payload of type <typeparamref name="TPayload"/> from a frame using the configured or provided serializer.
+   /// </summary>
+   public TPayload? DeserializePayload<TPayload>(
+      TFrame frame,
+      IResilientSerializer? serializer = null)
+   {
+      var s = serializer ?? Options?.Serializer;
+      if (s == null)
+      {
+         throw new InvalidOperationException("No IResilientSerializer provided or configured on ResilientServerOptions.");
+      }
+
+      var payloadSeq = frame.GetPayloadSequence();
+      return s.Deserialize<TPayload>(in payloadSeq);
    }
 
    /// <summary>

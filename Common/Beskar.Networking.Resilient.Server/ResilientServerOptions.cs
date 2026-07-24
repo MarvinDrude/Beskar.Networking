@@ -1,3 +1,5 @@
+using Beskar.Networking.Protocol;
+
 namespace Beskar.Networking.Resilient.Server;
 
 public sealed class ResilientServerOptions
@@ -24,4 +26,9 @@ public sealed class ResilientServerOptions
    /// Default is false (only message packets).
    /// </summary>
    public bool FrameReceivedAllPackets { get; set; } = false;
+
+   /// <summary>
+   /// Gets or sets an optional serializer interface for high-performance encoding/decoding of generic SendAsync payloads.
+   /// </summary>
+   public IResilientSerializer? Serializer { get; set; }
 }

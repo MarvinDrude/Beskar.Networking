@@ -234,7 +234,7 @@ public sealed class ResilientServer<TFrame>
          var connectionContext = new NetworkServerConnectionContext(listener, session);
          var controlStreamContext = new NetworkServerStreamContext(connectionContext, controlStreamResult.Success);
 
-         client = new ResilientServerClient<TFrame>(controlStreamContext);
+         client = new ResilientServerClient<TFrame>(controlStreamContext, Options);
          if (!Clients.TryAdd(client))
          {
             await client.DisposeAsync();

@@ -81,6 +81,16 @@ public partial struct BeskarPacket
       return new BeskarPacket { PacketType = packetType };
    }
 
+   public static BeskarPacket CreateFrame(ResilientFrameKind kind, ReadOnlySequence<byte> payload)
+   {
+      var packet = CreateFrame(kind);
+      packet.PayloadLength = (int)payload.Length;
+      packet.Payload = payload;
+      return packet;
+   }
+
+   public readonly ReadOnlySequence<byte> GetPayloadSequence() => Payload;
+
    public readonly bool TryGetPayload<TPayload>(out TPayload? payload) where TPayload : class, IResilientPayload
    {
       payload = null;
