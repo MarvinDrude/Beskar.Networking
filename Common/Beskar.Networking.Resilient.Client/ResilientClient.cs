@@ -196,6 +196,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
       catch (Exception ex)
       {
+         await DisconnectInternalAsync(null);
          State = ResilientClientState.Disconnected;
          return new StringError($"Connect error: {ex.Message}");
       }

@@ -313,6 +313,10 @@ public sealed class ResilientServer<TFrame>
                }, ct);
             }
          }
+         else
+         {
+            await session.DisposeAsync();
+         }
       }
    }
 
