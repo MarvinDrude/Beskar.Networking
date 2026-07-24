@@ -51,122 +51,58 @@ public interface IFramingProtocol<TSelf> where TSelf : struct, IFramingProtocol<
 
 ---
 
-## 2. Option A: Manual Implementation Example
+## 2. Option A: Source-Generated Framing (Recommended)
 
-Here is a complete custom protocol frame example named `CustomMagicPacket` which uses a `0xBEEF` magic header, a 1-byte kind field, a 2-byte payload length field, and a trailing payload body.
+To avoid writing manual parsing and serialization code, decorate a partial struct with the `[GenerateFramingProtocol]` attribute. The generator automatically implements the `TryRead`, `TryWrite`, `GetEncodedLength`, and `WriteTo` methods based on the sequential `Order` of your decorated properties.
+
+Here is the `CustomMagicPacket` struct rewritten using the source generator. It uses a `0xBEEF` magic header, a 1-byte kind field, a payload length prefix, and a trailing payload body:
 
 ```csharp
 using System.Buffers;
-using System.Buffers.Binary;
 using Beskar.Networking.Protocol;
+using Beskar.Networking.Protocol.Attributes;
 using Beskar.Networking.Protocol.Payloads;
 
-public struct CustomMagicPacket : IFramingProtocol<CustomMagicPacket>
-{
-    public const ushort MagicHeader = 0xBEEF;
+namespace MyCustomNamespace;
 
+[GenerateFramingProtocol]
+public partial struct CustomMagicPacket
+{
+    // 1. Declare magic bytes to identify frames (2 bytes: 0xBE, 0xEF)
+    [MagicBytes(0xBE, 0xEF, Order = 0)]
+    public partial bool HasValidMagicBytes { get; }
+
+    // 2. Frame classification kind
+    [ProtocolField(Order = 1)]
     public ResilientFrameKind Kind { get; set; }
+
+    // 3. Length prefix (encoded as a variable-length number)
+    [VarNumberField(Order = 2)]
+    public int PayloadLength { get; set; }
+
+    // 4. Payload buffer mapping (linked to PayloadLength)
+    [ByteSequenceField(nameof(PayloadLength), safeCopyData: false, Order = 3)]
     public ReadOnlySequence<byte> Payload { get; set; }
 
-    public ResilientFrameKind GetFrameKind() => Kind;
-    public ReadOnlySequence<byte> GetPayloadSequence() => Payload;
-    public int GetEncodedLength() => 5 + (int)Payload.Length;
+    // --- Manual Helpers to Satisfy IFramingProtocol ---
 
-    public bool TryWrite(Span<byte> destination, out int bytesWritten)
-    {
-        var totalLen = GetEncodedLength();
-        if (destination.Length < totalLen)
-        {
-            bytesWritten = 0;
-            return false;
-        }
+    public readonly ResilientFrameKind GetFrameKind() => Kind;
 
-        // Write Magic Header (2 Bytes)
-        BinaryPrimitives.WriteUInt16BigEndian(destination[..2], MagicHeader);
-        // Write Frame Kind (1 Byte)
-        destination[2] = (byte)Kind;
-        // Write Payload Length (2 Bytes)
-        BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(3, 2), (ushort)Payload.Length);
-        
-        // Copy Payload bytes
-        if (!Payload.IsEmpty)
-        {
-            Payload.CopyTo(destination[5..]);
-        }
+    public readonly ReadOnlySequence<byte> GetPayloadSequence() => Payload;
 
-        bytesWritten = totalLen;
-        return true;
-    }
-
-    public static bool TryRead(ref SequenceReader<byte> reader, out CustomMagicPacket frame)
-    {
-        frame = default;
-        if (reader.Remaining < 5) return false;
-
-        var startPosition = reader.Consumed;
-
-        // Read and check Magic Header
-        if (!reader.TryReadBigEndian(out short magic) || (ushort)magic != MagicHeader)
-        {
-            reader.Rewind(reader.Consumed - startPosition);
-            return false;
-        }
-
-        // Read Frame Kind
-        if (!reader.TryRead(out var kindByte))
-        {
-            reader.Rewind(reader.Consumed - startPosition);
-            return false;
-        }
-
-        // Read Payload Length
-        if (!reader.TryReadBigEndian(out short lenShort))
-        {
-            reader.Rewind(reader.Consumed - startPosition);
-            return false;
-        }
-
-        int payloadLen = (ushort)lenShort;
-        if (reader.UnreadSequence.Length < payloadLen)
-        {
-            // Frame is incomplete, wait for more data to arrive
-            reader.Rewind(reader.Consumed - startPosition);
-            return false;
-        }
-
-        // Parse Payload
-        var payloadSeq = payloadLen > 0
-            ? new ReadOnlySequence<byte>(reader.UnreadSequence.Slice(0, payloadLen).ToArray())
-            : ReadOnlySequence<byte>.Empty;
-
-        reader.Advance(payloadLen);
-
-        frame = new CustomMagicPacket
-        {
-            Kind = (ResilientFrameKind)kindByte,
-            Payload = payloadSeq
-        };
-        return true;
-    }
-
-    public void WriteTo(IBufferWriter<byte> writer)
-    {
-        var totalLen = GetEncodedLength();
-        var span = writer.GetSpan(totalLen);
-        if (TryWrite(span, out var written))
-        {
-            writer.Advance(written);
-        }
-    }
-
-    public static CustomMagicPacket CreateFrame(ResilientFrameKind kind) => 
+    public static CustomMagicPacket CreateFrame(ResilientFrameKind kind) =>
         new() { Kind = kind, Payload = ReadOnlySequence<byte>.Empty };
 
-    public static CustomMagicPacket CreateFrame(ResilientFrameKind kind, ReadOnlySequence<byte> payload) => 
-        new() { Kind = kind, Payload = payload };
+    public static CustomMagicPacket CreateFrame(ResilientFrameKind kind, ReadOnlySequence<byte> payload) =>
+        new() 
+        { 
+            Kind = kind, 
+            PayloadLength = (int)payload.Length, 
+            Payload = payload 
+        };
 
     // Standard control payload deserialization helpers
-    public bool TryGetPayload<TPayload>(out TPayload? payload) where TPayload : class, IResilientPayload
+    public readonly bool TryGetPayload<TPayload>(out TPayload? payload) where TPayload : class, IResilientPayload
     {
         payload = null;
         if (Payload.IsEmpty) return false;
@@ -204,46 +140,105 @@ public struct CustomMagicPacket : IFramingProtocol<CustomMagicPacket>
 
 ---
 
-## 3. Option B: Source-Generated Framing
+## 3. Option B: Manual Implementation
 
-To avoid writing low-level parsing methods manually (which can be error-prone and tedious), decorate a partial struct with the `[GenerateFramingProtocol]` attribute. The generator automatically implements the `TryRead`, `TryWrite`, `GetEncodedLength`, and `WriteTo` methods based on the sequential `Order` of your decorated properties.
-
-### Example Using Source Generator:
+If you require absolute low-level control or need to interface with a legacy system that does not align with the source generator's patterns, you can implement the methods manually.
 
 ```csharp
 using System.Buffers;
-using Beskar.Memory.Flags;
-using Beskar.Networking.Protocol.Attributes;
+using System.Buffers.Binary;
+using Beskar.Networking.Protocol;
 using Beskar.Networking.Protocol.Payloads;
 
-namespace MyCustomNamespace;
-
-[GenerateFramingProtocol]
-public partial struct CustomAutoPacket
+public struct ManualMagicPacket : IFramingProtocol<ManualMagicPacket>
 {
-    // 1. Declare magic bytes to identify frames
-    [MagicBytes(0xAB, 0xCD, Order = 0)]
-    public partial bool HasValidMagicBytes { get; }
+    public const ushort MagicHeader = 0xBEEF;
 
-    // 2. Protocol version field (1 byte)
-    [VersionField(Order = 1)]
-    public byte Version { get; set; }
-
-    // 3. Frame classification type
-    [ProtocolField(Order = 2)]
-    public MyPacketType PacketType { get; set; }
-
-    // 4. Compact boolean status flags (2 bytes space)
-    [FlagsField(Order = 3)]
-    public PackedBools16 Flags { get; set; }
-
-    // 5. Length prefix (encoded as variable length number)
-    [VarNumberField(Order = 4)]
-    public int PayloadLength { get; set; }
-
-    // 6. Payload buffer mapping (linked to PayloadLength)
-    [ByteSequenceField(nameof(PayloadLength), safeCopyData: false, Order = 5)]
+    public ResilientFrameKind Kind { get; set; }
     public ReadOnlySequence<byte> Payload { get; set; }
+
+    public ResilientFrameKind GetFrameKind() => Kind;
+    public ReadOnlySequence<byte> GetPayloadSequence() => Payload;
+    public int GetEncodedLength() => 5 + (int)Payload.Length;
+
+    public bool TryWrite(Span<byte> destination, out int bytesWritten)
+    {
+        var totalLen = GetEncodedLength();
+        if (destination.Length < totalLen)
+        {
+            bytesWritten = 0;
+            return false;
+        }
+
+        BinaryPrimitives.WriteUInt16BigEndian(destination[..2], MagicHeader);
+        destination[2] = (byte)Kind;
+        BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(3, 2), (ushort)Payload.Length);
+        
+        if (!Payload.IsEmpty) Payload.CopyTo(destination[5..]);
+
+        bytesWritten = totalLen;
+        return true;
+    }
+
+    public static bool TryRead(ref SequenceReader<byte> reader, out ManualMagicPacket frame)
+    {
+        frame = default;
+        if (reader.Remaining < 5) return false;
+
+        var startPosition = reader.Consumed;
+
+        if (!reader.TryReadBigEndian(out short magic) || (ushort)magic != MagicHeader)
+        {
+            reader.Rewind(reader.Consumed - startPosition);
+            return false;
+        }
+
+        if (!reader.TryRead(out var kindByte) || !reader.TryReadBigEndian(out short lenShort))
+        {
+            reader.Rewind(reader.Consumed - startPosition);
+            return false;
+        }
+
+        int payloadLen = (ushort)lenShort;
+        if (reader.UnreadSequence.Length < payloadLen)
+        {
+            reader.Rewind(reader.Consumed - startPosition);
+            return false;
+        }
+
+        var payloadSeq = payloadLen > 0
+            ? new ReadOnlySequence<byte>(reader.UnreadSequence.Slice(0, payloadLen).ToArray())
+            : ReadOnlySequence<byte>.Empty;
+
+        reader.Advance(payloadLen);
+
+        frame = new ManualMagicPacket
+        {
+            Kind = (ResilientFrameKind)kindByte,
+            Payload = payloadSeq
+        };
+        return true;
+    }
+
+    public void WriteTo(IBufferWriter<byte> writer)
+    {
+        var totalLen = GetEncodedLength();
+        var span = writer.GetSpan(totalLen);
+        if (TryWrite(span, out var written)) writer.Advance(written);
+    }
+
+    public static ManualMagicPacket CreateFrame(ResilientFrameKind kind) => 
+        new() { Kind = kind, Payload = ReadOnlySequence<byte>.Empty };
+
+    public static ManualMagicPacket CreateFrame(ResilientFrameKind kind, ReadOnlySequence<byte> payload) => 
+        new() { Kind = kind, Payload = payload };
+
+    public bool TryGetPayload<TPayload>(out TPayload? payload) where TPayload : class, IResilientPayload
+    {
+        // ... (Same Connect/Disconnect/Authenticate mapping logic as CustomMagicPacket)
+        payload = null;
+        return false;
+    }
 }
 ```
 
