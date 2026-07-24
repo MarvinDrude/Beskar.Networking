@@ -281,6 +281,7 @@ public sealed class ResilientServer<TFrame>
 
                if (connectContext.IsDenied)
                {
+                  client.SetHandshakeResult(false);
                   await client.DisconnectAsync();
                   return;
                }
@@ -288,6 +289,13 @@ public sealed class ResilientServer<TFrame>
 
             var connectAckFrame = TFrame.CreateFrame(ResilientFrameKind.ConnectAcknowledged);
             await client.SendAsync(connectAckFrame, combinedToken);
+            client.SetHandshakeResult(true);
+         }
+         else
+         {
+            client.SetHandshakeResult(false);
+            await client.DisconnectAsync();
+            return;
          }
 
          await listenTask;
@@ -300,6 +308,7 @@ public sealed class ResilientServer<TFrame>
       {
          if (client != null)
          {
+            client.SetHandshakeResult(false);
             Clients.TryRemove(client.Id, out _);
             await client.DisposeAsync();
 
@@ -466,15 +475,19 @@ public sealed class ResilientServer<TFrame>
                {
                   if (Events.FrameReceived.Count > 0)
                   {
-                     var eventContext = new ResilientFrameReceivedContext<TFrame>
+                     var handshakeSuccess = await client.HandshakeCompletedTask;
+                     if (handshakeSuccess)
                      {
-                        Client = client,
-                        Stream = streamContext.Stream,
-                        Frame = frame
-                     };
+                        var eventContext = new ResilientFrameReceivedContext<TFrame>
+                        {
+                           Client = client,
+                           Stream = streamContext.Stream,
+                           Frame = frame
+                        };
 
-                     await Events.FrameReceived.ExecuteAsync(
-                        eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                        await Events.FrameReceived.ExecuteAsync(
+                           eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                     }
                   }
                }
             }

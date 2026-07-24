@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net;
 using System.Text;
 using Beskar.Networking.Protocol.Frames;
@@ -270,5 +271,59 @@ public class ResilientAuthHandshakeTests
             AuthMethod = "SCRAM-SHA-256",
             AuthData = "step-2-ack"u8.ToArray()
          }, ct);
+   }
+
+   [Test]
+   public async Task Server_FrameReceived_ShouldNotFire_IfClientIsDeniedOnConnect()
+   {
+      var listenerEndPoint = new IPEndPoint(IPAddress.Loopback, 0);
+      var server = ResilientServerFactory.CreateBuilder<BeskarPacket>()
+         .UseTcp(listenerEndPoint)
+         .Build();
+
+      var frameReceivedFired = false;
+      server.Events.FrameReceived.Add((_, _) =>
+      {
+         frameReceivedFired = true;
+         return ValueTask.CompletedTask;
+      });
+
+      server.Events.OnConnect.Add(async (ctx, _) =>
+      {
+         await Task.Delay(50);
+         ctx.Deny();
+      });
+
+      await server.StartAsync();
+      var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
+
+      var socket = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      await socket.ConnectAsync(boundEndPoint);
+
+      using var writer = new Beskar.Networking.Protocol.Utilities.PooledBufferWriter();
+      var connectPayload = new ConnectPacketPayload();
+      var len = connectPayload.GetEncodedLength();
+      if (connectPayload.TryWrite(writer.GetSpan(len), out var bytesWritten))
+      {
+         writer.Advance(bytesWritten);
+      }
+
+      var connectFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Connect, new ReadOnlySequence<byte>(writer.WrittenMemory));
+      var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>("HelloUnauthenticated"u8.ToArray()));
+
+      using var streamWriter = new Beskar.Networking.Protocol.Utilities.PooledBufferWriter();
+      connectFrame.WriteTo(streamWriter);
+      msgFrame.WriteTo(streamWriter);
+
+      await socket.SendAsync(streamWriter.WrittenMemory);
+
+      var serverCleanedUp = await SpinWaitUntilAsync(() => server.Clients.Count == 0, TimeSpan.FromSeconds(3));
+      await Assert.That(serverCleanedUp).IsTrue();
+
+      await Assert.That(frameReceivedFired).IsFalse();
+
+      socket.Dispose();
+      await server.StopAsync();
+      await server.DisposeAsync();
    }
 }

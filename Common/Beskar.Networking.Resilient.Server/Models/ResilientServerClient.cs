@@ -87,6 +87,18 @@ public sealed class ResilientServerClient<TFrame>(
          SingleReader = false
       });
 
+   /// <summary>
+   /// A task that completes when the client's connection handshake and OnConnect event pipeline have finished.
+   /// Evaluates to true if accepted, false if denied or disconnected.
+   /// </summary>
+   public Task<bool> HandshakeCompletedTask => _handshakeTcs.Task;
+   private readonly TaskCompletionSource<bool> _handshakeTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+   internal void SetHandshakeResult(bool success)
+   {
+      _handshakeTcs.TrySetResult(success);
+   }
+
    private DateTimeOffset _lastActivityAt = DateTimeOffset.UtcNow;
    private int _disposedState;
 
@@ -218,6 +230,8 @@ public sealed class ResilientServerClient<TFrame>(
    /// </summary>
    public async ValueTask DisconnectAsync(DisconnectPacketPayload? disconnectPayload = null)
    {
+      _handshakeTcs.TrySetResult(false);
+
       if (Volatile.Read(ref _disposedState) == 1)
       {
          return;
