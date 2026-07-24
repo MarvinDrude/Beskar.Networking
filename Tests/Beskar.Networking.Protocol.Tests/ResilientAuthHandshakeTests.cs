@@ -11,6 +11,17 @@ namespace Beskar.Networking.Protocol.Tests;
 
 public class ResilientAuthHandshakeTests
 {
+   private static async Task<bool> SpinWaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+   {
+      using var cts = new CancellationTokenSource(timeout);
+      while (!cts.IsCancellationRequested)
+      {
+         if (condition()) return true;
+         await Task.Delay(10, cts.Token);
+      }
+      return condition();
+   }
+
    [Test]
    public async Task Tcp_Port0_Auth_SuccessfulChallengeResponse_Handshake()
    {
@@ -105,7 +116,9 @@ public class ResilientAuthHandshakeTests
 
       await Assert.That(connectResult.Failed).IsTrue();
       await Assert.That(client.IsConnected).IsFalse();
-      await Assert.That(server.Clients.Count).IsEqualTo(0);
+
+      var serverCleanedUp = await SpinWaitUntilAsync(() => server.Clients.Count == 0, TimeSpan.FromSeconds(6));
+      await Assert.That(serverCleanedUp).IsTrue();
 
       await server.StopAsync();
       await client.DisposeAsync();
@@ -168,6 +181,9 @@ public class ResilientAuthHandshakeTests
 
       await Assert.That(connectResult.Failed).IsTrue();
       await Assert.That(client.IsConnected).IsFalse();
+
+      var serverCleanedUp = await SpinWaitUntilAsync(() => server.Clients.Count == 0, TimeSpan.FromSeconds(2));
+      await Assert.That(serverCleanedUp).IsTrue();
 
       await server.StopAsync();
       await client.DisposeAsync();
