@@ -49,5 +49,34 @@ public partial struct BeskarPacket
    /// </summary>
    [ByteSequenceField(nameof(PayloadLength), safeCopyData: false, Order = 5)]
    public ReadOnlySequence<byte> Payload { get; set; }
-}
 
+   public readonly ResilientFrameKind GetFrameKind()
+   {
+      return PacketType switch
+      {
+         BeskarPacketType.Connect => ResilientFrameKind.Connect,
+         BeskarPacketType.Authenticate => ResilientFrameKind.Authenticate,
+         BeskarPacketType.ConnectAcknowledged => ResilientFrameKind.ConnectAcknowledged,
+         BeskarPacketType.Disconnect => ResilientFrameKind.Disconnect,
+         BeskarPacketType.Ping => ResilientFrameKind.Ping,
+         BeskarPacketType.Pong => ResilientFrameKind.Pong,
+         _ => ResilientFrameKind.Message
+      };
+   }
+
+   public static BeskarPacket CreateFrame(ResilientFrameKind kind)
+   {
+      var packetType = kind switch
+      {
+         ResilientFrameKind.Connect => BeskarPacketType.Connect,
+         ResilientFrameKind.Authenticate => BeskarPacketType.Authenticate,
+         ResilientFrameKind.ConnectAcknowledged => BeskarPacketType.ConnectAcknowledged,
+         ResilientFrameKind.Disconnect => BeskarPacketType.Disconnect,
+         ResilientFrameKind.Ping => BeskarPacketType.Ping,
+         ResilientFrameKind.Pong => BeskarPacketType.Pong,
+         _ => BeskarPacketType.Message
+      };
+
+      return new BeskarPacket { PacketType = packetType };
+   }
+}

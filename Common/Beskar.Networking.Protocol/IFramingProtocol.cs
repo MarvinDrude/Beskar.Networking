@@ -27,4 +27,15 @@ public interface IFramingProtocol<TSelf> where TSelf : struct, IFramingProtocol<
    /// Attempts to read a protocol frame from a SequenceReader.
    /// </summary>
    static abstract bool TryRead(ref SequenceReader<byte> reader, out TSelf result);
+
+   /// <summary>
+   /// Gets the classification kind of this frame (Connect, Disconnect, Ping, Pong, Message, etc.).
+   /// Defaults to ResilientFrameKind.Message.
+   /// </summary>
+   ResilientFrameKind GetFrameKind() => ResilientFrameKind.Message;
+
+   /// <summary>
+   /// Optionally creates a protocol frame instance of the specified kind.
+   /// </summary>
+   static virtual TSelf CreateFrame(ResilientFrameKind kind) => default;
 }

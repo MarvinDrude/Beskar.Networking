@@ -125,6 +125,26 @@ public class BeskarPacketTests
    }
 
    [Test]
+   public async Task ResilientFrameKind_GetFrameKind_And_CreateFrame_ShouldMapCorrectly()
+   {
+      var connectPkt = BeskarPacket.CreateFrame(ResilientFrameKind.Connect);
+      await Assert.That(connectPkt.PacketType).IsEqualTo(BeskarPacketType.Connect);
+      await Assert.That(connectPkt.GetFrameKind()).IsEqualTo(ResilientFrameKind.Connect);
+
+      var pingPkt = BeskarPacket.CreateFrame(ResilientFrameKind.Ping);
+      await Assert.That(pingPkt.PacketType).IsEqualTo(BeskarPacketType.Ping);
+      await Assert.That(pingPkt.GetFrameKind()).IsEqualTo(ResilientFrameKind.Ping);
+
+      var pongPkt = BeskarPacket.CreateFrame(ResilientFrameKind.Pong);
+      await Assert.That(pongPkt.PacketType).IsEqualTo(BeskarPacketType.Pong);
+      await Assert.That(pongPkt.GetFrameKind()).IsEqualTo(ResilientFrameKind.Pong);
+
+      var disconnectPkt = BeskarPacket.CreateFrame(ResilientFrameKind.Disconnect);
+      await Assert.That(disconnectPkt.PacketType).IsEqualTo(BeskarPacketType.Disconnect);
+      await Assert.That(disconnectPkt.GetFrameKind()).IsEqualTo(ResilientFrameKind.Disconnect);
+   }
+
+   [Test]
    public async Task SafeCopyData_True_ShouldAllocateNewArray()
    {
       var sourceData = "SafeCopyTestPayload"u8.ToArray();
@@ -422,7 +442,7 @@ public class BeskarPacketTests
    public async Task VarNumber_Direct_BoundaryValues_ShouldRoundtrip()
    {
       ulong[] testValues = [0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455, 268435456, ulong.MaxValue];
-      var tempBuffer = new byte[16];
+      byte[] tempBuffer = new byte[16];
 
       foreach (var val in testValues)
       {
