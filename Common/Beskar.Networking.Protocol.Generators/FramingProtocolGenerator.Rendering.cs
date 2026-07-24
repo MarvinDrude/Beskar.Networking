@@ -46,7 +46,7 @@ public partial class FramingProtocolGenerator
             writer.OpenBody();
          }
 
-         writer.WriteLine("partial " + model.TypeKind + " " + model.TypeName);
+         writer.WriteLine("partial " + model.TypeKind + " " + model.TypeName + " : Beskar.Networking.Protocol.IFramingProtocol<" + model.TypeName + ">");
          writer.OpenBody();
 
          // Partial properties implementation
@@ -144,7 +144,7 @@ public partial class FramingProtocolGenerator
          switch (prop.AttributeKind)
          {
             case ProtocolAttributeKind.MagicBytes:
-               for (var i = 0; i < prop.MagicBytes.Length; i++)
+               for (int i = 0; i < prop.MagicBytes.Length; i++)
                {
                   writer.WriteLine("destination[bytesWritten++] = 0x" + prop.MagicBytes[i].ToString("X2") + ";");
                }
@@ -205,7 +205,7 @@ public partial class FramingProtocolGenerator
          switch (prop.AttributeKind)
          {
             case ProtocolAttributeKind.MagicBytes:
-               for (var i = 0; i < prop.MagicBytes.Length; i++)
+               for (int i = 0; i < prop.MagicBytes.Length; i++)
                {
                   writer.WriteLine("if (!reader.TryRead(out byte b" + i + ") || b" + i + " != 0x" + prop.MagicBytes[i].ToString("X2") + ") return false;");
                }

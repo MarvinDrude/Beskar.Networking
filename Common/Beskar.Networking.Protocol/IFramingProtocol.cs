@@ -1,0 +1,30 @@
+using System.Buffers;
+
+namespace Beskar.Networking.Protocol;
+
+/// <summary>
+/// Defines the contract for a high-performance framing protocol struct or type.
+/// </summary>
+/// <typeparam name="TSelf">The implementing framing protocol type.</typeparam>
+public interface IFramingProtocol<TSelf> where TSelf : struct, IFramingProtocol<TSelf>
+{
+   /// <summary>
+   /// Gets the encoded byte length of this protocol frame.
+   /// </summary>
+   int GetEncodedLength();
+
+   /// <summary>
+   /// Attempts to write this protocol frame into a destination span.
+   /// </summary>
+   bool TryWrite(Span<byte> destination, out int bytesWritten);
+
+   /// <summary>
+   /// Writes this protocol frame into an IBufferWriter.
+   /// </summary>
+   void WriteTo(IBufferWriter<byte> writer);
+
+   /// <summary>
+   /// Attempts to read a protocol frame from a SequenceReader.
+   /// </summary>
+   static abstract bool TryRead(ref SequenceReader<byte> reader, out TSelf result);
+}

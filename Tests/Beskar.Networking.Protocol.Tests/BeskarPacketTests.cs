@@ -72,6 +72,38 @@ public partial struct VarNumberTypesPacket
 
 public class BeskarPacketTests
 {
+   private static bool GenericRoundtripHelper<TPacket>(TPacket frame, out TPacket readBack)
+      where TPacket : struct, IFramingProtocol<TPacket>
+   {
+      var buffer = new byte[frame.GetEncodedLength()];
+      if (!frame.TryWrite(buffer, out var written) || written != buffer.Length)
+      {
+         readBack = default;
+         return false;
+      }
+
+      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(buffer));
+      return TPacket.TryRead(ref reader, out readBack);
+   }
+
+   [Test]
+   public async Task GenericFramingProtocol_Interface_Constraint_ShouldWorkPolymorphically()
+   {
+      var packet = new BeskarPacket
+      {
+         Version = 10,
+         PacketType = BeskarPacketType.Message,
+         PayloadLength = 4,
+         Payload = new ReadOnlySequence<byte>("Data"u8.ToArray())
+      };
+
+      var success = GenericRoundtripHelper(packet, out var result);
+      await Assert.That(success).IsTrue();
+      await Assert.That(result.Version).IsEqualTo((byte)10);
+      await Assert.That(result.PacketType).IsEqualTo(BeskarPacketType.Message);
+      await Assert.That(result.PayloadLength).IsEqualTo(4);
+   }
+
    [Test]
    public async Task BeskarPacket_GetEncodedLength_ShouldCalculateCorrectSize()
    {
@@ -277,7 +309,7 @@ public class BeskarPacketTests
       await Assert.That(Unsafe.As<PackedBools32, uint>(ref flags32Copy)).IsEqualTo(0x12345678U);
 
       // Flags64
-      var raw64 = 0x123456789ABCDEF0UL;
+      ulong raw64 = 0x123456789ABCDEF0UL;
       var pkt64 = new PacketWithFlags64 { Flags = Unsafe.As<ulong, PackedBools64>(ref raw64) };
 
       var buf64 = new byte[pkt64.GetEncodedLength()];
@@ -329,7 +361,7 @@ public class BeskarPacketTests
    public async Task VarNumber_Direct_BoundaryValues_ShouldRoundtrip()
    {
       ulong[] testValues = [0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455, 268435456, ulong.MaxValue];
-      var tempBuffer = new byte[16];
+      byte[] tempBuffer = new byte[16];
 
       foreach (var val in testValues)
       {
