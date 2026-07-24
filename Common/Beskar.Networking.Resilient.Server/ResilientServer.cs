@@ -475,7 +475,10 @@ public sealed class ResilientServer<TFrame>
                {
                   if (Events.FrameReceived.Count > 0)
                   {
-                     var handshakeSuccess = await client.HandshakeCompletedTask;
+                     var handshakeSuccess = client.HandshakeCompletedTask.IsCompleted
+                        ? client.HandshakeCompletedTask.Result
+                        : await client.HandshakeCompletedTask;
+
                      if (handshakeSuccess)
                      {
                         var eventContext = new ResilientFrameReceivedContext<TFrame>
