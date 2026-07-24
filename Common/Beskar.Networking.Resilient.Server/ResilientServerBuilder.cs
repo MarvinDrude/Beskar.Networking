@@ -1,8 +1,12 @@
 using System.Net;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Protocol;
+using Beskar.Networking.Transports.Memory;
+using Beskar.Networking.Transports.NamedPipes;
 using Beskar.Networking.Transports.Quic;
 using Beskar.Networking.Transports.Tcp;
+using Beskar.Networking.Transports.Udp;
+using Beskar.Networking.Transports.Uds;
 using Beskar.Networking.Transports.Ws;
 
 namespace Beskar.Networking.Resilient.Server;
@@ -106,5 +110,97 @@ public class ResilientServerBuilder<TFrame>(ResilientServerOptions options)
    public ResilientServerBuilder<TFrame> UseQuic(int port, QuicTransportOptions? options = null)
    {
       return UseQuic(new IPEndPoint(IPAddress.Any, port), options);
+   }
+
+   /// <summary>
+   /// Configures the server to listen on the specified endpoint using Unix Domain Sockets (UDS).
+   /// </summary>
+   /// <param name="endPoint">The network endpoint to listen on.</param>
+   /// <param name="options">Optional UDS transport options.</param>
+   /// <returns>The builder instance.</returns>
+   public ResilientServerBuilder<TFrame> UseUds(IPEndPoint endPoint, UdsTransportOptions? options = null)
+   {
+      _listeners.Add(new UdsNetworkListener(endPoint, options ?? new UdsTransportOptions()));
+      return this;
+   }
+
+   /// <summary>
+   /// Configures the server to listen on the specified port using Unix Domain Sockets (UDS) with IPAddress.Any.
+   /// </summary>
+   /// <param name="port">The port to listen on.</param>
+   /// <param name="options">Optional UDS transport options.</param>
+   /// <returns>The builder instance.</returns>
+   public ResilientServerBuilder<TFrame> UseUds(int port, UdsTransportOptions? options = null)
+   {
+      return UseUds(new IPEndPoint(IPAddress.Any, port), options);
+   }
+
+   /// <summary>
+   /// Configures the server to listen on the specified endpoint using Named Pipes.
+   /// </summary>
+   /// <param name="endPoint">The NamedPipeEndPoint to listen on.</param>
+   /// <param name="options">Optional Named Pipes transport options.</param>
+   /// <returns>The builder instance.</returns>
+   public ResilientServerBuilder<TFrame> UseNamedPipes(NamedPipeEndPoint endPoint, NamedPipeTransportOptions? options = null)
+   {
+      _listeners.Add(new NamedPipeNetworkListener(endPoint, options ?? new NamedPipeTransportOptions()));
+      return this;
+   }
+
+   /// <summary>
+   /// Configures the server to listen on the specified pipe name using Named Pipes.
+   /// </summary>
+   /// <param name="pipeName">The name of the pipe to listen on.</param>
+   /// <param name="options">Optional Named Pipes transport options.</param>
+   /// <returns>The builder instance.</returns>
+   public ResilientServerBuilder<TFrame> UseNamedPipes(string pipeName, NamedPipeTransportOptions? options = null)
+   {
+      return UseNamedPipes(new NamedPipeEndPoint(pipeName), options);
+   }
+
+   /// <summary>
+   /// Configures the server to listen on the specified endpoint using in-memory transport.
+   /// </summary>
+   /// <param name="endPoint">The MemoryEndPoint to listen on.</param>
+   /// <param name="options">Optional Memory transport options.</param>
+   /// <returns>The builder instance.</returns>
+   public ResilientServerBuilder<TFrame> UseMemory(MemoryEndPoint endPoint, MemoryTransportOptions? options = null)
+   {
+      _listeners.Add(new MemoryNetworkListener(endPoint, options ?? new MemoryTransportOptions()));
+      return this;
+   }
+
+   /// <summary>
+   /// Configures the server to listen on the specified address using in-memory transport.
+   /// </summary>
+   /// <param name="address">The in-memory address to listen on.</param>
+   /// <param name="options">Optional Memory transport options.</param>
+   /// <returns>The builder instance.</returns>
+   public ResilientServerBuilder<TFrame> UseMemory(string address, MemoryTransportOptions? options = null)
+   {
+      return UseMemory(new MemoryEndPoint(address), options);
+   }
+
+   /// <summary>
+   /// Configures the server to listen on the specified endpoint using UDP.
+   /// </summary>
+   /// <param name="endPoint">The network endpoint to listen on.</param>
+   /// <param name="options">Optional UDP transport options.</param>
+   /// <returns>The builder instance.</returns>
+   public ResilientServerBuilder<TFrame> UseUdp(IPEndPoint endPoint, UdpTransportOptions? options = null)
+   {
+      _listeners.Add(new UdpNetworkListener(endPoint, options ?? new UdpTransportOptions()));
+      return this;
+   }
+
+   /// <summary>
+   /// Configures the server to listen on the specified port using UDP with IPAddress.Any.
+   /// </summary>
+   /// <param name="port">The port to listen on.</param>
+   /// <param name="options">Optional UDP transport options.</param>
+   /// <returns>The builder instance.</returns>
+   public ResilientServerBuilder<TFrame> UseUdp(int port, UdpTransportOptions? options = null)
+   {
+      return UseUdp(new IPEndPoint(IPAddress.Any, port), options);
    }
 }

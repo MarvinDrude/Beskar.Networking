@@ -1,5 +1,7 @@
+using System.Buffers;
 using Beskar.Networking.Protocol;
 using Beskar.Networking.Protocol.Payloads;
+using Beskar.Networking.Protocol.Utilities;
 using Beskar.Networking.Resilient.Server.Models;
 
 namespace Beskar.Networking.Resilient.Server.Contexts;
@@ -45,7 +47,14 @@ public sealed class ResilientClientConnectContext<TFrame>
    /// </summary>
    public async ValueTask SendAuthenticateAsync(AuthenticatePacketPayload payload, CancellationToken ct = default)
    {
-      var frame = TFrame.CreateFrame(ResilientFrameKind.Authenticate);
+      var len = payload.GetEncodedLength();
+      using var writer = new PooledBufferWriter(len);
+      if (payload.TryWrite(writer.GetSpan(len), out var bytesWritten))
+      {
+         writer.Advance(bytesWritten);
+      }
+
+      var frame = TFrame.CreateFrame(ResilientFrameKind.Authenticate, new ReadOnlySequence<byte>(writer.WrittenMemory));
       using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken, ct);
       await Client.SendAsync(frame, combinedCts.Token);
    }
