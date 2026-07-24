@@ -2,13 +2,16 @@ using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Writers;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Protocol;
 using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Common.Interfaces;
 using Beskar.Networking.Resilient.Server.Services;
 
 namespace Beskar.Networking.Resilient.Server;
 
-public sealed class ResilientServer : IResilientServer
+public sealed class ResilientServer<TFrame>
+   : IResilientServer<TFrame>
+   where TFrame : struct, IFramingProtocol<TFrame>
 {
    public ResilientServerState State
    {
@@ -30,14 +33,14 @@ public sealed class ResilientServer : IResilientServer
    private readonly INetworkListener[] _listeners;
    private CancellationTokenSource _cancellationTokenSource = new();
 
-   private readonly ResilientKeepAliveService _keepAliveService;
+   private readonly ResilientKeepAliveService<TFrame> _keepAliveService;
 
    public ResilientServer(INetworkListener[] listeners, ResilientServerOptions options)
    {
       _listeners = listeners;
       Options = options;
 
-      _keepAliveService = new ResilientKeepAliveService(this);
+      _keepAliveService = new ResilientKeepAliveService<TFrame>(this);
    }
 
    public async Task<VoidResult<StringError>> StartAsync()

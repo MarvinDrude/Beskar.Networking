@@ -1,6 +1,7 @@
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Protocol;
 using Beskar.Networking.Resilient.Common.Enums;
 
 namespace Beskar.Networking.Resilient.Common.Interfaces;
@@ -8,7 +9,9 @@ namespace Beskar.Networking.Resilient.Common.Interfaces;
 /// <summary>
 /// Represents a resilient server capable of handling network connections.
 /// </summary>
-public interface IResilientServer : IAsyncDisposable
+public interface IResilientServer<TFrame>
+   : IAsyncDisposable
+   where TFrame : struct, IFramingProtocol<TFrame>
 {
    /// <summary>
    /// Gets the current state of the resilient server during its lifecycle.

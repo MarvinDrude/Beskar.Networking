@@ -1,5 +1,6 @@
 using System.Net;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Protocol;
 using Beskar.Networking.Transports.Quic;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Ws;
@@ -7,21 +8,23 @@ using Beskar.Networking.Transports.Ws;
 namespace Beskar.Networking.Resilient.Server;
 
 /// <summary>
-/// Provides functionality to configure and build instances of <see cref="ResilientServer"/>.
+/// Provides functionality to configure and build instances of server.
 /// This builder offers a fluent API for specifying server options and network listeners.
 /// </summary>
-public class ResilientServerBuilder(ResilientServerOptions options) : IServerBuilder<ResilientServerBuilder>
+public class ResilientServerBuilder<TFrame>(ResilientServerOptions options)
+   : IServerBuilder<ResilientServerBuilder<TFrame>>
+   where TFrame : struct, IFramingProtocol<TFrame>
 {
    private readonly ResilientServerOptions _options = options;
    private readonly List<INetworkListener> _listeners = [];
 
    /// <summary>
-   /// Builds and returns the configured <see cref="ResilientServer"/> instance.
+   /// Builds and returns the configured instance.
    /// </summary>
-   /// <returns>A configured <see cref="ResilientServer"/> instance.</returns>
-   public ResilientServer Build()
+   /// <returns>A configured instance.</returns>
+   public ResilientServer<TFrame> Build()
    {
-      var server = new ResilientServer([.. _listeners], _options);
+      var server = new ResilientServer<TFrame>([.. _listeners], _options);
       return server;
    }
 
@@ -30,7 +33,7 @@ public class ResilientServerBuilder(ResilientServerOptions options) : IServerBui
    /// </summary>
    /// <param name="listener">The network listener to register with the server.</param>
    /// <returns>The builder instance for chaining calls.</returns>
-   public ResilientServerBuilder Use(INetworkListener listener)
+   public ResilientServerBuilder<TFrame> Use(INetworkListener listener)
    {
       _listeners.Add(listener);
       return this;
@@ -42,7 +45,7 @@ public class ResilientServerBuilder(ResilientServerOptions options) : IServerBui
    /// <param name="endPoint">The network endpoint to listen on.</param>
    /// <param name="options">Optional TCP transport options.</param>
    /// <returns>The builder instance.</returns>
-   public ResilientServerBuilder UseTcp(IPEndPoint endPoint, TcpTransportOptions? options = null)
+   public ResilientServerBuilder<TFrame> UseTcp(IPEndPoint endPoint, TcpTransportOptions? options = null)
    {
       _listeners.Add(new TcpNetworkListener(endPoint, options ?? new TcpTransportOptions()));
       return this;
@@ -54,7 +57,7 @@ public class ResilientServerBuilder(ResilientServerOptions options) : IServerBui
    /// <param name="port">The port to listen on.</param>
    /// <param name="options">Optional TCP transport options.</param>
    /// <returns>The builder instance.</returns>
-   public ResilientServerBuilder UseTcp(int port, TcpTransportOptions? options = null)
+   public ResilientServerBuilder<TFrame> UseTcp(int port, TcpTransportOptions? options = null)
    {
       return UseTcp(new IPEndPoint(IPAddress.Any, port), options);
    }
@@ -65,7 +68,7 @@ public class ResilientServerBuilder(ResilientServerOptions options) : IServerBui
    /// <param name="endPoint">The network endpoint to listen on.</param>
    /// <param name="options">Optional WebSocket transport options.</param>
    /// <returns>The builder instance.</returns>
-   public ResilientServerBuilder UseWs(IPEndPoint endPoint, WsTransportOptions? options = null)
+   public ResilientServerBuilder<TFrame> UseWs(IPEndPoint endPoint, WsTransportOptions? options = null)
    {
       _listeners.Add(new WsNetworkListener(endPoint, options ?? new WsTransportOptions()));
       return this;
@@ -77,7 +80,7 @@ public class ResilientServerBuilder(ResilientServerOptions options) : IServerBui
    /// <param name="port">The port to listen on.</param>
    /// <param name="options">Optional WebSocket transport options.</param>
    /// <returns>The builder instance.</returns>
-   public ResilientServerBuilder UseWs(int port, WsTransportOptions? options = null)
+   public ResilientServerBuilder<TFrame> UseWs(int port, WsTransportOptions? options = null)
    {
       return UseWs(new IPEndPoint(IPAddress.Any, port), options);
    }
@@ -88,7 +91,7 @@ public class ResilientServerBuilder(ResilientServerOptions options) : IServerBui
    /// <param name="endPoint">The network endpoint to listen on.</param>
    /// <param name="options">Optional QUIC transport options.</param>
    /// <returns>The builder instance.</returns>
-   public ResilientServerBuilder UseQuic(IPEndPoint endPoint, QuicTransportOptions? options = null)
+   public ResilientServerBuilder<TFrame> UseQuic(IPEndPoint endPoint, QuicTransportOptions? options = null)
    {
       _listeners.Add(new QuicNetworkListener(endPoint, options ?? new QuicTransportOptions()));
       return this;
@@ -100,7 +103,7 @@ public class ResilientServerBuilder(ResilientServerOptions options) : IServerBui
    /// <param name="port">The port to listen on.</param>
    /// <param name="options">Optional QUIC transport options.</param>
    /// <returns>The builder instance.</returns>
-   public ResilientServerBuilder UseQuic(int port, QuicTransportOptions? options = null)
+   public ResilientServerBuilder<TFrame> UseQuic(int port, QuicTransportOptions? options = null)
    {
       return UseQuic(new IPEndPoint(IPAddress.Any, port), options);
    }
