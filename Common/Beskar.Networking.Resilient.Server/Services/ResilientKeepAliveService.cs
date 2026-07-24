@@ -12,7 +12,6 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
    where TFrame : struct, IFramingProtocol<TFrame>
 {
    private readonly ResilientServer<TFrame> _server = server;
-
    private CancellationTokenSource? _cts;
    private Task? _timerTask;
 
@@ -22,7 +21,6 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
 
       _cts = new CancellationTokenSource();
       _timerTask = Task.Run(() => RunKeepAliveLoopAsync(_cts.Token));
-
       return Task.CompletedTask;
    }
 
@@ -32,7 +30,6 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
       {
          await _cts.CancelAsync();
          _cts.Dispose();
-
          _cts = null;
       }
 
@@ -40,13 +37,12 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
       {
          try
          {
-            await _timerTask.ConfigureAwait(false);
+            await _timerTask;
          }
          catch (OperationCanceledException)
          {
             // expected
          }
-
          _timerTask = null;
       }
    }

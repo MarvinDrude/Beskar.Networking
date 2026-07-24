@@ -1,12 +1,14 @@
 using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Memory.Threading;
 using Beskar.Memory.Writers;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Protocol;
 using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Common.Interfaces;
+using Beskar.Networking.Resilient.Server.Contexts;
 using Beskar.Networking.Resilient.Server.Models;
 using Beskar.Networking.Resilient.Server.Services;
 
@@ -29,6 +31,8 @@ public sealed class ResilientServer<TFrame>
       => _listeners;
 
    public ResilientServerOptions Options { get; }
+
+   public ResilientServerEvents<TFrame> Events { get; } = new();
 
    public ResilientServerClients<TFrame> Clients { get; } = new();
 
@@ -138,6 +142,7 @@ public sealed class ResilientServer<TFrame>
       }
 
       await Clients.DisconnectAllAsync();
+
       State = ResilientServerState.Stopped;
 
       return true;
@@ -210,7 +215,7 @@ public sealed class ResilientServer<TFrame>
             _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(client, connectionContext, combinedToken), combinedToken);
          }
 
-         await RunClientListenTask(client, controlStreamContext, combinedToken).ConfigureAwait(false);
+         await RunClientListenTask(client, controlStreamContext, combinedToken);
       }
       catch (Exception)
       {
@@ -248,7 +253,7 @@ public sealed class ResilientServer<TFrame>
       }
    }
 
-   private static async Task RunClientListenTask(
+   private async Task RunClientListenTask(
       ResilientServerClient<TFrame> client,
       NetworkServerStreamContext streamContext,
       CancellationToken ct)
@@ -270,20 +275,36 @@ public sealed class ResilientServer<TFrame>
 
             while (!buffer.IsEmpty)
             {
-               var sequenceReader = new SequenceReader<byte>(buffer);
-               if (!TFrame.TryRead(ref sequenceReader, out var frame))
+               TFrame frame;
+               SequencePosition consumedPos;
+
                {
-                  // Incomplete frame in buffer, wait for more data from stream
-                  break;
+                  var sequenceReader = new SequenceReader<byte>(buffer);
+                  if (!TFrame.TryRead(ref sequenceReader, out frame))
+                  {
+                     // Incomplete frame in buffer, wait for more data from stream
+                     break;
+                  }
+
+                  consumedPos = sequenceReader.Position;
                }
 
                client.TouchActivity();
+               buffer = buffer.Slice(consumedPos);
+               consumed = consumedPos;
 
-               // Successfully parsed complete frame on this stream
-               _ = frame;
+               if (Events.FrameReceived.Count > 0)
+               {
+                  var eventContext = new ResilientFrameReceivedContext<TFrame>
+                  {
+                     Client = client,
+                     Stream = streamContext.Stream,
+                     Frame = frame
+                  };
 
-               consumed = sequenceReader.Position;
-               buffer = buffer.Slice(consumed);
+                  await Events.FrameReceived.ExecuteAsync(
+                     eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+               }
             }
 
             reader.AdvanceTo(consumed, examined);

@@ -118,7 +118,7 @@ public partial class FramingProtocolGenerator
             }
             foreach (var namedArg in protocolAttr.NamedArguments)
             {
-               if (namedArg is { Key: "safeCopyData", Value.Value: bool copyValNamed })
+               if (namedArg is { Key: "safeCopyData" or "SafeCopyData", Value.Value: bool copyValNamed })
                {
                   safeCopyData = copyValNamed;
                }

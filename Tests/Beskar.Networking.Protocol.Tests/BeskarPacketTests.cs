@@ -70,6 +70,26 @@ public partial struct VarNumberTypesPacket
    public int IntVal { get; set; }
 }
 
+[GenerateFramingProtocol]
+public partial struct PacketWithSafeCopy
+{
+   [VarNumberField(Order = 0)]
+   public int Length { get; set; }
+
+   [ByteSequenceField(nameof(Length), safeCopyData: true, Order = 1)]
+   public ReadOnlySequence<byte> Payload { get; set; }
+}
+
+[GenerateFramingProtocol]
+public partial struct PacketWithUnsafeCopy
+{
+   [VarNumberField(Order = 0)]
+   public int Length { get; set; }
+
+   [ByteSequenceField(nameof(Length), safeCopyData: false, Order = 1)]
+   public ReadOnlySequence<byte> Payload { get; set; }
+}
+
 public class BeskarPacketTests
 {
    private static bool GenericRoundtripHelper<TPacket>(TPacket frame, out TPacket readBack)
@@ -102,6 +122,47 @@ public class BeskarPacketTests
       await Assert.That(result.Version).IsEqualTo((byte)10);
       await Assert.That(result.PacketType).IsEqualTo(BeskarPacketType.Message);
       await Assert.That(result.PayloadLength).IsEqualTo(4);
+   }
+
+   [Test]
+   public async Task SafeCopyData_True_ShouldAllocateNewArray()
+   {
+      var sourceData = "SafeCopyTestPayload"u8.ToArray();
+      var original = new PacketWithSafeCopy
+      {
+         Length = sourceData.Length,
+         Payload = new ReadOnlySequence<byte>(sourceData)
+      };
+
+      var buffer = new byte[original.GetEncodedLength()];
+      original.TryWrite(buffer, out _);
+
+      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(buffer));
+      await Assert.That(PacketWithSafeCopy.TryRead(ref reader, out var readBack)).IsTrue();
+
+      // Mutate the original buffer to verify the payload copy remains unaffected!
+      Array.Fill<byte>(buffer, 0xFF);
+
+      await Assert.That(readBack.Payload.ToArray()).IsEquivalentTo(sourceData);
+   }
+
+   [Test]
+   public async Task SafeCopyData_False_ShouldSliceDirectly()
+   {
+      var sourceData = "UnsafeCopyTestPayload"u8.ToArray();
+      var original = new PacketWithUnsafeCopy
+      {
+         Length = sourceData.Length,
+         Payload = new ReadOnlySequence<byte>(sourceData)
+      };
+
+      var buffer = new byte[original.GetEncodedLength()];
+      original.TryWrite(buffer, out _);
+
+      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(buffer));
+      await Assert.That(PacketWithUnsafeCopy.TryRead(ref reader, out var readBack)).IsTrue();
+
+      await Assert.That(readBack.Payload.ToArray()).IsEquivalentTo(sourceData);
    }
 
    [Test]
@@ -361,7 +422,7 @@ public class BeskarPacketTests
    public async Task VarNumber_Direct_BoundaryValues_ShouldRoundtrip()
    {
       ulong[] testValues = [0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455, 268435456, ulong.MaxValue];
-      byte[] tempBuffer = new byte[16];
+      var tempBuffer = new byte[16];
 
       foreach (var val in testValues)
       {

@@ -250,7 +250,7 @@ public partial class FramingProtocolGenerator
             case ProtocolAttributeKind.ByteSequenceField:
                if (!string.IsNullOrEmpty(prop.LengthPropertyName))
                {
-                  var lenProp = prop.LengthPropertyName!;
+                  var lenProp = prop.LengthPropertyName;
                   writer.WriteLine("int seqLen = pkt." + lenProp + ";");
                }
                else
@@ -258,7 +258,14 @@ public partial class FramingProtocolGenerator
                   writer.WriteLine("int seqLen = (int)(reader.Length - reader.Consumed);");
                }
                writer.WriteLine("if (reader.UnreadSequence.Length < seqLen) return false;");
-               writer.WriteLine("var seq = reader.UnreadSequence.Slice(0, seqLen);");
+               if (prop.SafeCopyData)
+               {
+                  writer.WriteLine("var seq = new ReadOnlySequence<byte>(reader.UnreadSequence.Slice(0, seqLen).ToArray());");
+               }
+               else
+               {
+                  writer.WriteLine("var seq = reader.UnreadSequence.Slice(0, seqLen);");
+               }
                writer.WriteLine("reader.Advance(seqLen);");
                writer.WriteLine("pkt." + prop.PropertyName + " = seq;");
                break;
