@@ -6,6 +6,11 @@ namespace Beskar.Networking.Resilient.Common.Enums;
 public enum ResilientClientState
 {
    /// <summary>
+   /// Indicates that the resilient client is not connected to the target server or endpoint.
+   /// </summary>
+   Disconnected,
+
+   /// <summary>
    /// Indicates that the resilient client is in the process of establishing a connection to the target server or endpoint.
    /// </summary>
    Connecting,
@@ -16,12 +21,12 @@ public enum ResilientClientState
    Connected,
 
    /// <summary>
-   /// Indicates that the resilient client is in the process of terminating an existing connection to the target server or endpoint.
+   /// Indicates that the resilient client is actively attempting to reconnect after an unexpected disconnect.
    /// </summary>
-   Disconnecting,
+   Reconnecting,
 
    /// <summary>
-   /// Indicates that the resilient client is not connected to the target server or endpoint.
+   /// Indicates that the resilient client is in the process of terminating an existing connection to the target server or endpoint.
    /// </summary>
-   Disconnected
+   Disconnecting
 }

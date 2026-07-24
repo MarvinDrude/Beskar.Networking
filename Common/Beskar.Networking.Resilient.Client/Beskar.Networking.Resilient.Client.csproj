@@ -1,9 +1,23 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
    <PropertyGroup>
       <Title>Beskar.Networking.Resilient.Client</Title>
-      <Description>High-performance, low-allocation event-driven highly-customizable Client over any transport.</Description>
+      <Description>High-performance, low-allocation event-driven highly-customizable Resilient Client over any transport.</Description>
       <IsPackable>true</IsPackable>
    </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Memory\Beskar.Networking.Transports.Memory.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.NamedPipes\Beskar.Networking.Transports.NamedPipes.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Udp\Beskar.Networking.Transports.Udp.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Uds\Beskar.Networking.Transports.Uds.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj" />
+      <ProjectReference Include="..\Beskar.Networking.Protocol\Beskar.Networking.Protocol.csproj" />
+      <ProjectReference Include="..\Beskar.Networking.Resilient.Common\Beskar.Networking.Resilient.Common.csproj" />
+   </ItemGroup>
 
 </Project>
