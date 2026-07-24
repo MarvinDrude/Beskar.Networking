@@ -193,9 +193,9 @@ public sealed class ResilientServer<TFrame>
          }
 
          var connectionContext = new NetworkServerConnectionContext(listener, session);
-         var streamContext = new NetworkServerStreamContext(connectionContext, controlStreamResult.Success);
+         var controlStreamContext = new NetworkServerStreamContext(connectionContext, controlStreamResult.Success);
 
-         client = new ResilientServerClient<TFrame>(streamContext);
+         client = new ResilientServerClient<TFrame>(controlStreamContext);
          if (!Clients.TryAdd(client))
          {
             await client.DisposeAsync();
@@ -203,7 +203,14 @@ public sealed class ResilientServer<TFrame>
          }
 
          using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-         await RunClientListenTask(client, streamContext, combinedCts.Token);
+         var combinedToken = combinedCts.Token;
+
+         if (session.IsSupportingMultiplexing)
+         {
+            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(client, connectionContext, combinedToken), combinedToken);
+         }
+
+         await RunClientListenTask(client, controlStreamContext, combinedToken).ConfigureAwait(false);
       }
       catch (Exception)
       {
@@ -215,6 +222,28 @@ public sealed class ResilientServer<TFrame>
          {
             Clients.TryRemove(client.Id, out _);
             await client.DisposeAsync();
+         }
+      }
+   }
+
+   private async Task RunAcceptMultiplexedStreamsTask(
+      ResilientServerClient<TFrame> client,
+      NetworkServerConnectionContext connectionContext,
+      CancellationToken ct)
+   {
+      while (!ct.IsCancellationRequested && client.IsConnected)
+      {
+         try
+         {
+            var streamResult = await client.Session.AcceptStreamAsync(ct);
+            if (streamResult.Failed) break;
+
+            var streamContext = new NetworkServerStreamContext(connectionContext, streamResult.Success);
+            _ = Task.Run(() => RunClientListenTask(client, streamContext, ct), ct);
+         }
+         catch
+         {
+            break;
          }
       }
    }
@@ -250,8 +279,8 @@ public sealed class ResilientServer<TFrame>
 
                client.TouchActivity();
 
-               // Successfully parsed complete frame!
-               _ = frame; // Ready for processing / handling
+               // Successfully parsed complete frame on this stream
+               _ = frame;
 
                consumed = sequenceReader.Position;
                buffer = buffer.Slice(consumed);
@@ -283,5 +312,6 @@ public sealed class ResilientServer<TFrame>
       }
 
       await _keepAliveService.DisposeAsync();
+      await Clients.DisposeAsync();
    }
 }
