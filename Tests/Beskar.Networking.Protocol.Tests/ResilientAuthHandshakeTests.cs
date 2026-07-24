@@ -19,6 +19,7 @@ public class ResilientAuthHandshakeTests
          if (condition()) return true;
          await Task.Delay(10, cts.Token);
       }
+
       return condition();
    }
 
@@ -59,7 +60,8 @@ public class ResilientAuthHandshakeTests
       await server.DisposeAsync();
    }
 
-   private static async ValueTask HandleServerConnect1(ResilientClientConnectContext<BeskarPacket> ctx, CancellationToken ct)
+   private static async ValueTask HandleServerConnect1(ResilientClientConnectContext<BeskarPacket> ctx,
+      CancellationToken ct)
    {
       var challengePayload = new AuthenticatePacketPayload
       {
@@ -69,13 +71,12 @@ public class ResilientAuthHandshakeTests
       await ctx.SendAuthenticateAsync(challengePayload, ct);
 
       var responsePayload = await ctx.ReceiveAuthenticateAsync(ct);
-      if (responsePayload == null || Encoding.UTF8.GetString(responsePayload.AuthData) != "valid-signature-100")
-      {
-         ctx.Deny();
-      }
+      if (responsePayload == null ||
+          Encoding.UTF8.GetString(responsePayload.AuthData) != "valid-signature-100") ctx.Deny();
    }
 
-   private static async ValueTask HandleClientAuth1(ResilientClientAuthenticateContext<BeskarPacket> ctx, CancellationToken ct)
+   private static async ValueTask HandleClientAuth1(ResilientClientAuthenticateContext<BeskarPacket> ctx,
+      CancellationToken ct)
    {
       if (ctx.ChallengePayload.AuthMethod == "HMAC-SHA256" &&
           Encoding.UTF8.GetString(ctx.ChallengePayload.AuthData) == "challenge-nonce-100")
@@ -125,28 +126,28 @@ public class ResilientAuthHandshakeTests
       await server.DisposeAsync();
    }
 
-   private static async ValueTask HandleServerConnectDenied(ResilientClientConnectContext<BeskarPacket> ctx, CancellationToken ct)
+   private static async ValueTask HandleServerConnectDenied(ResilientClientConnectContext<BeskarPacket> ctx,
+      CancellationToken ct)
    {
       var challengePayload = new AuthenticatePacketPayload
       {
          AuthMethod = "HMAC-SHA256",
-         AuthData = Encoding.UTF8.GetBytes("challenge-nonce-200")
+         AuthData = "challenge-nonce-200"u8.ToArray()
       };
       await ctx.SendAuthenticateAsync(challengePayload, ct);
 
       var responsePayload = await ctx.ReceiveAuthenticateAsync(ct);
-      if (responsePayload == null || Encoding.UTF8.GetString(responsePayload.AuthData) != "valid-signature-200")
-      {
-         ctx.Deny();
-      }
+      if (responsePayload == null ||
+          Encoding.UTF8.GetString(responsePayload.AuthData) != "valid-signature-200") ctx.Deny();
    }
 
-   private static async ValueTask HandleClientAuthDenied(ResilientClientAuthenticateContext<BeskarPacket> ctx, CancellationToken ct)
+   private static async ValueTask HandleClientAuthDenied(ResilientClientAuthenticateContext<BeskarPacket> ctx,
+      CancellationToken ct)
    {
       var responsePayload = new AuthenticatePacketPayload
       {
          AuthMethod = "HMAC-SHA256",
-         AuthData = Encoding.UTF8.GetBytes("invalid-signature-bad")
+         AuthData = "invalid-signature-bad"u8.ToArray()
       };
       await ctx.SendAuthenticateResponseAsync(responsePayload, ct);
    }
@@ -225,13 +226,14 @@ public class ResilientAuthHandshakeTests
       await server.DisposeAsync();
    }
 
-   private static async ValueTask HandleServerConnectMultiStep(ResilientClientConnectContext<BeskarPacket> ctx, CancellationToken ct)
+   private static async ValueTask HandleServerConnectMultiStep(ResilientClientConnectContext<BeskarPacket> ctx,
+      CancellationToken ct)
    {
       // Step 1 challenge
       await ctx.SendAuthenticateAsync(new AuthenticatePacketPayload
       {
          AuthMethod = "SCRAM-SHA-256",
-         AuthData = Encoding.UTF8.GetBytes("step-1-nonce")
+         AuthData = "step-1-nonce"u8.ToArray()
       }, ct);
 
       var resp1 = await ctx.ReceiveAuthenticateAsync(ct);
@@ -245,35 +247,28 @@ public class ResilientAuthHandshakeTests
       await ctx.SendAuthenticateAsync(new AuthenticatePacketPayload
       {
          AuthMethod = "SCRAM-SHA-256",
-         AuthData = Encoding.UTF8.GetBytes("step-2-final-verifier")
+         AuthData = "step-2-final-verifier"u8.ToArray()
       }, ct);
 
       var resp2 = await ctx.ReceiveAuthenticateAsync(ct);
-      if (resp2 == null || Encoding.UTF8.GetString(resp2.AuthData) != "step-2-ack")
-      {
-         ctx.Deny();
-         return;
-      }
+      if (resp2 == null || Encoding.UTF8.GetString(resp2.AuthData) != "step-2-ack") ctx.Deny();
    }
 
-   private static async ValueTask HandleClientAuthMultiStep(ResilientClientAuthenticateContext<BeskarPacket> ctx, CancellationToken ct)
+   private static async ValueTask HandleClientAuthMultiStep(ResilientClientAuthenticateContext<BeskarPacket> ctx,
+      CancellationToken ct)
    {
       var authDataStr = Encoding.UTF8.GetString(ctx.ChallengePayload.AuthData);
       if (authDataStr == "step-1-nonce")
-      {
          await ctx.SendAuthenticateResponseAsync(new AuthenticatePacketPayload
          {
             AuthMethod = "SCRAM-SHA-256",
-            AuthData = Encoding.UTF8.GetBytes("step-1-proof")
+            AuthData = "step-1-proof"u8.ToArray()
          }, ct);
-      }
       else if (authDataStr == "step-2-final-verifier")
-      {
          await ctx.SendAuthenticateResponseAsync(new AuthenticatePacketPayload
          {
             AuthMethod = "SCRAM-SHA-256",
-            AuthData = Encoding.UTF8.GetBytes("step-2-ack")
+            AuthData = "step-2-ack"u8.ToArray()
          }, ct);
-      }
    }
 }
