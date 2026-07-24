@@ -12,6 +12,16 @@ public sealed class ResilientServerEvents<TFrame>
    where TFrame : struct, IFramingProtocol<TFrame>
 {
    /// <summary>
+   /// Pipeline fired when the server starts running.
+   /// </summary>
+   public readonly HandlerPipeline<ResilientServerStartContext<TFrame>> OnStart = new();
+
+   /// <summary>
+   /// Pipeline fired when the server stops.
+   /// </summary>
+   public readonly HandlerPipeline<ResilientServerStopContext<TFrame>> OnStop = new();
+
+   /// <summary>
    /// Pipeline fired when a framing protocol frame is received from a client.
    /// </summary>
    public readonly HandlerPipeline<ResilientFrameReceivedContext<TFrame>> FrameReceived = new();

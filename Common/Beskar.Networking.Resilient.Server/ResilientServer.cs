@@ -95,6 +95,13 @@ public sealed class ResilientServer<TFrame>
       await _keepAliveService.StartAsync();
       State = ResilientServerState.Running;
 
+      if (Events.OnStart.Count > 0)
+      {
+         await Events.OnStart.ExecuteAsync(
+            new ResilientServerStartContext<TFrame> { Server = this },
+            HandlerExecutionStrategy.SequentialContinueOnError, ct);
+      }
+
       return true;
 
       static async Task CleanupCode(ArrayBuilder<INetworkListener> builder, CancellationToken ct)
@@ -144,6 +151,13 @@ public sealed class ResilientServer<TFrame>
       await Clients.DisconnectAllAsync();
 
       State = ResilientServerState.Stopped;
+
+      if (Events.OnStop.Count > 0)
+      {
+         await Events.OnStop.ExecuteAsync(
+            new ResilientServerStopContext<TFrame> { Server = this },
+            HandlerExecutionStrategy.SequentialContinueOnError);
+      }
 
       return true;
    }
@@ -278,6 +292,7 @@ public sealed class ResilientServer<TFrame>
                TFrame frame;
                SequencePosition consumedPos;
 
+               // Scope SequenceReader so ref struct doesn't cross await boundary
                {
                   var sequenceReader = new SequenceReader<byte>(buffer);
                   if (!TFrame.TryRead(ref sequenceReader, out frame))
@@ -285,7 +300,6 @@ public sealed class ResilientServer<TFrame>
                      // Incomplete frame in buffer, wait for more data from stream
                      break;
                   }
-
                   consumedPos = sequenceReader.Position;
                }
 
