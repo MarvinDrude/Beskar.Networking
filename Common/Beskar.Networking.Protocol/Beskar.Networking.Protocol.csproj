@@ -14,4 +14,14 @@
      <PackageReference Include="Beskar.Memory" />
    </ItemGroup>
 
+   <PropertyGroup>
+      <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackAnalyzer</TargetsForTfmSpecificContentInPackage>
+   </PropertyGroup>
+
+   <Target Name="PackAnalyzer">
+      <ItemGroup>
+         <TfmSpecificPackageFile Include="..\Beskar.Networking.Protocol.Generators\bin\$(Configuration)\netstandard2.0\Beskar.Networking.Protocol.Generators.dll" PackagePath="analyzers/dotnet/cs" />
+      </ItemGroup>
+   </Target>
+
 </Project>

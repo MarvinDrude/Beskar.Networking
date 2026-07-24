@@ -110,10 +110,10 @@ public partial class FramingProtocolGenerator
                writer.WriteLine("length += System.Runtime.CompilerServices.Unsafe.SizeOf<" + prop.PropertyType + ">();");
                break;
             case ProtocolAttributeKind.FlagsField:
-               if (prop.PropertyType.Contains("PackedBools16")) writer.WriteLine("length += 2;");
+               if (prop.PropertyType.Contains("PackedBools8")) writer.WriteLine("length += 1;");
                else if (prop.PropertyType.Contains("PackedBools32")) writer.WriteLine("length += 4;");
                else if (prop.PropertyType.Contains("PackedBools64")) writer.WriteLine("length += 8;");
-               else if (prop.PropertyType.Contains("PackedBools8")) writer.WriteLine("length += 1;");
+               else if (prop.PropertyType.Contains("PackedBools16")) writer.WriteLine("length += 2;");
                else writer.WriteLine("length += System.Runtime.CompilerServices.Unsafe.SizeOf<" + prop.PropertyType + ">();");
                break;
             case ProtocolAttributeKind.VarNumberField:
@@ -144,7 +144,7 @@ public partial class FramingProtocolGenerator
          switch (prop.AttributeKind)
          {
             case ProtocolAttributeKind.MagicBytes:
-               for (int i = 0; i < prop.MagicBytes.Length; i++)
+               for (var i = 0; i < prop.MagicBytes.Length; i++)
                {
                   writer.WriteLine("destination[bytesWritten++] = 0x" + prop.MagicBytes[i].ToString("X2") + ";");
                }
@@ -158,8 +158,25 @@ public partial class FramingProtocolGenerator
                break;
             case ProtocolAttributeKind.FlagsField:
                writer.WriteLine("var flagsCopy_" + prop.PropertyName + " = " + prop.PropertyName + ";");
-               writer.WriteLine("BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(bytesWritten), System.Runtime.CompilerServices.Unsafe.As<" + prop.PropertyType + ", ushort>(ref flagsCopy_" + prop.PropertyName + "));");
-               writer.WriteLine("bytesWritten += 2;");
+               if (prop.PropertyType.Contains("PackedBools8"))
+               {
+                  writer.WriteLine("destination[bytesWritten++] = System.Runtime.CompilerServices.Unsafe.As<" + prop.PropertyType + ", byte>(ref flagsCopy_" + prop.PropertyName + ");");
+               }
+               else if (prop.PropertyType.Contains("PackedBools32"))
+               {
+                  writer.WriteLine("BinaryPrimitives.WriteUInt32BigEndian(destination.Slice(bytesWritten), System.Runtime.CompilerServices.Unsafe.As<" + prop.PropertyType + ", uint>(ref flagsCopy_" + prop.PropertyName + "));");
+                  writer.WriteLine("bytesWritten += 4;");
+               }
+               else if (prop.PropertyType.Contains("PackedBools64"))
+               {
+                  writer.WriteLine("BinaryPrimitives.WriteUInt64BigEndian(destination.Slice(bytesWritten), System.Runtime.CompilerServices.Unsafe.As<" + prop.PropertyType + ", ulong>(ref flagsCopy_" + prop.PropertyName + "));");
+                  writer.WriteLine("bytesWritten += 8;");
+               }
+               else
+               {
+                  writer.WriteLine("BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(bytesWritten), System.Runtime.CompilerServices.Unsafe.As<" + prop.PropertyType + ", ushort>(ref flagsCopy_" + prop.PropertyName + "));");
+                  writer.WriteLine("bytesWritten += 2;");
+               }
                break;
             case ProtocolAttributeKind.VarNumberField:
                writer.WriteLine("bytesWritten += VarNumber.Write(destination.Slice(bytesWritten), " + prop.PropertyName + ");");
@@ -188,7 +205,7 @@ public partial class FramingProtocolGenerator
          switch (prop.AttributeKind)
          {
             case ProtocolAttributeKind.MagicBytes:
-               for (int i = 0; i < prop.MagicBytes.Length; i++)
+               for (var i = 0; i < prop.MagicBytes.Length; i++)
                {
                   writer.WriteLine("if (!reader.TryRead(out byte b" + i + ") || b" + i + " != 0x" + prop.MagicBytes[i].ToString("X2") + ") return false;");
                }
@@ -202,9 +219,29 @@ public partial class FramingProtocolGenerator
                writer.WriteLine("pkt." + prop.PropertyName + " = (" + prop.PropertyType + ")(ushort)pTypeRaw;");
                break;
             case ProtocolAttributeKind.FlagsField:
-               writer.WriteLine("if (!reader.TryReadBigEndian(out short flagsRaw)) return false;");
-               writer.WriteLine("ushort flagsU16 = (ushort)flagsRaw;");
-               writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<ushort, " + prop.PropertyType + ">(ref flagsU16);");
+               if (prop.PropertyType.Contains("PackedBools8"))
+               {
+                  writer.WriteLine("if (!reader.TryRead(out byte flags8Raw_" + prop.PropertyName + ")) return false;");
+                  writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<byte, " + prop.PropertyType + ">(ref flags8Raw_" + prop.PropertyName + ");");
+               }
+               else if (prop.PropertyType.Contains("PackedBools32"))
+               {
+                  writer.WriteLine("if (!reader.TryReadBigEndian(out int flags32Raw_" + prop.PropertyName + ")) return false;");
+                  writer.WriteLine("uint flagsU32_" + prop.PropertyName + " = (uint)flags32Raw_" + prop.PropertyName + ";");
+                  writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<uint, " + prop.PropertyType + ">(ref flagsU32_" + prop.PropertyName + ");");
+               }
+               else if (prop.PropertyType.Contains("PackedBools64"))
+               {
+                  writer.WriteLine("if (!reader.TryReadBigEndian(out long flags64Raw_" + prop.PropertyName + ")) return false;");
+                  writer.WriteLine("ulong flagsU64_" + prop.PropertyName + " = (ulong)flags64Raw_" + prop.PropertyName + ";");
+                  writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<ulong, " + prop.PropertyType + ">(ref flagsU64_" + prop.PropertyName + ");");
+               }
+               else
+               {
+                  writer.WriteLine("if (!reader.TryReadBigEndian(out short flags16Raw_" + prop.PropertyName + ")) return false;");
+                  writer.WriteLine("ushort flagsU16_" + prop.PropertyName + " = (ushort)flags16Raw_" + prop.PropertyName + ";");
+                  writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<ushort, " + prop.PropertyType + ">(ref flagsU16_" + prop.PropertyName + ");");
+               }
                break;
             case ProtocolAttributeKind.VarNumberField:
                writer.WriteLine("if (!VarNumber.TryRead(ref reader, out " + prop.PropertyType + " varVal_" + prop.PropertyName + ")) return false;");
