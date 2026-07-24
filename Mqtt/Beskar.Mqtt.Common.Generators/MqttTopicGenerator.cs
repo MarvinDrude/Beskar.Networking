@@ -10,8 +10,9 @@ public partial class MqttTopicGenerator : IIncrementalGenerator
    public void Initialize(IncrementalGeneratorInitializationContext context)
    {
       var methodDeclarations = context.SyntaxProvider
-         .CreateSyntaxProvider(
-            static (s, _) => IsSyntaxTargetForGeneration(s),
+         .ForAttributeWithMetadataName(
+            "Beskar.Mqtt.Common.Generators.GeneratedMqttTopicAttribute",
+            static (node, _) => IsSyntaxTargetForGeneration(node),
             static (ctx, token) => GetSemanticTargetForGeneration(ctx, token))
          .Where(static m => m is not null)
          .Select(static (m, _) => m!.Value);

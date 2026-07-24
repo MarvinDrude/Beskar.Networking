@@ -9,33 +9,14 @@ namespace Beskar.Mqtt.Common.Generators;
 
 public partial class MqttTopicGenerator
 {
-   private static GeneratedMethodModel? GetSemanticTargetForGeneration(GeneratorSyntaxContext context,
+   private static GeneratedMethodModel? GetSemanticTargetForGeneration(GeneratorAttributeSyntaxContext context,
       CancellationToken cancellationToken)
    {
-      var methodDeclaration = (MethodDeclarationSyntax)context.Node;
-      IMethodSymbol? methodSymbol = null;
-      AttributeData? attributeData = null;
+      if (context.TargetNode is not MethodDeclarationSyntax methodDeclaration) return null;
+      if (context.TargetSymbol is not IMethodSymbol methodSymbol) return null;
 
-      foreach (var attributeList in methodDeclaration.AttributeLists)
-      {
-         foreach (var attribute in attributeList.Attributes)
-         {
-            var symbol = context.SemanticModel.GetSymbolInfo(attribute, cancellationToken).Symbol;
-            if (symbol is IMethodSymbol attribMethodSymbol &&
-                attribMethodSymbol.ContainingType.IsGeneratedMqttTopicAttribute())
-            {
-               methodSymbol = context.SemanticModel.GetDeclaredSymbol(methodDeclaration, cancellationToken);
-               attributeData = methodSymbol?.GetAttributes()
-                  .FirstOrDefault(ad => ad.AttributeClass.IsGeneratedMqttTopicAttribute());
-
-               break;
-            }
-         }
-
-         if (methodSymbol is not null) break;
-      }
-
-      if (methodSymbol is null || attributeData is null || attributeData.ConstructorArguments.Length == 0) return null;
+      var attributeData = context.Attributes.FirstOrDefault();
+      if (attributeData is null || attributeData.ConstructorArguments.Length == 0) return null;
 
       var patternValue = attributeData.ConstructorArguments[0].Value as string;
       if (string.IsNullOrEmpty(patternValue)) return null;

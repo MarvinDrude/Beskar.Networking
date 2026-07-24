@@ -17,7 +17,9 @@
     <Project Path="Common/Beskar.Networking.Resilient.Common/Beskar.Networking.Resilient.Common.csproj" />
     <Project Path="Common/Beskar.Networking.Resilient.Server/Beskar.Networking.Resilient.Server.csproj" />
   </Folder>
-  <Folder Name="/Common/Generators/" />
+  <Folder Name="/Common/Generators/">
+    <Project Path="Common/Beskar.Networking.Protocol.Generators/Beskar.Networking.Protocol.Generators.csproj" />
+  </Folder>
   <Folder Name="/Documentation/" />
   <Folder Name="/Documentation/Basics/">
     <File Path="Documentation/Basics/Abstractions.md" />
@@ -86,6 +88,7 @@
     <Project Path="Tests/Beskar.Networking.Transports.NamedPipes.Tests/Beskar.Networking.Transports.NamedPipes.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Transports.Memory.Tests/Beskar.Networking.Transports.Memory.Tests.csproj" />
     <Project Path="Tests/Beskar.Mqtt.Integration.Tests/Beskar.Mqtt.Integration.Tests.csproj" />
+    <Project Path="Tests/Beskar.Networking.Protocol.Tests/Beskar.Networking.Protocol.Tests.csproj" />
   </Folder>
   <Folder Name="/Utilities/">
     <Project Path="Utilities/Beskar.Utilities.Console/Beskar.Utilities.Console.csproj" />
