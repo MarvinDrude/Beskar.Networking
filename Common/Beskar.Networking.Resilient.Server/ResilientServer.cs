@@ -254,6 +254,8 @@ public sealed class ResilientServer<TFrame>
          var connectPayload = await ReadConnectPayloadAsync(client, combinedToken);
          if (connectPayload != null)
          {
+            client.ConnectPayload = connectPayload;
+
             if (Events.OnConnect.Count > 0)
             {
                var connectContext = new ResilientClientConnectContext<TFrame>

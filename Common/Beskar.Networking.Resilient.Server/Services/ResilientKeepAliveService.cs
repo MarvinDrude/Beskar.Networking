@@ -57,12 +57,15 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
 
       while (!ct.IsCancellationRequested && await timer.WaitForNextTickAsync(ct))
       {
-         var timeout = options.DefaultKeepAliveTime;
          var now = DateTimeOffset.UtcNow;
          var clients = _server.Clients.GetAll();
 
          foreach (var client in clients)
          {
+            var timeout = (client.ConnectPayload != null && client.ConnectPayload.KeepAliveSeconds > 0)
+               ? TimeSpan.FromSeconds(client.ConnectPayload.KeepAliveSeconds)
+               : options.DefaultKeepAliveTime;
+
             if (now - client.LastActivityAt > timeout)
             {
                await client.DisconnectAsync();

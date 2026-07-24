@@ -58,6 +58,11 @@ public sealed class ResilientServerClient<TFrame>(NetworkServerStreamContext con
    public IReadOnlyCollection<INetworkStream> ActiveStreams => Session.ActiveStreams;
 
    /// <summary>
+   /// Gets the payload received from a Connect frame, if any.
+   /// </summary>
+   public ConnectPacketPayload? ConnectPayload { get; internal set; }
+
+   /// <summary>
    /// Gets the payload received from a Disconnect frame, if any.
    /// </summary>
    public DisconnectPacketPayload? DisconnectPayload { get; internal set; }

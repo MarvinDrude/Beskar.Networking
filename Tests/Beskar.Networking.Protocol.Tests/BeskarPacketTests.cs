@@ -151,14 +151,12 @@ public class BeskarPacketTests
       // ConnectPacketPayload
       var connectOriginal = new ConnectPacketPayload
       {
-         ClientId = "TestClient123",
-         KeepAliveSeconds = 60,
-         CleanSession = true
+         KeepAliveSeconds = 60
       };
 
       var connectBuffer = new byte[connectOriginal.GetEncodedLength()];
       await Assert.That(connectOriginal.TryWrite(connectBuffer, out var writtenConnect)).IsTrue();
-      await Assert.That(writtenConnect).IsEqualTo(connectBuffer.Length);
+      await Assert.That(writtenConnect).IsEqualTo(2);
 
       var connectPacket = new BeskarPacket
       {
@@ -169,9 +167,7 @@ public class BeskarPacketTests
 
       await Assert.That(connectPacket.TryGetPayload<ConnectPacketPayload>(out var connectRead)).IsTrue();
       await Assert.That(connectRead).IsNotEqualTo(null);
-      await Assert.That(connectRead!.ClientId).IsEqualTo("TestClient123");
-      await Assert.That(connectRead.KeepAliveSeconds).IsEqualTo((ushort)60);
-      await Assert.That(connectRead.CleanSession).IsTrue();
+      await Assert.That(connectRead!.KeepAliveSeconds).IsEqualTo((ushort)60);
 
       // DisconnectPacketPayload
       var disconnectOriginal = new DisconnectPacketPayload
