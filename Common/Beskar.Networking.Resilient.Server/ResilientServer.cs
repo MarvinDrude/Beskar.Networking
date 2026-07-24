@@ -476,6 +476,10 @@ public sealed class ResilientServer<TFrame>
       {
          // transport read exception
       }
+      finally
+      {
+         await streamContext.Stream.DisposeAsync();
+      }
    }
 
    public async ValueTask DisposeAsync()

@@ -625,6 +625,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       finally
       {
          _handshakeChannel.Writer.TryComplete();
+         await stream.DisposeAsync();
       }
    }
 

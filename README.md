@@ -52,6 +52,8 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 | :--- |:----------------------------------------------------------------------------------------------------| :--- |
 | **Beskar.Mqtt.Server** | High-performance, low-allocation MQTT broker/server support for v3.1.1 and v5.0 over any transport. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Mqtt.Server.svg)](https://www.nuget.org/packages/Beskar.Mqtt.Server/) |
 | **Beskar.Mqtt.Client** | Lightweight and efficient MQTT client supporting v3.1.1 and v5.0 over any transport.                | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Mqtt.Client.svg)](https://www.nuget.org/packages/Beskar.Mqtt.Client/) |
+| **Beskar.Networking.Resilient.Server** | High-performance, event-driven resilient server wrapper supporting keep-alives, handshakes, and custom framing over any transport. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Resilient.Server.svg)](https://www.nuget.org/packages/Beskar.Networking.Resilient.Server/) |
+| **Beskar.Networking.Resilient.Client** | High-performance resilient client wrapper supporting automatic reconnection, keep-alives, handshakes, and custom framing. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Resilient.Client.svg)](https://www.nuget.org/packages/Beskar.Networking.Resilient.Client/) |
 | **Beskar.Networking.Transports.Tcp** | High-performance, native TCP transport implementation supporting TLS.                               | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Tcp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Tcp/) |
 | **Beskar.Networking.Transports.Ws** | WebSocket (WS/WSS) transport adapter wrapping custom framed duplex pipelines.                       | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Ws.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Ws/) |
 | **Beskar.Networking.Transports.Quic** | Multiplexed and secure QUIC transport implementation built on native .NET libraries.                | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Quic.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Quic/) |
@@ -88,13 +90,12 @@ For more details, see the [Basics Documentation](https://github.com/MarvinDrude/
 
 ### High-Level Managed APIs
 
-For protocols like MQTT, `Beskar.Networking` provides fully managed implementations:
-* **Fully Managed Broker & Client**: Pre-built wrappers that manage the connection, session,
-and stream states automatically.
-* **Event-Driven**: Fully event-driven design with convenient events to react to incoming messages,
-client connections, and subscription actions, eliminating the need to write custom accept loops or pipeline plumbing.
+For protocols like MQTT, or connection-resilient networking, `Beskar.Networking` provides fully managed implementations:
+* **Fully Managed Broker & Client (MQTT)**: Pre-built wrappers that manage the connection, session, and stream states automatically.
+* **Resilient Client & Server**: Connection-resilient managed wrappers (`ResilientClient<TFrame>` and `ResilientServer<TFrame>`) that handle transient disconnect supervision, automatic pings/pongs (keep-alive), protocol control handshakes, custom challenge-response authentication, and pluggable framing protocol generation.
+* **Event-Driven**: Fully event-driven design with convenient events to react to incoming messages, client connections, and status updates, eliminating the need to write custom accept loops or pipeline plumbing.
 
-In the future, additional managed APIs for other application protocols will be added here.
+For more details, see the [Resilient Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Resilient/Overview.md) and [Mqtt Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Mqtt/PubSub.md).
 
 ---
 
@@ -115,6 +116,13 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
   - [**Quality of Service (QoS) Levels**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.QosLevels): Demonstrates publishing and subscribing messages with different QoS levels (QoS 0: At Most Once, QoS 1: At Least Once, QoS 2: Exactly Once) using wildcard topic filters.
   - [**Authentication (v3 & v5 Challenges)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.Authentication): Highlights both simple username/password validation for MQTT v3.1.1 and advanced challenge-response authentication for MQTT v5.0.
   - [**Client Reconnection & Event Handling**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.Reconnection): Shows how to register connection status events and implement custom auto-reconnection loops when connections are unexpectedly lost.
+- [**Resilient Managed Examples**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient): A set of projects demonstrating the high-level connection-resilient server and client wrappers:
+  - [**Resilient Chat Application**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient): A complete chat application using the resilient wrappers with default `BeskarPacket` framing and automated JSON serialization:
+    - [**Common**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.Chat.Common): Contains shared message payloads and a JSON `ChatSerializer` implementing `IResilientSerializer`.
+    - [**Server**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.Chat.Server): Integrates `ResilientServer<BeskarPacket>` to accept, track, and broadcast chat messages over TCP port 9000.
+    - [**Client**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.Chat.Client): Interactive chat client using `ResilientClient<BeskarPacket>` that reconnects and re-authenticates/joins automatically when connection is lost.
+  - [**Simple Ping-Pong**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.PingPong): Demonstrates basic ping-pong message exchange using `ResilientServer` and `ResilientClient` with default framing over TCP port 9001.
+  - [**Authentication Challenge-Response**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.Authentication): Highlights pre-handshake HMAC-SHA256 signature challenge-response authentication, showing both success and server-denial test cases on TCP port 9002.
 
 ---
 
