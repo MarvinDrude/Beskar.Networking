@@ -20,7 +20,9 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
       if (_timerTask != null) return Task.CompletedTask;
 
       _cts = new CancellationTokenSource();
-      _timerTask = Task.Run(() => RunKeepAliveLoopAsync(_cts.Token));
+      var token = _cts.Token;
+      // ReSharper disable once MethodSupportsCancellation
+      _timerTask = Task.Run(() => RunKeepAliveLoopAsync(token));
       return Task.CompletedTask;
    }
 
