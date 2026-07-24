@@ -14,6 +14,7 @@ public partial class FramingProtocolGenerator
       if (context.TargetSymbol is not INamedTypeSymbol typeSymbol) return null;
 
       var isPartial = typeDeclaration.Modifiers.Any(SyntaxKind.PartialKeyword);
+      cancellationToken.ThrowIfCancellationRequested();
 
       var loc = typeDeclaration.Identifier.GetLocation();
       var typeLocation = new LocationModel(
@@ -38,6 +39,8 @@ public partial class FramingProtocolGenerator
 
       var nestingTypes = new List<NestingModel>();
       var currentType = typeSymbol.ContainingType;
+      cancellationToken.ThrowIfCancellationRequested();
+
       while (currentType is not null)
       {
          var kind = currentType.IsRecord
@@ -49,6 +52,7 @@ public partial class FramingProtocolGenerator
       nestingTypes.Reverse();
 
       var properties = new List<ProtocolPropertyModel>();
+      cancellationToken.ThrowIfCancellationRequested();
 
       foreach (var member in typeSymbol.GetMembers())
       {
@@ -130,6 +134,7 @@ public partial class FramingProtocolGenerator
 
          var isPropPartial = propSymbol.IsPartialDefinition;
 
+         cancellationToken.ThrowIfCancellationRequested();
          properties.Add(new ProtocolPropertyModel(
             propSymbol.Name,
             propSymbol.Type.ToDisplayString(),
@@ -145,6 +150,7 @@ public partial class FramingProtocolGenerator
 
       properties.Sort((a, b) => a.Order.CompareTo(b.Order));
 
+      cancellationToken.ThrowIfCancellationRequested();
       var typeKindStr = typeSymbol.IsRecord
          ? (typeSymbol.IsValueType ? "record struct" : "record class")
          : (typeSymbol.IsValueType ? "struct" : "class");
