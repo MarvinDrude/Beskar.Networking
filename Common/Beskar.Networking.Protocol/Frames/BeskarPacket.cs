@@ -86,6 +86,7 @@ public partial struct BeskarPacket
       var packet = CreateFrame(kind);
       packet.PayloadLength = (int)payload.Length;
       packet.Payload = payload;
+
       return packet;
    }
 

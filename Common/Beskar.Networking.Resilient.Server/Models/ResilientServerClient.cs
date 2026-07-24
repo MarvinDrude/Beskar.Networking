@@ -67,12 +67,12 @@ public sealed class ResilientServerClient<TFrame>(
    public IReadOnlyCollection<INetworkStream> ActiveStreams => Session.ActiveStreams;
 
    /// <summary>
-   /// Gets the payload received from a Connect frame, if any.
+   /// Gets the payload received for Connect, if any.
    /// </summary>
    public ConnectPacketPayload? ConnectPayload { get; internal set; }
 
    /// <summary>
-   /// Gets the payload received from a Disconnect frame, if any.
+   /// Gets the payload received or sent for Disconnect, if any.
    /// </summary>
    public DisconnectPacketPayload? DisconnectPayload { get; internal set; }
 
@@ -143,20 +143,20 @@ public sealed class ResilientServerClient<TFrame>(
    /// Asynchronously serializes and sends a generic payload on the main control stream using the configured or provided serializer.
    /// Uses PooledBufferWriter backed by ArrayPool<byte>.Shared for zero-allocation performance.
    /// </summary>
-   public ValueTask SendAsync<TPayload>(
+   public ValueTask SendPayloadAsync<TPayload>(
       TPayload payload,
       ResilientFrameKind kind = ResilientFrameKind.Message,
       IResilientSerializer? serializer = null,
       CancellationToken cancellationToken = default)
    {
-      return SendAsync(payload, ControlStream, kind, serializer, cancellationToken);
+      return SendPayloadAsync(payload, ControlStream, kind, serializer, cancellationToken);
    }
 
    /// <summary>
    /// Asynchronously serializes and sends a generic payload on a specific stream using the configured or provided serializer.
    /// Uses PooledBufferWriter backed by ArrayPool<byte>.Shared for zero-allocation performance.
    /// </summary>
-   public async ValueTask SendAsync<TPayload>(
+   public async ValueTask SendPayloadAsync<TPayload>(
       TPayload payload,
       INetworkStream stream,
       ResilientFrameKind kind = ResilientFrameKind.Message,
@@ -214,10 +214,33 @@ public sealed class ResilientServerClient<TFrame>(
 
    /// <summary>
    /// Asynchronously disconnects the client session and closes all active streams.
+   /// Optionally sends a disconnect payload frame to the client first.
    /// </summary>
-   public async ValueTask DisconnectAsync()
+   public async ValueTask DisconnectAsync(DisconnectPacketPayload? disconnectPayload = null)
    {
       if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
+
+      if (disconnectPayload != null)
+      {
+         DisconnectPayload = disconnectPayload;
+
+         try
+         {
+            var len = disconnectPayload.GetEncodedLength();
+            using var writer = new PooledBufferWriter(len);
+            if (disconnectPayload.TryWrite(writer.GetSpan(len), out var bytesWritten))
+            {
+               writer.Advance(bytesWritten);
+            }
+
+            var frame = TFrame.CreateFrame(ResilientFrameKind.Disconnect, new ReadOnlySequence<byte>(writer.WrittenMemory));
+            await SendAsync(frame, ControlStream);
+         }
+         catch
+         {
+            // ignored if send fails during disconnect
+         }
+      }
 
       try
       {
