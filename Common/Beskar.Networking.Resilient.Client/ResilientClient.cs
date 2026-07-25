@@ -654,8 +654,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                   }
 
                   State = ResilientClientState.Disconnecting;
-                  _ = DisconnectInternalAsync(null);
-                  break;
+                  await DisconnectInternalAsync(null);
+                  return;
                }
 
                if (Options.FrameReceivedAllPackets || frameKind is ResilientFrameKind.Message)

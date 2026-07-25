@@ -292,20 +292,13 @@ public sealed class ResilientServerClient<TFrame>(
 
             var frame = TFrame.CreateFrame(ResilientFrameKind.Disconnect, new ReadOnlySequence<byte>(writer.WrittenMemory));
             await SendAsync(frame, ControlStream);
+
+            await ControlStream.Transport.Output.CompleteAsync();
          }
          catch
          {
             // ignored if send fails during disconnect
          }
-      }
-
-      try
-      {
-         await ControlStream.Transport.Output.CompleteAsync();
-      }
-      catch
-      {
-         // ignored
       }
 
       await Session.DisposeAsync();
