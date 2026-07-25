@@ -180,6 +180,7 @@ public sealed class SocketSender(PipeOptions pipeOptions)
       Stop();
 
       Pipe.Reset();
+      Pipe = new Pipe(pipeOptions);
 
       _connection = null;
       _socket = null;

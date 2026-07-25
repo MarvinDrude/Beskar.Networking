@@ -198,6 +198,9 @@ public sealed class StreamConnection(
       _readPipe.Reset();
       _writePipe.Reset();
 
+      _readPipe = new Pipe(readOptions);
+      _writePipe = new Pipe(writeOptions);
+
       InnerStream = null;
       _stopped = false;
       _isDisposed = false;
