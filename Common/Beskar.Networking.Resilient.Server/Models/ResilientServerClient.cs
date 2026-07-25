@@ -96,6 +96,19 @@ public sealed class ResilientServerClient<TFrame>(
          SingleReader = false
       });
 
+   internal Action<Guid>? OnDisposing { get; set; }
+
+   /// <summary>
+   /// Channel holding pre-handshake message frames for sequential FIFO processing upon handshake completion.
+   /// </summary>
+   internal Channel<(TFrame Frame, INetworkStream Stream)> PreHandshakeFrameChannel { get; } = Channel.CreateBounded<(TFrame Frame, INetworkStream Stream)>(
+      new BoundedChannelOptions(1024)
+      {
+         SingleWriter = false,
+         SingleReader = true,
+         FullMode = BoundedChannelFullMode.DropOldest
+      });
+
    /// <summary>
    /// A task that completes when the client's connection handshake and OnConnect event pipeline have finished.
    /// Evaluates to true if accepted, false if denied or disconnected.
@@ -109,6 +122,11 @@ public sealed class ResilientServerClient<TFrame>(
 
       _handshakeTcs.TrySetResult(success);
       ControlPayloadChannel.Writer.TryComplete();
+
+      if (!success)
+      {
+         PreHandshakeFrameChannel.Writer.TryComplete();
+      }
    }
 
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
@@ -256,6 +274,8 @@ public sealed class ResilientServerClient<TFrame>(
       {
          return;
       }
+
+      OnDisposing?.Invoke(Id);
 
       if (disconnectPayload != null)
       {

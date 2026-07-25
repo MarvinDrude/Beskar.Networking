@@ -56,6 +56,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
    private int _disposedState;
    private volatile int _state = (int)ResilientClientState.Disconnected;
+   private int _disconnectedEventFired;
 
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
    private long _lastTouchMs = Environment.TickCount64;
@@ -67,7 +68,6 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private CancellationTokenSource? _reconnectCts;
 
    private readonly ResilientClientKeepAliveService<TFrame> _keepAliveService;
-   private Channel<IResilientPayload> _handshakeChannel = CreateHandshakeChannel();
 
    private static Channel<IResilientPayload> CreateHandshakeChannel()
       => Channel.CreateUnbounded<IResilientPayload>(new UnboundedChannelOptions
@@ -102,11 +102,10 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       if (Volatile.Read(ref _disposedState) == 1)
          return new StringError("Already disposed client.");
 
-      if (State is ResilientClientState.Connected or ResilientClientState.Connecting or ResilientClientState.Reconnecting)
+      if (Interlocked.CompareExchange(ref _state, (int)ResilientClientState.Connecting, (int)ResilientClientState.Disconnected) != (int)ResilientClientState.Disconnected)
          return new StringError("Client is already connected, connecting, or reconnecting.");
 
       _remoteEndPoint = endPoint;
-      State = ResilientClientState.Connecting;
 
       _connectionCts?.Dispose();
       _connectionCts = new CancellationTokenSource();
@@ -203,6 +202,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
          State = ResilientClientState.Connected;
          ConnectedAt = DateTimeOffset.UtcNow;
+
+         _disconnectedEventFired = 0;
          TouchActivity();
 
          await _keepAliveService.StartAsync();
@@ -290,104 +291,115 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    {
       try
       {
-         await _keepAliveService.StopAsync();
-      }
-      catch
-      {
-         // ignored
-      }
-
-      if (disconnectPayload != null && ControlStream != null &&
-          Session is { SessionClosedToken.IsCancellationRequested: false })
-      {
-         DisconnectPayload = disconnectPayload;
          try
          {
-            var len = disconnectPayload.GetEncodedLength();
-            using var writer = new PooledBufferWriter(len);
-            if (disconnectPayload.TryWrite(writer.GetSpan(len), out var bytesWritten))
+            await _keepAliveService.StopAsync();
+         }
+         catch
+         {
+            // ignored
+         }
+
+         if (disconnectPayload != null && ControlStream != null &&
+             Session is { SessionClosedToken.IsCancellationRequested: false })
+         {
+            DisconnectPayload = disconnectPayload;
+            try
             {
-               writer.Advance(bytesWritten);
+               var len = disconnectPayload.GetEncodedLength();
+               using var writer = new PooledBufferWriter(len);
+               if (disconnectPayload.TryWrite(writer.GetSpan(len), out var bytesWritten))
+               {
+                  writer.Advance(bytesWritten);
+               }
+
+               var frame = TFrame.CreateFrame(ResilientFrameKind.Disconnect,
+                  new ReadOnlySequence<byte>(writer.WrittenMemory));
+
+               await SendAsync(frame, ControlStream);
+               await ControlStream.Transport.Output.CompleteAsync();
+               await Task.Delay(10);
             }
-
-            var frame = TFrame.CreateFrame(ResilientFrameKind.Disconnect,
-               new ReadOnlySequence<byte>(writer.WrittenMemory));
-
-            await SendAsync(frame, ControlStream);
-            await ControlStream.Transport.Output.CompleteAsync();
+            catch
+            {
+               // ignored if send fails during disconnect
+            }
          }
-         catch
+
+         if (_connectionCts != null)
          {
-            // ignored if send fails during disconnect
+            try
+            {
+               await _connectionCts.CancelAsync();
+            }
+            catch
+            {
+               // ignored
+            }
+         }
+
+         if (_reconnectCts != null)
+         {
+            try
+            {
+               await _reconnectCts.CancelAsync();
+            }
+            catch
+            {
+               // ignored
+            }
+         }
+
+         if (raiseDisconnectedEvent && Interlocked.Exchange(ref _disconnectedEventFired, 1) == 0 && Events.OnDisconnected.Count > 0)
+         {
+            var disconnectContext = new ResilientClientDisconnectedContext<TFrame>
+            {
+               Client = this,
+               DisconnectPayload = DisconnectPayload
+            };
+
+            try
+            {
+               await Events.OnDisconnected.ExecuteAsync(
+                  disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError);
+            }
+            catch
+            {
+               // background protection
+            }
+         }
+
+         if (ControlStream != null)
+         {
+            try
+            {
+               await ControlStream.Transport.Output.CompleteAsync();
+            }
+            catch
+            {
+               // ignored
+            }
+         }
+
+         _controlStream = null;
+
+         if (Session != null)
+         {
+            try
+            {
+               await Session.DisposeAsync();
+            }
+            catch
+            {
+               // ignored
+            }
          }
       }
-
-      if (_connectionCts != null)
+      finally
       {
-         try
+         if (State is not ResilientClientState.Reconnecting)
          {
-            await _connectionCts.CancelAsync();
-         }
-         catch
-         {
-            // ignored
-         }
-      }
-
-      if (_reconnectCts != null)
-      {
-         try
-         {
-            await _reconnectCts.CancelAsync();
-         }
-         catch
-         {
-            // ignored
-         }
-      }
-
-      if (raiseDisconnectedEvent && Events.OnDisconnected.Count > 0)
-      {
-         var disconnectContext = new ResilientClientDisconnectedContext<TFrame>
-         {
-            Client = this,
-            DisconnectPayload = DisconnectPayload
-         };
-
-         try
-         {
-            await Events.OnDisconnected.ExecuteAsync(
-               disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError);
-         }
-         catch
-         {
-            // background protection
-         }
-      }
-
-      if (ControlStream != null)
-      {
-         try
-         {
-            await ControlStream.Transport.Output.CompleteAsync();
-         }
-         catch
-         {
-            // ignored
-         }
-      }
-
-      _controlStream = null;
-
-      if (Session != null)
-      {
-         try
-         {
-            await Session.DisposeAsync();
-         }
-         catch
-         {
-            // ignored
+            State = ResilientClientState.Disconnected;
          }
       }
    }
@@ -771,12 +783,19 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                   return;
                }
 
+               var oldCts = _connectionCts;
+               _connectionCts = new CancellationTokenSource();
+               oldCts?.Dispose();
+
                return; // Reconnect successful!
             }
          }
 
-         State = ResilientClientState.Disconnected;
-         await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
+         if (State is not ResilientClientState.Disconnected)
+         {
+            State = ResilientClientState.Disconnected;
+            await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
+         }
       }
       finally
       {

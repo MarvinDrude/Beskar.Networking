@@ -89,6 +89,9 @@ public sealed class ResilientServer<TFrame>
             continue;
          }
 
+         await _cancellationTokenSource.CancelAsync();
+         _cancellationTokenSource.Dispose();
+
          await CleanupCode(startedBuilder, ct);
          State = ResilientServerState.Stopped;
          return new StringError($"Failed to start one of the listener: {startResult.Error.Message}");
@@ -241,6 +244,8 @@ public sealed class ResilientServer<TFrame>
          var controlStreamContext = new NetworkServerStreamContext(connectionContext, controlStreamResult.Success);
 
          client = new ResilientServerClient<TFrame>(controlStreamContext, Options);
+         client.OnDisposing = id => Clients.TryRemove(id, out _);
+
          if (!Clients.TryAdd(client))
          {
             await client.DisposeAsync();
@@ -317,6 +322,7 @@ public sealed class ResilientServer<TFrame>
             var connectAckFrame = TFrame.CreateFrame(ResilientFrameKind.ConnectAcknowledged);
             await client.SendAsync(connectAckFrame, combinedToken);
             client.SetHandshakeResult(true);
+            _ = Task.Run(() => ProcessBufferedPreHandshakeFramesAsync(client, combinedToken));
          }
          else
          {
@@ -583,30 +589,7 @@ public sealed class ResilientServer<TFrame>
                      }
                      else if (!client.HandshakeCompletedTask.IsCompleted)
                      {
-                        var localFrame = frame;
-                        var localStream = streamContext.Stream;
-                        _ = Task.Run(async () =>
-                        {
-                           try
-                           {
-                              if (await client.HandshakeCompletedTask)
-                              {
-                                 var eventContext = new ResilientFrameReceivedContext<TFrame>
-                                 {
-                                    Client = client,
-                                    Stream = localStream,
-                                    Frame = localFrame
-                                 };
-
-                                 await Events.FrameReceived.ExecuteAsync(
-                                    eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
-                              }
-                           }
-                           catch
-                           {
-                              // background protection
-                           }
-                        }, ct);
+                        client.PreHandshakeFrameChannel.Writer.TryWrite((frame, streamContext.Stream));
                      }
                   }
                }
@@ -628,6 +611,38 @@ public sealed class ResilientServer<TFrame>
       {
          client.ControlPayloadChannel.Writer.TryComplete();
          await streamContext.Stream.DisposeAsync();
+      }
+   }
+
+   private async Task ProcessBufferedPreHandshakeFramesAsync(
+      ResilientServerClient<TFrame> client,
+      CancellationToken ct)
+   {
+      var reader = client.PreHandshakeFrameChannel.Reader;
+      try
+      {
+         while (await reader.WaitToReadAsync(ct))
+         {
+            while (reader.TryRead(out var item))
+            {
+               if (Events.FrameReceived.Count > 0)
+               {
+                  var eventContext = new ResilientFrameReceivedContext<TFrame>
+                  {
+                     Client = client,
+                     Stream = item.Stream,
+                     Frame = item.Frame
+                  };
+
+                  await Events.FrameReceived.ExecuteAsync(
+                     eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+               }
+            }
+         }
+      }
+      catch
+      {
+         // background protection
       }
    }
 
