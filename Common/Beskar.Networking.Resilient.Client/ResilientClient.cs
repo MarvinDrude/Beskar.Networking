@@ -67,6 +67,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
    private CancellationTokenSource? _connectionCts;
    private CancellationTokenSource? _reconnectCts;
+   private Task? _reconnectTask;
 
    private readonly ResilientClientKeepAliveService<TFrame> _keepAliveService;
 
@@ -326,6 +327,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
                await SendAsync(frame, ControlStream);
                await ControlStream.Transport.Output.CompleteAsync();
+               await Task.Yield();
             }
             catch
             {
@@ -579,7 +581,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          {
             try
             {
-               await Task.WhenAll(streamTasks.Keys);
+               var whenAll = Task.WhenAll(streamTasks.Keys);
+               await Task.WhenAny(whenAll, Task.Delay(2000, CancellationToken.None));
             }
             catch
             {
@@ -668,7 +671,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
                if (Options.FrameReceivedAllPackets || frameKind is ResilientFrameKind.Message)
                {
-                  if (Events.FrameReceived.Count > 0)
+                  if (Events.FrameReceived.Count > 0
+                      && (Options.FrameReceivedAllPackets || State is ResilientClientState.Connected))
                   {
                      var eventContext = new ResilientClientFrameReceivedContext<TFrame>
                      {
@@ -701,6 +705,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
       catch (Exception ex)
       {
+         TraceLogger.LogClientError("ResilientClient: Exception in listen task on stream {0}: {1}", stream.StreamId, ex.Message);
          if (stream == ControlStream && State is ResilientClientState.Connected or ResilientClientState.Reconnecting)
          {
             _ = TriggerAutoReconnectAsync(ex);
@@ -715,110 +720,113 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
    private int _isReconnectingState;
 
-   private async Task TriggerAutoReconnectAsync(Exception? cause)
+   private Task TriggerAutoReconnectAsync(Exception? cause)
    {
       if (State is ResilientClientState.Disconnecting or ResilientClientState.Disconnected)
-         return;
+         return Task.CompletedTask;
 
       if (Interlocked.CompareExchange(ref _isReconnectingState, 1, 0) == 1)
-         return;
+         return _reconnectTask ?? Task.CompletedTask;
 
-      try
+      _reconnectTask = Task.Run(async () =>
       {
-         if (!Options.Reconnecting.AutoReconnect || _remoteEndPoint == null)
+         try
          {
-            TraceLogger.LogClientWarning("ResilientClient: Connection lost ({0}). AutoReconnect is disabled. Disconnecting.", cause?.Message ?? "Transport closed");
-            State = ResilientClientState.Disconnected;
-            await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
-            return;
-         }
-
-         TraceLogger.LogClientWarning("ResilientClient: Connection lost ({0}). Triggering auto-reconnect to {1}...", cause?.Message ?? "Transport closed", _remoteEndPoint);
-         State = ResilientClientState.Reconnecting;
-         await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
-
-         _reconnectCts?.Dispose();
-         _reconnectCts = new CancellationTokenSource();
-         var masterCt = _reconnectCts.Token;
-
-         var attempt = 0;
-         var maxRetries = Options.Reconnecting.MaxRetries;
-
-         while (!masterCt.IsCancellationRequested && State is ResilientClientState.Reconnecting)
-         {
-            attempt++;
-            if (maxRetries > 0 && attempt > maxRetries)
+            if (!Options.Reconnecting.AutoReconnect || _remoteEndPoint == null)
             {
-               TraceLogger.LogClientError("ResilientClient: Max reconnect attempts ({0}) reached for {1}. Stopping.", maxRetries, _remoteEndPoint);
-               break;
+               TraceLogger.LogClientWarning("ResilientClient: Connection lost ({0}). AutoReconnect is disabled. Disconnecting.", cause?.Message ?? "Transport closed");
+               State = ResilientClientState.Disconnected;
+               await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
+               return;
             }
 
-            TraceLogger.LogClientInfo("ResilientClient: Auto-reconnect attempt #{0} (Max: {1}) to {2} in {3}ms...", attempt, maxRetries, _remoteEndPoint, Options.Reconnecting.RetryInterval.TotalMilliseconds);
+            TraceLogger.LogClientWarning("ResilientClient: Connection lost ({0}). Triggering auto-reconnect to {1}...", cause?.Message ?? "Transport closed", _remoteEndPoint);
+            State = ResilientClientState.Reconnecting;
+            await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
 
-            if (Events.OnReconnecting.Count > 0)
+            _reconnectCts?.Dispose();
+            _reconnectCts = new CancellationTokenSource();
+            var masterCt = _reconnectCts.Token;
+
+            var attempt = 0;
+            var maxRetries = Options.Reconnecting.MaxRetries;
+
+            while (!masterCt.IsCancellationRequested && State is ResilientClientState.Reconnecting)
             {
-               var reconnectContext = new ResilientClientReconnectingContext<TFrame>
+               attempt++;
+               if (maxRetries > 0 && attempt > maxRetries)
                {
-                  Client = this,
-                  Attempt = attempt,
-                  LastException = cause
-               };
-
-               await Events.OnReconnecting.ExecuteAsync(
-                  reconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, masterCt);
-            }
-
-            try
-            {
-               await Task.Delay(Options.Reconnecting.RetryInterval, masterCt);
-            }
-            catch (OperationCanceledException)
-            {
-               break;
-            }
-
-            if (State is not ResilientClientState.Reconnecting || Volatile.Read(ref _disposedState) == 1)
-            {
-               break;
-            }
-
-            _connectionCts?.Dispose();
-            _connectionCts = CancellationTokenSource.CreateLinkedTokenSource(masterCt);
-            var attemptCt = _connectionCts.Token;
-
-            var result = await ConnectInternalAsync(_remoteEndPoint, attemptCt, isReconnect: true);
-            if (!result.Failed)
-            {
-               if (Volatile.Read(ref _disposedState) == 1 || State is ResilientClientState.Disconnecting or ResilientClientState.Disconnected)
-               {
-                  await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
-                  State = ResilientClientState.Disconnected;
-                  return;
+                  TraceLogger.LogClientError("ResilientClient: Max reconnect attempts ({0}) reached for {1}. Stopping.", maxRetries, _remoteEndPoint);
+                  break;
                }
 
-               var oldCts = _connectionCts;
-               _connectionCts = new CancellationTokenSource();
-               oldCts?.Dispose();
+               TraceLogger.LogClientInfo("ResilientClient: Auto-reconnect attempt #{0} (Max: {1}) to {2} in {3}ms...", attempt, maxRetries, _remoteEndPoint, Options.Reconnecting.RetryInterval.TotalMilliseconds);
 
-               TraceLogger.LogClientInfo("ResilientClient: Auto-reconnect attempt #{0} to {1} SUCCEEDED!", attempt, _remoteEndPoint);
-               return; // Reconnect successful!
+               if (Events.OnReconnecting.Count > 0)
+               {
+                  var reconnectContext = new ResilientClientReconnectingContext<TFrame>
+                  {
+                     Client = this,
+                     Attempt = attempt,
+                     LastException = cause
+                  };
+
+                  await Events.OnReconnecting.ExecuteAsync(
+                     reconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, masterCt);
+               }
+
+               try
+               {
+                  await Task.Delay(Options.Reconnecting.RetryInterval, masterCt);
+               }
+               catch (OperationCanceledException)
+               {
+                  break;
+               }
+
+               if (State is not ResilientClientState.Reconnecting || Volatile.Read(ref _disposedState) == 1)
+               {
+                  break;
+               }
+
+               _connectionCts?.Dispose();
+               _connectionCts = new CancellationTokenSource();
+
+               using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(_connectionCts.Token, masterCt);
+               var attemptCt = attemptCts.Token;
+
+               var result = await ConnectInternalAsync(_remoteEndPoint, attemptCt, isReconnect: true);
+               if (!result.Failed)
+               {
+                  if (Volatile.Read(ref _disposedState) == 1 || State is ResilientClientState.Disconnecting or ResilientClientState.Disconnected)
+                  {
+                     await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
+                     State = ResilientClientState.Disconnected;
+                     return;
+                  }
+
+                  TraceLogger.LogClientInfo("ResilientClient: Auto-reconnect attempt #{0} to {1} SUCCEEDED!", attempt, _remoteEndPoint);
+                  return; // Reconnect successful!
+               }
+            }
+
+            if (State is not (ResilientClientState.Disconnected or ResilientClientState.Disconnecting))
+            {
+               TraceLogger.LogClientError("ResilientClient: Auto-reconnect loop finished without reconnecting. Setting state to Disconnected.");
+               State = ResilientClientState.Disconnected;
+               await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
             }
          }
-
-         if (State is not ResilientClientState.Disconnected)
+         finally
          {
-            TraceLogger.LogClientError("ResilientClient: Auto-reconnect loop finished without reconnecting. Setting state to Disconnected.");
-            State = ResilientClientState.Disconnected;
-            await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
-         }
-      }
-      finally
-      {
-         _reconnectCts?.Dispose();
-         _reconnectCts = null;
+            _reconnectCts?.Dispose();
+            _reconnectCts = null;
 
-         Interlocked.Exchange(ref _isReconnectingState, 0);
-      }
+            Interlocked.Exchange(ref _isReconnectingState, 0);
+         }
+      });
+
+      return _reconnectTask;
    }
 
    public async ValueTask DisposeAsync()
@@ -840,6 +848,19 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
 
       await DisconnectInternalAsync(null);
+
+      var reconnectTask = _reconnectTask;
+      if (reconnectTask != null)
+      {
+         try
+         {
+            await reconnectTask;
+         }
+         catch
+         {
+            // ignored
+         }
+      }
 
       _connectionCts?.Dispose();
       _connectionCts = null;

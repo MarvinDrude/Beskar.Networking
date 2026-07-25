@@ -62,7 +62,7 @@ public partial struct PacketWithSafeCopy
 {
    [VarNumberField(Order = 0)] public int Length { get; set; }
 
-   [ByteSequenceField(nameof(Length), true, Order = 1)]
+   [ByteSequenceField(nameof(Length), Order = 1)]
    public ReadOnlySequence<byte> Payload { get; set; }
 }
 

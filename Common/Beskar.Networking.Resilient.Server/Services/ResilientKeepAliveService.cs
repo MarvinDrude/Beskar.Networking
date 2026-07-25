@@ -77,6 +77,11 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
 
             foreach (var client in clients)
             {
+               if (!client.IsHandshakeCompleted)
+               {
+                  continue;
+               }
+
                if (options.Mode is ResilientServerKeepAliveMode.ClientConfigured &&
                    client.ConnectPayload is { KeepAliveSeconds: 0 })
                {

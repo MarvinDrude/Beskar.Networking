@@ -143,10 +143,7 @@ public class ResilientClientServerIntegrationTests
       {
          var text = Encoding.UTF8.GetString(ctx.Frame.Payload.ToArray());
          receivedMessages[ctx.Stream.StreamId] = text;
-         if (Interlocked.Increment(ref receivedCount) == messageCount)
-         {
-            tcs.TrySetResult();
-         }
+         if (Interlocked.Increment(ref receivedCount) == messageCount) tcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
 
@@ -224,10 +221,7 @@ public class ResilientClientServerIntegrationTests
       {
          var text = Encoding.UTF8.GetString(ctx.Frame.Payload.ToArray());
          receivedMessages[ctx.Stream.StreamId] = text;
-         if (Interlocked.Increment(ref receivedCount) == messageCount)
-         {
-            tcs.TrySetResult();
-         }
+         if (Interlocked.Increment(ref receivedCount) == messageCount) tcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
 
@@ -239,10 +233,7 @@ public class ResilientClientServerIntegrationTests
       await Assert.That(client.IsConnected).IsTrue();
 
       // Wait a moment for server to register the client connection
-      for (var i = 0; i < 50 && server.Clients.Count == 0; i++)
-      {
-         await Task.Delay(50);
-      }
+      for (var i = 0; i < 50 && server.Clients.Count == 0; i++) await Task.Delay(50);
       await Assert.That(server.Clients.Count).IsEqualTo(1);
       var serverClient = server.Clients.GetAll().First();
 
@@ -301,9 +292,13 @@ public class ResilientClientServerIntegrationTests
       finally
       {
          if (File.Exists(socketPath))
-         {
-            try { File.Delete(socketPath); } catch { }
-         }
+            try
+            {
+               File.Delete(socketPath);
+            }
+            catch
+            {
+            }
       }
    }
 

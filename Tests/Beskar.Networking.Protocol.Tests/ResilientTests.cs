@@ -1,9 +1,11 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using Beskar.Networking.Protocol.Frames;
 using Beskar.Networking.Protocol.Payloads;
+using Beskar.Networking.Protocol.Utilities;
 using Beskar.Networking.Resilient.Client;
 using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Server;
@@ -104,22 +106,22 @@ public class ResilientTests
       await server.StartAsync();
       var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
 
-      var socket = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
       await socket.ConnectAsync(boundEndPoint);
 
       // Send Connect frame AND Message frame simultaneously in one write
-      using var connectWriter = new Beskar.Networking.Protocol.Utilities.PooledBufferWriter();
+      using var connectWriter = new PooledBufferWriter();
       var connectPayload = new ConnectPacketPayload();
       var len = connectPayload.GetEncodedLength();
       if (connectPayload.TryWrite(connectWriter.GetSpan(len), out var bytesWritten))
-      {
          connectWriter.Advance(bytesWritten);
-      }
 
-      var connectFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Connect, new ReadOnlySequence<byte>(connectWriter.WrittenMemory));
-      var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>("HelloEarlyMessage"u8.ToArray()));
+      var connectFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Connect,
+         new ReadOnlySequence<byte>(connectWriter.WrittenMemory));
+      var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message,
+         new ReadOnlySequence<byte>("HelloEarlyMessage"u8.ToArray()));
 
-      using var streamWriter = new Beskar.Networking.Protocol.Utilities.PooledBufferWriter();
+      using var streamWriter = new PooledBufferWriter();
       connectFrame.WriteTo(streamWriter);
       msgFrame.WriteTo(streamWriter);
 
@@ -324,33 +326,35 @@ public class ResilientTests
       {
          var text = Encoding.UTF8.GetString(ctx.Frame.Payload.ToArray());
          if (int.TryParse(text, out var num))
-         {
-            lock (lockObj) receivedSequence.Add(num);
-         }
+            lock (lockObj)
+            {
+               receivedSequence.Add(num);
+            }
+
          return ValueTask.CompletedTask;
       });
 
       await server.StartAsync();
       var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
 
-      var socket = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
       await socket.ConnectAsync(boundEndPoint);
 
-      using var streamWriter = new Beskar.Networking.Protocol.Utilities.PooledBufferWriter();
+      using var streamWriter = new PooledBufferWriter();
 
       var connectPayload = new ConnectPacketPayload();
       var len = connectPayload.GetEncodedLength();
-      using var connectWriter = new Beskar.Networking.Protocol.Utilities.PooledBufferWriter(len);
+      using var connectWriter = new PooledBufferWriter(len);
       if (connectPayload.TryWrite(connectWriter.GetSpan(len), out var bytesWritten))
-      {
          connectWriter.Advance(bytesWritten);
-      }
 
-      BeskarPacket.CreateFrame(ResilientFrameKind.Connect, new ReadOnlySequence<byte>(connectWriter.WrittenMemory)).WriteTo(streamWriter);
+      BeskarPacket.CreateFrame(ResilientFrameKind.Connect, new ReadOnlySequence<byte>(connectWriter.WrittenMemory))
+         .WriteTo(streamWriter);
 
       for (var i = 1; i <= 5; i++)
       {
-         var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(i.ToString())));
+         var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message,
+            new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(i.ToString())));
          msgFrame.WriteTo(streamWriter);
       }
 
@@ -358,12 +362,19 @@ public class ResilientTests
 
       var allReceived = await SpinWaitUntilAsync(() =>
       {
-         lock (lockObj) return receivedSequence.Count == 5;
+         lock (lockObj)
+         {
+            return receivedSequence.Count == 5;
+         }
       }, TimeSpan.FromSeconds(5));
 
       await Assert.That(allReceived).IsTrue();
       int[] snapshot;
-      lock (lockObj) snapshot = receivedSequence.ToArray();
+      lock (lockObj)
+      {
+         snapshot = receivedSequence.ToArray();
+      }
+
       await Assert.That(snapshot).IsEquivalentTo(new[] { 1, 2, 3, 4, 5 });
 
       socket.Dispose();
@@ -435,6 +446,302 @@ public class ResilientTests
       await Assert.That(disconnectedCount).IsEqualTo(1);
 
       await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
+   [Test]
+   public async Task AutoReconnect_ShouldNotThrowObjectDisposedException_OnSuccessfulReconnect()
+   {
+      var endpoint = new MemoryEndPoint($"reconnect_ode_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+
+      await server.StartAsync();
+
+      var clientOptions = new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            RetryInterval = TimeSpan.FromMilliseconds(50),
+            MaxRetries = 5
+         }
+      };
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+      var reconnectedTcs = new TaskCompletionSource();
+      client.Events.OnConnected.Add((ctx, _) =>
+      {
+         if (ctx.Client.State == ResilientClientState.Connected) reconnectedTcs.TrySetResult();
+         return ValueTask.CompletedTask;
+      });
+
+      await client.ConnectAsync(endpoint);
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Kill the connection to force a reconnect
+      var serverClient = server.Clients.GetAll().First();
+      await serverClient.Session.DisposeAsync();
+
+      // Wait for reconnect to succeed
+      await reconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Ensure sending still works and doesn't throw ODE
+      var payload = "TestAfterReconnect"u8.ToArray();
+      var frame = BeskarPacket.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>(payload));
+
+      var sendSuccessful = true;
+      try
+      {
+         await client.SendAsync(frame);
+      }
+      catch (Exception)
+      {
+         sendSuccessful = false;
+      }
+
+      await Assert.That(sendSuccessful).IsTrue();
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
+   [Test]
+   public async Task DisposeAsync_ShouldStopBackgroundReconnectLoopCleanly()
+   {
+      var endpoint = new MemoryEndPoint($"dispose_reconnect_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+
+      await server.StartAsync();
+
+      var clientOptions = new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            RetryInterval = TimeSpan.FromMilliseconds(50),
+            MaxRetries = 10
+         }
+      };
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+      var reconnectingTcs = new TaskCompletionSource();
+      client.Events.OnReconnecting.Add((_, _) =>
+      {
+         reconnectingTcs.TrySetResult();
+         return ValueTask.CompletedTask;
+      });
+
+      await client.ConnectAsync(endpoint);
+
+      // Stop server to trigger reconnect
+      await server.StopAsync();
+      await reconnectingTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+      await Assert.That(client.State).IsEqualTo(ResilientClientState.Reconnecting);
+
+      // Dispose client
+      var sw = Stopwatch.StartNew();
+      await client.DisposeAsync();
+      sw.Stop();
+
+      // Verify it exits quickly and state is Disconnected
+      await Assert.That(sw.ElapsedMilliseconds).IsLessThan(2000);
+      await Assert.That(client.State).IsEqualTo(ResilientClientState.Disconnected);
+
+      await server.DisposeAsync();
+   }
+
+   [Test]
+   public async Task Client_ShouldNotFireFrameReceived_BeforeConnected()
+   {
+      var endpoint = new MemoryEndPoint($"early_client_frame_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+
+      await server.StartAsync();
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>();
+      var isConnectedDuringFrame = false;
+      var frameReceived = false;
+
+      client.Events.FrameReceived.Add((ctx, _) =>
+      {
+         frameReceived = true;
+         if (ctx.Client.State == ResilientClientState.Connected) isConnectedDuringFrame = true;
+         return ValueTask.CompletedTask;
+      });
+
+      var connectionTcs = new TaskCompletionSource();
+      client.Events.OnConnected.Add((_, _) =>
+      {
+         connectionTcs.TrySetResult();
+         return ValueTask.CompletedTask;
+      });
+
+      await client.ConnectAsync(endpoint);
+
+      // Send an early message from the server client immediately
+      var serverClient = server.Clients.GetAll().First();
+      var payload = "EarlyMessage"u8.ToArray();
+      var frame = BeskarPacket.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>(payload));
+      await serverClient.SendAsync(frame);
+
+      await connectionTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+      // Wait a moment for messages to be processed
+      await Task.Delay(100);
+
+      if (frameReceived) await Assert.That(isConnectedDuringFrame).IsTrue();
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
+   [Test]
+   public async Task KeepAliveService_ShouldNotDisconnect_AuthenticatingClient()
+   {
+      var endpoint = new MemoryEndPoint($"keepalive_auth_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+
+      var serverOptions = new ResilientServerOptions
+      {
+         KeepAlive = new ResilientServerKeepAliveOptions
+         {
+            Mode = ResilientServerKeepAliveMode.Alawys,
+            CheckInterval = TimeSpan.FromMilliseconds(50),
+            DefaultKeepAliveTime = TimeSpan.FromMilliseconds(100)
+         },
+         HandshakeTimeout = TimeSpan.FromSeconds(5)
+      };
+
+      var server = new ResilientServer<BeskarPacket>([listener], serverOptions);
+      var authStartedTcs = new TaskCompletionSource();
+      var finishAuthTcs = new TaskCompletionSource();
+
+      server.Events.OnConnect.Add(async (ctx, ct) =>
+      {
+         authStartedTcs.TrySetResult();
+         await finishAuthTcs.Task.WaitAsync(ct);
+      });
+
+      await server.StartAsync();
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>();
+      var connectTask = Task.Run(() => client.ConnectAsync(endpoint));
+
+      // Wait for authentication on the server to start
+      await authStartedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+      // Wait a bit to let keep-alive check run multiple times
+      await Task.Delay(500);
+
+      // Server client should still be in Clients list (not disconnected by keep-alive)
+      await Assert.That(server.Clients.Count).IsEqualTo(1);
+
+      // Finish authentication
+      finishAuthTcs.TrySetResult();
+      var connectResult = await connectTask.WaitAsync(TimeSpan.FromSeconds(3));
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
+   [Test]
+   public async Task Server_ShouldProcessBufferedAndPostHandshakeFrames_InStrictOrder()
+   {
+      var listenerEndPoint = new IPEndPoint(IPAddress.Loopback, 0);
+      var server = ResilientServerFactory.CreateBuilder<BeskarPacket>()
+         .UseTcp(listenerEndPoint)
+         .Build();
+
+      var receivedSequence = new List<int>();
+      var lockObj = new object();
+      var connectCompletedTcs = new TaskCompletionSource();
+
+      server.Events.OnConnect.Add(async (ctx, ct) =>
+      {
+         await Task.Delay(150, ct); // Delay handshake completion
+         connectCompletedTcs.TrySetResult();
+      });
+
+      server.Events.FrameReceived.Add((ctx, _) =>
+      {
+         var text = Encoding.UTF8.GetString(ctx.Frame.Payload.ToArray());
+         if (int.TryParse(text, out var num))
+            lock (lockObj)
+            {
+               receivedSequence.Add(num);
+            }
+
+         return ValueTask.CompletedTask;
+      });
+
+      await server.StartAsync();
+      var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
+
+      var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+      await socket.ConnectAsync(boundEndPoint);
+
+      using var streamWriter = new PooledBufferWriter();
+
+      var connectPayload = new ConnectPacketPayload();
+      var len = connectPayload.GetEncodedLength();
+      using var connectWriter = new PooledBufferWriter(len);
+      if (connectPayload.TryWrite(connectWriter.GetSpan(len), out var bytesWritten))
+         connectWriter.Advance(bytesWritten);
+
+      BeskarPacket.CreateFrame(ResilientFrameKind.Connect, new ReadOnlySequence<byte>(connectWriter.WrittenMemory))
+         .WriteTo(streamWriter);
+
+      for (var i = 1; i <= 5; i++)
+      {
+         var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message,
+            new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(i.ToString())));
+         msgFrame.WriteTo(streamWriter);
+      }
+
+      await socket.SendAsync(streamWriter.WrittenMemory);
+
+      // Wait for handshake to complete
+      await connectCompletedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+      // Send frame 6 immediately after handshake
+      using var postStreamWriter = new PooledBufferWriter();
+      var postMsgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message,
+         new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes("6")));
+      postMsgFrame.WriteTo(postStreamWriter);
+      await socket.SendAsync(postStreamWriter.WrittenMemory);
+
+      var allReceived = await SpinWaitUntilAsync(() =>
+      {
+         lock (lockObj)
+         {
+            return receivedSequence.Count == 6;
+         }
+      }, TimeSpan.FromSeconds(5));
+
+      await Assert.That(allReceived).IsTrue();
+      int[] snapshot;
+      lock (lockObj)
+      {
+         snapshot = receivedSequence.ToArray();
+      }
+
+      // Verify strict order 1 to 6
+      await Assert.That(snapshot).IsEquivalentTo(new[] { 1, 2, 3, 4, 5, 6 });
+
+      socket.Dispose();
+      await server.StopAsync();
       await server.DisposeAsync();
    }
 }

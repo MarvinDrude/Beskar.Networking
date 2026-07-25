@@ -1,8 +1,10 @@
 using System.Buffers;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using Beskar.Networking.Protocol.Frames;
 using Beskar.Networking.Protocol.Payloads;
+using Beskar.Networking.Protocol.Utilities;
 using Beskar.Networking.Resilient.Client;
 using Beskar.Networking.Resilient.Client.Contexts;
 using Beskar.Networking.Resilient.Server;
@@ -297,21 +299,20 @@ public class ResilientAuthHandshakeTests
       await server.StartAsync();
       var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
 
-      var socket = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
       await socket.ConnectAsync(boundEndPoint);
 
-      using var writer = new Beskar.Networking.Protocol.Utilities.PooledBufferWriter();
+      using var writer = new PooledBufferWriter();
       var connectPayload = new ConnectPacketPayload();
       var len = connectPayload.GetEncodedLength();
-      if (connectPayload.TryWrite(writer.GetSpan(len), out var bytesWritten))
-      {
-         writer.Advance(bytesWritten);
-      }
+      if (connectPayload.TryWrite(writer.GetSpan(len), out var bytesWritten)) writer.Advance(bytesWritten);
 
-      var connectFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Connect, new ReadOnlySequence<byte>(writer.WrittenMemory));
-      var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>("HelloUnauthenticated"u8.ToArray()));
+      var connectFrame =
+         BeskarPacket.CreateFrame(ResilientFrameKind.Connect, new ReadOnlySequence<byte>(writer.WrittenMemory));
+      var msgFrame = BeskarPacket.CreateFrame(ResilientFrameKind.Message,
+         new ReadOnlySequence<byte>("HelloUnauthenticated"u8.ToArray()));
 
-      using var streamWriter = new Beskar.Networking.Protocol.Utilities.PooledBufferWriter();
+      using var streamWriter = new PooledBufferWriter();
       connectFrame.WriteTo(streamWriter);
       msgFrame.WriteTo(streamWriter);
 
@@ -343,7 +344,7 @@ public class ResilientAuthHandshakeTests
       await server.StartAsync();
       var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
 
-      var socket = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
       await socket.ConnectAsync(boundEndPoint);
 
       // Client connects but sends NO payload. Handshake should timeout on server.

@@ -110,6 +110,11 @@ public sealed class ResilientServerClient<TFrame>(
       });
 
    /// <summary>
+   /// A task that completes when all buffered pre-handshake frames have been drained and processed.
+   /// </summary>
+   public Task DrainingTask { get; internal set; } = Task.CompletedTask;
+
+   /// <summary>
    /// A task that completes when the client's connection handshake and OnConnect event pipeline have finished.
    /// Evaluates to true if accepted, false if denied or disconnected.
    /// </summary>
@@ -122,11 +127,7 @@ public sealed class ResilientServerClient<TFrame>(
 
       _handshakeTcs.TrySetResult(success);
       ControlPayloadChannel.Writer.TryComplete();
-
-      if (!success)
-      {
-         PreHandshakeFrameChannel.Writer.TryComplete();
-      }
+      PreHandshakeFrameChannel.Writer.TryComplete();
    }
 
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
@@ -294,6 +295,7 @@ public sealed class ResilientServerClient<TFrame>(
             await SendAsync(frame, ControlStream);
 
             await ControlStream.Transport.Output.CompleteAsync();
+            await Task.Yield();
          }
          catch
          {
