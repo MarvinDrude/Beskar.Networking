@@ -906,6 +906,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       _connectionCts?.Dispose();
       _connectionCts = null;
 
+      await _keepAliveService.DisposeAsync();
       await NetworkClient.DisposeAsync();
    }
 
