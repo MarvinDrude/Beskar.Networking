@@ -77,8 +77,15 @@ public sealed class ResilientClientKeepAliveService<TFrame>(ResilientClient<TFra
 
             if (idleTime >= options.KeepAliveInterval)
             {
-               var pingFrame = TFrame.CreateFrame(ResilientFrameKind.Ping);
-               await _client.SendAsync(pingFrame, ct);
+               try
+               {
+                  var pingFrame = TFrame.CreateFrame(ResilientFrameKind.Ping);
+                  await _client.SendAsync(pingFrame, ct);
+               }
+               catch (Exception ex) when (ex is not OperationCanceledException)
+               {
+                  // protection against keep-alive send exceptions
+               }
             }
          }
       }

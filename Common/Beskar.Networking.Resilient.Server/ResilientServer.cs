@@ -83,21 +83,27 @@ public sealed class ResilientServer<TFrame>
       foreach (var listener in _listeners)
       {
          var startResult = await listener.BindAsync(ct);
-         _ = Task.Run(() => RunAcceptTask(listener, ct), ct);
-
-         if (!startResult.Failed)
+         if (startResult.Failed)
          {
-            startedBuilder.Add(listener);
-            continue;
+            TraceLogger.LogServerError("ResilientServer: Failed to bind listener on {0}: {1}", listener.LocalAddress, startResult.Error.Message);
+            try
+            {
+               await _cancellationTokenSource.CancelAsync();
+            }
+            catch
+            {
+               // ignored
+            }
+
+            await CleanupCode(startedBuilder, CancellationToken.None);
+            _cancellationTokenSource.Dispose();
+
+            State = ResilientServerState.Stopped;
+            return new StringError($"Failed to start one of the listener: {startResult.Error.Message}");
          }
 
-         TraceLogger.LogServerError("ResilientServer: Failed to bind listener on {0}: {1}", listener.LocalAddress, startResult.Error.Message);
-         await _cancellationTokenSource.CancelAsync();
-         _cancellationTokenSource.Dispose();
-
-         await CleanupCode(startedBuilder, ct);
-         State = ResilientServerState.Stopped;
-         return new StringError($"Failed to start one of the listener: {startResult.Error.Message}");
+         startedBuilder.Add(listener);
+         _ = Task.Run(() => RunAcceptTask(listener, ct), ct);
       }
 
       await _keepAliveService.StartAsync();
@@ -466,7 +472,8 @@ public sealed class ResilientServer<TFrame>
          {
             try
             {
-               await Task.WhenAll(streamTasks.Keys);
+               var whenAll = Task.WhenAll(streamTasks.Keys);
+               await Task.WhenAny(whenAll, Task.Delay(2000, CancellationToken.None));
             }
             catch
             {
@@ -615,9 +622,9 @@ public sealed class ResilientServer<TFrame>
       {
          // client cancelled or disconnected
       }
-      catch (Exception)
+      catch (Exception ex)
       {
-         // transport read exception
+         TraceLogger.LogServerError("ResilientServer: Exception in stream listener for client {0}: {1}", client.Id, ex.Message);
       }
       finally
       {

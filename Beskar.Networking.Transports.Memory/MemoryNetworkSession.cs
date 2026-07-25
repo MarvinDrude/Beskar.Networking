@@ -137,11 +137,6 @@ public sealed class MemoryNetworkSession(
          // Ignored
       }
 
-      var peer = _peerSession;
-      if (peer is not null)
-      {
-         _peerSession = null;
-         await peer.DisposeAsync();
-      }
+      _peerSession = null;
    }
 }
