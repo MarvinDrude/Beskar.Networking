@@ -488,11 +488,11 @@ public static class Program
                      while (!readCts.Token.IsCancellationRequested)
                      {
                         var readResult = await stream.Transport.Input.ReadAsync(readCts.Token);
-                        if (readResult.IsCompleted && readResult.Buffer.IsEmpty)
+                        stream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+                        if (readResult.IsCompleted)
                         {
                            break;
                         }
-                        stream.Transport.Input.AdvanceTo(readResult.Buffer.End);
                      }
                   }
                   catch
