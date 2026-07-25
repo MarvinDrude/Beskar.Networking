@@ -588,6 +588,8 @@ public static class Program
             Console.WriteLine($"Active Server Sess: {Volatile.Read(ref _activeServerSessions)}");
             Console.WriteLine($"Connection Stats:   Attempts={Volatile.Read(ref _clientConnectionAttempts)} Failures={Volatile.Read(ref _clientConnectionFailures)} Established={Volatile.Read(ref _clientConnectionsEstablished)} Lost={Volatile.Read(ref _clientConnectionsLost)}");
             Console.WriteLine($"Data Sent/Recv:     Sent={Volatile.Read(ref _packetsSent)} Recv={Volatile.Read(ref _packetsReceived)} Speed={speedKB:F1} KB/s");
+            var poolStats = Beskar.Networking.Transports.Common.Options.SharedTransportMemoryPool.GetStats();
+            Console.WriteLine($"Memory Pools:       Rented={poolStats.Rented} Cached/InStore={poolStats.InStore} Created={poolStats.Created}");
             Console.WriteLine($"Fault Metrics:      ChecksumFailures={Volatile.Read(ref _checksumFailures)} Gaps(Drops)={Volatile.Read(ref _droppedPackets)} OutOfOrder={Volatile.Read(ref _outOfOrderPackets)}");
             Console.WriteLine($"Latency (ms):       Min={minLat} Max={maxLat} Avg={avgLatency:F1}");
             Console.WriteLine("[---------------------------------------]");

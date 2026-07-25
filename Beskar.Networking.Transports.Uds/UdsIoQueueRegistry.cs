@@ -58,7 +58,12 @@ public sealed class UdsIoQueueRegistry : IAsyncDisposable
          }
 
          TraceLogger.LogNeutralInfo("UDS IO Registry: Returning socket connection to pool");
-         await _socketConnectionPool.ReturnAsync(socketConn);
+         if (await _socketConnectionPool.ReturnAsync(socketConn))
+         {
+            return;
+         }
+
+         await socketConn.DisposeAsync();
       }
    }
 

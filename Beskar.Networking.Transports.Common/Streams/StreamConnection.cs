@@ -96,19 +96,39 @@ public sealed class StreamConnection(
    {
       await _writePipe.Writer.CompleteAsync();
 
-      var writeTask = _writeTask;
-      if (writeTask is not null)
+      lock (_lock)
+      {
+         if (!_stopped)
+         {
+            _stopped = true;
+            _cts.Cancel();
+         }
+      }
+
+      var stream = InnerStream;
+      if (stream is not null)
       {
          try
          {
-            using var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await writeTask.WaitAsync(delayCts.Token);
+            if (stream.CanWrite)
+            {
+               using var flushCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+               await stream.FlushAsync(flushCts.Token).ConfigureAwait(false);
+            }
          }
          catch
          {
-            lock (_lock)
+            // Expected
+         }
+         finally
+         {
+            try
             {
-               _cts.Cancel();
+               await stream.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+               // Expected
             }
          }
       }
@@ -128,6 +148,7 @@ public sealed class StreamConnection(
          }
       }
 
+      var writeTask = _writeTask;
       if (writeTask is not null)
       {
          try
@@ -137,26 +158,6 @@ public sealed class StreamConnection(
          catch
          {
             // Expected
-         }
-      }
-
-      var stream = InnerStream;
-      if (stream is not null)
-      {
-         try
-         {
-            if (stream.CanWrite)
-            {
-               await stream.FlushAsync();
-            }
-         }
-         catch
-         {
-            // Expected
-         }
-         finally
-         {
-            await stream.DisposeAsync();
          }
       }
    }

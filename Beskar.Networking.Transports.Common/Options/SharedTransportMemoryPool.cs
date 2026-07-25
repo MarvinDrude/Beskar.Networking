@@ -37,4 +37,23 @@ public static class SharedTransportMemoryPool
       var index = Interlocked.Increment(ref _currentIndex) % (ulong)PoolCount;
       return Pools[index];
    }
+
+   /// <summary>
+   /// Gets the aggregated stats of all shared memory pools.
+   /// </summary>
+   public static (long Created, int InStore, long Rented) GetStats()
+   {
+      long created = 0;
+      var inStore = 0;
+      long rented = 0;
+
+      foreach (var pool in Pools)
+      {
+         created += pool.CreatedBlocksCount;
+         inStore += pool.InStoreBlocksCount;
+         rented += pool.RentedBlocksCount;
+      }
+
+      return (created, inStore, rented);
+   }
 }

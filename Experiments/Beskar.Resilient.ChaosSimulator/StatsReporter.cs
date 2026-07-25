@@ -39,6 +39,8 @@ public static class StatsReporter
                   $"TCP: {Interlocked.Read(ref Program.ActiveTcpConnections)} | WS: {Interlocked.Read(ref Program.ActiveWsConnections)} | QUIC: {Interlocked.Read(ref Program.ActiveQuicConnections)}")
                .AddRow("Server Disconnect Tracking",
                   $"Graceful: {Interlocked.Read(ref Program.ServerConnectionsGraceful)} | Abrupt/Crash: {Interlocked.Read(ref Program.ServerConnectionsAbrupt)}")
+               .AddRow("Shared Memory Blocks",
+                  $"Rented: {Beskar.Networking.Transports.Common.Options.SharedTransportMemoryPool.GetStats().Rented} | InStore: {Beskar.Networking.Transports.Common.Options.SharedTransportMemoryPool.GetStats().InStore} | Total: {Beskar.Networking.Transports.Common.Options.SharedTransportMemoryPool.GetStats().Created}")
                .Render();
 
             // Render Client operations stats table

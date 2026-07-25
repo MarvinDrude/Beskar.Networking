@@ -356,4 +356,85 @@ public class MemoryLeakAndPoolTests
       await client.DisposeAsync();
       await listener.DisposeAsync();
    }
+
+   [Test]
+   public async Task RegistryDisposalOrPoolFull_DisposesRejectedConnections()
+   {
+      var options = new TcpTransportOptions
+      {
+         SocketOptions = new SocketTransportOptions { MaxConnectionPoolSize = 2 },
+         StreamOptions = new StreamTransportOptions { MaxConnectionPoolSize = 2 },
+         ForceStreamBased = false
+      };
+
+      var registry = new TcpIoQueueRegistry(options);
+
+      var socket1 = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      var socket2 = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      var socket3 = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      var socket4 = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+
+      var conn1 = (Beskar.Networking.Transports.Common.Sockets.SocketConnection)registry.Create(socket1);
+      var conn2 = (Beskar.Networking.Transports.Common.Sockets.SocketConnection)registry.Create(socket2);
+      var conn3 = (Beskar.Networking.Transports.Common.Sockets.SocketConnection)registry.Create(socket3);
+      var conn4 = (Beskar.Networking.Transports.Common.Sockets.SocketConnection)registry.Create(socket4);
+
+      var registrySocketPool = (AsyncDisposableObjectPool<Beskar.Networking.Transports.Common.Sockets.SocketConnection>)GetPool(registry, "_socketConnectionPool")!;
+
+      await conn1.StopAsync();
+      await conn2.StopAsync();
+      await conn3.StopAsync();
+      await conn4.StopAsync();
+
+      await registry.ReturnAsync(conn1);
+      await registry.ReturnAsync(conn2);
+      await registry.ReturnAsync(conn3);
+      await registry.ReturnAsync(conn4);
+
+      var isDisposedField = typeof(Beskar.Networking.Transports.Common.Sockets.SocketConnection).GetField("_isDisposed", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+      var isConn1Disposed = (bool)isDisposedField.GetValue(conn1)!;
+      var isConn2Disposed = (bool)isDisposedField.GetValue(conn2)!;
+      var isConn3Disposed = (bool)isDisposedField.GetValue(conn3)!;
+      var isConn4Disposed = (bool)isDisposedField.GetValue(conn4)!;
+
+      // conn1, conn2, conn3 should NOT be disposed because they fit in the pool (capacity MaxSize + 1)
+      await Assert.That(isConn1Disposed).IsFalse();
+      await Assert.That(isConn2Disposed).IsFalse();
+      await Assert.That(isConn3Disposed).IsFalse();
+
+      // conn4 should be automatically disposed by the registry because the pool was full!
+      await Assert.That(isConn4Disposed).IsTrue();
+
+      await registry.DisposeAsync();
+   }
+
+   [Test]
+   public async Task PoolDisposal_DisposesCachedConnections()
+   {
+      var options = new TcpTransportOptions
+      {
+         SocketOptions = new SocketTransportOptions { MaxConnectionPoolSize = 10 },
+         StreamOptions = new StreamTransportOptions { MaxConnectionPoolSize = 10 },
+         ForceStreamBased = false
+      };
+
+      var registry = new TcpIoQueueRegistry(options);
+      var socket1 = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      var conn1 = (Beskar.Networking.Transports.Common.Sockets.SocketConnection)registry.Create(socket1);
+
+      await conn1.StopAsync();
+      await registry.ReturnAsync(conn1);
+
+      var isDisposedField = typeof(Beskar.Networking.Transports.Common.Sockets.SocketConnection).GetField("_isDisposed", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+      
+      // Before registry disposal, conn1 should NOT be disposed (it's cached in the pool)
+      await Assert.That((bool)isDisposedField.GetValue(conn1)!).IsFalse();
+
+      // Dispose the registry, which disposes the pool
+      await registry.DisposeAsync();
+
+      // After registry disposal, conn1 MUST be disposed!
+      await Assert.That((bool)isDisposedField.GetValue(conn1)!).IsTrue();
+   }
 }
