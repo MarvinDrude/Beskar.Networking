@@ -13,8 +13,8 @@ public sealed class StreamConnection(
 {
    private static readonly int MinAllocBufferSize = PinnedBlockMemoryPool.BlockSize / 2;
 
-   private readonly Pipe _readPipe = new(readOptions);
-   private readonly Pipe _writePipe = new(writeOptions);
+   private Pipe _readPipe = new(readOptions);
+   private Pipe _writePipe = new(writeOptions);
 
    private Task? _readTask;
    private Task? _writeTask;
@@ -181,8 +181,8 @@ public sealed class StreamConnection(
          return false;
       }
 
-      _readPipe.Reset();
-      _writePipe.Reset();
+      _readPipe = new Pipe(readOptions);
+      _writePipe = new Pipe(writeOptions);
 
       InnerStream = null;
       _stopped = false;

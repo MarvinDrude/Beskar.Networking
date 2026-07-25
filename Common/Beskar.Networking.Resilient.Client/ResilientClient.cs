@@ -326,7 +326,6 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
                await SendAsync(frame, ControlStream);
                await ControlStream.Transport.Output.CompleteAsync();
-               await Task.Delay(10);
             }
             catch
             {
@@ -663,6 +662,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
                   State = ResilientClientState.Disconnecting;
                   await DisconnectInternalAsync(null);
+                  State = ResilientClientState.Disconnected;
                   return;
                }
 

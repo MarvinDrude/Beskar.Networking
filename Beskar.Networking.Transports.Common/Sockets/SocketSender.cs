@@ -9,7 +9,7 @@ namespace Beskar.Networking.Transports.Common.Sockets;
 public sealed class SocketSender(PipeOptions pipeOptions)
    : IPooledObject, IAsyncDisposable
 {
-   public Pipe Pipe { get; } = new(pipeOptions);
+   public Pipe Pipe { get; private set; } = new(pipeOptions);
 
    private SocketConnection? _connection;
    private Socket? _socket;
@@ -177,7 +177,7 @@ public sealed class SocketSender(PipeOptions pipeOptions)
          return false;
       }
 
-      Pipe.Reset();
+      Pipe = new Pipe(pipeOptions);
 
       _connection = null;
       _socket = null;

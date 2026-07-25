@@ -11,7 +11,7 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
 {
    private static readonly int MinAllocBufferSize = PinnedBlockMemoryPool.BlockSize / 2;
    
-   public Pipe Pipe { get; } = new(pipeOptions);
+   public Pipe Pipe { get; private set; } = new(pipeOptions);
 
    private SocketConnection? _connection;
    private Socket? _socket;
@@ -124,7 +124,7 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
          return false;
       }
 
-      Pipe.Reset();
+      Pipe = new Pipe(pipeOptions);
 
       _connection = null;
       _socket = null;
