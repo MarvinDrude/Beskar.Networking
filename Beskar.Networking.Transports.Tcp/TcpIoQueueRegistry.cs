@@ -70,7 +70,11 @@ public sealed class TcpIoQueueRegistry : IAsyncDisposable
          if (_streamConnectionPool is not null)
          {
             TraceLogger.LogNeutralInfo("TCP IO Registry: Returning stream connection to pool");
-            await _streamConnectionPool.ReturnAsync(streamConn);
+            if (!await _streamConnectionPool.ReturnAsync(streamConn))
+            {
+               TraceLogger.LogNeutralInfo("TCP IO Registry: Stream connection rejected by pool, disposing");
+               await streamConn.DisposeAsync();
+            }
          }
          else
          {
@@ -85,7 +89,11 @@ public sealed class TcpIoQueueRegistry : IAsyncDisposable
          if (_socketConnectionPool is not null)
          {
             TraceLogger.LogNeutralInfo("TCP IO Registry: Returning socket connection to pool");
-            await _socketConnectionPool.ReturnAsync(socketConn);
+            if (!await _socketConnectionPool.ReturnAsync(socketConn))
+            {
+               TraceLogger.LogNeutralInfo("TCP IO Registry: Socket connection rejected by pool, disposing");
+               await socketConn.DisposeAsync();
+            }
          }
          else
          {

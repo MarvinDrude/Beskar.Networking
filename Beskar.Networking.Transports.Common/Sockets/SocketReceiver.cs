@@ -3,23 +3,24 @@ using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Pools;
+using Beskar.Networking.Transports.Common.Pipelines;
 
 namespace Beskar.Networking.Transports.Common.Sockets;
 
-public sealed class SocketReceiver(PipeOptions pipeOptions) 
+public sealed class SocketReceiver(PipeOptions pipeOptions)
    : IPooledObject, IAsyncDisposable
 {
-   private static readonly int MinAllocBufferSize = PinnedBlockMemoryPool.BlockSize / 2;
-   
+   private static readonly int MinAllocBufferSize = NetworkPinnedBlockMemoryPool.BlockSize / 2;
+
    public Pipe Pipe { get; private set; } = new(pipeOptions);
 
    private SocketConnection? _connection;
    private Socket? _socket;
-   
+
    private Task? _receiveTask;
    private CancellationTokenSource _cts = new();
    private bool _stopped;
-   
+
    public void Initialize(SocketConnection connection, Socket socket)
    {
       _connection = connection;
@@ -39,7 +40,7 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
          {
             throw new InvalidOperationException("Cannot start a stopped SocketReceiver.");
          }
-         
+
          _receiveTask = Task.Run(ProcessReceiveAsync);
       }
    }
@@ -50,7 +51,7 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
       {
          if (_stopped) return;
          _stopped = true;
-         
+
          _cts.Cancel();
       }
 
@@ -128,12 +129,12 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
 
       _connection = null;
       _socket = null;
-      
+
       _stopped = false;
-      
+
       _cts.Dispose();
       _cts = new CancellationTokenSource();
-      
+
       return true;
    }
 

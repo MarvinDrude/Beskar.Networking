@@ -76,7 +76,11 @@ public sealed class QuicIoQueueRegistry : IAsyncDisposable
       }
 
       TraceLogger.LogNeutralInfo("QUIC IO Registry: Returning stream connection to pool");
-      await _streamConnectionPool.ReturnAsync(connection);
+      if (!await _streamConnectionPool.ReturnAsync(connection))
+      {
+         TraceLogger.LogNeutralInfo("QUIC IO Registry: Stream connection rejected by pool, disposing");
+         await connection.DisposeAsync();
+      }
    }
 
    public async ValueTask DisposeAsync()

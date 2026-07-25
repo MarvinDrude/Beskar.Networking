@@ -3,6 +3,7 @@ using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Interfaces.Pools;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Pools;
+using Beskar.Networking.Transports.Common.Pipelines;
 
 namespace Beskar.Networking.Transports.Common.Streams;
 
@@ -11,7 +12,7 @@ public sealed class StreamConnection(
    PipeOptions writeOptions)
    : IDuplexPipe, IAsyncDisposable, IPooledObject
 {
-   private static readonly int MinAllocBufferSize = PinnedBlockMemoryPool.BlockSize / 2;
+   private static readonly int MinAllocBufferSize = NetworkPinnedBlockMemoryPool.BlockSize / 2;
 
    private Pipe _readPipe = new(readOptions);
    private Pipe _writePipe = new(writeOptions);

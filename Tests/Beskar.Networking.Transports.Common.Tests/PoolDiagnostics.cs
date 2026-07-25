@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Reflection;
 using Beskar.Memory.Pools;
+using Beskar.Networking.Transports.Common.Pipelines;
 
 namespace Beskar.Networking.Transports.Common.Tests;
 
@@ -37,7 +38,7 @@ public static class PoolDiagnostics
       return currentSize - GetCachedCount(pool);
    }
 
-   public static int GetCachedBlocksCount(PinnedBlockMemoryPool pool)
+   public static int GetCachedBlocksCount(NetworkPinnedBlockMemoryPool pool)
    {
       var type = pool.GetType();
       var blocksField = type.GetField("_blocks", BindingFlags.NonPublic | BindingFlags.Instance);

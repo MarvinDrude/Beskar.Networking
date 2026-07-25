@@ -1,5 +1,6 @@
 using System.Buffers;
 using Beskar.Memory.Pools;
+using Beskar.Networking.Transports.Common.Pipelines;
 
 namespace Beskar.Networking.Transports.Common.Options;
 
@@ -15,16 +16,16 @@ public static class SharedTransportMemoryPool
    /// </summary>
    public static int PoolCount { get; } = Math.Min(Environment.ProcessorCount, 12);
 
-   private static readonly PinnedBlockMemoryPool[] Pools;
+   private static readonly NetworkPinnedBlockMemoryPool[] Pools;
    private static ulong _currentIndex;
 
    static SharedTransportMemoryPool()
    {
-      Pools = new PinnedBlockMemoryPool[PoolCount];
+      Pools = new NetworkPinnedBlockMemoryPool[PoolCount];
 
       for (var i = 0; i < PoolCount; i++)
       {
-         Pools[i] = new PinnedBlockMemoryPool();
+         Pools[i] = new NetworkPinnedBlockMemoryPool();
       }
    }
 
@@ -32,7 +33,7 @@ public static class SharedTransportMemoryPool
    /// Gets the next memory pool from the shared registry using round-robin assignment.
    /// Thread-safe via atomic increment.
    /// </summary>
-   public static PinnedBlockMemoryPool GetNext()
+   public static NetworkPinnedBlockMemoryPool GetNext()
    {
       var index = Interlocked.Increment(ref _currentIndex) % (ulong)PoolCount;
       return Pools[index];

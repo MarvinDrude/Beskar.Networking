@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Common.Options;
 using Beskar.Memory.Pools;
+using Beskar.Networking.Transports.Common.Pipelines;
 
 namespace Beskar.Networking.Transports.Common.Tests;
 
@@ -266,7 +267,7 @@ public class MemoryLeakAndPoolTests
 
       var memoryPool = socketSettings.GetType()
          .GetProperty("MemoryPool", BindingFlags.Public | BindingFlags.Instance)!
-         .GetValue(socketSettings) as PinnedBlockMemoryPool;
+         .GetValue(socketSettings) as NetworkPinnedBlockMemoryPool;
 
       await Assert.That(memoryPool).IsNotNull();
 
@@ -427,7 +428,7 @@ public class MemoryLeakAndPoolTests
       await registry.ReturnAsync(conn1);
 
       var isDisposedField = typeof(Beskar.Networking.Transports.Common.Sockets.SocketConnection).GetField("_isDisposed", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-      
+
       // Before registry disposal, conn1 should NOT be disposed (it's cached in the pool)
       await Assert.That((bool)isDisposedField.GetValue(conn1)!).IsFalse();
 
