@@ -760,7 +760,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                   break;
                }
 
-               TraceLogger.LogClientInfo("ResilientClient: Auto-reconnect attempt #{0} (Max: {1}) to {2} in {3}ms...", attempt, maxRetries, _remoteEndPoint, Options.Reconnecting.RetryInterval.TotalMilliseconds);
+               var retryInterval = Options.Reconnecting.RetryInterval;
+               if (retryInterval < TimeSpan.Zero && retryInterval != Timeout.InfiniteTimeSpan)
+               {
+                  retryInterval = TimeSpan.FromSeconds(1);
+               }
+
+               TraceLogger.LogClientInfo("ResilientClient: Auto-reconnect attempt #{0} (Max: {1}) to {2} in {3}ms...", attempt, maxRetries, _remoteEndPoint, retryInterval.TotalMilliseconds);
 
                if (Events.OnReconnecting.Count > 0)
                {
@@ -777,7 +783,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
                try
                {
-                  await Task.Delay(Options.Reconnecting.RetryInterval, masterCt);
+                  await Task.Delay(retryInterval, masterCt);
                }
                catch (OperationCanceledException)
                {

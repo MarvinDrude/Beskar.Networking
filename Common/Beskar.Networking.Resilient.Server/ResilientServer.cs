@@ -261,7 +261,7 @@ public sealed class ResilientServer<TFrame>
          client = new ResilientServerClient<TFrame>(controlStreamContext, Options);
          client.OnDisposing = id => Clients.TryRemove(id, out _);
 
-         if (!Clients.TryAdd(client))
+         if (!Clients.TryAdd(client, Options.MaxConnections))
          {
             await client.DisposeAsync();
             return;

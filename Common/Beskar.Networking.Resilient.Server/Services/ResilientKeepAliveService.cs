@@ -63,7 +63,7 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
    private async Task RunKeepAliveLoopAsync(CancellationToken ct)
    {
       var options = _server.Options.KeepAlive;
-      if (options.Mode is ResilientServerKeepAliveMode.None)
+      if (options.Mode is ResilientServerKeepAliveMode.None || options.CheckInterval <= TimeSpan.Zero)
          return;
 
       using var timer = new PeriodicTimer(options.CheckInterval);

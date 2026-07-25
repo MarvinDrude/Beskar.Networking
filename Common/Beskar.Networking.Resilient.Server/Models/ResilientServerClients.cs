@@ -20,8 +20,20 @@ public sealed class ResilientServerClients<TFrame> : IAsyncDisposable
    /// <summary>
    /// Attempts to register a newly connected client.
    /// </summary>
-   public bool TryAdd(ResilientServerClient<TFrame> client)
+   public bool TryAdd(ResilientServerClient<TFrame> client, int maxConnections = 0)
    {
+      if (maxConnections > 0)
+      {
+         lock (_clients)
+         {
+            if (_clients.Count >= maxConnections)
+            {
+               return false;
+            }
+
+            return _clients.TryAdd(client.Id, client);
+         }
+      }
       return _clients.TryAdd(client.Id, client);
    }
 

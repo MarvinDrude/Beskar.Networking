@@ -744,4 +744,117 @@ public class ResilientTests
       await server.StopAsync();
       await server.DisposeAsync();
    }
+
+   [Test]
+   public async Task ServerStart_WithZeroKeepAliveCheckInterval_ShouldNotThrow()
+   {
+      var endpoint = new MemoryEndPoint($"keepalive_zero_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var serverOptions = new ResilientServerOptions
+      {
+         KeepAlive = new ResilientServerKeepAliveOptions
+         {
+            Mode = ResilientServerKeepAliveMode.Alawys,
+            CheckInterval = TimeSpan.Zero
+         }
+      };
+
+      var server = new ResilientServer<BeskarPacket>([listener], serverOptions);
+      await server.StartAsync();
+
+      await Task.Delay(100);
+
+      await server.StopAsync();
+      await server.DisposeAsync();
+   }
+
+   [Test]
+   public async Task ServerAccept_ConcurrentConnections_ShouldNotExceedMaxConnections()
+   {
+      var endpoint = new MemoryEndPoint($"max_conn_race_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var serverOptions = new ResilientServerOptions
+      {
+         MaxConnections = 1,
+         OpenToNewConnections = true
+      };
+
+      var server = new ResilientServer<BeskarPacket>([listener], serverOptions);
+      await server.StartAsync();
+
+      var clients = new List<ResilientClient<BeskarPacket>>();
+      var connectTasks = new List<Task>();
+
+      for (var i = 0; i < 5; i++)
+      {
+         var client = ResilientClientFactory.CreateMemory<BeskarPacket>();
+         clients.Add(client);
+         connectTasks.Add(Task.Run(() => client.ConnectAsync(endpoint)));
+      }
+
+      await Task.WhenAll(connectTasks);
+
+      await Task.Delay(200);
+
+      var activeClientsCount = server.Clients.Count;
+      
+      foreach (var client in clients)
+      {
+         await client.DisposeAsync();
+      }
+      await server.DisposeAsync();
+
+      await Assert.That(activeClientsCount).IsLessThanOrEqualTo(1);
+   }
+
+   [Test]
+   public async Task ClientConnect_WithNegativeRetryInterval_ShouldStillReconnect()
+   {
+      var endpoint = new MemoryEndPoint($"reconnect_neg_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+      await server.StartAsync();
+
+      var clientOptions = new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            RetryInterval = TimeSpan.FromSeconds(-5),
+            MaxRetries = 5
+         }
+      };
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+      var reconnectingTcs = new TaskCompletionSource();
+      var reconnectedTcs = new TaskCompletionSource();
+
+      client.Events.OnReconnecting.Add((_, _) =>
+      {
+         reconnectingTcs.TrySetResult();
+         return ValueTask.CompletedTask;
+      });
+
+      await client.ConnectAsync(endpoint);
+
+      client.Events.OnConnected.Add((_, _) =>
+      {
+         reconnectedTcs.TrySetResult();
+         return ValueTask.CompletedTask;
+      });
+
+      await server.StopAsync();
+      await reconnectingTcs.Task.WaitAsync(TimeSpan.FromSeconds(8));
+
+      await Task.Delay(200);
+
+      // Start the server again to allow client to reconnect
+      await server.StartAsync();
+
+      // If the loop crashed, this will timeout and throw
+      await reconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(8));
+
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
 }
