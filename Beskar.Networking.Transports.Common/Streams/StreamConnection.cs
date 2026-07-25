@@ -81,7 +81,17 @@ public sealed class StreamConnection(
    {
       lock (_lock)
       {
-         if (_stopped) return;
+         if (_stopped)
+         {
+            _readPipe.Reader.Complete();
+            _readPipe.Writer.Complete();
+
+            _writePipe.Reader.Complete();
+            _writePipe.Writer.Complete();
+
+            return;
+         }
+
          _stopped = true;
          _cts.Cancel();
       }
@@ -183,8 +193,10 @@ public sealed class StreamConnection(
          return false;
       }
 
-      _readPipe = new Pipe(readOptions);
-      _writePipe = new Pipe(writeOptions);
+      Stop();
+
+      _readPipe.Reset();
+      _writePipe.Reset();
 
       InnerStream = null;
       _stopped = false;

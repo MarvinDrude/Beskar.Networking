@@ -177,7 +177,9 @@ public sealed class SocketSender(PipeOptions pipeOptions)
          return false;
       }
 
-      Pipe = new Pipe(pipeOptions);
+      Stop();
+
+      Pipe.Reset();
 
       _connection = null;
       _socket = null;

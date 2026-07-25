@@ -125,7 +125,9 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
          return false;
       }
 
-      Pipe = new Pipe(pipeOptions);
+      Stop();
+
+      Pipe.Reset();
 
       _connection = null;
       _socket = null;
