@@ -15,6 +15,7 @@ using Beskar.Networking.Protocol.Utilities;
 using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Client.Contexts;
 using Beskar.Networking.Resilient.Client.Services;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Resilient.Client;
 
@@ -142,11 +143,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    {
       try
       {
+         TraceLogger.LogClientInfo("ResilientClient: Initiating connection to endpoint {0}...", endPoint);
          var handshakeChannel = CreateHandshakeChannel();
 
          var connectResult = await NetworkClient.ConnectAsync(endPoint, ct);
          if (connectResult.Failed)
          {
+            TraceLogger.LogClientError("ResilientClient: Transport connection to {0} failed: {1}", endPoint, connectResult.Error.Message);
             if (!isReconnect) State = ResilientClientState.Disconnected;
             return new StringError($"Transport connect failed: {connectResult.Error.Message}");
          }
@@ -156,6 +159,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          var streamResult = await session.OpenStreamAsync(NetworkStreamDirection.Bidirectional, ct);
          if (streamResult.Failed)
          {
+            TraceLogger.LogClientError("ResilientClient: Control stream open to {0} failed: {1}", endPoint, streamResult.Error.Message);
             await session.DisposeAsync();
             if (!isReconnect) State = ResilientClientState.Disconnected;
             return new StringError($"Control stream open failed: {streamResult.Error.Message}");
@@ -182,11 +186,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          var connectFrame =
             TFrame.CreateFrame(ResilientFrameKind.Connect, new ReadOnlySequence<byte>(writer.WrittenMemory));
          await SendAsync(connectFrame, _controlStream, ct);
+         TraceLogger.LogClientInfo("ResilientClient: Sent Connect payload to {0}. Awaiting handshake completion...", endPoint);
 
          // Wait for handshake completion (ConnectAcknowledged or Authenticate challenge)
          var handshakeSuccess = await ProcessHandshakeAsync(handshakeChannel, ct);
          if (!handshakeSuccess)
          {
+            TraceLogger.LogClientError("ResilientClient: Handshake failed, timed out, or denied by server at {0}.", endPoint);
             await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
             if (!isReconnect) State = ResilientClientState.Disconnected;
 
@@ -202,6 +208,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
          State = ResilientClientState.Connected;
          ConnectedAt = DateTimeOffset.UtcNow;
+         TraceLogger.LogClientInfo("ResilientClient: Connected successfully to {0}. State is Connected.", endPoint);
 
          _disconnectedEventFired = 0;
          TouchActivity();
@@ -279,6 +286,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       if (State is ResilientClientState.Disconnected or ResilientClientState.Disconnecting)
          return new StringError("Client is not connected.");
 
+      TraceLogger.LogClientInfo("ResilientClient: Disconnecting client session...");
       State = ResilientClientState.Disconnecting;
 
       await DisconnectInternalAsync(disconnectPayload, raiseDisconnectedEvent: true);
@@ -719,11 +727,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       {
          if (!Options.Reconnecting.AutoReconnect || _remoteEndPoint == null)
          {
+            TraceLogger.LogClientWarning("ResilientClient: Connection lost ({0}). AutoReconnect is disabled. Disconnecting.", cause?.Message ?? "Transport closed");
             State = ResilientClientState.Disconnected;
             await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
             return;
          }
 
+         TraceLogger.LogClientWarning("ResilientClient: Connection lost ({0}). Triggering auto-reconnect to {1}...", cause?.Message ?? "Transport closed", _remoteEndPoint);
          State = ResilientClientState.Reconnecting;
          await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
 
@@ -739,8 +749,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
             attempt++;
             if (maxRetries > 0 && attempt > maxRetries)
             {
+               TraceLogger.LogClientError("ResilientClient: Max reconnect attempts ({0}) reached for {1}. Stopping.", maxRetries, _remoteEndPoint);
                break;
             }
+
+            TraceLogger.LogClientInfo("ResilientClient: Auto-reconnect attempt #{0} (Max: {1}) to {2} in {3}ms...", attempt, maxRetries, _remoteEndPoint, Options.Reconnecting.RetryInterval.TotalMilliseconds);
 
             if (Events.OnReconnecting.Count > 0)
             {
@@ -787,12 +800,14 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                _connectionCts = new CancellationTokenSource();
                oldCts?.Dispose();
 
+               TraceLogger.LogClientInfo("ResilientClient: Auto-reconnect attempt #{0} to {1} SUCCEEDED!", attempt, _remoteEndPoint);
                return; // Reconnect successful!
             }
          }
 
          if (State is not ResilientClientState.Disconnected)
          {
+            TraceLogger.LogClientError("ResilientClient: Auto-reconnect loop finished without reconnecting. Setting state to Disconnected.");
             State = ResilientClientState.Disconnected;
             await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
          }

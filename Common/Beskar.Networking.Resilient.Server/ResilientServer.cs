@@ -13,6 +13,7 @@ using Beskar.Networking.Resilient.Common.Interfaces;
 using Beskar.Networking.Resilient.Server.Contexts;
 using Beskar.Networking.Resilient.Server.Models;
 using Beskar.Networking.Resilient.Server.Services;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Resilient.Server;
 
@@ -76,6 +77,7 @@ public sealed class ResilientServer<TFrame>
       _cancellationTokenSource = new CancellationTokenSource();
       var ct = _cancellationTokenSource.Token;
 
+      TraceLogger.LogServerInfo("ResilientServer: Starting server with {0} listener(s)...", _listeners.Length);
       using var startedBuilder = new ArrayBuilder<INetworkListener>(_listeners.Length);
 
       foreach (var listener in _listeners)
@@ -89,6 +91,7 @@ public sealed class ResilientServer<TFrame>
             continue;
          }
 
+         TraceLogger.LogServerError("ResilientServer: Failed to bind listener on {0}: {1}", listener.LocalAddress, startResult.Error.Message);
          await _cancellationTokenSource.CancelAsync();
          _cancellationTokenSource.Dispose();
 
@@ -99,6 +102,7 @@ public sealed class ResilientServer<TFrame>
 
       await _keepAliveService.StartAsync();
       State = ResilientServerState.Running;
+      TraceLogger.LogServerInfo("ResilientServer: Server started successfully. State is Running.");
 
       if (Events.OnStart.Count > 0)
       {
@@ -127,41 +131,42 @@ public sealed class ResilientServer<TFrame>
       if (Interlocked.CompareExchange(ref _state, (int)ResilientServerState.Stopping, (int)ResilientServerState.Running) != (int)ResilientServerState.Running)
          return new StringError("Server is not running.");
 
+      TraceLogger.LogServerInfo("ResilientServer: Stopping server...");
       State = ResilientServerState.Stopping;
 
       try
       {
-         await _keepAliveService.StopAsync();
-      }
-      catch (Exception)
-      {
-         // ignored
-      }
-
-      try
-      {
          await _cancellationTokenSource.CancelAsync();
-         _cancellationTokenSource.Dispose();
       }
       catch (ObjectDisposedException)
       {
          // already disposed
       }
 
-      foreach (var listener in _listeners)
-      {
-         await listener.UnbindAsync();
-      }
-
+      await _keepAliveService.StopAsync();
       await Clients.DisconnectAllAsync();
 
+      var listeners = _listeners.ToArray();
+      foreach (var listener in listeners)
+      {
+         try
+         {
+            await listener.UnbindAsync();
+         }
+         catch
+         {
+            // background exception protection
+         }
+      }
+
       State = ResilientServerState.Stopped;
+      TraceLogger.LogServerInfo("ResilientServer: Server stopped.");
 
       if (Events.OnStop.Count > 0)
       {
          await Events.OnStop.ExecuteAsync(
             new ResilientServerStopContext<TFrame> { Server = this },
-            HandlerExecutionStrategy.SequentialContinueOnError);
+            HandlerExecutionStrategy.SequentialContinueOnError, CancellationToken.None);
       }
 
       return true;
@@ -179,10 +184,13 @@ public sealed class ResilientServer<TFrame>
             if (!Options.OpenToNewConnections ||
                 (Options.MaxConnections > 0 && Clients.Count >= Options.MaxConnections))
             {
+               TraceLogger.LogServerWarning("ResilientServer: Rejected incoming session {0} from {1} (OpenToNewConnections={2}, MaxConnections={3}, Current={4})",
+                  sessionResult.Success.Id, sessionResult.Success.RemoteAddress, Options.OpenToNewConnections, Options.MaxConnections, Clients.Count);
                await sessionResult.Success.DisposeAsync();
                continue;
             }
 
+            TraceLogger.LogServerInfo("ResilientServer: Accepted session {0} from {1}", sessionResult.Success.Id, sessionResult.Success.RemoteAddress);
             _ = Task.Factory.StartNew(
                () => RunClientTask(listener, sessionResult.Success, ct),
                CancellationToken.None,
@@ -222,6 +230,7 @@ public sealed class ResilientServer<TFrame>
 
          if (preHandshakeContext.IsDenied)
          {
+            TraceLogger.LogServerWarning("ResilientServer: Pre-handshake check denied session {0} from {1}", session.Id, session.RemoteAddress);
             await session.DisposeAsync();
             return;
          }
@@ -322,10 +331,12 @@ public sealed class ResilientServer<TFrame>
             var connectAckFrame = TFrame.CreateFrame(ResilientFrameKind.ConnectAcknowledged);
             await client.SendAsync(connectAckFrame, combinedToken);
             client.SetHandshakeResult(true);
+            TraceLogger.LogServerInfo("ResilientServer: Handshake succeeded for client {0} ({1}). Sent ConnectAck.", client.Id, session.RemoteAddress);
             _ = Task.Run(() => ProcessBufferedPreHandshakeFramesAsync(client, combinedToken));
          }
          else
          {
+            TraceLogger.LogServerWarning("ResilientServer: Handshake denied or failed for client {0} ({1}). Disconnecting.", client.Id, session.RemoteAddress);
             client.SetHandshakeResult(false);
             await client.DisconnectAsync();
 
@@ -363,6 +374,7 @@ public sealed class ResilientServer<TFrame>
 
          if (client != null)
          {
+            TraceLogger.LogServerInfo("ResilientServer: Client {0} ({1}) disconnected.", client.Id, session.RemoteAddress);
             client.SetHandshakeResult(false);
             Clients.TryRemove(client.Id, out _);
 
