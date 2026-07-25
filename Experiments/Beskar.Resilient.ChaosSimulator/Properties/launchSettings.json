@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Beskar.Resilient.ChaosSimulator": {
+      "commandName": "Project",
+      "debugEngines": "managed,native"
+    }
+  }
+}

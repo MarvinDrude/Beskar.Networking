@@ -90,6 +90,22 @@ public sealed class QuicNetworkStream : INetworkStream
 
       TraceLogger.LogNeutralInfo("QUIC Stream: Disposing stream wrapper {0} (Direction: {1}) for session {2}", StreamId, Direction, Session.Id);
 
+      try
+      {
+         if (_quicStream.CanRead)
+         {
+            _quicStream.Abort(QuicAbortDirection.Read, 0);
+         }
+         if (_quicStream.CanWrite)
+         {
+            _quicStream.Abort(QuicAbortDirection.Write, 0);
+         }
+      }
+      catch
+      {
+         // Ignored
+      }
+
       await _session.ReturnConnectionAsync(this, _connection);
    }
 }
