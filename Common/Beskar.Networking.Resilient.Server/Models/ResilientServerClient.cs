@@ -143,7 +143,7 @@ public sealed class ResilientServerClient<TFrame>(
    /// </summary>
    public async ValueTask SendAsync(TFrame frame, INetworkStream stream, CancellationToken cancellationToken = default)
    {
-      if (Volatile.Read(ref _disposedState) == 1 || !IsConnected)
+      if (!IsConnected)
          return;
 
       using var writeLock = await stream.AcquireWriterLock(cancellationToken);
@@ -252,7 +252,7 @@ public sealed class ResilientServerClient<TFrame>(
    {
       _handshakeTcs.TrySetResult(false);
 
-      if (Volatile.Read(ref _disposedState) == 1)
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1)
       {
          return;
       }
@@ -277,11 +277,6 @@ public sealed class ResilientServerClient<TFrame>(
          {
             // ignored if send fails during disconnect
          }
-      }
-
-      if (Interlocked.Exchange(ref _disposedState, 1) == 1)
-      {
-         return;
       }
 
       try

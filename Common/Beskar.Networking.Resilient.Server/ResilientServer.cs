@@ -60,10 +60,8 @@ public sealed class ResilientServer<TFrame>
       if (Volatile.Read(ref _disposedState) == 1)
          return new StringError("Already disposed server.");
 
-      if (State is not ResilientServerState.Stopped)
-         return new StringError("Server is not running.");
-
-      State = ResilientServerState.Starting;
+      if (Interlocked.CompareExchange(ref _state, (int)ResilientServerState.Starting, (int)ResilientServerState.Stopped) != (int)ResilientServerState.Stopped)
+         return new StringError("Server is already running or starting.");
 
       try
       {
@@ -92,6 +90,7 @@ public sealed class ResilientServer<TFrame>
          }
 
          await CleanupCode(startedBuilder, ct);
+         State = ResilientServerState.Stopped;
          return new StringError($"Failed to start one of the listener: {startResult.Error.Message}");
       }
 
@@ -122,7 +121,7 @@ public sealed class ResilientServer<TFrame>
       if (Volatile.Read(ref _disposedState) == 1)
          return new StringError("Already disposed server.");
 
-      if (State is not ResilientServerState.Running)
+      if (Interlocked.CompareExchange(ref _state, (int)ResilientServerState.Stopping, (int)ResilientServerState.Running) != (int)ResilientServerState.Running)
          return new StringError("Server is not running.");
 
       State = ResilientServerState.Stopping;
@@ -200,7 +199,7 @@ public sealed class ResilientServer<TFrame>
 
    private async Task RunClientTask(INetworkListener listener, INetworkSession session, CancellationToken ct)
    {
-      if (ct.IsCancellationRequested || State is not ResilientServerState.Running)
+      if (ct.IsCancellationRequested || State is not (ResilientServerState.Running or ResilientServerState.Starting))
       {
          await session.DisposeAsync();
          return;
@@ -421,7 +420,7 @@ public sealed class ResilientServer<TFrame>
       NetworkServerConnectionContext connectionContext,
       CancellationToken ct)
    {
-      var streamTasks = new ConcurrentBag<Task>();
+      var streamTasks = new ConcurrentDictionary<Task, byte>();
       try
       {
          while (!ct.IsCancellationRequested && client.IsConnected)
@@ -433,7 +432,9 @@ public sealed class ResilientServer<TFrame>
 
                var streamContext = new NetworkServerStreamContext(connectionContext, streamResult.Success);
                var t = Task.Run(() => RunClientListenTask(client, streamContext, ct), ct);
-               streamTasks.Add(t);
+
+               streamTasks.TryAdd(t, 0);
+               _ = t.ContinueWith(_ => streamTasks.TryRemove(t, out var _), TaskScheduler.Default);
             }
             catch
             {
@@ -447,7 +448,7 @@ public sealed class ResilientServer<TFrame>
          {
             try
             {
-               await Task.WhenAll(streamTasks);
+               await Task.WhenAll(streamTasks.Keys);
             }
             catch
             {

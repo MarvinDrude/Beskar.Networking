@@ -100,8 +100,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       if (Volatile.Read(ref _disposedState) == 1)
          return new StringError("Already disposed client.");
 
-      if (State is ResilientClientState.Connected or ResilientClientState.Connecting)
-         return new StringError("Client is already connected or connecting.");
+      if (State is ResilientClientState.Connected or ResilientClientState.Connecting or ResilientClientState.Reconnecting)
+         return new StringError("Client is already connected, connecting, or reconnecting.");
 
       _remoteEndPoint = endPoint;
       State = ResilientClientState.Connecting;
@@ -505,7 +505,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
    private async Task RunAcceptMultiplexedStreamsTask(CancellationToken ct)
    {
-      var streamTasks = new ConcurrentBag<Task>();
+      var streamTasks = new ConcurrentDictionary<Task, byte>();
       try
       {
          while (!ct.IsCancellationRequested && Session != null && !Session.SessionClosedToken.IsCancellationRequested)
@@ -516,7 +516,9 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                if (streamResult.Failed) break;
 
                var t = Task.Run(() => RunClientListenTask(streamResult.Success, ct), ct);
-               streamTasks.Add(t);
+
+               streamTasks.TryAdd(t, 0);
+               _ = t.ContinueWith(_ => streamTasks.TryRemove(t, out var _), TaskScheduler.Default);
             }
             catch
             {
@@ -530,7 +532,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          {
             try
             {
-               await Task.WhenAll(streamTasks);
+               await Task.WhenAll(streamTasks.Keys);
             }
             catch
             {
@@ -611,6 +613,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                      DisconnectPayload = disconnectPayload;
                   }
 
+                  State = ResilientClientState.Disconnecting;
                   _ = DisconnectInternalAsync(null);
                   break;
                }
@@ -665,64 +668,78 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
    }
 
+   private int _isReconnectingState;
+
    private async Task TriggerAutoReconnectAsync(Exception? cause)
    {
       if (State is ResilientClientState.Disconnecting or ResilientClientState.Disconnected)
          return;
 
-      if (!Options.Reconnecting.AutoReconnect || _remoteEndPoint == null)
-      {
-         State = ResilientClientState.Disconnected;
-         await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
+      if (Interlocked.CompareExchange(ref _isReconnectingState, 1, 0) == 1)
          return;
-      }
 
-      State = ResilientClientState.Reconnecting;
-      await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
-
-      _connectionCts?.Dispose();
-      _connectionCts = new CancellationTokenSource();
-      var reconnectCt = _connectionCts.Token;
-
-      var attempt = 0;
-      var maxRetries = Options.Reconnecting.MaxRetries;
-
-      while (!reconnectCt.IsCancellationRequested)
+      try
       {
-         attempt++;
-         if (maxRetries > 0 && attempt > maxRetries)
+         if (!Options.Reconnecting.AutoReconnect || _remoteEndPoint == null)
          {
             State = ResilientClientState.Disconnected;
-            break;
+            await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
+            return;
          }
 
-         if (Events.OnReconnecting.Count > 0)
+         State = ResilientClientState.Reconnecting;
+         await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
+
+         _connectionCts?.Dispose();
+         _connectionCts = new CancellationTokenSource();
+         var reconnectCt = _connectionCts.Token;
+
+         var attempt = 0;
+         var maxRetries = Options.Reconnecting.MaxRetries;
+
+         while (!reconnectCt.IsCancellationRequested)
          {
-            var reconnectContext = new ResilientClientReconnectingContext<TFrame>
+            attempt++;
+            if (maxRetries > 0 && attempt > maxRetries)
             {
-               Client = this,
-               Attempt = attempt,
-               LastException = cause
-            };
+               break;
+            }
 
-            await Events.OnReconnecting.ExecuteAsync(
-               reconnectContext, HandlerExecutionStrategy.SequentialContinueOnError);
+            if (Events.OnReconnecting.Count > 0)
+            {
+               var reconnectContext = new ResilientClientReconnectingContext<TFrame>
+               {
+                  Client = this,
+                  Attempt = attempt,
+                  LastException = cause
+               };
+
+               await Events.OnReconnecting.ExecuteAsync(
+                  reconnectContext, HandlerExecutionStrategy.SequentialContinueOnError);
+            }
+
+            try
+            {
+               await Task.Delay(Options.Reconnecting.RetryInterval, reconnectCt);
+            }
+            catch (OperationCanceledException)
+            {
+               break;
+            }
+
+            var result = await ConnectInternalAsync(_remoteEndPoint, reconnectCt);
+            if (!result.Failed)
+            {
+               return; // Reconnect successful!
+            }
          }
 
-         try
-         {
-            await Task.Delay(Options.Reconnecting.RetryInterval, reconnectCt);
-         }
-         catch (OperationCanceledException)
-         {
-            break;
-         }
-
-         var result = await ConnectInternalAsync(_remoteEndPoint, reconnectCt);
-         if (!result.Failed)
-         {
-            break; // Reconnect successful!
-         }
+         State = ResilientClientState.Disconnected;
+         await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
+      }
+      finally
+      {
+         Interlocked.Exchange(ref _isReconnectingState, 0);
       }
    }
 
