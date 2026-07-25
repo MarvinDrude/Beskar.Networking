@@ -4,28 +4,31 @@ namespace Beskar.Mqtt.Common.Generators;
 
 internal static class MqttTopicSymbolExtensions
 {
-   public static bool IsGeneratedMqttTopicAttribute(this ISymbol? symbol)
+   extension(ISymbol? symbol)
    {
-      return symbol is
+      public bool IsGeneratedMqttTopicAttribute()
       {
-         Name: "GeneratedMqttTopicAttribute",
-         ContainingNamespace:
+         return symbol is
          {
-            Name: "Generators",
+            Name: "GeneratedMqttTopicAttribute",
             ContainingNamespace:
             {
-               Name: "Common",
+               Name: "Generators",
                ContainingNamespace:
                {
-                  Name: "Mqtt",
+                  Name: "Common",
                   ContainingNamespace:
                   {
-                     Name: "Beskar",
-                     ContainingNamespace.IsGlobalNamespace: true
+                     Name: "Mqtt",
+                     ContainingNamespace:
+                     {
+                        Name: "Beskar",
+                        ContainingNamespace.IsGlobalNamespace: true
+                     }
                   }
                }
             }
-         }
-      };
+         };
+      }
    }
 }

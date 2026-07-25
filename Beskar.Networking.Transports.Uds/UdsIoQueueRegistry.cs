@@ -51,6 +51,12 @@ public sealed class UdsIoQueueRegistry : IAsyncDisposable
       {
          await socketConn.StopAsync();
 
+         if (_isDisposed)
+         {
+            await socketConn.DisposeAsync();
+            return;
+         }
+
          TraceLogger.LogNeutralInfo("UDS IO Registry: Returning socket connection to pool");
          await _socketConnectionPool.ReturnAsync(socketConn);
       }

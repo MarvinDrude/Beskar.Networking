@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>Exe</OutputType>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj"/>
+      <ProjectReference Include="..\..\Common\Beskar.Networking.Protocol\Beskar.Networking.Protocol.csproj"/>
+      <ProjectReference Include="..\..\Common\Beskar.Networking.Resilient.Common\Beskar.Networking.Resilient.Common.csproj"/>
+      <ProjectReference Include="..\..\Common\Beskar.Networking.Resilient.Client\Beskar.Networking.Resilient.Client.csproj"/>
+      <ProjectReference Include="..\..\Common\Beskar.Networking.Resilient.Server\Beskar.Networking.Resilient.Server.csproj"/>
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Console\Beskar.Utilities.Console.csproj"/>
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj"/>
+   </ItemGroup>
+
+</Project>

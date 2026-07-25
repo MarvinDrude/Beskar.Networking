@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>Exe</OutputType>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj"/>
+      <ProjectReference Include="..\..\Common\Beskar.Networking.Protocol\Beskar.Networking.Protocol.csproj"/>
+      <ProjectReference Include="..\..\Common\Beskar.Networking.Resilient.Common\Beskar.Networking.Resilient.Common.csproj"/>
+      <ProjectReference Include="..\..\Common\Beskar.Networking.Resilient.Client\Beskar.Networking.Resilient.Client.csproj"/>
+      <ProjectReference Include="..\..\Common\Beskar.Networking.Resilient.Server\Beskar.Networking.Resilient.Server.csproj"/>
+   </ItemGroup>
+
+</Project>

@@ -325,8 +325,9 @@ public class UdsTransportTests
    public async Task UdsExtensions_RegisterCorrectly()
    {
       // Test ServerBuilder extension
+      var socketPath = GetTempSocketPath();
       var builder = new MockServerBuilder();
-      builder.UseUds(12345);
+      builder.UseUds(socketPath);
 
       await Assert.That(builder.Listener).IsNotNull();
       await Assert.That(builder.Listener!.Transport).IsEqualTo(TransportKind.UnixDomainSocket);

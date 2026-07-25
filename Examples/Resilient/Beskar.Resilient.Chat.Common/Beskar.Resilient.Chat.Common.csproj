@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <TargetFramework>net10.0</TargetFramework>
+      <ImplicitUsings>enable</ImplicitUsings>
+      <Nullable>enable</Nullable>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj"/>
+      <ProjectReference Include="..\..\..\Common\Beskar.Networking.Protocol\Beskar.Networking.Protocol.csproj"/>
+   </ItemGroup>
+
+</Project>

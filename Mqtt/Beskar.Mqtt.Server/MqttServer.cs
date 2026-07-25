@@ -52,9 +52,20 @@ public sealed partial class MqttServer : IAsyncDisposable
    /// </summary>
    public ServerEvents Events { get; } = new();
 
+   /// <summary>
+   /// A read-only collection of network listeners associated with the MQTT server.
+   /// Each listener handles incoming connections and communication over different network interfaces.
+   /// </summary>
    public IReadOnlyList<INetworkListener> Listeners => _listeners;
 
+   /// <summary>
+   /// Manages retained messages within the MQTT server.
+   /// Retained messages are stored on the server and sent to clients subscribing
+   /// to topics that match the messages' topics, ensuring reliable message delivery
+   /// even when clients connect after the messages are published.
+   /// </summary>
    public MqttRetainedMessages RetainedMessages { get; } = new();
+
    internal MqttTrieSubscriptionRouter SubscriptionRouter { get; } = new();
    internal MqttClientSessions ClientSessions { get; }
    internal MqttServerOptions Options { get; }
@@ -76,6 +87,15 @@ public sealed partial class MqttServer : IAsyncDisposable
       _keepAliveService = new MqttKeepAliveService(this);
    }
 
+   /// <summary>
+   /// Starts the MQTT server asynchronously.
+   /// This method transitions the server from a stopped state to a running state,
+   /// initializes listeners, manages cancellation tokens, and triggers specified events.
+   /// </summary>
+   /// <returns>
+   /// A task representing the asynchronous operation. The result will be a <see cref="VoidResult{TError}"/>
+   /// indicating success or a <see cref="StringError"/> containing an error message if the operation fails.
+   /// </returns>
    public async Task<VoidResult<StringError>> StartAsync()
    {
       if (Volatile.Read(ref _disposedState) == 1)
@@ -148,6 +168,19 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
    }
 
+   /// <summary>
+   /// Stops the MQTT server asynchronously.
+   /// This method transitions the server from a running state to a stopped state,
+   /// cleans up resources, notifies connected clients, and triggers specified events.
+   /// </summary>
+   /// <param name="options">
+   /// The options specifying custom disconnect behavior for clients. If null, default options
+   /// are used with a reason code indicating that the server is shutting down.
+   /// </param>
+   /// <returns>
+   /// A task representing the asynchronous operation. The result will be a <see cref="VoidResult{StringError}"/>
+   /// indicating success or a <see cref="StringError"/> containing an error message if the operation fails.
+   /// </returns>
    public async Task<VoidResult<StringError>> StopAsync(DisconnectOptions? options = null)
    {
       if (Volatile.Read(ref _disposedState) == 1)

@@ -50,6 +50,12 @@ public sealed class NamedPipeIoQueueRegistry : IAsyncDisposable
       {
          await streamConn.StopAsync();
 
+         if (_isDisposed)
+         {
+            await streamConn.DisposeAsync();
+            return;
+         }
+
          TraceLogger.LogNeutralInfo("NamedPipe IO Registry: Returning stream connection to pool");
          await _streamConnectionPool.ReturnAsync(streamConn);
       }

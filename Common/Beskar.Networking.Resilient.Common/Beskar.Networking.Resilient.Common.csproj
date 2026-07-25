@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <Title>Beskar.Networking.Resilient.Common</Title>
+      <Description>High-performance, low-allocation event-driven highly-customizable Common package for Server/Client over any transport.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+     <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+     <ProjectReference Include="..\Beskar.Networking.Protocol\Beskar.Networking.Protocol.csproj" />
+   </ItemGroup>
+
+</Project>

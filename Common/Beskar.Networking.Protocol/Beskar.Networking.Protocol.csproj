@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <Title>Beskar.Networking.Protocol</Title>
+      <Description>High-performance, low-allocation source generated way of creating protocol framing and it's writing and reading logic.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+     <ProjectReference Include="..\Beskar.Networking.Protocol.Generators\Beskar.Networking.Protocol.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+   </ItemGroup>
+
+   <ItemGroup>
+     <PackageReference Include="Beskar.Memory" />
+   </ItemGroup>
+
+   <PropertyGroup>
+      <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackAnalyzer</TargetsForTfmSpecificContentInPackage>
+   </PropertyGroup>
+
+   <Target Name="PackAnalyzer">
+      <ItemGroup>
+         <TfmSpecificPackageFile Include="..\Beskar.Networking.Protocol.Generators\bin\$(Configuration)\netstandard2.0\Beskar.Networking.Protocol.Generators.dll" PackagePath="analyzers/dotnet/cs" />
+      </ItemGroup>
+   </Target>
+
+</Project>
