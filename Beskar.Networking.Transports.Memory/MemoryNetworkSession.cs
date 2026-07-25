@@ -12,19 +12,17 @@ namespace Beskar.Networking.Transports.Memory;
 /// <summary>
 /// An in-memory implementation of <see cref="INetworkSession"/>.
 /// </summary>
-public sealed class MemoryNetworkSession(
-   EndPoint localAddress, EndPoint remoteAddress, IDuplexPipe connection)
-   : INetworkSession
+public sealed class MemoryNetworkSession : INetworkSession
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 
-   public EndPoint RemoteAddress { get; } = remoteAddress;
-   public EndPoint LocalAddress { get; } = localAddress;
+   public EndPoint RemoteAddress { get; }
+   public EndPoint LocalAddress { get; }
 
    public bool IsSupportingMultiplexing => false;
    public bool IsSupportingUnidirectional => false;
 
-   public CancellationToken SessionClosedToken => _cts.Token;
+   public CancellationToken SessionClosedToken { get; }
 
    public INetworkPropertyStore Properties { get; } = new NetworkPropertyStore();
 
@@ -48,12 +46,22 @@ public sealed class MemoryNetworkSession(
 
    public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
 
-   private readonly IDuplexPipe _connection = connection;
-   private readonly CancellationTokenSource _cts = new();
+   private readonly IDuplexPipe _connection;
+   private readonly CancellationTokenSource _cts;
 
    private MemoryNetworkStream? _stream;
    private MemoryNetworkSession? _peerSession;
    private int _disposed;
+
+   public MemoryNetworkSession(EndPoint localAddress, EndPoint remoteAddress, IDuplexPipe connection)
+   {
+      LocalAddress = localAddress;
+      RemoteAddress = remoteAddress;
+      _connection = connection;
+
+      _cts = new CancellationTokenSource();
+      SessionClosedToken = _cts.Token;
+   }
 
    internal void SetPeer(MemoryNetworkSession peer)
    {
@@ -96,6 +104,9 @@ public sealed class MemoryNetworkSession(
 
       TraceLogger.LogInfo("Disposing active Memory session {0}", TraceLogOrigin.None, Id);
 
+      var peer = _peerSession;
+      _peerSession = null;
+
       try
       {
          await _cts.CancelAsync();
@@ -137,6 +148,16 @@ public sealed class MemoryNetworkSession(
          // Ignored
       }
 
-      _peerSession = null;
+      if (peer is not null)
+      {
+         try
+         {
+            await peer.DisposeAsync();
+         }
+         catch
+         {
+            // Ignored
+         }
+      }
    }
 }
