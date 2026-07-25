@@ -614,7 +614,26 @@ public sealed class ResilientServer<TFrame>
                      }
                      else if (!client.HandshakeCompletedTask.IsCompleted)
                      {
-                        client.PreHandshakeFrameChannel.Writer.TryWrite((frame, streamContext.Stream));
+                        if (!client.PreHandshakeFrameChannel.Writer.TryWrite((frame, streamContext.Stream)))
+                        {
+                           if (client.IsHandshakeCompleted)
+                           {
+                              if (!client.DrainingTask.IsCompleted)
+                              {
+                                 await client.DrainingTask;
+                              }
+
+                              var eventContext = new ResilientFrameReceivedContext<TFrame>
+                              {
+                                 Client = client,
+                                 Stream = streamContext.Stream,
+                                 Frame = frame
+                              };
+
+                              await Events.FrameReceived.ExecuteAsync(
+                                 eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                           }
+                        }
                      }
                   }
                }

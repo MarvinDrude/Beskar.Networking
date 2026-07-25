@@ -58,6 +58,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private int _disposedState;
    private volatile int _state = (int)ResilientClientState.Disconnected;
    private int _disconnectedEventFired;
+   private volatile int _handshakeAckReceived;
 
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
    private long _lastTouchMs = Environment.TickCount64;
@@ -149,6 +150,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private async Task<VoidResult<StringError>> ConnectInternalAsync(EndPoint endPoint, CancellationToken ct,
       bool isReconnect = false)
    {
+      _handshakeAckReceived = 0;
+      var connectionCts = _connectionCts;
+      if (connectionCts == null)
+      {
+         return new StringError("Client has been disposed or disconnected.");
+      }
+
       try
       {
          TraceLogger.LogClientInfo("ResilientClient: Initiating connection to endpoint {0}...", endPoint);
@@ -178,11 +186,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          _controlStream = streamResult.Success;
 
          // Start background listen task on control stream
-         _ = Task.Run(() => RunClientListenTask(_controlStream, handshakeChannel, _connectionCts!.Token));
+         _ = Task.Run(() => RunClientListenTask(_controlStream, handshakeChannel, connectionCts.Token));
 
          if (session.IsSupportingMultiplexing)
          {
-            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(_connectionCts!.Token));
+            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(connectionCts.Token));
          }
 
          // Send Connect frame payload
@@ -230,7 +238,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
          if (Events.OnConnected.Count > 0)
          {
-            using var connectedCts = CancellationTokenSource.CreateLinkedTokenSource(_connectionCts!.Token);
+            using var connectedCts = CancellationTokenSource.CreateLinkedTokenSource(connectionCts.Token);
             await Events.OnConnected.ExecuteAsync(
                new ResilientClientConnectedContext<TFrame> { Client = this },
                HandlerExecutionStrategy.SequentialContinueOnError, connectedCts.Token);
@@ -658,6 +666,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                {
                   if (State is ResilientClientState.Connecting or ResilientClientState.Reconnecting)
                   {
+                     _handshakeAckReceived = 1;
                      handshakeChannel?.Writer.TryWrite(new ConnectAckPayloadMarker());
                   }
                }
@@ -688,7 +697,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                if (Options.FrameReceivedAllPackets || frameKind is ResilientFrameKind.Message)
                {
                   if (Events.FrameReceived.Count > 0
-                      && (Options.FrameReceivedAllPackets || State is ResilientClientState.Connected))
+                      && (Options.FrameReceivedAllPackets || State is ResilientClientState.Connected || _handshakeAckReceived == 1))
                   {
                      var eventContext = new ResilientClientFrameReceivedContext<TFrame>
                      {
