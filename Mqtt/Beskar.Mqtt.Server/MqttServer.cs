@@ -599,7 +599,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             }
 
             reader.AdvanceTo(consumed, examined);
-            if (result.IsCompleted && buffer.IsEmpty) break;
+            if (result.IsCompleted) break;
          }
       }
       catch (OperationCanceledException)

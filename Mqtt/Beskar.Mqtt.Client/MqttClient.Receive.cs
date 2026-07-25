@@ -54,7 +54,7 @@ public sealed partial class MqttClient
             }
 
             reader.AdvanceTo(consumed, examined);
-            if (result.IsCompleted && buffer.IsEmpty) break;
+            if (result.IsCompleted) break;
          }
       }
       catch (OperationCanceledException)
