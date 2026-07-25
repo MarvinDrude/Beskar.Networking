@@ -182,6 +182,11 @@ public static class Program
       server.Events.ClientDisconnected.Add((ctx, ct) =>
       {
          var client = ctx.Client;
+         if (!client.IsHandshakeCompleted)
+         {
+            return ValueTask.CompletedTask;
+         }
+
          var transport = client.Session.Transport;
          var clientId = client.Id.ToString()[..8];
 

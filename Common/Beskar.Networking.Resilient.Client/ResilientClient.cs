@@ -353,7 +353,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                var frame = TFrame.CreateFrame(ResilientFrameKind.Disconnect,
                   new ReadOnlySequence<byte>(writer.WrittenMemory));
 
-               await SendAsync(frame, ControlStream);
+               using var disconnectSendCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+               await SendAsync(frame, ControlStream, disconnectSendCts.Token);
                await ControlStream.Transport.Output.CompleteAsync();
                await Task.Yield();
             }
