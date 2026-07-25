@@ -248,7 +248,7 @@ public sealed class ResilientServer<TFrame>
 
          if (session.IsSupportingMultiplexing)
          {
-            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(client, connectionContext, combinedToken), combinedToken);
+            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(client, connectionContext, combinedToken));
          }
 
          var listenTask = Task.Run(async () =>
@@ -259,12 +259,29 @@ public sealed class ResilientServer<TFrame>
             }
             finally
             {
-               // ReSharper disable once AccessToDisposedClosure
-               await combinedCts.CancelAsync();
+               try
+               {
+                  await combinedCts.CancelAsync();
+               }
+               catch (ObjectDisposedException)
+               {
+                  // expected if RunClientTask exited and disposed combinedCts
+               }
             }
-         }, combinedToken);
+         });
 
-         var connectPayload = await ReadConnectPayloadAsync(client, combinedToken);
+         ConnectPacketPayload? connectPayload = null;
+         try
+         {
+            using var handshakeTimeoutCts = new CancellationTokenSource(Options.HandshakeTimeout);
+            using var handshakeCts = CancellationTokenSource.CreateLinkedTokenSource(combinedToken, handshakeTimeoutCts.Token);
+            connectPayload = await ReadConnectPayloadAsync(client, handshakeCts.Token);
+         }
+         catch
+         {
+            // timeout or cancellation
+         }
+
          if (connectPayload != null)
          {
             client.ConnectPayload = connectPayload;
@@ -326,13 +343,13 @@ public sealed class ResilientServer<TFrame>
                   try
                   {
                      await Events.ClientDisconnected.ExecuteAsync(
-                        disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                        disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, CancellationToken.None);
                   }
                   catch
                   {
                      // background exception protection
                   }
-               }, ct);
+               });
             }
          }
          else
@@ -452,24 +469,30 @@ public sealed class ResilientServer<TFrame>
                }
                else if (frameKind is ResilientFrameKind.Connect)
                {
-                  if (frame.TryGetPayload<ConnectPacketPayload>(out var connectPayload) && connectPayload != null)
+                  if (!client.IsHandshakeCompleted)
                   {
-                     client.ControlPayloadChannel.Writer.TryWrite(connectPayload);
-                  }
-                  else
-                  {
-                     client.ControlPayloadChannel.Writer.TryWrite(new ConnectPacketPayload());
+                     if (frame.TryGetPayload<ConnectPacketPayload>(out var connectPayload) && connectPayload != null)
+                     {
+                        client.ControlPayloadChannel.Writer.TryWrite(connectPayload);
+                     }
+                     else
+                     {
+                        client.ControlPayloadChannel.Writer.TryWrite(new ConnectPacketPayload());
+                     }
                   }
                }
                else if (frameKind is ResilientFrameKind.Authenticate)
                {
-                  if (frame.TryGetPayload<AuthenticatePacketPayload>(out var authPayload) && authPayload != null)
+                  if (!client.IsHandshakeCompleted)
                   {
-                     client.ControlPayloadChannel.Writer.TryWrite(authPayload);
-                  }
-                  else
-                  {
-                     client.ControlPayloadChannel.Writer.TryWrite(new AuthenticatePacketPayload());
+                     if (frame.TryGetPayload<AuthenticatePacketPayload>(out var authPayload) && authPayload != null)
+                     {
+                        client.ControlPayloadChannel.Writer.TryWrite(authPayload);
+                     }
+                     else
+                     {
+                        client.ControlPayloadChannel.Writer.TryWrite(new AuthenticatePacketPayload());
+                     }
                   }
                }
 

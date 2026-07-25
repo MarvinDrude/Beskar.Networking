@@ -326,4 +326,32 @@ public class ResilientAuthHandshakeTests
       await server.StopAsync();
       await server.DisposeAsync();
    }
+
+   [Test]
+   public async Task Server_HandshakeTimeout_ShouldDisconnectClient_WhenNoConnectPayloadSent()
+   {
+      var listenerEndPoint = new IPEndPoint(IPAddress.Loopback, 0);
+      var serverOptions = new ResilientServerOptions
+      {
+         HandshakeTimeout = TimeSpan.FromMilliseconds(300)
+      };
+
+      var server = ResilientServerFactory.CreateBuilder<BeskarPacket>(serverOptions)
+         .UseTcp(listenerEndPoint)
+         .Build();
+
+      await server.StartAsync();
+      var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
+
+      var socket = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+      await socket.ConnectAsync(boundEndPoint);
+
+      // Client connects but sends NO payload. Handshake should timeout on server.
+      var serverCleanedUp = await SpinWaitUntilAsync(() => server.Clients.Count == 0, TimeSpan.FromSeconds(2));
+      await Assert.That(serverCleanedUp).IsTrue();
+
+      socket.Dispose();
+      await server.StopAsync();
+      await server.DisposeAsync();
+   }
 }

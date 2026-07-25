@@ -28,6 +28,12 @@ public sealed class ResilientServerOptions
    public bool FrameReceivedAllPackets { get; set; } = false;
 
    /// <summary>
+   /// Gets or sets the timeout duration for client handshake completion.
+   /// Default is 10 seconds.
+   /// </summary>
+   public TimeSpan HandshakeTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+   /// <summary>
    /// Gets or sets an optional serializer interface for high-performance encoding/decoding of generic SendAsync payloads.
    /// </summary>
    public IResilientSerializer? Serializer { get; set; }

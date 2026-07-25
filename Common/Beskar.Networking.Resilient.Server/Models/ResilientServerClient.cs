@@ -106,19 +106,28 @@ public sealed class ResilientServerClient<TFrame>(
    internal void SetHandshakeResult(bool success)
    {
       _isHandshakeCompleted = success;
+
       _handshakeTcs.TrySetResult(success);
+      ControlPayloadChannel.Writer.TryComplete();
    }
 
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
+   private long _lastTouchMs = Environment.TickCount64;
+
    private volatile bool _isHandshakeCompleted;
    private int _disposedState;
 
    /// <summary>
-   /// Updates the last activity timestamp to the current UTC time.
+   /// Updates the last activity timestamp. Throttled to prevent high system call overhead per frame.
    /// </summary>
    public void TouchActivity()
    {
-      Interlocked.Exchange(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
+      var currentMs = Environment.TickCount64;
+      if (currentMs - Volatile.Read(ref _lastTouchMs) >= 200)
+      {
+         Volatile.Write(ref _lastTouchMs, currentMs);
+         Interlocked.Exchange(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
+      }
    }
 
    /// <summary>

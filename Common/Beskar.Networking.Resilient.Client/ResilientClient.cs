@@ -55,7 +55,10 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
    private int _disposedState;
    private volatile int _state = (int)ResilientClientState.Disconnected;
+
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
+   private long _lastTouchMs = Environment.TickCount64;
+
    private EndPoint? _remoteEndPoint;
    private INetworkStream? _controlStream;
 
@@ -75,11 +78,16 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    }
 
    /// <summary>
-   /// Updates the last activity timestamp to the current UTC time.
+   /// Updates the last activity timestamp. Throttled to prevent high system call overhead per frame.
    /// </summary>
    public void TouchActivity()
    {
-      Interlocked.Exchange(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
+      var currentMs = Environment.TickCount64;
+      if (currentMs - Volatile.Read(ref _lastTouchMs) >= 200)
+      {
+         Volatile.Write(ref _lastTouchMs, currentMs);
+         Interlocked.Exchange(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
+      }
    }
 
    /// <summary>
@@ -102,7 +110,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       _connectionCts?.Dispose();
       _connectionCts = new CancellationTokenSource();
 
-      using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_connectionCts.Token, cancellationToken);
+      using var handshakeTimeoutCts = new CancellationTokenSource(Options.HandshakeTimeout);
+      using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_connectionCts.Token, cancellationToken, handshakeTimeoutCts.Token);
       var ct = linkedCts.Token;
 
       var result = await ConnectInternalAsync(endPoint, ct);
@@ -151,11 +160,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          _controlStream = streamResult.Success;
 
          // Start background listen task on control stream
-         _ = Task.Run(() => RunClientListenTask(_controlStream, _connectionCts!.Token), _connectionCts!.Token);
+         _ = Task.Run(() => RunClientListenTask(_controlStream, _connectionCts!.Token));
 
          if (session.IsSupportingMultiplexing)
          {
-            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(_connectionCts!.Token), _connectionCts!.Token);
+            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(_connectionCts!.Token));
          }
 
          // Send Connect frame payload
@@ -176,7 +185,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          {
             await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
             State = ResilientClientState.Disconnected;
-            return new StringError("Handshake failed or denied by server.");
+
+            return new StringError("Handshake failed, timed out, or denied by server.");
          }
 
          State = ResilientClientState.Connected;
@@ -237,7 +247,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
       catch (OperationCanceledException)
       {
-         // cancelled
+         // cancelled or timed out
       }
 
       return false;
@@ -703,14 +713,25 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    {
       if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
+      State = ResilientClientState.Disconnected;
+
       if (_connectionCts is not null)
       {
-         await _connectionCts.CancelAsync();
+         try
+         {
+            await _connectionCts.CancelAsync();
+         }
+         catch
+         {
+            // ignored if already canceled or disposed
+         }
       }
 
-      _connectionCts?.Dispose();
-
       await DisconnectInternalAsync(null);
+
+      _connectionCts?.Dispose();
+      _connectionCts = null;
+
       await NetworkClient.DisposeAsync();
    }
 
