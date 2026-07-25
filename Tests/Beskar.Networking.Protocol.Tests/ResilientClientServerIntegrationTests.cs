@@ -8,6 +8,7 @@ using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Protocol.Frames;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Client;
+using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Server;
 using Beskar.Networking.Transports.Memory;
 using Beskar.Networking.Transports.Quic;
@@ -332,6 +333,49 @@ public class ResilientClientServerIntegrationTests
       await Assert.That(disconnectCount).IsEqualTo(1);
 
       await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
+   [Test]
+   public async Task ResilientClient_AutoReconnect_ShouldRetryMultipleTimes_WhenServerUnavailable()
+   {
+      var endpoint = new MemoryEndPoint($"resilient_test_reconnect_retry_{Guid.NewGuid()}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+
+      await server.StartAsync();
+
+      var reconnectAttempts = 0;
+      var clientOptions = new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            MaxRetries = 3,
+            RetryInterval = TimeSpan.FromMilliseconds(50)
+         }
+      };
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+      client.Events.OnReconnecting.Add((ctx, _) =>
+      {
+         Interlocked.Increment(ref reconnectAttempts);
+         return ValueTask.CompletedTask;
+      });
+
+      await client.ConnectAsync(endpoint);
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Stop server while client is connected to trigger auto-reconnect
+      await server.StopAsync();
+
+      // Wait for reconnection attempts to finish retrying
+      await Task.Delay(600);
+
+      await Assert.That(reconnectAttempts).IsGreaterThanOrEqualTo(3);
+      await Assert.That(client.State).IsEqualTo(ResilientClientState.Disconnected);
+
       await client.DisposeAsync();
       await server.DisposeAsync();
    }

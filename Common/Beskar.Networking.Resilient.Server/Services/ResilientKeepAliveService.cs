@@ -28,11 +28,19 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
 
    public async Task StopAsync()
    {
-      if (_cts != null)
+      var cts = _cts;
+      _cts = null;
+
+      if (cts != null)
       {
-         await _cts.CancelAsync();
-         _cts.Dispose();
-         _cts = null;
+         try
+         {
+            await cts.CancelAsync();
+         }
+         catch
+         {
+            // ignored
+         }
       }
 
       if (_timerTask != null)
@@ -41,12 +49,14 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
          {
             await _timerTask;
          }
-         catch (OperationCanceledException)
+         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
          {
             // expected
          }
          _timerTask = null;
       }
+
+      cts?.Dispose();
    }
 
    private async Task RunKeepAliveLoopAsync(CancellationToken ct)
@@ -57,42 +67,49 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
 
       using var timer = new PeriodicTimer(options.CheckInterval);
 
-      while (!ct.IsCancellationRequested && await timer.WaitForNextTickAsync(ct))
+      try
       {
-         var now = DateTimeOffset.UtcNow;
-         var clients = _server.Clients.GetAll();
-
-         foreach (var client in clients)
+         while (!ct.IsCancellationRequested && await timer.WaitForNextTickAsync(ct))
          {
-            if (options.Mode is ResilientServerKeepAliveMode.ClientConfigured &&
-                client.ConnectPayload is { KeepAliveSeconds: 0 })
+            var now = DateTimeOffset.UtcNow;
+            var clients = _server.Clients.GetAll();
+
+            foreach (var client in clients)
             {
-               // Client explicitly disabled keep-alive
-               continue;
-            }
-
-            var baseTimeout = options.Mode is ResilientServerKeepAliveMode.ClientConfigured
-               && client.ConnectPayload is { KeepAliveSeconds: > 0 }
-               ? TimeSpan.FromSeconds(client.ConnectPayload.KeepAliveSeconds)
-               : options.DefaultKeepAliveTime;
-
-            var timeout = baseTimeout * 1.5;
-
-            if (now - client.LastActivityAt > timeout)
-            {
-               _ = Task.Run(async () =>
+               if (options.Mode is ResilientServerKeepAliveMode.ClientConfigured &&
+                   client.ConnectPayload is { KeepAliveSeconds: 0 })
                {
-                  try
+                  // Client explicitly disabled keep-alive
+                  continue;
+               }
+
+               var baseTimeout = options.Mode is ResilientServerKeepAliveMode.ClientConfigured
+                  && client.ConnectPayload is { KeepAliveSeconds: > 0 }
+                  ? TimeSpan.FromSeconds(client.ConnectPayload.KeepAliveSeconds)
+                  : options.DefaultKeepAliveTime;
+
+               var timeout = baseTimeout * 1.5;
+
+               if (now - client.LastActivityAt > timeout)
+               {
+                  _ = Task.Run(async () =>
                   {
-                     await client.DisconnectAsync();
-                  }
-                  catch
-                  {
-                     // ignored
-                  }
-               }, CancellationToken.None);
+                     try
+                     {
+                        await client.DisconnectAsync();
+                     }
+                     catch
+                     {
+                        // ignored
+                     }
+                  }, CancellationToken.None);
+               }
             }
          }
+      }
+      catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+      {
+         // expected on cancellation or dispose
       }
    }
 

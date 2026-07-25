@@ -547,11 +547,17 @@ public sealed class ResilientServer<TFrame>
                   }
                }
 
+               var isControlFrame = frameKind is ResilientFrameKind.Connect
+                  or ResilientFrameKind.Authenticate
+                  or ResilientFrameKind.Ping
+                  or ResilientFrameKind.Pong
+                  or ResilientFrameKind.Disconnect;
+
                if (Options.FrameReceivedAllPackets || frameKind is ResilientFrameKind.Message)
                {
                   if (Events.FrameReceived.Count > 0)
                   {
-                     var handshakeSuccess = client.IsHandshakeCompleted ||
+                     var handshakeSuccess = isControlFrame || client.IsHandshakeCompleted ||
                         (client.HandshakeCompletedTask.IsCompleted
                            ? client.HandshakeCompletedTask.Result
                            : await client.HandshakeCompletedTask);

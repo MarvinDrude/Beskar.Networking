@@ -27,11 +27,19 @@ public sealed class ResilientClientKeepAliveService<TFrame>(ResilientClient<TFra
 
    public async Task StopAsync()
    {
-      if (_cts != null)
+      var cts = _cts;
+      _cts = null;
+
+      if (cts != null)
       {
-         await _cts.CancelAsync();
-         _cts.Dispose();
-         _cts = null;
+         try
+         {
+            await cts.CancelAsync();
+         }
+         catch
+         {
+            // ignored
+         }
       }
 
       if (_timerTask != null)
@@ -40,12 +48,14 @@ public sealed class ResilientClientKeepAliveService<TFrame>(ResilientClient<TFra
          {
             await _timerTask;
          }
-         catch (OperationCanceledException)
+         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
          {
             // expected
          }
          _timerTask = null;
       }
+
+      cts?.Dispose();
    }
 
    private async Task RunKeepAliveLoopAsync(CancellationToken ct)
@@ -56,18 +66,25 @@ public sealed class ResilientClientKeepAliveService<TFrame>(ResilientClient<TFra
 
       using var timer = new PeriodicTimer(options.KeepAliveInterval);
 
-      while (!ct.IsCancellationRequested && await timer.WaitForNextTickAsync(ct))
+      try
       {
-         if (!_client.IsConnected) continue;
-
-         var now = DateTimeOffset.UtcNow;
-         var idleTime = now - _client.LastActivityAt;
-
-         if (idleTime >= options.KeepAliveInterval)
+         while (!ct.IsCancellationRequested && await timer.WaitForNextTickAsync(ct))
          {
-            var pingFrame = TFrame.CreateFrame(ResilientFrameKind.Ping);
-            await _client.SendAsync(pingFrame, ct);
+            if (!_client.IsConnected) continue;
+
+            var now = DateTimeOffset.UtcNow;
+            var idleTime = now - _client.LastActivityAt;
+
+            if (idleTime >= options.KeepAliveInterval)
+            {
+               var pingFrame = TFrame.CreateFrame(ResilientFrameKind.Ping);
+               await _client.SendAsync(pingFrame, ct);
+            }
          }
+      }
+      catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+      {
+         // expected on cancellation or dispose
       }
    }
 

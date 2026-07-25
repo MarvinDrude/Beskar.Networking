@@ -190,6 +190,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
             return new StringError("Handshake failed, timed out, or denied by server.");
          }
 
+         if (Volatile.Read(ref _disposedState) == 1 || State is ResilientClientState.Disconnecting or ResilientClientState.Disconnected)
+         {
+            await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
+            State = ResilientClientState.Disconnected;
+            return new StringError("Client was disconnected or disposed during connection.");
+         }
+
          State = ResilientClientState.Connected;
          ConnectedAt = DateTimeOffset.UtcNow;
          TouchActivity();
@@ -690,14 +697,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          State = ResilientClientState.Reconnecting;
          await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
 
-         _connectionCts?.Dispose();
-         _connectionCts = new CancellationTokenSource();
-         var reconnectCt = _connectionCts.Token;
+         using var masterCts = new CancellationTokenSource();
+         var masterCt = masterCts.Token;
 
          var attempt = 0;
          var maxRetries = Options.Reconnecting.MaxRetries;
 
-         while (!reconnectCt.IsCancellationRequested)
+         while (!masterCt.IsCancellationRequested && State is ResilientClientState.Reconnecting)
          {
             attempt++;
             if (maxRetries > 0 && attempt > maxRetries)
@@ -715,21 +721,37 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                };
 
                await Events.OnReconnecting.ExecuteAsync(
-                  reconnectContext, HandlerExecutionStrategy.SequentialContinueOnError);
+                  reconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, masterCt);
             }
 
             try
             {
-               await Task.Delay(Options.Reconnecting.RetryInterval, reconnectCt);
+               await Task.Delay(Options.Reconnecting.RetryInterval, masterCt);
             }
             catch (OperationCanceledException)
             {
                break;
             }
 
-            var result = await ConnectInternalAsync(_remoteEndPoint, reconnectCt);
+            if (State is not ResilientClientState.Reconnecting || Volatile.Read(ref _disposedState) == 1)
+            {
+               break;
+            }
+
+            _connectionCts?.Dispose();
+            _connectionCts = CancellationTokenSource.CreateLinkedTokenSource(masterCt);
+            var attemptCt = _connectionCts.Token;
+
+            var result = await ConnectInternalAsync(_remoteEndPoint, attemptCt);
             if (!result.Failed)
             {
+               if (Volatile.Read(ref _disposedState) == 1 || State is ResilientClientState.Disconnecting or ResilientClientState.Disconnected)
+               {
+                  await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
+                  State = ResilientClientState.Disconnected;
+                  return;
+               }
+
                return; // Reconnect successful!
             }
          }
