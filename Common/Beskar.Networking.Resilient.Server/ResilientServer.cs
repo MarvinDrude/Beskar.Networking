@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Threading;
@@ -14,6 +15,7 @@ using Beskar.Networking.Resilient.Server.Models;
 using Beskar.Networking.Resilient.Server.Services;
 
 namespace Beskar.Networking.Resilient.Server;
+
 
 public sealed class ResilientServer<TFrame>
    : IResilientServer<TFrame>
@@ -224,6 +226,9 @@ public sealed class ResilientServer<TFrame>
       }
 
       ResilientServerClient<TFrame>? client = null;
+      var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      var combinedToken = combinedCts.Token;
+
       try
       {
          var controlStreamResult = await session.AcceptStreamAsync(ct);
@@ -243,12 +248,10 @@ public sealed class ResilientServer<TFrame>
             return;
          }
 
-         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-         var combinedToken = combinedCts.Token;
-
+         Task? acceptMultiplexedTask = null;
          if (session.IsSupportingMultiplexing)
          {
-            _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(client, connectionContext, combinedToken));
+            acceptMultiplexedTask = Task.Run(() => RunAcceptMultiplexedStreamsTask(client, connectionContext, combinedToken));
          }
 
          var listenTask = Task.Run(async () =>
@@ -263,9 +266,9 @@ public sealed class ResilientServer<TFrame>
                {
                   await combinedCts.CancelAsync();
                }
-               catch (ObjectDisposedException)
+               catch
                {
-                  // expected if RunClientTask exited and disposed combinedCts
+                  // expected
                }
             }
          });
@@ -282,6 +285,7 @@ public sealed class ResilientServer<TFrame>
             // timeout or cancellation
          }
 
+         var handshakeSuccess = false;
          if (connectPayload != null)
          {
             client.ConnectPayload = connectPayload;
@@ -298,14 +302,19 @@ public sealed class ResilientServer<TFrame>
                await Events.OnConnect.ExecuteAsync(
                   connectContext, HandlerExecutionStrategy.SequentialContinueOnError, combinedToken);
 
-               if (connectContext.IsDenied)
+               if (!connectContext.IsDenied)
                {
-                  client.SetHandshakeResult(false);
-                  await client.DisconnectAsync();
-                  return;
+                  handshakeSuccess = true;
                }
             }
+            else
+            {
+               handshakeSuccess = true;
+            }
+         }
 
+         if (handshakeSuccess)
+         {
             var connectAckFrame = TFrame.CreateFrame(ResilientFrameKind.ConnectAcknowledged);
             await client.SendAsync(connectAckFrame, combinedToken);
             client.SetHandshakeResult(true);
@@ -314,10 +323,23 @@ public sealed class ResilientServer<TFrame>
          {
             client.SetHandshakeResult(false);
             await client.DisconnectAsync();
-            return;
+
+            try
+            {
+               await combinedCts.CancelAsync();
+            }
+            catch
+            {
+               // ignored
+            }
          }
 
          await listenTask;
+
+         if (acceptMultiplexedTask != null)
+         {
+            await acceptMultiplexedTask;
+         }
       }
       catch (Exception)
       {
@@ -325,11 +347,19 @@ public sealed class ResilientServer<TFrame>
       }
       finally
       {
+         try
+         {
+            await combinedCts.CancelAsync();
+         }
+         catch
+         {
+            // ignored
+         }
+
          if (client != null)
          {
             client.SetHandshakeResult(false);
             Clients.TryRemove(client.Id, out _);
-            await client.DisposeAsync();
 
             if (Events.ClientDisconnected.Count > 0)
             {
@@ -338,24 +368,25 @@ public sealed class ResilientServer<TFrame>
                   Client = client
                };
 
-               _ = Task.Run(async () =>
+               try
                {
-                  try
-                  {
-                     await Events.ClientDisconnected.ExecuteAsync(
-                        disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, CancellationToken.None);
-                  }
-                  catch
-                  {
-                     // background exception protection
-                  }
-               });
+                  await Events.ClientDisconnected.ExecuteAsync(
+                     disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError, CancellationToken.None);
+               }
+               catch
+               {
+                  // background exception protection
+               }
             }
+
+            await client.DisposeAsync();
          }
          else
          {
             await session.DisposeAsync();
          }
+
+         combinedCts.Dispose();
       }
    }
 
@@ -390,19 +421,38 @@ public sealed class ResilientServer<TFrame>
       NetworkServerConnectionContext connectionContext,
       CancellationToken ct)
    {
-      while (!ct.IsCancellationRequested && client.IsConnected)
+      var streamTasks = new ConcurrentBag<Task>();
+      try
       {
-         try
+         while (!ct.IsCancellationRequested && client.IsConnected)
          {
-            var streamResult = await client.Session.AcceptStreamAsync(ct);
-            if (streamResult.Failed) break;
+            try
+            {
+               var streamResult = await client.Session.AcceptStreamAsync(ct);
+               if (streamResult.Failed) break;
 
-            var streamContext = new NetworkServerStreamContext(connectionContext, streamResult.Success);
-            _ = Task.Run(() => RunClientListenTask(client, streamContext, ct), ct);
+               var streamContext = new NetworkServerStreamContext(connectionContext, streamResult.Success);
+               var t = Task.Run(() => RunClientListenTask(client, streamContext, ct), ct);
+               streamTasks.Add(t);
+            }
+            catch
+            {
+               break;
+            }
          }
-         catch
+      }
+      finally
+      {
+         if (!streamTasks.IsEmpty)
          {
-            break;
+            try
+            {
+               await Task.WhenAll(streamTasks);
+            }
+            catch
+            {
+               // protection against stream exceptions
+            }
          }
       }
    }

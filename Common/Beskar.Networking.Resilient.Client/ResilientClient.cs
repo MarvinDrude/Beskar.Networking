@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Threading.Channels;
 using Beskar.Memory.Results;
@@ -319,6 +320,25 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          }
       }
 
+      if (raiseDisconnectedEvent && Events.OnDisconnected.Count > 0)
+      {
+         var disconnectContext = new ResilientClientDisconnectedContext<TFrame>
+         {
+            Client = this,
+            DisconnectPayload = DisconnectPayload
+         };
+
+         try
+         {
+            await Events.OnDisconnected.ExecuteAsync(
+               disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError);
+         }
+         catch
+         {
+            // background protection
+         }
+      }
+
       if (ControlStream != null)
       {
          try
@@ -341,28 +361,6 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          {
             // ignored
          }
-      }
-
-      if (raiseDisconnectedEvent && Events.OnDisconnected.Count > 0)
-      {
-         var disconnectContext = new ResilientClientDisconnectedContext<TFrame>
-         {
-            Client = this,
-            DisconnectPayload = DisconnectPayload
-         };
-
-         _ = Task.Run(async () =>
-         {
-            try
-            {
-               await Events.OnDisconnected.ExecuteAsync(
-                  disconnectContext, HandlerExecutionStrategy.SequentialContinueOnError);
-            }
-            catch
-            {
-               // background protection
-            }
-         });
       }
    }
 
@@ -507,18 +505,37 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
    private async Task RunAcceptMultiplexedStreamsTask(CancellationToken ct)
    {
-      while (!ct.IsCancellationRequested && Session != null && !Session.SessionClosedToken.IsCancellationRequested)
+      var streamTasks = new ConcurrentBag<Task>();
+      try
       {
-         try
+         while (!ct.IsCancellationRequested && Session != null && !Session.SessionClosedToken.IsCancellationRequested)
          {
-            var streamResult = await Session.AcceptStreamAsync(ct);
-            if (streamResult.Failed) break;
+            try
+            {
+               var streamResult = await Session.AcceptStreamAsync(ct);
+               if (streamResult.Failed) break;
 
-            _ = Task.Run(() => RunClientListenTask(streamResult.Success, ct), ct);
+               var t = Task.Run(() => RunClientListenTask(streamResult.Success, ct), ct);
+               streamTasks.Add(t);
+            }
+            catch
+            {
+               break;
+            }
          }
-         catch
+      }
+      finally
+      {
+         if (!streamTasks.IsEmpty)
          {
-            break;
+            try
+            {
+               await Task.WhenAll(streamTasks);
+            }
+            catch
+            {
+               // protection against stream exceptions
+            }
          }
       }
    }
