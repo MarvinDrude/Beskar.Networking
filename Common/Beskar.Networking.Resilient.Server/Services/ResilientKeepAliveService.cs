@@ -92,17 +92,20 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
 
                if (now - client.LastActivityAt > timeout)
                {
-                  _ = Task.Run(async () =>
+                  if (_server.Clients.TryRemove(client.Id, out _))
                   {
-                     try
+                     _ = Task.Run(async () =>
                      {
-                        await client.DisconnectAsync();
-                     }
-                     catch
-                     {
-                        // ignored
-                     }
-                  }, CancellationToken.None);
+                        try
+                        {
+                           await client.DisconnectAsync();
+                        }
+                        catch
+                        {
+                           // ignored
+                        }
+                     }, CancellationToken.None);
+                  }
                }
             }
          }

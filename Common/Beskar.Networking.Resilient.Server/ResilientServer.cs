@@ -557,12 +557,7 @@ public sealed class ResilientServer<TFrame>
                {
                   if (Events.FrameReceived.Count > 0)
                   {
-                     var handshakeSuccess = isControlFrame || client.IsHandshakeCompleted ||
-                        (client.HandshakeCompletedTask.IsCompleted
-                           ? client.HandshakeCompletedTask.Result
-                           : await client.HandshakeCompletedTask);
-
-                     if (handshakeSuccess)
+                     if (isControlFrame)
                      {
                         var eventContext = new ResilientFrameReceivedContext<TFrame>
                         {
@@ -573,6 +568,45 @@ public sealed class ResilientServer<TFrame>
 
                         await Events.FrameReceived.ExecuteAsync(
                            eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                     }
+                     else if (client.IsHandshakeCompleted)
+                     {
+                        var eventContext = new ResilientFrameReceivedContext<TFrame>
+                        {
+                           Client = client,
+                           Stream = streamContext.Stream,
+                           Frame = frame
+                        };
+
+                        await Events.FrameReceived.ExecuteAsync(
+                           eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                     }
+                     else if (!client.HandshakeCompletedTask.IsCompleted)
+                     {
+                        var localFrame = frame;
+                        var localStream = streamContext.Stream;
+                        _ = Task.Run(async () =>
+                        {
+                           try
+                           {
+                              if (await client.HandshakeCompletedTask)
+                              {
+                                 var eventContext = new ResilientFrameReceivedContext<TFrame>
+                                 {
+                                    Client = client,
+                                    Stream = localStream,
+                                    Frame = localFrame
+                                 };
+
+                                 await Events.FrameReceived.ExecuteAsync(
+                                    eventContext, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+                              }
+                           }
+                           catch
+                           {
+                              // background protection
+                           }
+                        }, ct);
                      }
                   }
                }

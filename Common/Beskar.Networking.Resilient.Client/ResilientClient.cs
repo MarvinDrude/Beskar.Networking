@@ -64,6 +64,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private INetworkStream? _controlStream;
 
    private CancellationTokenSource? _connectionCts;
+   private CancellationTokenSource? _reconnectCts;
+
    private readonly ResilientClientKeepAliveService<TFrame> _keepAliveService;
    private Channel<IResilientPayload> _handshakeChannel = CreateHandshakeChannel();
 
@@ -106,8 +108,6 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       _remoteEndPoint = endPoint;
       State = ResilientClientState.Connecting;
 
-      _handshakeChannel = CreateHandshakeChannel();
-
       _connectionCts?.Dispose();
       _connectionCts = new CancellationTokenSource();
 
@@ -139,13 +139,16 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       return ConnectAsync(_remoteEndPoint, cancellationToken);
    }
 
-   private async Task<VoidResult<StringError>> ConnectInternalAsync(EndPoint endPoint, CancellationToken ct)
+   private async Task<VoidResult<StringError>> ConnectInternalAsync(EndPoint endPoint, CancellationToken ct, bool isReconnect = false)
    {
       try
       {
+         var handshakeChannel = CreateHandshakeChannel();
+
          var connectResult = await NetworkClient.ConnectAsync(endPoint, ct);
          if (connectResult.Failed)
          {
+            if (!isReconnect) State = ResilientClientState.Disconnected;
             return new StringError($"Transport connect failed: {connectResult.Error.Message}");
          }
 
@@ -155,13 +158,14 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          if (streamResult.Failed)
          {
             await session.DisposeAsync();
+            if (!isReconnect) State = ResilientClientState.Disconnected;
             return new StringError($"Control stream open failed: {streamResult.Error.Message}");
          }
 
          _controlStream = streamResult.Success;
 
          // Start background listen task on control stream
-         _ = Task.Run(() => RunClientListenTask(_controlStream, _connectionCts!.Token));
+         _ = Task.Run(() => RunClientListenTask(_controlStream, handshakeChannel, _connectionCts!.Token));
 
          if (session.IsSupportingMultiplexing)
          {
@@ -181,11 +185,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          await SendAsync(connectFrame, _controlStream, ct);
 
          // Wait for handshake completion (ConnectAcknowledged or Authenticate challenge)
-         var handshakeSuccess = await ProcessHandshakeAsync(ct);
+         var handshakeSuccess = await ProcessHandshakeAsync(handshakeChannel, ct);
          if (!handshakeSuccess)
          {
             await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
-            State = ResilientClientState.Disconnected;
+            if (!isReconnect) State = ResilientClientState.Disconnected;
 
             return new StringError("Handshake failed, timed out, or denied by server.");
          }
@@ -205,9 +209,10 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
          if (Events.OnConnected.Count > 0)
          {
+            using var connectedCts = CancellationTokenSource.CreateLinkedTokenSource(_connectionCts!.Token);
             await Events.OnConnected.ExecuteAsync(
                new ResilientClientConnectedContext<TFrame> { Client = this },
-               HandlerExecutionStrategy.SequentialContinueOnError, ct);
+               HandlerExecutionStrategy.SequentialContinueOnError, connectedCts.Token);
          }
 
          return true;
@@ -215,14 +220,14 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       catch (Exception ex)
       {
          await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
-         State = ResilientClientState.Disconnected;
+         if (!isReconnect) State = ResilientClientState.Disconnected;
          return new StringError($"Connect error: {ex.Message}");
       }
    }
 
-   private async ValueTask<bool> ProcessHandshakeAsync(CancellationToken ct)
+   private async ValueTask<bool> ProcessHandshakeAsync(Channel<IResilientPayload> handshakeChannel, CancellationToken ct)
    {
-      var reader = _handshakeChannel.Reader;
+      var reader = handshakeChannel.Reader;
 
       try
       {
@@ -307,7 +312,9 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
             var frame = TFrame.CreateFrame(ResilientFrameKind.Disconnect,
                new ReadOnlySequence<byte>(writer.WrittenMemory));
+
             await SendAsync(frame, ControlStream);
+            await ControlStream.Transport.Output.CompleteAsync();
          }
          catch
          {
@@ -320,6 +327,18 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          try
          {
             await _connectionCts.CancelAsync();
+         }
+         catch
+         {
+            // ignored
+         }
+      }
+
+      if (_reconnectCts != null)
+      {
+         try
+         {
+            await _reconnectCts.CancelAsync();
          }
          catch
          {
@@ -357,6 +376,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
             // ignored
          }
       }
+
+      _controlStream = null;
 
       if (Session != null)
       {
@@ -522,7 +543,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                var streamResult = await Session.AcceptStreamAsync(ct);
                if (streamResult.Failed) break;
 
-               var t = Task.Run(() => RunClientListenTask(streamResult.Success, ct), ct);
+               var t = Task.Run(() => RunClientListenTask(streamResult.Success, null, ct), ct);
 
                streamTasks.TryAdd(t, 0);
                _ = t.ContinueWith(_ => streamTasks.TryRemove(t, out var _), TaskScheduler.Default);
@@ -549,7 +570,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
    }
 
-   private async Task RunClientListenTask(INetworkStream stream, CancellationToken ct)
+   private async Task RunClientListenTask(INetworkStream stream, Channel<IResilientPayload>? handshakeChannel, CancellationToken ct)
    {
       try
       {
@@ -597,18 +618,18 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                }
                else if (frameKind is ResilientFrameKind.ConnectAcknowledged)
                {
-                  if (State is ResilientClientState.Connecting)
+                  if (State is ResilientClientState.Connecting or ResilientClientState.Reconnecting)
                   {
-                     _handshakeChannel.Writer.TryWrite(new ConnectAckPayloadMarker());
+                     handshakeChannel?.Writer.TryWrite(new ConnectAckPayloadMarker());
                   }
                }
                else if (frameKind is ResilientFrameKind.Authenticate)
                {
-                  if (State is ResilientClientState.Connecting)
+                  if (State is ResilientClientState.Connecting or ResilientClientState.Reconnecting)
                   {
                      if (frame.TryGetPayload<AuthenticatePacketPayload>(out var authPayload) && authPayload != null)
                      {
-                        _handshakeChannel.Writer.TryWrite(authPayload);
+                        handshakeChannel?.Writer.TryWrite(authPayload);
                      }
                   }
                }
@@ -667,10 +688,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
       finally
       {
-         if (stream == ControlStream)
-         {
-            _handshakeChannel.Writer.TryComplete();
-         }
+         handshakeChannel?.Writer.TryComplete();
          await stream.DisposeAsync();
       }
    }
@@ -697,8 +715,9 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          State = ResilientClientState.Reconnecting;
          await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
 
-         using var masterCts = new CancellationTokenSource();
-         var masterCt = masterCts.Token;
+         _reconnectCts?.Dispose();
+         _reconnectCts = new CancellationTokenSource();
+         var masterCt = _reconnectCts.Token;
 
          var attempt = 0;
          var maxRetries = Options.Reconnecting.MaxRetries;
@@ -742,7 +761,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
             _connectionCts = CancellationTokenSource.CreateLinkedTokenSource(masterCt);
             var attemptCt = _connectionCts.Token;
 
-            var result = await ConnectInternalAsync(_remoteEndPoint, attemptCt);
+            var result = await ConnectInternalAsync(_remoteEndPoint, attemptCt, isReconnect: true);
             if (!result.Failed)
             {
                if (Volatile.Read(ref _disposedState) == 1 || State is ResilientClientState.Disconnecting or ResilientClientState.Disconnected)
@@ -761,6 +780,9 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
       finally
       {
+         _reconnectCts?.Dispose();
+         _reconnectCts = null;
+
          Interlocked.Exchange(ref _isReconnectingState, 0);
       }
    }
