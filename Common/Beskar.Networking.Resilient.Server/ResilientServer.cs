@@ -149,9 +149,6 @@ public sealed class ResilientServer<TFrame>
          // already disposed
       }
 
-      await _keepAliveService.StopAsync();
-      await Clients.DisconnectAllAsync();
-
       var listeners = _listeners.ToArray();
       foreach (var listener in listeners)
       {
@@ -164,6 +161,9 @@ public sealed class ResilientServer<TFrame>
             // background exception protection
          }
       }
+
+      await _keepAliveService.StopAsync();
+      await Clients.DisconnectAllAsync();
 
       State = ResilientServerState.Stopped;
       TraceLogger.LogServerInfo("ResilientServer: Server stopped.");

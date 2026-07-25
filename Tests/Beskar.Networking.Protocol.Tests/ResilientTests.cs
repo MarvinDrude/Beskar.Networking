@@ -3,6 +3,11 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Errors;
+using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Protocol.Frames;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Protocol.Utilities;
@@ -857,4 +862,146 @@ public class ResilientTests
       await client.DisposeAsync();
       await server.DisposeAsync();
    }
+
+   [Test]
+   public async Task AutoReconnect_ShouldContinueRetrying_WhenHandshakeFails()
+   {
+      var endpoint = new MemoryEndPoint($"reconnect_handshake_fail_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+      await server.StartAsync();
+
+      var clientOptions = new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            RetryInterval = TimeSpan.FromMilliseconds(50),
+            MaxRetries = 5
+         }
+      };
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+      var reconnectedTcs = new TaskCompletionSource();
+
+      await client.ConnectAsync(endpoint);
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Stop first server to trigger reconnect
+      await server.StopAsync();
+      await server.DisposeAsync();
+
+      // Setup a second server that will deny the first reconnect attempt but accept the second
+      var listenerSec = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var serverSec = new ResilientServer<BeskarPacket>([listenerSec], new ResilientServerOptions());
+
+      var connectCount = 0;
+      serverSec.Events.OnConnect.Add((ctx, ct) =>
+      {
+         var count = Interlocked.Increment(ref connectCount);
+         if (count == 1)
+         {
+            ctx.Deny();
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      client.Events.OnConnected.Add((_, _) =>
+      {
+         if (client.State == ResilientClientState.Connected)
+         {
+            reconnectedTcs.TrySetResult();
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      await serverSec.StartAsync();
+
+      // If the loop crashed on the denied handshake, this will timeout
+      await reconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(6));
+
+      await Assert.That(client.IsConnected).IsTrue();
+      await Assert.That(connectCount).IsEqualTo(2);
+
+      await client.DisposeAsync();
+      await serverSec.StopAsync();
+      await serverSec.DisposeAsync();
+   }
+
+   [Test]
+   public async Task AutoReconnect_ShouldContinueRetrying_WhenConnectionExceptionThrown()
+   {
+      var endpoint = new MemoryEndPoint($"reconnect_exception_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+      await server.StartAsync();
+
+      var clientOptions = new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            RetryInterval = TimeSpan.FromMilliseconds(50),
+            MaxRetries = 5
+         }
+      };
+
+      var rawClient = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+      var wrapperClient = new ExceptionThrowingNetworkClient(rawClient.NetworkClient);
+      var client = new ResilientClient<BeskarPacket>(wrapperClient, clientOptions);
+
+      var reconnectedTcs = new TaskCompletionSource();
+
+      await client.ConnectAsync(endpoint);
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Stop server to trigger reconnect
+      await server.StopAsync();
+
+      client.Events.OnConnected.Add((_, _) =>
+      {
+         if (client.State == ResilientClientState.Connected)
+         {
+            reconnectedTcs.TrySetResult();
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      // Start server again so the second attempt succeeds
+      await server.StartAsync();
+
+      // If the loop crashed on the exception (the first attempt throws), this will timeout
+      await reconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(6));
+
+      await Assert.That(client.IsConnected).IsTrue();
+
+      await client.DisposeAsync();
+      await server.StopAsync();
+      await server.DisposeAsync();
+   }
+
+   private class ExceptionThrowingNetworkClient(INetworkClient inner) : INetworkClient
+   {
+      public TransportKind Transport => inner.Transport;
+      public bool IsConnected => inner.IsConnected;
+      public INetworkSession? Session => inner.Session;
+      public EndPoint? LocalAddress => inner.LocalAddress;
+      public EndPoint? RemoteAddress => inner.RemoteAddress;
+      public NetworkClientStats Stats => inner.Stats;
+      private int _connectCount;
+
+      public ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(EndPoint endPoint, CancellationToken ct = default)
+      {
+         var count = Interlocked.Increment(ref _connectCount);
+         if (count == 2)
+         {
+            throw new SocketException((int)SocketError.ConnectionRefused);
+         }
+         return inner.ConnectAsync(endPoint, ct);
+      }
+
+      public ValueTask DisconnectAsync(CancellationToken ct = default) => inner.DisconnectAsync(ct);
+      public ValueTask DisposeAsync() => inner.DisposeAsync();
+   }
 }
+
