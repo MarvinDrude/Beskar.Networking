@@ -337,8 +337,8 @@ public sealed class ResilientServer<TFrame>
             var connectAckFrame = TFrame.CreateFrame(ResilientFrameKind.ConnectAcknowledged);
             await client.SendAsync(connectAckFrame, combinedToken);
 
-            client.SetHandshakeResult(true);
             client.DrainingTask = ProcessBufferedPreHandshakeFramesAsync(client, combinedToken);
+            client.SetHandshakeResult(true);
             TraceLogger.LogServerInfo("ResilientServer: Handshake succeeded for client {0} ({1}). Sent ConnectAck.", client.Id, session.RemoteAddress);
          }
          else

@@ -1024,6 +1024,51 @@ public class ResilientTests
       await server.DisposeAsync();
    }
 
+   [Test]
+   public async Task ConnectAsync_ShouldSynchronizeKeepAliveIntervalWithConnectPayload()
+   {
+      var endpoint = new MemoryEndPoint($"keepalive_sync_test_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      
+      var serverOptions = new ResilientServerOptions
+      {
+         KeepAlive = new ResilientServerKeepAliveOptions
+         {
+            Mode = ResilientServerKeepAliveMode.ClientConfigured
+         }
+      };
+      var server = new ResilientServer<BeskarPacket>([listener], serverOptions);
+      await server.StartAsync();
+
+      var clientOptions = new ResilientClientOptions
+      {
+         KeepAlive = new ResilientClientKeepAliveOptions
+         {
+            Enabled = true,
+            KeepAliveInterval = TimeSpan.FromSeconds(45)
+         }
+      };
+      
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+      
+      await client.ConnectAsync(endpoint);
+      
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Verify that KeepAliveSeconds was automatically populated on the client side
+      await Assert.That(client.Options.ConnectPayload.KeepAliveSeconds).IsEqualTo((ushort)45);
+
+      // Verify that the server successfully received the keep alive seconds
+      var serverClient = server.Clients.GetAll().First();
+      await Assert.That(serverClient.ConnectPayload).IsNotNull();
+      await Assert.That(serverClient.ConnectPayload!.KeepAliveSeconds).IsEqualTo((ushort)45);
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
    private class ExceptionThrowingNetworkClient(INetworkClient inner) : INetworkClient
    {
       public TransportKind Transport => inner.Transport;
