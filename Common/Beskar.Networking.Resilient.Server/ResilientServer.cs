@@ -181,7 +181,9 @@ public sealed class ResilientServer<TFrame>
 
             _ = Task.Factory.StartNew(
                () => RunClientTask(listener, sessionResult.Success, ct),
-               TaskCreationOptions.PreferFairness);
+               CancellationToken.None,
+               TaskCreationOptions.PreferFairness,
+               TaskScheduler.Default);
          }
          catch (OperationCanceledException)
          {
@@ -475,9 +477,10 @@ public sealed class ResilientServer<TFrame>
                {
                   if (Events.FrameReceived.Count > 0)
                   {
-                     var handshakeSuccess = client.HandshakeCompletedTask.IsCompleted
-                        ? client.HandshakeCompletedTask.Result
-                        : await client.HandshakeCompletedTask;
+                     var handshakeSuccess = client.IsHandshakeCompleted ||
+                        (client.HandshakeCompletedTask.IsCompleted
+                           ? client.HandshakeCompletedTask.Result
+                           : await client.HandshakeCompletedTask);
 
                      if (handshakeSuccess)
                      {

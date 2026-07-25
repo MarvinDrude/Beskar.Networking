@@ -276,4 +276,63 @@ public class ResilientClientServerIntegrationTests
       await client.DisposeAsync();
       await server.DisposeAsync();
    }
+
+   [Test]
+   public async Task ResilientServerBuilder_UseUds_ShouldConfigureListener()
+   {
+      var socketPath = Path.Combine(Path.GetTempPath(), $"test_resilient_{Guid.NewGuid():N}.sock");
+      try
+      {
+         var serverOptions = new ResilientServerOptions();
+         var builder = new ResilientServerBuilder<BeskarPacket>(serverOptions);
+         builder.UseUds(socketPath);
+         var server = builder.Build();
+
+         await Assert.That(server.Listeners.Count).IsEqualTo(1);
+         await Assert.That(server.Listeners[0].LocalAddress.ToString()).IsEqualTo(socketPath);
+
+         var startResult = await server.StartAsync();
+         await Assert.That(startResult.Failed).IsFalse();
+
+         await server.StopAsync();
+         await server.DisposeAsync();
+      }
+      finally
+      {
+         if (File.Exists(socketPath))
+         {
+            try { File.Delete(socketPath); } catch { }
+         }
+      }
+   }
+
+   [Test]
+   public async Task ResilientClient_OnDisconnected_ShouldFireExactlyOnceOnDisconnect()
+   {
+      var endpoint = new MemoryEndPoint($"resilient_test_disconnect_once_{Guid.NewGuid()}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+
+      await server.StartAsync();
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>();
+      var disconnectCount = 0;
+      client.Events.OnDisconnected.Add((_, _) =>
+      {
+         Interlocked.Increment(ref disconnectCount);
+         return ValueTask.CompletedTask;
+      });
+
+      await client.ConnectAsync(endpoint);
+      await Assert.That(client.IsConnected).IsTrue();
+
+      await client.DisconnectAsync();
+      await Task.Delay(100);
+
+      await Assert.That(disconnectCount).IsEqualTo(1);
+
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
 }

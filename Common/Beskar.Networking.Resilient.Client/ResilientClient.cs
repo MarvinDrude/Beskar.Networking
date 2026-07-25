@@ -49,13 +49,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
    public DateTimeOffset ConnectedAt { get; private set; }
 
-   public DateTimeOffset LastActivityAt => _lastActivityAt;
+   public DateTimeOffset LastActivityAt => new(Volatile.Read(ref _lastActivityTicks), TimeSpan.Zero);
 
    public DisconnectPacketPayload? DisconnectPayload { get; internal set; }
 
    private int _disposedState;
    private volatile int _state = (int)ResilientClientState.Disconnected;
-   private DateTimeOffset _lastActivityAt = DateTimeOffset.UtcNow;
+   private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
    private EndPoint? _remoteEndPoint;
    private INetworkStream? _controlStream;
 
@@ -79,7 +79,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    /// </summary>
    public void TouchActivity()
    {
-      _lastActivityAt = DateTimeOffset.UtcNow;
+      Interlocked.Exchange(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
    }
 
    /// <summary>
@@ -174,7 +174,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          var handshakeSuccess = await ProcessHandshakeAsync(ct);
          if (!handshakeSuccess)
          {
-            await DisconnectInternalAsync(null);
+            await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
             State = ResilientClientState.Disconnected;
             return new StringError("Handshake failed or denied by server.");
          }
@@ -196,7 +196,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       }
       catch (Exception ex)
       {
-         await DisconnectInternalAsync(null);
+         await DisconnectInternalAsync(null, raiseDisconnectedEvent: false);
          State = ResilientClientState.Disconnected;
          return new StringError($"Connect error: {ex.Message}");
       }
@@ -257,13 +257,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
       State = ResilientClientState.Disconnecting;
 
-      await DisconnectInternalAsync(disconnectPayload);
+      await DisconnectInternalAsync(disconnectPayload, raiseDisconnectedEvent: true);
 
       State = ResilientClientState.Disconnected;
       return true;
    }
 
-   private async ValueTask DisconnectInternalAsync(DisconnectPacketPayload? disconnectPayload)
+   private async ValueTask DisconnectInternalAsync(DisconnectPacketPayload? disconnectPayload, bool raiseDisconnectedEvent = true)
    {
       try
       {
@@ -333,7 +333,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          }
       }
 
-      if (Events.OnDisconnected.Count > 0)
+      if (raiseDisconnectedEvent && Events.OnDisconnected.Count > 0)
       {
          var disconnectContext = new ResilientClientDisconnectedContext<TFrame>
          {
@@ -561,13 +561,19 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                }
                else if (frameKind is ResilientFrameKind.ConnectAcknowledged)
                {
-                  _handshakeChannel.Writer.TryWrite(new ConnectAckPayloadMarker());
+                  if (State is ResilientClientState.Connecting)
+                  {
+                     _handshakeChannel.Writer.TryWrite(new ConnectAckPayloadMarker());
+                  }
                }
                else if (frameKind is ResilientFrameKind.Authenticate)
                {
-                  if (frame.TryGetPayload<AuthenticatePacketPayload>(out var authPayload) && authPayload != null)
+                  if (State is ResilientClientState.Connecting)
                   {
-                     _handshakeChannel.Writer.TryWrite(authPayload);
+                     if (frame.TryGetPayload<AuthenticatePacketPayload>(out var authPayload) && authPayload != null)
+                     {
+                        _handshakeChannel.Writer.TryWrite(authPayload);
+                     }
                   }
                }
                else if (frameKind is ResilientFrameKind.Disconnect)
@@ -640,12 +646,12 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       if (!Options.Reconnecting.AutoReconnect || _remoteEndPoint == null)
       {
          State = ResilientClientState.Disconnected;
-         await DisconnectInternalAsync(null);
+         await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
          return;
       }
 
       State = ResilientClientState.Reconnecting;
-      await DisconnectInternalAsync(null);
+      await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
 
       _connectionCts?.Dispose();
       _connectionCts = new CancellationTokenSource();

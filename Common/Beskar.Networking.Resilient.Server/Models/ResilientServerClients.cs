@@ -42,11 +42,11 @@ public sealed class ResilientServerClients<TFrame> : IAsyncDisposable
    }
 
    /// <summary>
-   /// Returns a snapshot list of all connected clients.
+   /// Returns a read-only collection of all connected clients without allocating a new array.
    /// </summary>
    public IReadOnlyCollection<ResilientServerClient<TFrame>> GetAll()
    {
-      return [.. _clients.Values];
+      return (IReadOnlyCollection<ResilientServerClient<TFrame>>)_clients.Values;
    }
 
    /// <summary>

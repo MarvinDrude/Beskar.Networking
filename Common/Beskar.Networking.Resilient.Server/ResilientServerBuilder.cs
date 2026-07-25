@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Protocol;
 using Beskar.Networking.Transports.Memory;
@@ -115,24 +116,24 @@ public class ResilientServerBuilder<TFrame>(ResilientServerOptions options)
    /// <summary>
    /// Configures the server to listen on the specified endpoint using Unix Domain Sockets (UDS).
    /// </summary>
-   /// <param name="endPoint">The network endpoint to listen on.</param>
+   /// <param name="endPoint">The UnixDomainSocketEndPoint to listen on.</param>
    /// <param name="options">Optional UDS transport options.</param>
    /// <returns>The builder instance.</returns>
-   public ResilientServerBuilder<TFrame> UseUds(IPEndPoint endPoint, UdsTransportOptions? options = null)
+   public ResilientServerBuilder<TFrame> UseUds(UnixDomainSocketEndPoint endPoint, UdsTransportOptions? options = null)
    {
       _listeners.Add(new UdsNetworkListener(endPoint, options ?? new UdsTransportOptions()));
       return this;
    }
 
    /// <summary>
-   /// Configures the server to listen on the specified port using Unix Domain Sockets (UDS) with IPAddress.Any.
+   /// Configures the server to listen on the specified socket path using Unix Domain Sockets (UDS).
    /// </summary>
-   /// <param name="port">The port to listen on.</param>
+   /// <param name="socketPath">The Unix Domain Socket path to listen on.</param>
    /// <param name="options">Optional UDS transport options.</param>
    /// <returns>The builder instance.</returns>
-   public ResilientServerBuilder<TFrame> UseUds(int port, UdsTransportOptions? options = null)
+   public ResilientServerBuilder<TFrame> UseUds(string socketPath, UdsTransportOptions? options = null)
    {
-      return UseUds(new IPEndPoint(IPAddress.Any, port), options);
+      return UseUds(new UnixDomainSocketEndPoint(socketPath), options);
    }
 
    /// <summary>

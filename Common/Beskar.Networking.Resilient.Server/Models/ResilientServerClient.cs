@@ -54,12 +54,21 @@ public sealed class ResilientServerClient<TFrame>(
    /// <summary>
    /// UTC timestamp of the last activity (packet received or sent).
    /// </summary>
-   public DateTimeOffset LastActivityAt => _lastActivityAt;
+   public DateTimeOffset LastActivityAt => new(Volatile.Read(ref _lastActivityTicks), TimeSpan.Zero);
 
    /// <summary>
    /// Indicates whether the underlying transport session is active.
    /// </summary>
    public bool IsConnected => !Session.SessionClosedToken.IsCancellationRequested;
+
+   /// <summary>
+   /// Indicates whether the handshake and OnConnect pipeline have completed successfully.
+   /// </summary>
+   public bool IsHandshakeCompleted
+   {
+      get => _isHandshakeCompleted;
+      internal set => _isHandshakeCompleted = value;
+   }
 
    /// <summary>
    /// Gets all active streams currently open on this client's session.
@@ -96,10 +105,12 @@ public sealed class ResilientServerClient<TFrame>(
 
    internal void SetHandshakeResult(bool success)
    {
+      _isHandshakeCompleted = success;
       _handshakeTcs.TrySetResult(success);
    }
 
-   private DateTimeOffset _lastActivityAt = DateTimeOffset.UtcNow;
+   private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
+   private volatile bool _isHandshakeCompleted;
    private int _disposedState;
 
    /// <summary>
@@ -107,7 +118,7 @@ public sealed class ResilientServerClient<TFrame>(
    /// </summary>
    public void TouchActivity()
    {
-      _lastActivityAt = DateTimeOffset.UtcNow;
+      Interlocked.Exchange(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
    }
 
    /// <summary>
