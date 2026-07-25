@@ -713,7 +713,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
             }
 
             reader.AdvanceTo(consumed, examined);
-            if (result.IsCompleted && buffer.IsEmpty)
+            if (result.IsCompleted)
             {
                if (stream == ControlStream &&
                    State is ResilientClientState.Connected or ResilientClientState.Reconnecting)
@@ -863,16 +863,17 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                   await DisconnectInternalAsync(null, raiseDisconnectedEvent: true);
                }
             }
-            finally
-            {
-               _reconnectCts?.Dispose();
-               _reconnectCts = null;
+             finally
+             {
+                _reconnectCts?.Dispose();
+                _reconnectCts = null;
 
-               lock (_reconnectLock)
-               {
-                  _isReconnecting = false;
-               }
-            }
+                lock (_reconnectLock)
+                {
+                   _isReconnecting = false;
+                   _reconnectTask = null;
+                }
+             }
          });
 
          return _reconnectTask;

@@ -640,7 +640,7 @@ public sealed class ResilientServer<TFrame>
             }
 
             reader.AdvanceTo(consumed, examined);
-            if (result.IsCompleted && buffer.IsEmpty) break;
+            if (result.IsCompleted) break;
          }
       }
       catch (OperationCanceledException)
@@ -653,7 +653,10 @@ public sealed class ResilientServer<TFrame>
       }
       finally
       {
-         client.ControlPayloadChannel.Writer.TryComplete();
+         if (streamContext.Stream == client.ControlStream)
+         {
+            client.ControlPayloadChannel.Writer.TryComplete();
+         }
          await streamContext.Stream.DisposeAsync();
       }
    }

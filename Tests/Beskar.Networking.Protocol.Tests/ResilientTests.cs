@@ -980,6 +980,50 @@ public class ResilientTests
       await server.DisposeAsync();
    }
 
+   [Test]
+   public async Task ClientReaderLoop_ShouldNotLoopInfinitely_WhenStreamCompletedWithPartialData()
+   {
+      var endpoint = new MemoryEndPoint($"partial_data_bug_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+      await server.StartAsync();
+
+      var clientOptions = new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = false
+         }
+      };
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+      await client.ConnectAsync(endpoint);
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Get the server client session
+      var serverClient = server.Clients.GetAll().First();
+      var output = serverClient.ControlStream.Transport.Output;
+
+      // Write incomplete packet (only 2 magic bytes, header requires more)
+      var memory = output.GetMemory(2);
+      memory.Span[0] = 0xBE;
+      memory.Span[1] = 0x5C;
+      output.Advance(2);
+      await output.FlushAsync();
+
+      // Complete output (closes connection abruptly with partial bytes in pipe buffer)
+      await output.CompleteAsync();
+
+      // If the infinite loop bug is present, the client will never exit the listen task,
+      // and therefore client.State will never become Disconnected.
+      var disconnected = await SpinWaitUntilAsync(() => client.State == ResilientClientState.Disconnected, TimeSpan.FromSeconds(3));
+      
+      await Assert.That(disconnected).IsTrue();
+
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
    private class ExceptionThrowingNetworkClient(INetworkClient inner) : INetworkClient
    {
       public TransportKind Transport => inner.Transport;
