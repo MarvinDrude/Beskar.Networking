@@ -260,6 +260,7 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
          session.DisconnectionTimestamp = DateTimeOffset.UtcNow;
          session.Client = null;
          session.IsConnected = false;
+         session.ResetIncomingInFlight();
 
          if (session.PendingWillMessage is not null)
          {

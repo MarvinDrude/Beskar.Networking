@@ -198,7 +198,20 @@ public sealed partial class ServerPacketHandler
                      PacketIdentifier = packet.PacketIdentifier,
                      ReasonCode = PubRecReasonCode.Success
                   };
-                  await stream.Send(in pubRec, client.ProtocolVersion, ct);
+
+                  try
+                  {
+                     await stream.Send(in pubRec, client.ProtocolVersion, ct);
+                  }
+                  catch
+                  {
+                     if (isNewRegistered)
+                     {
+                        session.RemoveQos2Packet(packet.PacketIdentifier);
+                        isNewRegistered = false;
+                     }
+                     throw;
+                  }
 
                   if (server.Events.OnAcknowledgePub.Count > 0)
                   {

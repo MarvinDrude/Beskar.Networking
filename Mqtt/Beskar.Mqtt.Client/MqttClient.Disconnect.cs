@@ -215,8 +215,18 @@ public sealed partial class MqttClient
                ReasonString = _disconnectReasonString,
             };
 
-            _ = Task.Run(() => Events.OnClientDisconnected.ExecuteAsync(
-               clientDisconnectedContext, HandlerExecutionStrategy.SequentialContinueOnError));
+            _ = Task.Run(async () =>
+            {
+               try
+               {
+                  await Events.OnClientDisconnected.ExecuteAsync(
+                     clientDisconnectedContext, HandlerExecutionStrategy.SequentialContinueOnError);
+               }
+               catch (Exception ex)
+               {
+                  TraceLogger.LogClientError("MqttClient: Error executing OnClientDisconnected handler: {0}", ex.Message);
+               }
+            });
          }
       }
    }

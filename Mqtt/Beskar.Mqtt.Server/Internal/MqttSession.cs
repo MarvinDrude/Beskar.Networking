@@ -241,4 +241,12 @@ public sealed partial class MqttSession : IAsyncDisposable
          }
       }
    }
+
+   internal void ResetIncomingInFlight()
+   {
+      lock (_incomingQos2PacketsLock)
+      {
+         _incomingInFlightCount = 0;
+      }
+   }
 }
