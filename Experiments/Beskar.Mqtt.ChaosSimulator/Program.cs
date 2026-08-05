@@ -85,10 +85,27 @@ public static class Program
       ConsoleRender.Info($"Configured stats reporting interval: {StatsIntervalSeconds}s");
 
       var isQuicSupported = QuicConnection.IsSupported;
+      if (isQuicSupported)
+      {
+         var excludeQuic = PromptInt("Exclude QUIC transport? (0 = No, 1 = Yes)", 0) == 1;
+         if (excludeQuic)
+         {
+            isQuicSupported = false;
+            ConsoleRender.Warning("QUIC transport has been excluded by user option.");
+         }
+      }
+
       if (!isQuicSupported)
-         ConsoleRender.Warning("QUIC is not supported on this platform/OS. QUIC simulation will be disabled.");
+      {
+         if (!QuicConnection.IsSupported)
+         {
+            ConsoleRender.Warning("QUIC is not supported on this platform/OS. QUIC simulation will be disabled.");
+         }
+      }
       else
+      {
          ConsoleRender.Success("QUIC transport is supported and enabled.");
+      }
 
       ConsoleRender.Info("Starting MQTT Server...");
       var serverBuilder = MqttServerFactory.CreateBuilder()
@@ -635,5 +652,19 @@ public static class Program
             $"[darkgray][{DateTime.Now:HH:mm:ss}][/] [[{tagColorName}]{source,-6}[/]] [[cyan]{transport,-5}[/]] [[magenta]{version,-4}[/]] [[yellow]{eventName,-10}[/]] {message}";
          ConsoleRender.WriteMarkupLine(markup);
       }
+   }
+
+   private static int PromptInt(string prompt, int defaultValue)
+   {
+      Console.Write($"{prompt} [default: {defaultValue}]: ");
+      var input = Console.ReadLine();
+      if (string.IsNullOrWhiteSpace(input)) return defaultValue;
+
+      if (int.TryParse(input, out var value)) return value;
+
+      Console.ForegroundColor = ConsoleColor.Red;
+      Console.WriteLine($"Invalid input, using default value: {defaultValue}");
+      Console.ResetColor();
+      return defaultValue;
    }
 }

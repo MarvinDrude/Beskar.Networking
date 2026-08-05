@@ -30,6 +30,7 @@
     <File Path="Documentation/Mqtt/PubSub.md" />
     <File Path="Documentation/Mqtt/QosLevels.md" />
     <File Path="Documentation/Mqtt/Reconnection.md" />
+    <File Path="Documentation/Mqtt/DisconnectionSafety.md" />
   </Folder>
   <Folder Name="/Documentation/Resilient/">
     <File Path="Documentation/Resilient/Authentication.md" />
@@ -49,6 +50,7 @@
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.GeneratedPubSub/Beskar.Mqtt.Example.GeneratedPubSub.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.QosLevels/Beskar.Mqtt.Example.QosLevels.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.Reconnection/Beskar.Mqtt.Example.Reconnection.csproj" />
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.DisconnectionSafety/Beskar.Mqtt.Example.DisconnectionSafety.csproj" />
   </Folder>
   <Folder Name="/Examples/Resilient/">
     <Project Path="Examples/Resilient/Beskar.Resilient.Chat.Common/Beskar.Resilient.Chat.Common.csproj" />

@@ -78,10 +78,27 @@ public static class Program
       ConsoleRender.Info($"Configured stats reporting interval: {StatsIntervalSeconds}s");
 
       var isQuicSupported = QuicConnection.IsSupported;
+      if (isQuicSupported)
+      {
+         var excludeQuic = PromptInt("Exclude QUIC transport? (0 = No, 1 = Yes)", 0) == 1;
+         if (excludeQuic)
+         {
+            isQuicSupported = false;
+            ConsoleRender.Warning("QUIC transport has been excluded by user option.");
+         }
+      }
+
       if (!isQuicSupported)
-         ConsoleRender.Warning("QUIC is not supported on this platform/OS. QUIC simulation will be disabled.");
+      {
+         if (!QuicConnection.IsSupported)
+         {
+            ConsoleRender.Warning("QUIC is not supported on this platform/OS. QUIC simulation will be disabled.");
+         }
+      }
       else
+      {
          ConsoleRender.Success("QUIC transport is supported and enabled.");
+      }
 
       ConsoleRender.Info("Starting Resilient Server...");
       var serverOptions = new ResilientServerOptions
