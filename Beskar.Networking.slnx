@@ -31,6 +31,9 @@
     <File Path="Documentation/Mqtt/QosLevels.md" />
     <File Path="Documentation/Mqtt/Reconnection.md" />
     <File Path="Documentation/Mqtt/DisconnectionSafety.md" />
+    <File Path="Documentation/Mqtt/LastWill.md" />
+    <File Path="Documentation/Mqtt/UserProperties.md" />
+    <File Path="Documentation/Mqtt/TopicAliases.md" />
   </Folder>
   <Folder Name="/Documentation/Resilient/">
     <File Path="Documentation/Resilient/Authentication.md" />
@@ -51,6 +54,9 @@
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.QosLevels/Beskar.Mqtt.Example.QosLevels.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.Reconnection/Beskar.Mqtt.Example.Reconnection.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.DisconnectionSafety/Beskar.Mqtt.Example.DisconnectionSafety.csproj" />
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.LastWill/Beskar.Mqtt.Example.LastWill.csproj" />
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.UserProperties/Beskar.Mqtt.Example.UserProperties.csproj" />
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.TopicAliases/Beskar.Mqtt.Example.TopicAliases.csproj" />
   </Folder>
   <Folder Name="/Examples/Resilient/">
     <Project Path="Examples/Resilient/Beskar.Resilient.Chat.Common/Beskar.Resilient.Chat.Common.csproj" />

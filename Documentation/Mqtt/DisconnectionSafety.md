@@ -138,7 +138,7 @@ For state variables (e.g. temperature, machine status, battery level), only the 
 
 ### Implementing a Buffered Client Wrapper
 
-Below is an overview of how to implement a `BufferedMqttClient` wrapper. (A complete, runnable implementation is available in [Program.cs](file:///c:/Users/marvi/RiderProjects/Beskar.Networking/Examples/Mqtt/Beskar.Mqtt.Example.DisconnectionSafety/Program.cs)).
+Below is an overview of how to implement a `BufferedMqttClient` wrapper. (A complete, runnable implementation is available in [Program.cs](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Examples/Mqtt/Beskar.Mqtt.Example.DisconnectionSafety/Program.cs)).
 
 ```csharp
 public class BufferedMqttClient
@@ -208,7 +208,7 @@ public class BufferedMqttClient
 ## 4. Complete Code Reference
 
 To see these mechanisms in action, refer to the complete, runnable demonstration in the codebase:
-- **Example Location**: [Program.cs](file:///c:/Users/marvi/RiderProjects/Beskar.Networking/Examples/Mqtt/Beskar.Mqtt.Example.DisconnectionSafety/Program.cs)
+- **Example Location**: [Program.cs](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Examples/Mqtt/Beskar.Mqtt.Example.DisconnectionSafety/Program.cs)
 - **Features Tested**:
   - Auto-reloading retained messages on server restart.
   - Server-side offline queuing delivery for persistent sessions.
