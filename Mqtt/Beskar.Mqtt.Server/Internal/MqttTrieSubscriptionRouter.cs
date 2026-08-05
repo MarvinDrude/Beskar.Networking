@@ -198,20 +198,26 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
       using var disposer = _lock.EnterReadLock();
 
       var enumerator = new TopicLevelEnumerator(topic);
-      MatchRecursive(_rootNode, ref enumerator, ref visitor);
+      var startsWithDollar = topic.Length > 0 && topic[0] == (byte)'$';
+      MatchRecursive(_rootNode, ref enumerator, ref visitor, isFirstLevel: true, startsWithDollar: startsWithDollar);
    }
 
    private static void MatchRecursive<TVisitor>(
       MqttTrieNode node,
       ref TopicLevelEnumerator levels,
-      ref TVisitor visitor)
+      ref TVisitor visitor,
+      bool isFirstLevel = true,
+      bool startsWithDollar = false)
       where TVisitor : struct, ISubscriptionVisitor
    {
-      if (node.MultiLevelWildcardChild is { Subscriptions: { } hashSubs })
+      if (!(isFirstLevel && startsWithDollar))
       {
-         for (var i = 0; i < hashSubs.Count; i++)
+         if (node.MultiLevelWildcardChild is { Subscriptions: { } hashSubs })
          {
-            visitor.Visit(hashSubs[i]);
+            for (var i = 0; i < hashSubs.Count; i++)
+            {
+               visitor.Visit(hashSubs[i]);
+            }
          }
       }
 
@@ -233,13 +239,16 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
       if (alternateLookup.TryGetValue(currentLevel, out var exactChild))
       {
          var nextLevels = levels;
-         MatchRecursive(exactChild, ref nextLevels, ref visitor);
+         MatchRecursive(exactChild, ref nextLevels, ref visitor, isFirstLevel: false, startsWithDollar: false);
       }
 
-      if (node.SingleLevelWildcardChild is not null)
+      if (!(isFirstLevel && startsWithDollar))
       {
-         var nextLevels = levels;
-         MatchRecursive(node.SingleLevelWildcardChild, ref nextLevels, ref visitor);
+         if (node.SingleLevelWildcardChild is not null)
+         {
+            var nextLevels = levels;
+            MatchRecursive(node.SingleLevelWildcardChild, ref nextLevels, ref visitor, isFirstLevel: false, startsWithDollar: false);
+         }
       }
    }
 

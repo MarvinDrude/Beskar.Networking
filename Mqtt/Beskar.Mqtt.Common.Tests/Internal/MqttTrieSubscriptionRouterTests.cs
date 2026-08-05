@@ -215,6 +215,42 @@ public class MqttTrieSubscriptionRouterTests
       await Assert.That(visitor2.Matches).IsEmpty();
    }
 
+   [Test]
+   public async Task Route_DollarTopics_ShouldNotMatchWildcardsAtFirstLevel()
+   {
+      using var router = new MqttTrieSubscriptionRouter();
+      await using var server = new MqttServer(Array.Empty<INetworkListener>(), new MqttServerOptions());
+      var session1 = new MqttSession(server, null!);
+
+      // Subscribe to '#' (matches everything except '$' topics at first level)
+      router.Subscribe(session1, "#"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false,
+         RetainHandlingType.SendAtSubscription, 0);
+
+      // Subscribe to '+/bar' (matches 'foo/bar', but not '$foo/bar')
+      router.Subscribe(session1, "+/bar"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false,
+         RetainHandlingType.SendAtSubscription, 0);
+
+      // Subscribe to '$foo/+' (allowed wildcard at second level)
+      router.Subscribe(session1, "$foo/+"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false, false,
+         RetainHandlingType.SendAtSubscription, 0);
+
+      // 1. Publish to '$SYS/broker/uptime' - should NOT match '#'
+      var visitor1 = new TestVisitor();
+      router.Route("$SYS/broker/uptime"u8, ref visitor1);
+      await Assert.That(visitor1.Matches).IsEmpty();
+
+      // 2. Publish to '$foo/bar' - should NOT match '+/bar', but should match '$foo/+'
+      var visitor2 = new TestVisitor();
+      router.Route("$foo/bar"u8, ref visitor2);
+      await Assert.That(visitor2.Matches).Count().IsEqualTo(1);
+      await Assert.That(Encoding.UTF8.GetString(visitor2.Matches[0].TopicFilter)).IsEqualTo("$foo/+");
+
+      // 3. Publish to 'foo/bar' - should match both '#' and '+/bar'
+      var visitor3 = new TestVisitor();
+      router.Route("foo/bar"u8, ref visitor3);
+      await Assert.That(visitor3.Matches).Count().IsEqualTo(2);
+   }
+
    private struct TestVisitor : ISubscriptionVisitor
    {
       public List<MqttSubscription> Matches { get; } = new();

@@ -97,13 +97,14 @@ public sealed class MqttRetainedMessages : IDisposable
       using var disposer = _lock.EnterReadLock();
 
       var enumerator = new TopicLevelEnumerator(topicFilter);
-      MatchRecursive(_rootNode, ref enumerator, matched);
+      MatchRecursive(_rootNode, ref enumerator, matched, isFirstLevel: true);
    }
 
    private static void MatchRecursive(
       MqttRetainedMessageNode node,
       ref TopicLevelEnumerator levels,
-      List<MqttPublishMessage> matched)
+      List<MqttPublishMessage> matched,
+      bool isFirstLevel = true)
    {
       if (!levels.MoveNext())
       {
@@ -129,7 +130,7 @@ public sealed class MqttRetainedMessages : IDisposable
       if (currentLevel.SequenceEqual(HashTagBytes))
       {
          // # matches this node and all descendants
-         CollectAllRecursive(node, matched);
+         CollectAllRecursive(node, matched, skipDollarChildren: isFirstLevel);
          return;
       }
 
@@ -138,8 +139,12 @@ public sealed class MqttRetainedMessages : IDisposable
          // + matches any level, so we must go down all child nodes
          foreach (var child in node.Children.Values)
          {
+            if (isFirstLevel && child.Level is not null && child.Level.Length > 0 && child.Level[0] == (byte)'$')
+            {
+               continue;
+            }
             var nextLevels = levels;
-            MatchRecursive(child, ref nextLevels, matched);
+            MatchRecursive(child, ref nextLevels, matched, isFirstLevel: false);
          }
          return;
       }
@@ -148,11 +153,11 @@ public sealed class MqttRetainedMessages : IDisposable
       if (alternateLookup.TryGetValue(currentLevel, out var exactChild))
       {
          var nextLevels = levels;
-         MatchRecursive(exactChild, ref nextLevels, matched);
+         MatchRecursive(exactChild, ref nextLevels, matched, isFirstLevel: false);
       }
    }
 
-   private static void CollectAllRecursive(MqttRetainedMessageNode node, List<MqttPublishMessage> matched)
+   private static void CollectAllRecursive(MqttRetainedMessageNode node, List<MqttPublishMessage> matched, bool skipDollarChildren = false)
    {
       var msg = node.Message;
 
@@ -174,7 +179,11 @@ public sealed class MqttRetainedMessages : IDisposable
 
       foreach (var child in node.Children.Values)
       {
-         CollectAllRecursive(child, matched);
+         if (skipDollarChildren && child.Level is not null && child.Level.Length > 0 && child.Level[0] == (byte)'$')
+         {
+            continue;
+         }
+         CollectAllRecursive(child, matched, skipDollarChildren: false);
       }
    }
 

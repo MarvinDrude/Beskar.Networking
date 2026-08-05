@@ -109,6 +109,34 @@ public class MqttRetainedMessagesTests
    }
 
    [Test]
+   public async Task GetMatchingMessages_DollarTopics_ShouldNotMatchWildcardsAtFirstLevel()
+   {
+      using var manager = new MqttRetainedMessages();
+
+      manager.UpdateMessage("c1", CreatePublishMessage("$SYS/broker/uptime", "1"u8.ToArray()));
+      manager.UpdateMessage("c1", CreatePublishMessage("$foo/bar", "2"u8.ToArray()));
+      manager.UpdateMessage("c1", CreatePublishMessage("foo/bar", "3"u8.ToArray()));
+
+      // 1. Filter '#' - should NOT match '$SYS/broker/uptime' or '$foo/bar'
+      var matchedHash = new List<MqttPublishMessage>();
+      manager.GetMatchingMessages("#"u8, matchedHash);
+      await Assert.That(matchedHash).Count().IsEqualTo(1);
+      await Assert.That(matchedHash[0].Topic).IsEqualTo("foo/bar");
+
+      // 2. Filter '+/bar' - should NOT match '$foo/bar'
+      var matchedPlus = new List<MqttPublishMessage>();
+      manager.GetMatchingMessages("+/bar"u8, matchedPlus);
+      await Assert.That(matchedPlus).Count().IsEqualTo(1);
+      await Assert.That(matchedPlus[0].Topic).IsEqualTo("foo/bar");
+
+      // 3. Filter '$foo/+' - should match '$foo/bar' (allowed wildcard at second level)
+      var matchedNested = new List<MqttPublishMessage>();
+      manager.GetMatchingMessages("$foo/+"u8, matchedNested);
+      await Assert.That(matchedNested).Count().IsEqualTo(1);
+      await Assert.That(matchedNested[0].Topic).IsEqualTo("$foo/bar");
+   }
+
+   [Test]
    public async Task UpdateMessage_WithExpiredInterval_ShouldNotBeDeliveredAndShouldBePruned()
    {
       using var manager = new MqttRetainedMessages();
