@@ -204,6 +204,11 @@ public sealed partial class MqttServer
 
    private static bool ValidateTopicFilter(ReadOnlySpan<byte> topicFilter)
    {
+      if (topicFilter.IsEmpty)
+      {
+         return false;
+      }
+
       var enumerator = new TopicLevelEnumerator(topicFilter);
       var hasHash = false;
       var levels = 0;
