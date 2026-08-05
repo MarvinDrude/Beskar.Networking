@@ -6,7 +6,10 @@ using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Models;
+using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server;
+using Beskar.Mqtt.Server.Internal;
 using Beskar.Mqtt.Server.Options;
 
 namespace Beskar.Mqtt.Integration.Tests;
@@ -107,5 +110,72 @@ public class MqttBugFixesTests
          await server.StopAsync();
          await server.DisposeAsync();
       }
+   }
+
+   [Test]
+   public async Task ServerClient_TopicAliases_ConcurrentAccess_IsThreadSafe()
+   {
+      var serverClient = new MqttServerClient();
+
+      var tasks = new Task[20];
+      for (var i = 0; i < tasks.Length; i++)
+      {
+         var taskIndex = i;
+         tasks[i] = Task.Run(() =>
+         {
+            for (ushort alias = 1; alias <= 100; alias++)
+            {
+               var topic = Encoding.UTF8.GetBytes($"topic/alias/{taskIndex}/{alias}");
+               serverClient.SetTopicAlias(alias, topic);
+
+               serverClient.TryGetTopicAlias(alias, out _);
+            }
+         });
+      }
+
+      await Task.WhenAll(tasks);
+   }
+
+   [Test]
+   public async Task DeliverNextQueuedMessagesAsync_ConcurrentExecution_EnforcesReceiveMaximum()
+   {
+      var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var dummyClient = new MqttServerClient();
+      var session = new MqttSession(server, dummyClient)
+      {
+         ClientReceiveMaximum = 1
+      };
+
+      // Enqueue 10 offline messages
+      for (var i = 0; i < 10; i++)
+      {
+         var packet = new PublishPacket
+         {
+            TopicUtf8Bytes = new System.Buffers.ReadOnlySequence<byte>(Encoding.UTF8.GetBytes($"test/queue/{i}")),
+            Payload = new System.Buffers.ReadOnlySequence<byte>(Encoding.UTF8.GetBytes($"payload {i}")),
+            QualityOfService = QualityOfServiceType.AtLeastOnce
+         };
+         session.EnqueueOfflineMessage(new MqttQueuedMessage(
+            new MqttPublishMessage(packet),
+            QualityOfServiceType.AtLeastOnce,
+            false,
+            0));
+      }
+
+      // Run multiple concurrent DeliverNextQueuedMessagesAsync tasks
+      var deliveryTasks = new Task[10];
+      for (var i = 0; i < 10; i++)
+      {
+         deliveryTasks[i] = Task.Run(() => MqttServer.DeliverNextQueuedMessagesAsync(session));
+      }
+
+      await Task.WhenAll(deliveryTasks);
+
+      // Verify unacknowledged publish count never exceeded ClientReceiveMaximum (1)
+      await Assert.That(session.GetUnacknowledgedPublishCount()).IsLessThanOrEqualTo(1);
    }
 }

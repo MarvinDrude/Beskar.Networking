@@ -80,6 +80,7 @@ public sealed class MqttServerClient
 
    private CancellationTokenSource? _cancellationTokenSource;
    private readonly Dictionary<ushort, byte[]> _topicAliases = new(16);
+   private readonly Lock _topicAliasesLock = new();
 
    private Channel<IHeapMqttOptions>? _controlPacketChannel;
    private Channel<PublishPacket>? _outgoingPublishChannel;
@@ -157,12 +158,18 @@ public sealed class MqttServerClient
 
    internal bool TryGetTopicAlias(ushort alias, [NotNullWhen(true)] out byte[]? topic)
    {
-      return _topicAliases.TryGetValue(alias, out topic);
+      lock (_topicAliasesLock)
+      {
+         return _topicAliases.TryGetValue(alias, out topic);
+      }
    }
 
    internal void SetTopicAlias(ushort alias, byte[] topic)
    {
-      _topicAliases[alias] = topic;
+      lock (_topicAliasesLock)
+      {
+         _topicAliases[alias] = topic;
+      }
    }
 
    internal void SetConnectOptions(ConnectOptions options)

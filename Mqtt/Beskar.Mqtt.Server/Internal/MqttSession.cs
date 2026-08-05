@@ -39,6 +39,7 @@ public sealed partial class MqttSession : IAsyncDisposable
        && timestamp.AddSeconds(ExpiryInterval) <= DateTimeOffset.UtcNow;
 
    internal MqttServer Server { get; }
+   internal SemaphoreSlim DeliverySemaphore { get; } = new(1, 1);
 
    private Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; }
       = new(ByteArrayEqualityComparer.Instance);

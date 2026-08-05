@@ -904,64 +904,73 @@ public sealed partial class MqttServer : IAsyncDisposable
       var client = session.Client;
       if (client is null || !client.IsConnected) return;
 
-      using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(client.CancellationToken);
-      var ct = combinedCts.Token;
+      if (!await session.DeliverySemaphore.WaitAsync(0)) return;
 
       try
       {
-         var propertiesBuffer = new byte[128];
-         while (client.IsConnected && !ct.IsCancellationRequested)
+         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(client.CancellationToken);
+         var ct = combinedCts.Token;
+
+         try
          {
-            if (session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum)
+            var propertiesBuffer = new byte[128];
+            while (client.IsConnected && !ct.IsCancellationRequested)
             {
-               break;
-            }
-
-            if (!session.TryDequeueOfflineMessage(out var queuedMessage))
-            {
-               break;
-            }
-
-            if (queuedMessage.Message.MessageExpiryInterval > 0)
-            {
-               var timeSpent = (uint)(DateTimeOffset.UtcNow - queuedMessage.Message.CreatedAt).TotalSeconds;
-               if (timeSpent >= queuedMessage.Message.MessageExpiryInterval)
+               if (session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum)
                {
-                  continue; // Message expired, discard and skip
+                  break;
                }
-            }
 
-            var targetQos = queuedMessage.QualityOfService;
-            var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
-
-            if (targetQos > 0)
-            {
-               session.AddUnacknowledgedPublish(new MqttPendingPublish
+               if (!session.TryDequeueOfflineMessage(out var queuedMessage))
                {
-                  PacketIdentifier = packetId,
-                  Message = queuedMessage.Message,
-                  QualityOfService = targetQos,
-                  RetainAsPublished = queuedMessage.RetainAsPublished,
-                  SubscriptionIdentifier = queuedMessage.SubscriptionIdentifier
-               });
-            }
+                  break;
+               }
 
-            await SendPublishMessageAsync(
-               client,
-               queuedMessage.Message,
-               targetQos,
-               queuedMessage.RetainAsPublished,
-               queuedMessage.SubscriptionIdentifier,
-               packetId,
-               dup: false,
-               propertiesBuffer,
-               ct);
+               if (queuedMessage.Message.MessageExpiryInterval > 0)
+               {
+                  var timeSpent = (uint)(DateTimeOffset.UtcNow - queuedMessage.Message.CreatedAt).TotalSeconds;
+                  if (timeSpent >= queuedMessage.Message.MessageExpiryInterval)
+                  {
+                     continue; // Message expired, discard and skip
+                  }
+               }
+
+               var targetQos = queuedMessage.QualityOfService;
+               var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
+
+               if (targetQos > 0)
+               {
+                  session.AddUnacknowledgedPublish(new MqttPendingPublish
+                  {
+                     PacketIdentifier = packetId,
+                     Message = queuedMessage.Message,
+                     QualityOfService = targetQos,
+                     RetainAsPublished = queuedMessage.RetainAsPublished,
+                     SubscriptionIdentifier = queuedMessage.SubscriptionIdentifier
+                  });
+               }
+
+               await SendPublishMessageAsync(
+                  client,
+                  queuedMessage.Message,
+                  targetQos,
+                  queuedMessage.RetainAsPublished,
+                  queuedMessage.SubscriptionIdentifier,
+                  packetId,
+                  dup: false,
+                  propertiesBuffer,
+                  ct);
+            }
+         }
+         catch (Exception ex)
+         {
+            TraceLogger.LogServerError("MqttServer: Error delivering next queued messages to client '{0}': {1}",
+               client.ClientIdUtf8Bytes.GetUtf8String(), ex.Message);
          }
       }
-      catch (Exception ex)
+      finally
       {
-         TraceLogger.LogServerError("MqttServer: Error delivering next queued messages to client '{0}': {1}",
-            client.ClientIdUtf8Bytes.GetUtf8String(), ex.Message);
+         session.DeliverySemaphore.Release();
       }
    }
 
