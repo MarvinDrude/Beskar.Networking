@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using Beskar.Memory.Owners;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Threading;
+using Beskar.Networking.Transports.Common.Options;
 using Beskar.Networking.Transports.Ws.Enums;
 using Beskar.Utilities.Tracing;
 
@@ -22,8 +23,8 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    private readonly int _maxFrameSize;
    private readonly bool _expectMask;
 
-   private readonly Pipe _inputPipe = new();
-   private readonly Pipe _outputPipe = new();
+   private readonly Pipe _inputPipe;
+   private readonly Pipe _outputPipe;
 
    private readonly CancellationTokenSource _cts = new();
 
@@ -48,6 +49,15 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       _maxFrameSize = options.MaxFrameSize;
       _expectMask = !maskOutgoing;
       _keepAliveInterval = options.KeepAliveInterval;
+
+      var memoryPool = SharedTransportMemoryPool.GetNext();
+      var pipeOpts = new PipeOptions(
+         memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
+         pauseWriterThreshold: 65536, resumeWriterThreshold: 32768,
+         useSynchronizationContext: false);
+
+      _inputPipe = new Pipe(pipeOpts);
+      _outputPipe = new Pipe(pipeOpts);
 
       _tcpSession.SessionClosedToken.Register(() =>
       {
@@ -189,6 +199,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
                         await _tcpPipe.Output.FlushAsync(CancellationToken.None);
                      }
+                     await Task.Delay(10);
                   }
                   catch
                   {
@@ -271,20 +282,22 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
                using (await _writeLock.LockAsync(_cts.Token))
                {
+                  var outgoingOpcode = (WebSocketOpcode)_lastReceivedOpcode;
+                  if (outgoingOpcode is not (WebSocketOpcode.Text or WebSocketOpcode.Binary))
+                  {
+                     outgoingOpcode = WebSocketOpcode.Binary;
+                  }
+
                   while (!remaining.IsEmpty)
                   {
                      var chunkSize = Math.Min(remaining.Length, maxFrameSize);
                      var chunk = remaining.Slice(0, chunkSize);
 
-                     var outgoingOpcode = (WebSocketOpcode)_lastReceivedOpcode;
-                     if (outgoingOpcode is not (WebSocketOpcode.Text or WebSocketOpcode.Binary))
-                     {
-                        outgoingOpcode = WebSocketOpcode.Binary;
-                     }
-
-                     await WriteFrameAsync(writer, outgoingOpcode, chunk, _maskOutgoing, _cts.Token);
+                     WriteFrame(writer, outgoingOpcode, chunk, _maskOutgoing);
                      remaining = remaining.Slice(chunkSize);
                   }
+
+                  await writer.FlushAsync(_cts.Token);
                }
 
                reader.AdvanceTo(buffer.End);
@@ -642,11 +655,11 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          {
             await Task.Delay(_keepAliveInterval, _cts.Token);
 
-            using (await _writeLock.LockAsync(_cts.Token))
-            {
-               await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Ping, ReadOnlySequence<byte>.Empty, _maskOutgoing,
-                  _cts.Token);
-            }
+             using (await _writeLock.LockAsync(_cts.Token))
+             {
+                await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Ping, ReadOnlySequence<byte>.Empty, _maskOutgoing,
+                   _cts.Token);
+             }
          }
       }
       catch (OperationCanceledException)
