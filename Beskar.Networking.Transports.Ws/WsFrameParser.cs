@@ -2,6 +2,7 @@ using System.Buffers;
 using System.IO.Pipelines;
 using System.Numerics;
 using System.Security.Cryptography;
+using Beskar.Memory.Owners;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Threading;
 using Beskar.Networking.Transports.Ws.Enums;
@@ -31,6 +32,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    private readonly AsyncLock _writeLock = new();
    private int _disposed;
    private byte _currentFrameOpcode;
+   private volatile byte _lastReceivedOpcode = (byte)WebSocketOpcode.Binary;
 
    private readonly TimeSpan _keepAliveInterval;
    private readonly Task? _pingTask;
@@ -81,6 +83,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             {
                if (opcode is (byte)WebSocketOpcode.Binary or (byte)WebSocketOpcode.Text)
                {
+                  _lastReceivedOpcode = opcode;
                   if (_currentFrameOpcode != 0)
                   {
                      throw new InvalidDataException(
@@ -137,7 +140,24 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                {
                   using (await _writeLock.LockAsync(_cts.Token))
                   {
-                     await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Pong, payload, _maskOutgoing, _cts.Token);
+                     if (maskKey != null && !payload.IsEmpty)
+                     {
+                        using var unmaskedOwner = new SpanOwner<byte>((int)payload.Length, clearArray: false);
+
+                        var pIdx = 0;
+                        foreach (var seg in payload)
+                        {
+                           MaskOrUnmask(unmaskedOwner.Span.Slice(pIdx, seg.Length), seg.Span, maskKey, ref pIdx);
+                        }
+
+                        WriteFrame(_tcpPipe.Output, WebSocketOpcode.Pong, unmaskedOwner.Span, _maskOutgoing);
+                     }
+                     else
+                     {
+                        WriteFrame(_tcpPipe.Output, WebSocketOpcode.Pong, payload, _maskOutgoing);
+                     }
+
+                     await _tcpPipe.Output.FlushAsync(_cts.Token);
                   }
                }
                else if (opcode == (byte)WebSocketOpcode.Pong)
@@ -146,6 +166,35 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                }
                else if (opcode == (byte)WebSocketOpcode.Close)
                {
+                  try
+                  {
+                     using (await _writeLock.LockAsync(CancellationToken.None))
+                     {
+                        if (maskKey != null && !payload.IsEmpty)
+                        {
+                           using var unmaskedOwner = new SpanOwner<byte>((int)payload.Length, clearArray: false);
+
+                           var pIdx = 0;
+                           foreach (var seg in payload)
+                           {
+                              MaskOrUnmask(unmaskedOwner.Span.Slice(pIdx, seg.Length), seg.Span, maskKey, ref pIdx);
+                           }
+
+                           WriteFrame(_tcpPipe.Output, WebSocketOpcode.Close, unmaskedOwner.Span, _maskOutgoing);
+                        }
+                        else
+                        {
+                           WriteFrame(_tcpPipe.Output, WebSocketOpcode.Close, payload, _maskOutgoing);
+                        }
+
+                        await _tcpPipe.Output.FlushAsync(CancellationToken.None);
+                     }
+                  }
+                  catch
+                  {
+                     /* Ignored */
+                  }
+
                   await _cts.CancelAsync();
                   break;
                }
@@ -227,7 +276,13 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                      var chunkSize = Math.Min(remaining.Length, maxFrameSize);
                      var chunk = remaining.Slice(0, chunkSize);
 
-                     await WriteFrameAsync(writer, WebSocketOpcode.Binary, chunk, _maskOutgoing, _cts.Token);
+                     var outgoingOpcode = (WebSocketOpcode)_lastReceivedOpcode;
+                     if (outgoingOpcode is not (WebSocketOpcode.Text or WebSocketOpcode.Binary))
+                     {
+                        outgoingOpcode = WebSocketOpcode.Binary;
+                     }
+
+                     await WriteFrameAsync(writer, outgoingOpcode, chunk, _maskOutgoing, _cts.Token);
                      remaining = remaining.Slice(chunkSize);
                   }
                }
@@ -404,13 +459,94 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       }
    }
 
-   private static async Task WriteFrameAsync(
+   private static void WriteFrame(
+      PipeWriter tcpWriter,
+      WebSocketOpcode opcode,
+      ReadOnlySpan<byte> payload,
+      bool mask)
+   {
+      var len = payload.Length;
+      var headerSize = 2;
+
+      if (len >= 65536) headerSize += 8;
+      else if (len >= 126) headerSize += 2;
+
+      if (mask) headerSize += 4;
+
+      var headerSpan = tcpWriter.GetSpan(headerSize);
+      headerSpan[0] = (byte)(0x80 | (byte)opcode);
+      var index = 2;
+
+      if (len < 126)
+      {
+         headerSpan[1] = (byte)((mask ? 0x80 : 0x00) | (byte)len);
+      }
+      else if (len < 65536)
+      {
+         headerSpan[1] = (byte)((mask ? 0x80 : 0x00) | 126);
+         headerSpan[2] = (byte)(len >> 8);
+         headerSpan[3] = (byte)len;
+
+         index = 4;
+      }
+      else
+      {
+         headerSpan[1] = (byte)((mask ? 0x80 : 0x00) | 127);
+
+         for (var i = 0; i < 8; i++)
+         {
+            headerSpan[2 + i] = (byte)(len >> ((7 - i) * 8));
+         }
+
+         index = 10;
+      }
+
+      Span<byte> maskKey = stackalloc byte[4];
+      if (mask)
+      {
+         RandomNumberGenerator.Fill(maskKey);
+
+         headerSpan[index++] = maskKey[0];
+         headerSpan[index++] = maskKey[1];
+         headerSpan[index++] = maskKey[2];
+         headerSpan[index] = maskKey[3];
+      }
+
+      tcpWriter.Advance(headerSize);
+
+      if (mask)
+      {
+         var payloadIndex = 0;
+         var remaining = payload;
+
+         while (!remaining.IsEmpty)
+         {
+            var chunkSize = Math.Min(remaining.Length, 4096);
+            var targetSpan = tcpWriter.GetSpan(chunkSize);
+
+            MaskOrUnmask(targetSpan[..chunkSize], remaining[..chunkSize], maskKey, ref payloadIndex);
+            tcpWriter.Advance(chunkSize);
+            remaining = remaining[chunkSize..];
+         }
+      }
+      else
+      {
+         tcpWriter.Write(payload);
+      }
+   }
+
+   private static void WriteFrame(
       PipeWriter tcpWriter,
       WebSocketOpcode opcode,
       ReadOnlySequence<byte> payload,
-      bool mask,
-      CancellationToken ct)
+      bool mask)
    {
+      if (payload.IsSingleSegment)
+      {
+         WriteFrame(tcpWriter, opcode, payload.FirstSpan, mask);
+         return;
+      }
+
       var len = payload.Length;
       var headerSize = 2;
 
@@ -485,7 +621,16 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             tcpWriter.Write(segment.Span);
          }
       }
+   }
 
+   private static async Task WriteFrameAsync(
+      PipeWriter tcpWriter,
+      WebSocketOpcode opcode,
+      ReadOnlySequence<byte> payload,
+      bool mask,
+      CancellationToken ct)
+   {
+      WriteFrame(tcpWriter, opcode, payload, mask);
       await tcpWriter.FlushAsync(ct);
    }
 
