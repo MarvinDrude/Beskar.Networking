@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
@@ -6,6 +7,7 @@ using Beskar.Networking.Abstractions.Models;
 using System.IO.Pipelines;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Transports.Ws.Enums;
 
 namespace Beskar.Networking.Transports.Ws;
 
@@ -59,6 +61,11 @@ public sealed class WsNetworkSession : INetworkSession
 
       _stream = new WsNetworkStream(this, wsPipe);
 
+      if (_wsPipe is WsDuplexPipe wsDuplexPipe)
+      {
+         wsDuplexPipe.SetSession(this);
+      }
+
       _tcpSession.SessionClosedToken.Register(() =>
       {
          try
@@ -70,6 +77,18 @@ public sealed class WsNetworkSession : INetworkSession
             // Ignored
          }
       });
+   }
+
+   public ValueTask SendFrameAsync(ReadOnlySequence<byte> payload, 
+      WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken ct = default)
+   {
+      return _stream.SendFrameAsync(payload, opcode, ct);
+   }
+
+   public ValueTask SendFrameAsync(ReadOnlyMemory<byte> payload, 
+      WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken ct = default)
+   {
+      return _stream.SendFrameAsync(payload, opcode, ct);
    }
 
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)

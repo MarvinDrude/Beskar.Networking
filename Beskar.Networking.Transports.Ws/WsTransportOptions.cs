@@ -1,4 +1,6 @@
+using System.Buffers;
 using Beskar.Networking.Transports.Tcp;
+using Beskar.Networking.Transports.Ws.Enums;
 
 namespace Beskar.Networking.Transports.Ws;
 
@@ -57,4 +59,10 @@ public sealed class WsTransportOptions
    /// The Origin header to send during the client-side handshake.
    /// </summary>
    public string? Origin { get; set; }
+
+   /// <summary>
+   /// High-level frame-isolated message callback handler.
+   /// Invoked per discrete WebSocket frame received from the client.
+   /// </summary>
+   public Action<WsNetworkSession, ReadOnlySequence<byte>, WebSocketOpcode>? OnMessage { get; set; }
 }

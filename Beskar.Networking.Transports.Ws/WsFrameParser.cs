@@ -23,6 +23,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    private readonly int _maxFrameSize;
    private readonly bool _expectMask;
 
+   private readonly Action<WsNetworkSession, ReadOnlySequence<byte>, WebSocketOpcode>? _onMessage;
+   private readonly Func<WsNetworkSession?>? _sessionProvider;
+   private WsNetworkSession? _session;
+
    private readonly Pipe _inputPipe;
    private readonly Pipe _outputPipe;
 
@@ -41,13 +45,16 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    public PipeReader Input => _inputPipe.Reader;
    public PipeWriter Output => _outputPipe.Writer;
 
-   public WsDuplexPipe(IDuplexPipe tcpPipe, INetworkSession tcpSession, bool maskOutgoing, WsTransportOptions options)
+   public WsDuplexPipe(IDuplexPipe tcpPipe, INetworkSession tcpSession, bool maskOutgoing, WsTransportOptions options,
+      Func<WsNetworkSession?>? sessionProvider = null)
    {
       _tcpPipe = tcpPipe;
       _tcpSession = tcpSession;
       _maskOutgoing = maskOutgoing;
       _maxFrameSize = options.MaxFrameSize;
       _expectMask = !maskOutgoing;
+      _onMessage = options.OnMessage;
+      _sessionProvider = sessionProvider;
       _keepAliveInterval = options.KeepAliveInterval;
 
       var memoryPool = SharedTransportMemoryPool.GetNext();
@@ -74,6 +81,20 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       _readTask = Task.Run(ReadLoopAsync);
       _writeTask = Task.Run(WriteLoopAsync);
       _pingTask = _keepAliveInterval > TimeSpan.Zero ? Task.Run(PingLoopAsync) : null;
+   }
+
+   public void SetSession(WsNetworkSession session)
+   {
+      _session = session;
+   }
+
+   public async ValueTask SendFrameDirectAsync(ReadOnlySequence<byte> payload, WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
+   {
+      using (await _writeLock.LockAsync(cancellationToken))
+      {
+         await WriteFrameAsync(_tcpPipe.Output, opcode, payload, _maskOutgoing, cancellationToken);
+         await _tcpPipe.Output.FlushAsync(cancellationToken);
+      }
    }
 
    private async Task ReadLoopAsync()
@@ -105,19 +126,42 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                      _currentFrameOpcode = opcode;
                   }
 
-                  if (maskKey != null)
+                  var currentSession = _sessionProvider?.Invoke() ?? _session;
+                  if (_onMessage != null && currentSession != null)
                   {
-                     UnmaskAndWrite(writer, payload, maskKey);
+                     if (maskKey != null)
+                     {
+                        using var unmaskedOwner = SpanOwner<byte>.Allocate((int)payload.Length);
+                        var unmaskedSpan = unmaskedOwner.Span;
+                        int payloadIdx = 0;
+                        foreach (var segment in payload)
+                        {
+                           MaskOrUnmask(unmaskedSpan.Slice(payloadIdx, segment.Length), segment.Span, maskKey, ref payloadIdx);
+                           payloadIdx += segment.Length;
+                        }
+                        _onMessage(currentSession, new ReadOnlySequence<byte>(unmaskedSpan.ToArray()), (WebSocketOpcode)opcode);
+                     }
+                     else
+                     {
+                        _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
+                     }
                   }
                   else
                   {
-                     foreach (var segment in payload)
+                     if (maskKey != null)
                      {
-                        writer.Write(segment.Span);
+                        UnmaskAndWrite(writer, payload, maskKey);
                      }
-                  }
+                     else
+                     {
+                        foreach (var segment in payload)
+                        {
+                           writer.Write(segment.Span);
+                        }
+                     }
 
-                  await writer.FlushAsync(_cts.Token);
+                     await writer.FlushAsync(_cts.Token);
+                  }
                }
                else if (opcode == 0) // Continuation Frame
                {
@@ -132,19 +176,44 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                      _currentFrameOpcode = 0;
                   }
 
-                  if (maskKey != null)
+                  var currentSession = _sessionProvider?.Invoke() ?? _session;
+                  if (_onMessage != null && currentSession != null)
                   {
-                     UnmaskAndWrite(writer, payload, maskKey);
+                     if (maskKey != null)
+                     {
+                        using var unmaskedOwner = SpanOwner<byte>.Allocate((int)payload.Length);
+                        var unmaskedSpan = unmaskedOwner.Span;
+                        var payloadIdx = 0;
+
+                        foreach (var segment in payload)
+                        {
+                           MaskOrUnmask(unmaskedSpan.Slice(payloadIdx, segment.Length), segment.Span, maskKey, ref payloadIdx);
+                           payloadIdx += segment.Length;
+                        }
+
+                        _onMessage(currentSession, new ReadOnlySequence<byte>([.. unmaskedSpan]), (WebSocketOpcode)opcode);
+                     }
+                     else
+                     {
+                        _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
+                     }
                   }
                   else
                   {
-                     foreach (var segment in payload)
+                     if (maskKey != null)
                      {
-                        writer.Write(segment.Span);
+                        UnmaskAndWrite(writer, payload, maskKey);
                      }
-                  }
+                     else
+                     {
+                        foreach (var segment in payload)
+                        {
+                           writer.Write(segment.Span);
+                        }
+                     }
 
-                  await writer.FlushAsync(_cts.Token);
+                     await writer.FlushAsync(_cts.Token);
+                  }
                }
                else if (opcode == (byte)WebSocketOpcode.Ping)
                {

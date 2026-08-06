@@ -1,8 +1,10 @@
+using System.Buffers;
 using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Threading;
+using Beskar.Networking.Transports.Ws.Enums;
 using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Transports.Ws;
@@ -56,8 +58,12 @@ public sealed class WsNetworkStream : INetworkStream
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
 
+   private readonly IDuplexPipe _rawTransport;
+
    public WsNetworkStream(INetworkSession session, IDuplexPipe transport)
    {
+      _rawTransport = transport;
+      
       Session = session;
       Transport = new StatsTrackingDuplexPipe(transport, this);
    }
@@ -73,5 +79,35 @@ public sealed class WsNetworkStream : INetworkStream
    {
       TraceLogger.LogNeutralInfo("WS Stream: Disposing stream wrapper for session {0}", Session.Id);
       return ValueTask.CompletedTask;
+   }
+
+   public ValueTask SendFrameAsync(ReadOnlySequence<byte> payload, 
+      WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
+   {
+      if (_rawTransport is WsDuplexPipe wsDuplexPipe)
+      {
+         return wsDuplexPipe.SendFrameDirectAsync(payload, opcode, cancellationToken);
+      }
+      
+      return SendFramePipeAsync(payload, cancellationToken);
+   }
+
+   private async ValueTask SendFramePipeAsync(ReadOnlySequence<byte> payload, CancellationToken cancellationToken)
+   {
+      var writer = Transport.Output;
+      foreach (var segment in payload)
+      {
+         var span = writer.GetSpan(segment.Length);
+         segment.Span.CopyTo(span);
+         writer.Advance(segment.Length);
+      }
+      
+      await writer.FlushAsync(cancellationToken);
+   }
+
+   public ValueTask SendFrameAsync(ReadOnlyMemory<byte> payload, 
+      WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
+   {
+      return SendFrameAsync(new ReadOnlySequence<byte>(payload), opcode, cancellationToken);
    }
 }
