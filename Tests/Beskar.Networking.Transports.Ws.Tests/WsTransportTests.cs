@@ -967,5 +967,125 @@ public class WsTransportTests
       await serverSession.DisposeAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task WsTransport_OnMessage_FiresPerFrameWithIsolatedPayloadAndOpcode()
+   {
+      var receivedMessages = new System.Collections.Concurrent.ConcurrentBag<string>();
+      var options = new WsTransportOptions
+      {
+         Path = "/chat",
+         OnMessage = (session, payload, opcode) =>
+         {
+            var text = System.Text.Encoding.UTF8.GetString(payload.ToArray());
+            receivedMessages.Add(text);
+            _ = session.SendFrameAsync(payload, opcode);
+         }
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var clientOptions = new WsTransportOptions { Path = "/chat" };
+      var client = new WsNetworkClient(clientOptions);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var clientStream = (await clientSession.AcceptStreamAsync()).Success!;
+
+      var clientWsStream = (WsNetworkStream)clientStream;
+
+      // Send 3 separate messages from client
+      var msgs = new[] { "Message 1", "Message 2", "Message 3" };
+      foreach (var msg in msgs)
+      {
+         await clientWsStream.SendFrameAsync(System.Text.Encoding.UTF8.GetBytes(msg), Enums.WebSocketOpcode.Text);
+      }
+
+      // Allow OnMessage handler to process
+      await Task.Delay(200);
+
+      await Assert.That(receivedMessages.Count).IsEqualTo(3);
+      await Assert.That(receivedMessages).Contains("Message 1");
+      await Assert.That(receivedMessages).Contains("Message 2");
+      await Assert.That(receivedMessages).Contains("Message 3");
+
+      await clientSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsTransport_OnMessage_MultiFrameEcho_PreservesBoundaries()
+   {
+      var options = new WsTransportOptions
+      {
+         Path = "/chat",
+         OnMessage = (session, payload, opcode) =>
+         {
+            _ = session.SendFrameAsync(payload, opcode);
+         }
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, ((IPEndPoint)listener.LocalAddress).Port);
+      await using var stream = tcpClient.GetStream();
+
+      // Send HTTP Upgrade
+      var request = "GET /chat HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+      await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(request));
+      await stream.FlushAsync();
+
+      var buffer = new byte[1024];
+      var read = await stream.ReadAsync(buffer);
+      var responseText = System.Text.Encoding.ASCII.GetString(buffer, 0, read);
+      await Assert.That(responseText).Contains("101 Switching Protocols");
+
+      // Send 3 WebSocket text frames back-to-back down the TCP socket
+      var maskKey = new byte[] { 0x11, 0x22, 0x33, 0x44 };
+      var sentMsgs = new[] { "msg-1-aaa", "msg-2-bbb", "msg-3-ccc" };
+
+      var msgsBuffer = new List<byte>();
+      foreach (var msgText in sentMsgs)
+      {
+         var rawPayload = System.Text.Encoding.UTF8.GetBytes(msgText);
+         var frame = new byte[2 + 4 + rawPayload.Length];
+         frame[0] = 0x81; // FIN + Text
+         frame[1] = (byte)(0x80 | rawPayload.Length);
+         maskKey.CopyTo(frame, 2);
+         for (int i = 0; i < rawPayload.Length; i++)
+         {
+            frame[6 + i] = (byte)(rawPayload[i] ^ maskKey[i % 4]);
+         }
+         msgsBuffer.AddRange(frame);
+      }
+
+      await stream.WriteAsync(msgsBuffer.ToArray());
+      await stream.FlushAsync();
+
+      // Server should echo back 3 individual WS frames
+      for (int i = 0; i < 3; i++)
+      {
+         var respHeader = new byte[2];
+         var readHeader = await stream.ReadAsync(respHeader);
+         await Assert.That(readHeader).IsEqualTo(2);
+         await Assert.That(respHeader[0]).IsEqualTo((byte)0x81); // Text frame FIN
+
+         int len = respHeader[1] & 0x7F;
+         var respPayload = new byte[len];
+         var readPayload = await stream.ReadAsync(respPayload);
+         await Assert.That(readPayload).IsEqualTo(len);
+
+         var echoedText = System.Text.Encoding.UTF8.GetString(respPayload);
+         await Assert.That(echoedText).IsEqualTo(sentMsgs[i]);
+      }
+
+      await listener.UnbindAsync();
+   }
 }
 
