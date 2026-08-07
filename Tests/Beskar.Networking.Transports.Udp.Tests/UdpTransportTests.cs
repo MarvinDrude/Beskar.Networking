@@ -1,8 +1,10 @@
 using System.Buffers;
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Transports.Udp;
 using Beskar.Networking.Transports.Udp.Extensions;
 
@@ -489,6 +491,102 @@ public class UdpTransportTests
       await serverSession1.DisposeAsync();
       await serverSession2.DisposeAsync();
       await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task UdpClientServer_WithMeterListener_TracksConnectionsStreamsAndBytes()
+   {
+      long recordedConnectionsOpened = 0;
+      long recordedConnectionsClosed = 0;
+      long recordedConnectionsActiveDelta = 0;
+      long recordedStreamsActiveDelta = 0;
+      long recordedBytesSent = 0;
+      long recordedBytesReceived = 0;
+
+      using var meterListener = new MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == TransportMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.transport.connections.opened")
+         {
+            Interlocked.Add(ref recordedConnectionsOpened, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.connections.closed")
+         {
+            Interlocked.Add(ref recordedConnectionsClosed, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.connections.active")
+         {
+            Interlocked.Add(ref recordedConnectionsActiveDelta, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.streams.active")
+         {
+            Interlocked.Add(ref recordedStreamsActiveDelta, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.bytes.sent")
+         {
+            Interlocked.Add(ref recordedBytesSent, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.bytes.received")
+         {
+            Interlocked.Add(ref recordedBytesReceived, measurement);
+         }
+      });
+      meterListener.Start();
+
+      var options = new UdpTransportOptions();
+      var listener = new UdpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var initialOpened = Volatile.Read(ref recordedConnectionsOpened);
+      var initialClosed = Volatile.Read(ref recordedConnectionsClosed);
+      var initialActive = Volatile.Read(ref recordedConnectionsActiveDelta);
+      var initialStreamsActive = Volatile.Read(ref recordedStreamsActiveDelta);
+
+      var client = new UdpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var clientStream = (await clientSession.OpenStreamAsync()).Success!;
+
+      var payload = "UDP Telemetry Payload"u8.ToArray();
+      await clientStream.Transport.Output.WriteAsync(payload);
+      await clientStream.Transport.Output.FlushAsync();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+      var serverSession = acceptResult.Success!;
+
+      var openedDelta = Volatile.Read(ref recordedConnectionsOpened) - initialOpened;
+      await Assert.That(openedDelta).IsGreaterThanOrEqualTo(1);
+
+      var activeDuringConnection = Volatile.Read(ref recordedConnectionsActiveDelta) - initialActive;
+      await Assert.That(activeDuringConnection).IsGreaterThanOrEqualTo(1);
+
+      var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
+
+      var streamsActiveDelta = Volatile.Read(ref recordedStreamsActiveDelta) - initialStreamsActive;
+      await Assert.That(streamsActiveDelta).IsGreaterThanOrEqualTo(2);
+
+      var readResult = await serverStream.Transport.Input.ReadAsync();
+      serverStream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+
+      await Assert.That(recordedBytesSent).IsGreaterThanOrEqualTo(payload.Length);
+      await Assert.That(recordedBytesReceived).IsGreaterThanOrEqualTo(payload.Length);
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+
+      var closedDelta = Volatile.Read(ref recordedConnectionsClosed) - initialClosed;
+      await Assert.That(closedDelta).IsGreaterThanOrEqualTo(1);
    }
 
    [Test]
