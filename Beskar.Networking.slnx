@@ -72,6 +72,7 @@
   </Folder>
   <Folder Name="/Examples/Simple/">
     <Project Path="Examples/Simple/Beskar.Bare.PingPongMessage/Beskar.Bare.PingPongMessage.csproj" />
+    <Project Path="Examples/Simple/Beskar.Bare.QuickStart/Beskar.Bare.QuickStart.csproj" />
   </Folder>
   <Folder Name="/Examples/Telemetry/">
     <Project Path="Examples/Telemetry/Beskar.Example.Telemetry/Beskar.Example.Telemetry.csproj" />

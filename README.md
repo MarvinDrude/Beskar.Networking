@@ -82,32 +82,48 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 > or specialized network microservices.
 
 ```csharp
-using System.Net;
-using System.Text;
-using Beskar.Networking.Transports.Tcp;
+var endPoint = new IPEndPoint(IPAddress.Loopback, 9000);
 
 // Server Listener
-var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Any, 9000));
+await using var listener = new TcpNetworkListener(endPoint, new TcpTransportOptions());
 await listener.BindAsync();
 
-_ = Task.Run(async () => {
-    var sessionResult = await listener.AcceptSessionAsync();
-    var session = sessionResult.Success;
-    var stream = (await session.AcceptStreamAsync()).Success;
+var serverTask = Task.Run(async () =>
+{
+   // ReSharper disable once AccessToDisposedClosure
+   var sessionResult = await listener.AcceptSessionAsync();
+   if (sessionResult.Failed) return;
 
-    // Read raw pipeline input
-    var readResult = await stream.Transport.Input.ReadAsync();
-    Console.WriteLine($"Received: {Encoding.UTF8.GetString(readResult.Buffer.FirstSpan)}");
+   await using var session = sessionResult.Success;
+   var streamResult = await session.AcceptStreamAsync();
+   if (streamResult.Failed) return;
+
+   var stream = streamResult.Success;
+
+   // Read raw pipeline input
+   var readResult = await stream.Transport.Input.ReadAsync();
+   Console.WriteLine($"Received: {Encoding.UTF8.GetString(readResult.Buffer.FirstSpan)}");
 });
 
 // Client Connection
-var client = new TcpNetworkClient();
-var connectResult = await client.ConnectAsync(new IPEndPoint(IPAddress.Loopback, 9000));
-var clientStream = (await connectResult.Success.AcceptStreamAsync()).Success;
+await using var client = new TcpNetworkClient(new TcpTransportOptions());
+var connectResult = await client.ConnectAsync(endPoint);
+if (!connectResult.Failed)
+{
+   var session = connectResult.Success;
+   var streamResult = await session.AcceptStreamAsync();
+   if (!streamResult.Failed)
+   {
+      var clientStream = streamResult.Success;
 
-// Write directly to pipeline output
-var bytes = "Hello Bare Metal!"u8.ToArray();
-await clientStream.Transport.Output.WriteAsync(bytes);
+      // Write directly to pipeline output
+      var bytes = "Hello Bare Metal!"u8.ToArray();
+      await clientStream.Transport.Output.WriteAsync(bytes);
+   }
+}
+
+// Wait for server task to finish processing received message
+await serverTask;
 ```
 
 ### Full MQTT Broker & Client (v3.1.1 & v5.0)
