@@ -4,6 +4,7 @@ using Beskar.Memory.Threading;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Encoders.Properties;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Models;
@@ -80,6 +81,7 @@ public sealed partial class ServerPacketHandler
                         return;
                      }
 
+                     MqttMetrics.RecordTopicAliasHit();
                      resolvedTopicBytes = topicBytes;
                   }
                   else

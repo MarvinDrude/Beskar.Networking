@@ -10,6 +10,7 @@ using Beskar.Networking.Protocol;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Common.Interfaces;
+using Beskar.Networking.Resilient.Common.Telemetry;
 using Beskar.Networking.Resilient.Server.Contexts;
 using Beskar.Networking.Resilient.Server.Models;
 using Beskar.Networking.Resilient.Server.Services;
@@ -331,6 +332,8 @@ public sealed class ResilientServer<TFrame>
                handshakeSuccess = true;
             }
          }
+
+         ResilientMetrics.RecordAuthAttempt(handshakeSuccess);
 
          if (handshakeSuccess)
          {

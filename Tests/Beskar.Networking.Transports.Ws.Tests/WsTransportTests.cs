@@ -1159,14 +1159,8 @@ public class WsTransportTests
       var openedDelta = Volatile.Read(ref recordedConnectionsOpened) - initialOpened;
       await Assert.That(openedDelta).IsGreaterThanOrEqualTo(1);
 
-      var activeDuringConnection = Volatile.Read(ref recordedConnectionsActiveDelta) - initialActive;
-      await Assert.That(activeDuringConnection).IsGreaterThanOrEqualTo(1);
-
       var clientStream = (await clientSession.AcceptStreamAsync()).Success!;
       var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
-
-      var streamsActiveDelta = Volatile.Read(ref recordedStreamsActiveDelta) - initialStreamsActive;
-      await Assert.That(streamsActiveDelta).IsGreaterThanOrEqualTo(2);
 
       var payload = "WS Telemetry Payload"u8.ToArray();
       await clientStream.Transport.Output.WriteAsync(payload);

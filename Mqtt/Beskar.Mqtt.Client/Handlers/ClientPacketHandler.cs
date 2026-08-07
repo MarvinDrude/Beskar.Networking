@@ -98,8 +98,6 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
          {
             if (packet.TopicAlias > 0)
             {
-               MqttMetrics.RecordTopicAliasHit();
-
                var topicAliasMax = client.CurrentConnectOptions.TopicAliasMaximum ?? 0;
                if (packet.TopicAlias > topicAliasMax)
                {
@@ -123,6 +121,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
                      return;
                   }
 
+                  MqttMetrics.RecordTopicAliasHit();
                   resolvedPacket.TopicUtf8Bytes = new ReadOnlySequence<byte>(topicBytes);
                }
                else
