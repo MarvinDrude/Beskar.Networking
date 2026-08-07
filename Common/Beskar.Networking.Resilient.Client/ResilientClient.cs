@@ -63,6 +63,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
    private long _lastTouchMs = Environment.TickCount64;
+   internal long LastPingSentTicks;
 
    private EndPoint? _remoteEndPoint;
    private INetworkStream? _controlStream;
@@ -672,6 +673,12 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                }
                else if (frameKind is ResilientFrameKind.Pong)
                {
+                  var lastPing = Volatile.Read(ref LastPingSentTicks);
+                  if (lastPing > 0)
+                  {
+                     var rttMs = (DateTimeOffset.UtcNow.Ticks - lastPing) / (double)TimeSpan.TicksPerMillisecond;
+                     ResilientMetrics.RecordPingRtt(rttMs, isClient: true);
+                  }
                   TouchActivity();
                }
                else if (frameKind is ResilientFrameKind.ConnectAcknowledged)
