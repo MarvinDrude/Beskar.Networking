@@ -90,6 +90,31 @@ public partial struct BeskarPacket
       return packet;
    }
 
+   public static BeskarPacket CreateFrame(ResilientFrameKind kind, ReadOnlyMemory<byte> payload)
+   {
+      return CreateFrame(kind, new ReadOnlySequence<byte>(payload));
+   }
+
+   public static BeskarPacket CreateFrame(ResilientFrameKind kind, byte[] payload)
+   {
+      return CreateFrame(kind, new ReadOnlySequence<byte>(payload));
+   }
+
+   public static BeskarPacket CreateMessage(ReadOnlySequence<byte> payload)
+   {
+      return CreateFrame(ResilientFrameKind.Message, payload);
+   }
+
+   public static BeskarPacket CreateMessage(ReadOnlyMemory<byte> payload)
+   {
+      return CreateFrame(ResilientFrameKind.Message, payload);
+   }
+
+   public static BeskarPacket CreateMessage(byte[] payload)
+   {
+      return CreateFrame(ResilientFrameKind.Message, payload);
+   }
+
    public readonly ReadOnlySequence<byte> GetPayloadSequence() => Payload;
 
    public readonly bool TryGetPayload<TPayload>(out TPayload? payload) where TPayload : class, IResilientPayload

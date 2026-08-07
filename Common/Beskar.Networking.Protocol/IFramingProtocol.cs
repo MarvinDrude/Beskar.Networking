@@ -46,6 +46,31 @@ public interface IFramingProtocol<TSelf> where TSelf : struct, IFramingProtocol<
    static virtual TSelf CreateFrame(ResilientFrameKind kind, ReadOnlySequence<byte> payload) => TSelf.CreateFrame(kind);
 
    /// <summary>
+   /// Optionally creates a protocol frame instance of the specified kind with a payload memory block.
+   /// </summary>
+   static virtual TSelf CreateFrame(ResilientFrameKind kind, ReadOnlyMemory<byte> payload) => TSelf.CreateFrame(kind, new ReadOnlySequence<byte>(payload));
+
+   /// <summary>
+   /// Optionally creates a protocol frame instance of the specified kind with a byte array payload.
+   /// </summary>
+   static virtual TSelf CreateFrame(ResilientFrameKind kind, byte[] payload) => TSelf.CreateFrame(kind, new ReadOnlySequence<byte>(payload));
+
+   /// <summary>
+   /// Optionally creates a message protocol frame with a payload sequence.
+   /// </summary>
+   static virtual TSelf CreateMessage(ReadOnlySequence<byte> payload) => TSelf.CreateFrame(ResilientFrameKind.Message, payload);
+
+   /// <summary>
+   /// Optionally creates a message protocol frame with a payload memory block.
+   /// </summary>
+   static virtual TSelf CreateMessage(ReadOnlyMemory<byte> payload) => TSelf.CreateFrame(ResilientFrameKind.Message, payload);
+
+   /// <summary>
+   /// Optionally creates a message protocol frame with a byte array payload.
+   /// </summary>
+   static virtual TSelf CreateMessage(byte[] payload) => TSelf.CreateFrame(ResilientFrameKind.Message, payload);
+
+   /// <summary>
    /// Gets the payload byte sequence of this frame if available.
    /// Defaults to empty sequence.
    /// </summary>

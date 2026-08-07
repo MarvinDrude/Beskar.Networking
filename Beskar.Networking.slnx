@@ -66,6 +66,7 @@
     <Project Path="Examples/Resilient/Beskar.Resilient.Chat.Server/Beskar.Resilient.Chat.Server.csproj" />
     <Project Path="Examples/Resilient/Beskar.Resilient.Chat.Client/Beskar.Resilient.Chat.Client.csproj" />
     <Project Path="Examples/Resilient/Beskar.Resilient.PingPong/Beskar.Resilient.PingPong.csproj" />
+    <Project Path="Examples/Resilient/Beskar.Resilient.QuickStart/Beskar.Resilient.QuickStart.csproj" />
     <Project Path="Examples/Resilient/Beskar.Resilient.Authentication/Beskar.Resilient.Authentication.csproj" />
   </Folder>
   <Folder Name="/Examples/Simple/">

@@ -1,4 +1,3 @@
-
 <h1>
 <p align="center">
    <img src="https://github.com/MarvinDrude/Beskar.Networking/blob/master/Resources/banner.png" alt="Logo" width="256" />
@@ -7,24 +6,33 @@
 </p>
 </h1>
 <p align="center">
-   Fast, <code>.NET</code> native, high-performance, low-allocation networking library.<br/>
+   Fast, <code>.NET 10</code> native, high-performance, low-allocation networking library.<br/>
    Built for modern <code>C#</code> includes TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, Memory, and MQTT.<br/>
    No external runtime dependencies besides <b>Beskar</b>.<br/><br/>
    <a href="#about">About</a>
    ·
+   <a href="#quick-start">Quick Start</a>
+   ·
+   <a href="#api-overview">API Overview</a>
+   ·
+   <a href="#roslyn-source-generators">Source Generators</a>
+   ·
+   <a href="#chaos-engineering">Chaos Engineering</a>
+   ·
+   <a href="#transport-comparison">Transports</a>
+   ·
    <a href="#examples">Examples</a>
    ·
-   <a href="#documenation">Documentation</a>
+   <a href="#documentation">Documentation</a>
    ·
    <a href="#performance-benchmarks">Performance</a>
-   ·
-   <a href="#key-aspects">Key Aspects</a>
 </p>
 <br/>
 
 ---
 <br/>
 
+![.NET 10](https://img.shields.io/badge/.NET-10.0-blueviolet)
 ![Code Poetry](https://img.shields.io/badge/code-is_poetry-orange)
 ![Issues](https://img.shields.io/github/issues/MarvinDrude/Beskar.Networking)
 ![Repo Size](https://img.shields.io/github/repo-size/MarvinDrude/Beskar.Networking.svg)
@@ -32,36 +40,140 @@
 
 ## About
 
-Main reasons for why you should consider using `Beskar.Networking` for your next **Networking** or **MQTT** use case:
+Main reasons for why you should consider using `Beskar.Networking` for your next **Networking**, **IPC**, or **MQTT** use case:
 
 - Made with passion and love for the craft.
-- Built for modern `.NET` using `C#` and designed to be highly performant, low-allocation, and easy to use.
-- Purposefully designed to be lightweight and flexible.
-- Performance-first approach with **100,000** - **10,800,000** messages/packets per second. (Depending on various factors)
-- Many simple or more advanced example projects demonstrating how to use `Beskar.Networking` across various transports.
-- Various Unit Tests to verify functionality and performance.
-- Active development and steady progress towards a full feature set.
-- Native OpenTelemetry and `System.Diagnostics.Metrics` telemetry support across all transports, resilient protocol, and MQTT. See [Telemetry Meters](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Telemetry/Meters.md).
-- MQTT V3 and V5 support. (Server and Client) – Over any transport supported by Beskar.
-- No external runtime dependencies besides .NET and Beskar.
+- Built for modern **`.NET 10`** using `C#` and designed to be highly performant, low-allocation, and easy to use.
+- **Extreme Performance**: From **100,000** up to **12,700,000** messages/packets per second with zero/near-zero allocations via `System.IO.Pipelines`.
+- **Roslyn Incremental Source Generators**: Compile-time protocol framing and zero-allocation MQTT topic byte generation.
+- **Built-in Chaos Engineering**: Test network resiliency with built-in fault injection (latency jitter, packet drops, bandwidth caps, abrupt teardowns).
+- **Transport Independence**: Run MQTT or Resilient protocols seamlessly over TCP, WebSockets, QUIC, UDP, Unix Domain Sockets (UDS), Named Pipes, or In-Memory.
+- **Native OpenTelemetry & Metrics**: Built-in `System.Diagnostics.Metrics` meters across all transports, resilient protocol, and MQTT broker/client.
+- **Full MQTT v3.1.1 & v5.0 Support**: High-performance broker and client with retained message persistence, offline crash-safe queuing, and user properties.
+- **No external runtime dependencies** besides .NET and Beskar.
 
 ---
 
 ## NuGet packages overview
 
-| Package / Project | Description                                                                                         | NuGet Link |
+| Package / Project | Description | NuGet Link |
 | :--- |:----------------------------------------------------------------------------------------------------| :--- |
 | **Beskar.Mqtt.Server** | High-performance, low-allocation MQTT broker/server support for v3.1.1 and v5.0 over any transport. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Mqtt.Server.svg)](https://www.nuget.org/packages/Beskar.Mqtt.Server/) |
-| **Beskar.Mqtt.Client** | Lightweight and efficient MQTT client supporting v3.1.1 and v5.0 over any transport.                | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Mqtt.Client.svg)](https://www.nuget.org/packages/Beskar.Mqtt.Client/) |
+| **Beskar.Mqtt.Client** | Lightweight and efficient MQTT client supporting v3.1.1 and v5.0 over any transport. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Mqtt.Client.svg)](https://www.nuget.org/packages/Beskar.Mqtt.Client/) |
 | **Beskar.Networking.Resilient.Server** | High-performance, event-driven resilient server wrapper supporting keep-alives, handshakes, and custom framing over any transport. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Resilient.Server.svg)](https://www.nuget.org/packages/Beskar.Networking.Resilient.Server/) |
 | **Beskar.Networking.Resilient.Client** | High-performance resilient client wrapper supporting automatic reconnection, keep-alives, handshakes, and custom framing. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Resilient.Client.svg)](https://www.nuget.org/packages/Beskar.Networking.Resilient.Client/) |
-| **Beskar.Networking.Transports.Tcp** | High-performance, native TCP transport implementation supporting TLS.                               | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Tcp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Tcp/) |
-| **Beskar.Networking.Transports.Ws** | WebSocket (WS/WSS) transport adapter wrapping custom framed duplex pipelines.                       | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Ws.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Ws/) |
-| **Beskar.Networking.Transports.Quic** | Multiplexed and secure QUIC transport implementation built on native .NET libraries.                | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Quic.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Quic/) |
-| **Beskar.Networking.Transports.Udp** | High-performance, virtualized session-multiplexed UDP transport implementation.                     | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Udp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Udp/) |
-| **Beskar.Networking.Transports.Uds** | Native Unix Domain Sockets (UDS) local transport implementation.                                    | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Uds.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Uds/) |
-| **Beskar.Networking.Transports.NamedPipes** | Native local Inter-Process Communication (IPC) Named Pipes transport implementation.                 | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.NamedPipes.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.NamedPipes/) |
-| **Beskar.Networking.Transports.Memory** | Fast, zero-allocation local in-memory transport implementation for tests and local IPC.            | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Memory.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Memory/) |
+| **Beskar.Networking.Transports.Tcp** | High-performance, native TCP transport implementation supporting TLS. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Tcp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Tcp/) |
+| **Beskar.Networking.Transports.Ws** | WebSocket (WS/WSS) transport adapter wrapping custom framed duplex pipelines. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Ws.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Ws/) |
+| **Beskar.Networking.Transports.Quic** | Multiplexed and secure QUIC transport implementation built on native .NET libraries. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Quic.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Quic/) |
+| **Beskar.Networking.Transports.Udp** | High-performance, virtualized session-multiplexed UDP transport implementation. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Udp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Udp/) |
+| **Beskar.Networking.Transports.Uds** | Native Unix Domain Sockets (UDS) local transport implementation. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Uds.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Uds/) |
+| **Beskar.Networking.Transports.NamedPipes** | Native local Inter-Process Communication (IPC) Named Pipes transport implementation. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.NamedPipes.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.NamedPipes/) |
+| **Beskar.Networking.Transports.Memory** | Fast, zero-allocation local in-memory transport implementation for tests and local IPC. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Memory.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Memory/) |
+
+---
+
+## Quick Start
+
+`Beskar.Networking` provides 3 distinct levels of abstraction depending on your application needs.
+
+### Bare-Metal Transport API (Low-Level)
+> **What it's worth:** Maximum speed and total control over raw bytes using `System.IO.Pipelines`.
+> Zero framework overhead. Ideal for building custom wire protocols, high-performance proxy gateways,
+> or specialized network microservices.
+
+```csharp
+using System.Net;
+using System.Text;
+using Beskar.Networking.Transports.Tcp;
+
+// Server Listener
+var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Any, 9000));
+await listener.BindAsync();
+
+_ = Task.Run(async () => {
+    var sessionResult = await listener.AcceptSessionAsync();
+    var session = sessionResult.Success;
+    var stream = (await session.AcceptStreamAsync()).Success;
+
+    // Read raw pipeline input
+    var readResult = await stream.Transport.Input.ReadAsync();
+    Console.WriteLine($"Received: {Encoding.UTF8.GetString(readResult.Buffer.FirstSpan)}");
+});
+
+// Client Connection
+var client = new TcpNetworkClient();
+var connectResult = await client.ConnectAsync(new IPEndPoint(IPAddress.Loopback, 9000));
+var clientStream = (await connectResult.Success.AcceptStreamAsync()).Success;
+
+// Write directly to pipeline output
+var bytes = "Hello Bare Metal!"u8.ToArray();
+await clientStream.Transport.Output.WriteAsync(bytes);
+```
+
+### Full MQTT Broker & Client (v3.1.1 & v5.0)
+> **What it's worth:** Full-featured, enterprise-grade MQTT pub/sub engine over **any** transport
+> (TCP, WebSockets, UDS, Named Pipes, or Memory). Features QoS 0/1/2, Retained message persistence,
+> offline crash-safe queuing, Topic Aliases, and User Properties trace contexts.
+> Ideal for IoT fleets, event-driven microservices, and telemetry pipelines.
+
+```csharp
+var endPoint = new IPEndPoint(IPAddress.Loopback, 1883);
+
+// 1. Spin up MQTT Server / Broker
+var broker = MqttServerFactory.CreateBuilder().UseTcp(endPoint.Port).Build();
+await broker.StartAsync();
+
+// 2. Subscriber Client
+await using var subClient = MqttClientFactory.CreateTcp();
+subClient.AddMessageReceiveHandler((ctx, ct) => {
+    Console.WriteLine($"Received [{ctx.Message.Topic}]: {Encoding.UTF8.GetString(ctx.Message.Payload.Span)}");
+    return ValueTask.CompletedTask;
+});
+await subClient.ConnectAsync(new ConnectOptions { EndPoint = endPoint, ProtocolVersion = MqttProtocolVersion.V50 });
+await subClient.SubscribeAsync(SubscribeOptions.Create().WithTopicFilter("sensors/temp").Build());
+
+// 3. Publisher Client
+await using var pubClient = MqttClientFactory.CreateTcp();
+await pubClient.ConnectAsync(new ConnectOptions { EndPoint = endPoint, ProtocolVersion = MqttProtocolVersion.V50 });
+await pubClient.PublishAsync(PublishOptions.Create()
+    .WithTopic("sensors/temp")
+    .WithPayload("{ \"celsius\": 22.5 }")
+    .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+    .Build());
+```
+
+### Resilient Managed Engine (High-Level Event-Driven)
+> **What it's worth:** Production-ready real-time networking without connection handling boilerplate.
+> Out-of-the-box auto-reconnection, ping-pong heartbeats with live RTT latency monitoring, HMAC challenge-response security,
+> and framing serialization. Ideal for multiplayer games, chat applications, and financial streaming.
+
+```csharp
+var endPoint = new IPEndPoint(IPAddress.Loopback, 9001);
+
+// 1. Resilient Server
+var server = ResilientServerFactory.CreateBuilder().UseTcp(endPoint).Build();
+server.Events.FrameReceived.Add((ctx, ct) => {
+    var text = Encoding.UTF8.GetString(ctx.Frame.GetPayloadSequence().ToArray());
+    Console.WriteLine($"Server received: {text}");
+
+    // Echo response frame back
+    return ctx.Client.SendAsync(BeskarPacket.CreateMessage("Pong!"u8.ToArray()), ct);
+});
+await server.StartAsync();
+
+// 2. Resilient Client (with Auto-Reconnect enabled)
+var client = ResilientClientFactory.CreateTcp<BeskarPacket>(clientOptions: new ResilientClientOptions {
+    Reconnecting = new ResilientClientReconnectionOptions { AutoReconnect = true }
+});
+
+client.Events.FrameReceived.Add((ctx, ct) => {
+    Console.WriteLine($"Client received: {Encoding.UTF8.GetString(ctx.Frame.GetPayloadSequence().ToArray())}");
+    return ValueTask.CompletedTask;
+});
+
+await client.ConnectAsync(endPoint);
+await client.SendAsync(BeskarPacket.CreateMessage("Ping!"u8.ToArray()));
+```
 
 ---
 
@@ -77,9 +189,9 @@ The core library features protocol-agnostic, low-level interfaces:
 * `INetworkSession` - Represents a single connection between a client and server.
 * `INetworkStream` - Provides transport-agnostic handling (supporting TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, or Memory).
 
-These interfaces provide transport-agnostic handling (supporting TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, or Memory).
-Because they are low-level, you are responsible for managing execution tasks yourself, such as
-starting your own accept loops, launching read/write tasks, and supervising session lifecycles.
+These interfaces provide transport-agnostic handling.
+Because they are low-level, you are responsible for managing execution tasks yourself, such as starting your own accept
+loops, launching read/write tasks, and supervising session lifecycles.
 
 > [!IMPORTANT]
 > **Client Transport Optimization (Low-Level APIs)**
@@ -97,6 +209,41 @@ For protocols like MQTT, or connection-resilient networking, `Beskar.Networking`
 * **Event-Driven**: Fully event-driven design with convenient events to react to incoming messages, client connections, and status updates, eliminating the need to write custom accept loops or pipeline plumbing.
 
 For more details, see the [Resilient Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Resilient/Overview.md) and [Mqtt Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Mqtt/PubSub.md).
+
+---
+
+## Roslyn Source Generators
+
+`Beskar.Networking` comes equipped with Roslyn Incremental Source Generators to shift runtime reflections
+and string formatting overhead to compile-time:
+
+* **`[GenerateFramingProtocol]` (`FramingProtocolGenerator`)**: Zero-boilerplate compilation of custom wire framing protocols.
+* **`[GenerateMqttTopic]` (`MqttTopicGenerator`)**: Compile-time MQTT topic path validation and generation of zero-allocation `ReadOnlySpan<byte>` publishing overloads.
+
+```csharp
+// Compile-time generated MQTT topic helper
+[GenerateMqttTopic("sensors/telemetry/{deviceId}")]
+public partial class TelemetryTopic;
+
+// Zero-allocation publishing using generated byte spans
+await client.PublishAsync(TelemetryTopic.GetBytes("device-01"), payloadSpan);
+```
+
+---
+
+## Transport Comparison
+
+Swap underlying transports dynamically without altering high-level business logic:
+
+| Transport | Encryption | Target Scope | Best For |
+| :--- | :---: | :---: | :--- |
+| **Named Pipes** | OS Native | Local IPC | Extremely fast Windows/Linux local process communication |
+| **Unix Domain Sockets (UDS)** | OS Native | Local IPC | Ultra-low latency Linux/Unix inter-process communication |
+| **TCP** | TLS 1.2/1.3 | LAN / WAN | Standard high-throughput client-server networking |
+| **WebSockets (WS/WSS)** | TLS / SSL | Web / Firewall | Browser clients, proxies, and firewall-friendly duplex streaming |
+| **QUIC** | Encrypted | Mobile / WAN | Multiplexed UDP-based connections with zero head-of-line blocking |
+| **UDP** | Manual | LAN / Virtual | High-frequency datagram messaging & virtual session multiplexing |
+| **Memory** | N/A | In-Process | Ultra-fast unit testing, mocking, and in-process communication |
 
 ---
 
@@ -184,9 +331,9 @@ for building extremely fast network applications across multiple transport proto
 
 - **Unified Abstractions**: Write your network layer once and swap between TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, or Memory dynamically.
 - **Modern .NET 10 Stack**: Heavily leverages `System.IO.Pipelines` (decoupling IO thread queues from application processing), `Span<T>`, `ReadOnlySpan<T>`, and direct memory pooling to achieve zero/near-zero allocations.
+- **Roslyn Incremental Source Generators**: Zero-allocation MQTT topic formatting and compile-time framing protocol compilation.
+- **Built-in Chaos Simulator**: Battle-tested against latency jitter, packet loss, bandwidth caps, and data corruption.
 - **TLS/SSL Encryption**: Full native SSL/TLS wrapping for TCP and WebSocket transports out of the box.
 - **Non-blocking IO Queueing**: Highly-optimized custom IO queues (like `TcpIoQueueRegistry` / `TcpIoQueue`) to handle asynchronous reading and writing concurrently.
-- **Native OpenTelemetry & Metrics**: Built-in `System.Diagnostics.Metrics` meters and instruments tracking live active connections, streams, byte throughput, MQTT broker sessions/retries/retained messages, and resilient RTT/reconnections. See [Telemetry Meters Reference](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Telemetry/Meters.md).
+- **Native OpenTelemetry & Metrics**: Built-in `System.Diagnostics.Metrics` meters tracking live active connections, streams, byte throughput, MQTT broker sessions/retries/retained messages, and resilient RTT/reconnections. See [Telemetry Meters Reference](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Telemetry/Meters.md).
 - **Full MQTT**: Complete MQTT v3.1.1 and v5.0 server broker and client support over any transport.
-
----

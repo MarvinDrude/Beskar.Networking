@@ -200,6 +200,24 @@ public sealed class ResilientServerClient<TFrame>(
    }
 
    /// <summary>
+   /// Asynchronously sends raw payload bytes as a Message frame on the main control stream.
+   /// </summary>
+   public ValueTask SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
+   {
+      var frame = TFrame.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>(payload));
+      return SendAsync(frame, cancellationToken);
+   }
+
+   /// <summary>
+   /// Asynchronously sends raw payload bytes as a Message frame on a specific stream.
+   /// </summary>
+   public ValueTask SendAsync(ReadOnlyMemory<byte> payload, INetworkStream stream, CancellationToken cancellationToken = default)
+   {
+      var frame = TFrame.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>(payload));
+      return SendAsync(frame, stream, cancellationToken);
+   }
+
+   /// <summary>
    /// Asynchronously serializes and sends a generic payload on the main control stream using the configured or provided serializer.
    /// Uses PooledBufferWriter backed by ArrayPool<byte>.Shared for zero-allocation performance.
    /// </summary>
