@@ -42,6 +42,8 @@ public sealed partial class MqttClient
          await semaphore.WaitAsync(ct);
       }
 
+      MqttMetrics.RecordQosInflightChange(1);
+
       try
       {
          return options.QualityOfService switch
@@ -53,6 +55,7 @@ public sealed partial class MqttClient
       }
       finally
       {
+         MqttMetrics.RecordQosInflightChange(-1);
          try
          {
             semaphore?.Release();

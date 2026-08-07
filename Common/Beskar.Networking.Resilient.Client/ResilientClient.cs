@@ -13,6 +13,7 @@ using Beskar.Networking.Protocol;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Protocol.Utilities;
 using Beskar.Networking.Resilient.Common.Enums;
+using Beskar.Networking.Resilient.Common.Telemetry;
 using Beskar.Networking.Resilient.Client.Contexts;
 using Beskar.Networking.Resilient.Client.Services;
 using Beskar.Utilities.Tracing;
@@ -235,6 +236,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
          State = ResilientClientState.Connected;
          ConnectedAt = DateTimeOffset.UtcNow;
+         ResilientMetrics.RecordSessionStateChange(1, isClient: true);
          TraceLogger.LogClientInfo("ResilientClient: Connected successfully to {0}. State is Connected.", endPoint);
 
          _disconnectedEventFired = 0;
@@ -326,6 +328,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private async ValueTask DisconnectInternalAsync(DisconnectPacketPayload? disconnectPayload,
       bool raiseDisconnectedEvent = true)
    {
+      ResilientMetrics.RecordSessionStateChange(-1, isClient: true);
       try
       {
          try

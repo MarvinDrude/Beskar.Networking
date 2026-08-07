@@ -1,3 +1,4 @@
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Server.Enumerators;
 using Beskar.Networking.Abstractions.Comparers;
@@ -78,6 +79,7 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
             retainAsPublished,
             retainHandling,
             subscriptionIdentifier));
+         MqttMetrics.RecordSubscriptionChange(1);
       }
 
       var options = new MqttSessionSubscription
@@ -102,6 +104,11 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
       UnsubscribeRecursive(_rootNode, ref enumerator, session, ref removed);
 
       session.RemoveSubscription(topicFilter);
+
+      if (removed)
+      {
+         MqttMetrics.RecordSubscriptionChange(-1);
+      }
 
       return removed;
    }
