@@ -20,6 +20,7 @@ using Beskar.Mqtt.Server.Options;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Mqtt.Common.Encoders.Properties;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Utilities.Tracing;
 using Beskar.Mqtt.Protocol.Extensions;
@@ -630,6 +631,7 @@ public sealed partial class MqttServer : IAsyncDisposable
       byte[]? correlationData,
       UserPropertyCollection userProperties)
    {
+      MqttMetrics.RecordLastWillTriggered();
       var topicBytes = Encoding.UTF8.GetBytes(topic);
       var topicSequence = new ReadOnlySequence<byte>(topicBytes);
 

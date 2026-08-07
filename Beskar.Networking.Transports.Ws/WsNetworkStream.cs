@@ -3,6 +3,7 @@ using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Abstractions.Threading;
 using Beskar.Networking.Transports.Ws.Enums;
 using Beskar.Utilities.Tracing;
@@ -48,12 +49,14 @@ public sealed class WsNetworkStream : INetworkStream
    {
       Interlocked.Add(ref _bytesReceived, bytes);
       Volatile.Write(ref _lastReceivedTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      TransportMetrics.RecordBytesReceived(bytes, Session.Transport);
    }
 
    public void IncrementBytesSent(long bytes)
    {
       Interlocked.Add(ref _bytesSent, bytes);
       Volatile.Write(ref _lastSentTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      TransportMetrics.RecordBytesSent(bytes, Session.Transport);
    }
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;

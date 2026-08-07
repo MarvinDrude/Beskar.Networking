@@ -3,6 +3,7 @@ using Beskar.Memory.Threading;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Handlers.Contexts;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Models;
@@ -89,12 +90,16 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
       static async ValueTask Awaited(MqttClient client, PublishPacket packet, CancellationToken ct)
       {
+         MqttMetrics.RecordPublished(isInbound: true, qos: (int)packet.QualityOfService, isRetained: packet.Retain);
+
          var resolvedPacket = packet;
 
          if (client.ProtocolVersion is MqttProtocolVersion.V50)
          {
             if (packet.TopicAlias > 0)
             {
+               MqttMetrics.RecordTopicAliasHit();
+
                var topicAliasMax = client.CurrentConnectOptions.TopicAliasMaximum ?? 0;
                if (packet.TopicAlias > topicAliasMax)
                {

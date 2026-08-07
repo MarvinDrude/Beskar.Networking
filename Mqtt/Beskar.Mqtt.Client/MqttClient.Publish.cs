@@ -4,6 +4,7 @@ using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Encoders.Version3;
 using Beskar.Mqtt.Common.Encoders.Version5;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
@@ -27,6 +28,7 @@ public sealed partial class MqttClient
          return new StringError("Invalid control stream.");
       }
 
+      MqttMetrics.RecordPublished(isInbound: false, qos: (int)options.QualityOfService, isRetained: options.Retain);
       TraceLogger.LogClientInfo("MqttClient.PublishAsync: Publishing to topic '{0}' (QoS: {1}).", Encoding.UTF8.GetString(options.TopicUtf8Bytes.Span), options.QualityOfService);
 
       if (options.QualityOfService is QualityOfServiceType.AtMostOnce)
