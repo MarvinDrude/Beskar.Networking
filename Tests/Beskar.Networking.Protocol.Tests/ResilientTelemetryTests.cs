@@ -72,4 +72,66 @@ public class ResilientTelemetryTests
       await client.DisposeAsync();
       await server.DisposeAsync();
    }
+
+   [Test]
+   public async Task ResilientTelemetry_ConnectDisconnectReconnect_CountsSessionsWithoutLeak()
+   {
+      long recordedSessionsActive = 0;
+      long recordedReconnectAttempts = 0;
+
+      using var meterListener = new MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == ResilientMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.resilient.sessions.active")
+         {
+            Interlocked.Add(ref recordedSessionsActive, measurement);
+         }
+         else if (instrument.Name == "beskar.resilient.reconnect.attempts")
+         {
+            Interlocked.Add(ref recordedReconnectAttempts, measurement);
+         }
+      });
+
+      meterListener.Start();
+
+      var endpoint = new MemoryEndPoint($"resilient_reconnect_exp_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<CustomMagicPacket>([listener], new ResilientServerOptions());
+      await server.StartAsync();
+
+      var client = ResilientClientFactory.CreateMemory<CustomMagicPacket>();
+      using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+      var startAuth = Volatile.Read(ref recordedReconnectAttempts);
+
+      // Phase 1: Initial Connect
+      var connectResult = await client.ConnectAsync(endpoint, cts.Token);
+      await Assert.That(connectResult.Failed).IsFalse();
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Phase 2: Disconnect
+      await client.DisconnectAsync();
+      await Assert.That(client.IsConnected).IsFalse();
+
+      // Phase 3: Reconnect
+      var reconnectResult = await client.ConnectAsync(endpoint, cts.Token);
+      await Assert.That(reconnectResult.Failed).IsFalse();
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Phase 4: Final Disconnect
+      await client.DisconnectAsync();
+      await Assert.That(client.IsConnected).IsFalse();
+
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
 }

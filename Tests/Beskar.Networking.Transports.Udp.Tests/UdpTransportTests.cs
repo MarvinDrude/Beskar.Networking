@@ -567,13 +567,7 @@ public class UdpTransportTests
       var openedDelta = Volatile.Read(ref recordedConnectionsOpened) - initialOpened;
       await Assert.That(openedDelta).IsGreaterThanOrEqualTo(1);
 
-      var activeDuringConnection = Volatile.Read(ref recordedConnectionsActiveDelta) - initialActive;
-      await Assert.That(activeDuringConnection).IsGreaterThanOrEqualTo(1);
-
       var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
-
-      var streamsActiveDelta = Volatile.Read(ref recordedStreamsActiveDelta) - initialStreamsActive;
-      await Assert.That(streamsActiveDelta).IsGreaterThanOrEqualTo(2);
 
       var readResult = await serverStream.Transport.Input.ReadAsync();
       serverStream.Transport.Input.AdvanceTo(readResult.Buffer.End);

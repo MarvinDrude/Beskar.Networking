@@ -60,6 +60,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private volatile int _state = (int)ResilientClientState.Disconnected;
    private int _disconnectedEventFired;
    private volatile int _handshakeAckReceived;
+   private int _isSessionActiveRecorded;
 
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
    private long _lastTouchMs = Environment.TickCount64;
@@ -237,7 +238,10 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
          State = ResilientClientState.Connected;
          ConnectedAt = DateTimeOffset.UtcNow;
-         ResilientMetrics.RecordSessionStateChange(1, isClient: true);
+         if (Interlocked.Exchange(ref _isSessionActiveRecorded, 1) == 0)
+         {
+            ResilientMetrics.RecordSessionStateChange(1, isClient: true);
+         }
          TraceLogger.LogClientInfo("ResilientClient: Connected successfully to {0}. State is Connected.", endPoint);
 
          _disconnectedEventFired = 0;
@@ -329,7 +333,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private async ValueTask DisconnectInternalAsync(DisconnectPacketPayload? disconnectPayload,
       bool raiseDisconnectedEvent = true)
    {
-      if (State is ResilientClientState.Connected or ResilientClientState.Disconnecting)
+      if (Interlocked.Exchange(ref _isSessionActiveRecorded, 0) == 1)
       {
          ResilientMetrics.RecordSessionStateChange(-1, isClient: true);
       }
