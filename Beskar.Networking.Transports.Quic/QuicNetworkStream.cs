@@ -98,13 +98,16 @@ public sealed class QuicNetworkStream : INetworkStream
 
       try
       {
+         var errorCode = _session.Options.DefaultStreamErrorCode;
+
          if (_quicStream.CanRead)
          {
-            _quicStream.Abort(QuicAbortDirection.Read, 0);
+            _quicStream.Abort(QuicAbortDirection.Read, errorCode);
          }
+
          if (_quicStream.CanWrite)
          {
-            _quicStream.Abort(QuicAbortDirection.Write, 0);
+            _quicStream.Abort(QuicAbortDirection.Write, errorCode);
          }
       }
       catch

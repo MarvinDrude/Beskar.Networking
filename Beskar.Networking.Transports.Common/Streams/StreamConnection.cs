@@ -31,8 +31,9 @@ public sealed class StreamConnection(
    public PipeWriter Output => _writePipe.Writer;
 
    public Stream? InnerStream { get; private set; }
+   private bool AllowFlushOnStop { get; set; } = true;
 
-   public void Initialize(Stream stream)
+   public void Initialize(Stream stream, bool allowFlushOnStop = true)
    {
       ArgumentNullException.ThrowIfNull(stream);
       if (stream is { CanRead: false, CanWrite: false })
@@ -41,6 +42,7 @@ public sealed class StreamConnection(
       }
 
       InnerStream = stream;
+      AllowFlushOnStop = allowFlushOnStop;
    }
 
    public void Start()
@@ -121,9 +123,9 @@ public sealed class StreamConnection(
       {
          try
          {
-            if (stream.CanWrite)
+            if (stream.CanWrite && AllowFlushOnStop && !_cts.IsCancellationRequested)
             {
-               using var flushCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+               using var flushCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
                await stream.FlushAsync(flushCts.Token).ConfigureAwait(false);
             }
          }
@@ -202,6 +204,7 @@ public sealed class StreamConnection(
       _writePipe = new Pipe(writeOptions);
 
       InnerStream = null;
+      AllowFlushOnStop = true;
       _stopped = false;
       _isDisposed = false;
 

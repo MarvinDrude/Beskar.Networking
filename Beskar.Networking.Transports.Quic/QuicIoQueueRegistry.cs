@@ -59,7 +59,7 @@ public sealed class QuicIoQueueRegistry : IAsyncDisposable
          TraceLogger.LogNeutralInfo("QUIC IO Registry: Creating stream connection for generic Stream");
       }
 
-      connection.Initialize(stream);
+      connection.Initialize(stream, allowFlushOnStop: false);
       connection.Start();
 
       return connection;

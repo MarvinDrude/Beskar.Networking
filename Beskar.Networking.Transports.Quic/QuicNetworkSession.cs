@@ -31,6 +31,7 @@ public sealed class QuicNetworkSession : INetworkSession
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
    public TransportKind Transport => TransportKind.Quic;
+   public QuicTransportOptions Options => _options;
 
    public NetworkSecurityInfo SecurityInfo => new(
       IsEncrypted: true,
@@ -148,6 +149,11 @@ public sealed class QuicNetworkSession : INetworkSession
       }
       catch (QuicException ex)
       {
+         if (ex.QuicError is QuicError.ConnectionAborted or QuicError.ConnectionTimeout or QuicError.OperationAborted)
+         {
+            try { await _cts.CancelAsync(); } catch { /* Ignored */ }
+         }
+
          if (ex.QuicError == QuicError.ConnectionAborted)
          {
             TraceLogger.LogServerInfo("QUIC Session {0}: Connection closed by peer gracefully or aborted (Application Error Code: {1})", Id, ex.ApplicationErrorCode);
@@ -213,6 +219,11 @@ public sealed class QuicNetworkSession : INetworkSession
       }
       catch (QuicException ex)
       {
+         if (ex.QuicError is QuicError.ConnectionAborted or QuicError.ConnectionTimeout or QuicError.OperationAborted)
+         {
+            try { await _cts.CancelAsync(); } catch { /* Ignored */ }
+         }
+
          TraceLogger.LogClientError("QUIC Session {0}: QuicException opening outbound stream (Code: {1}): {2}", Id, (int)ex.QuicError, ex.Message);
          return new NetworkCodeError((int)ex.QuicError, ex.Message);
       }
@@ -290,7 +301,6 @@ public sealed class QuicNetworkSession : INetworkSession
       {
          // Ignored
       }
-      _cts.Dispose();
 
       foreach (var stream in _activeStreams.Values)
       {
@@ -307,14 +317,23 @@ public sealed class QuicNetworkSession : INetworkSession
 
       try
       {
-         // ReSharper disable once MethodSupportsCancellation
-         await _connection.CloseAsync(_options.DefaultCloseErrorCode);
+         using var closeCts = new CancellationTokenSource(50);
+         await _connection.CloseAsync(_options.DefaultCloseErrorCode, closeCts.Token);
+      }
+      catch
+      {
+         // Ignored
+      }
+
+      try
+      {
+         await _connection.DisposeAsync();
       }
       catch (Exception ex)
       {
-         TraceLogger.LogNeutralWarning("QUIC Session {0}: Error closing connection: {1}", Id, ex.Message);
+         TraceLogger.LogNeutralWarning("QUIC Session {0}: Error disposing connection: {1}", Id, ex.Message);
       }
 
-      await _connection.DisposeAsync();
+      _cts.Dispose();
    }
 }
