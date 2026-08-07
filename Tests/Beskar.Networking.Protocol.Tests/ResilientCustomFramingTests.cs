@@ -5,6 +5,7 @@ using System.Text;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Client;
 using Beskar.Networking.Resilient.Server;
+using Beskar.Networking.Transports.Memory;
 
 namespace Beskar.Networking.Protocol.Tests;
 
@@ -165,10 +166,10 @@ public class ResilientCustomFramingTests
    [Test]
    public async Task Client_And_Server_WithCustomFramingProtocol_ShouldHandshake_And_ExchangeMessages()
    {
-      var listenerEndPoint = new IPEndPoint(IPAddress.Loopback, 0);
-      var server = ResilientServerFactory.CreateBuilder<CustomMagicPacket>()
-         .UseTcp(listenerEndPoint)
-         .Build();
+      var endpoint = new MemoryEndPoint($"custom_framing_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var serverOptions = new ResilientServerOptions();
+      var server = new ResilientServer<CustomMagicPacket>([listener], serverOptions);
 
       var serverReceivedTcs = new TaskCompletionSource<string>();
 
@@ -181,15 +182,13 @@ public class ResilientCustomFramingTests
 
       await server.StartAsync();
 
-      var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
-
-      var client = ResilientClientFactory.CreateTcp<CustomMagicPacket>(clientOptions: new ResilientClientOptions
+      var client = ResilientClientFactory.CreateMemory<CustomMagicPacket>(clientOptions: new ResilientClientOptions
       {
          Reconnecting = new ResilientClientReconnectionOptions { AutoReconnect = false }
       });
 
       using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-      var connectResult = await client.ConnectAsync(boundEndPoint, cts.Token);
+      var connectResult = await client.ConnectAsync(endpoint, cts.Token);
       await Assert.That(connectResult.Failed).IsFalse();
       await Assert.That(client.IsConnected).IsTrue();
 

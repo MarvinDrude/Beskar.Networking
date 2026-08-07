@@ -41,6 +41,9 @@
     <File Path="Documentation/Resilient/Events.md" />
     <File Path="Documentation/Resilient/Overview.md" />
   </Folder>
+  <Folder Name="/Documentation/Telemetry/">
+    <File Path="Documentation/Telemetry/Meters.md" />
+  </Folder>
   <Folder Name="/Examples/" />
   <Folder Name="/Examples/Advanced/">
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Client/Beskar.Adv.Chat.Client.csproj" />

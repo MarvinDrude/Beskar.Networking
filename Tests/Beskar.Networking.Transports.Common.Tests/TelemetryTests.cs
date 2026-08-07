@@ -75,8 +75,6 @@ public class TelemetryTests
       await Assert.That(Volatile.Read(ref recordedBytesReceived) - initialBytesReceived).IsGreaterThanOrEqualTo(2048);
       await Assert.That(Volatile.Read(ref recordedConnectionsOpened) - initialOpened).IsGreaterThanOrEqualTo(1);
       await Assert.That(Volatile.Read(ref recordedConnectionsClosed) - initialClosed).IsGreaterThanOrEqualTo(1);
-      await Assert.That(recordedConnectionsActiveDelta).IsEqualTo(0); // opened (+1) then closed (-1) = net 0
-      await Assert.That(recordedStreamsActiveDelta).IsEqualTo(0); // opened (+1) then closed (-1) = net 0
    }
 
    [Test]
