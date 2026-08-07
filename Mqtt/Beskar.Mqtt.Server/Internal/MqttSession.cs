@@ -220,6 +220,19 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
+   internal void ClearUnacknowledgedPublishes()
+   {
+      lock (_unacknowledgedPublishesLock)
+      {
+         var count = _unacknowledgedPublishes.Count;
+         if (count > 0)
+         {
+            _unacknowledgedPublishes.Clear();
+            MqttMetrics.RecordQosInflightChange(-count);
+         }
+      }
+   }
+
    internal bool TryIncrementIncomingInFlight(ushort receiveMaximum, out int current)
    {
       lock (_incomingQos2PacketsLock)

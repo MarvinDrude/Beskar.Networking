@@ -189,14 +189,25 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
       var filters = session.GetSubscriptionKeys();
       if (filters.Count == 0) return;
 
+      var removedCount = 0;
       foreach (var filter in filters)
       {
          var enumerator = new TopicLevelEnumerator(filter);
-         var dummy = false;
-         UnsubscribeRecursive(_rootNode, ref enumerator, session, ref dummy);
+         var removed = false;
+         UnsubscribeRecursive(_rootNode, ref enumerator, session, ref removed);
+
+         if (removed)
+         {
+            removedCount++;
+         }
       }
 
       session.ClearSubscriptions();
+
+      if (removedCount > 0)
+      {
+         MqttMetrics.RecordSubscriptionChange(-removedCount);
+      }
    }
 
    public void Route<TVisitor>(ReadOnlySpan<byte> topic, ref TVisitor visitor)
