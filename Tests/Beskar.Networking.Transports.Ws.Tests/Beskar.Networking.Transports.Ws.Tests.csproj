@@ -11,6 +11,7 @@
 
    <ItemGroup>
       <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj"/>
    </ItemGroup>
 
 </Project>

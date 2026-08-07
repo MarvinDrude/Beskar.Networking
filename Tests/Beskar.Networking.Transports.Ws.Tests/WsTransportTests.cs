@@ -1,14 +1,100 @@
 using System.Buffers;
 using System.Diagnostics.Metrics;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Telemetry;
+using Beskar.Networking.Transports.Quic;
+using Beskar.Networking.Transports.Tcp;
 
 namespace Beskar.Networking.Transports.Ws.Tests;
 
 public class WsTransportTests
 {
+   [Test]
+   public async Task WsClientServer_WssConnection_DataExchangedSuccessfully()
+   {
+      using var certificate = CertificateUtility.GenerateSelfSignedCertificate();
+
+      var serverSslOptions = new SslServerAuthenticationOptions
+      {
+         ServerCertificate = certificate,
+         ClientCertificateRequired = false
+      };
+
+      var clientSslOptions = new SslClientAuthenticationOptions
+      {
+         TargetHost = "localhost",
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+      };
+
+      var serverOptions = new WsTransportOptions
+      {
+         Path = "/secure-chat",
+         TcpOptions = new TcpTransportOptions
+         {
+            UseSsl = true,
+            SslServerOptions = serverSslOptions
+         }
+      };
+
+      var clientOptions = new WsTransportOptions
+      {
+         Path = "/secure-chat",
+         TcpOptions = new TcpTransportOptions
+         {
+            UseSsl = true,
+            SslClientOptions = clientSslOptions
+         }
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), serverOptions);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(clientOptions);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      // Assert session security info for WSS connection
+      await Assert.That(clientSession.SecurityInfo.IsEncrypted).IsTrue();
+      await Assert.That(serverSession.SecurityInfo.IsEncrypted).IsTrue();
+      await Assert.That(clientSession.SecurityInfo.Protocol).IsNotNull();
+      await Assert.That(serverSession.SecurityInfo.Protocol).IsNotNull();
+      await Assert.That(clientSession.SecurityInfo.RemoteCertificate).IsNotNull();
+      await Assert.That(serverSession.SecurityInfo.LocalCertificate).IsNotNull();
+
+      var clientStreamResult = await clientSession.AcceptStreamAsync();
+      var serverStreamResult = await serverSession.AcceptStreamAsync();
+
+      await Assert.That(clientStreamResult.Failed).IsFalse();
+      await Assert.That(serverStreamResult.Failed).IsFalse();
+
+      var clientStream = clientStreamResult.Success!;
+      var serverStream = serverStreamResult.Success!;
+
+      var payload = "Encrypted WSS Payload"u8.ToArray();
+      await clientStream.Transport.Output.WriteAsync(payload);
+      await clientStream.Transport.Output.FlushAsync();
+
+      var readResult = await serverStream.Transport.Input.ReadAsync();
+      var readBytes = readResult.Buffer.ToArray();
+      serverStream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+
+      await Assert.That(readBytes).IsEquivalentTo(payload);
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
    [Test]
    public async Task ComputeAcceptKey_WithStandardRfcKey_ReturnsExpectedBase64Hash()
    {
