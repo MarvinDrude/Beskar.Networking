@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
@@ -9,6 +10,7 @@ using Beskar.Networking.Protocol.Frames;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Client;
 using Beskar.Networking.Resilient.Common.Enums;
+using Beskar.Networking.Resilient.Common.Telemetry;
 using Beskar.Networking.Resilient.Server;
 using Beskar.Networking.Transports.Memory;
 using Beskar.Networking.Transports.Quic;
@@ -371,6 +373,49 @@ public class ResilientClientServerIntegrationTests
       await Assert.That(reconnectAttempts).IsGreaterThanOrEqualTo(3);
       await Assert.That(client.State).IsEqualTo(ResilientClientState.Disconnected);
 
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
+   [Test]
+   public async Task ResilientClientServer_WithMeterListener_TracksResilientSessions()
+   {
+      long recordedSessionsDelta = 0;
+
+      using var meterListener = new MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == ResilientMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.resilient.sessions.active")
+         {
+            Interlocked.Add(ref recordedSessionsDelta, measurement);
+         }
+      });
+      meterListener.Start();
+
+      var endpoint = new MemoryEndPoint($"resilient_telemetry_{Guid.NewGuid()}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+
+      await server.StartAsync();
+
+      var initialSessions = Volatile.Read(ref recordedSessionsDelta);
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>();
+      var connectResult = await client.ConnectAsync(endpoint);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var sessionsDelta = Volatile.Read(ref recordedSessionsDelta) - initialSessions;
+      await Assert.That(sessionsDelta).IsGreaterThanOrEqualTo(1);
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
       await client.DisposeAsync();
       await server.DisposeAsync();
    }

@@ -69,6 +69,7 @@ public sealed partial class MqttSession
        }
 
        Server.SubscriptionRouter.UnsubscribeAll(this);
+       ClearUnacknowledgedPublishes();
 
        lock (_incomingQos2PacketsLock)
        {

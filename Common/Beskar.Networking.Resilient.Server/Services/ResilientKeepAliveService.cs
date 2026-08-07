@@ -1,5 +1,6 @@
 using Beskar.Networking.Protocol;
 using Beskar.Networking.Resilient.Common.Enums;
+using Beskar.Networking.Resilient.Common.Telemetry;
 using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Resilient.Server.Services;
@@ -98,6 +99,7 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
 
                if (now - client.LastActivityAt > timeout)
                {
+                  ResilientMetrics.RecordPingTimeout(isClient: false);
                   TraceLogger.LogServerWarning("ResilientServer KeepAlive: Client {0} idle for {1:F1}s (exceeds timeout {2:F1}s). Disconnecting client.", client.Id, (now - client.LastActivityAt).TotalSeconds, timeout.TotalSeconds);
                   if (_server.Clients.TryRemove(client.Id, out _))
                   {

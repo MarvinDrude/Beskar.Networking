@@ -3,6 +3,7 @@ using Beskar.Memory.Threading;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Handlers.Contexts;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Models;
@@ -89,6 +90,12 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
       static async ValueTask Awaited(MqttClient client, PublishPacket packet, CancellationToken ct)
       {
+         MqttMetrics.RecordPublished(isInbound: true, qos: (int)packet.QualityOfService, isRetained: packet.Retain);
+         if (packet.Dup)
+         {
+            MqttMetrics.RecordQosRetry();
+         }
+
          var resolvedPacket = packet;
 
          if (client.ProtocolVersion is MqttProtocolVersion.V50)
@@ -118,6 +125,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
                      return;
                   }
 
+                  MqttMetrics.RecordTopicAliasHit();
                   resolvedPacket.TopicUtf8Bytes = new ReadOnlySequence<byte>(topicBytes);
                }
                else

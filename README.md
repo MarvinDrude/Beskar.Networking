@@ -41,6 +41,7 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 - Many simple or more advanced example projects demonstrating how to use `Beskar.Networking` across various transports.
 - Various Unit Tests to verify functionality and performance.
 - Active development and steady progress towards a full feature set.
+- Native OpenTelemetry and `System.Diagnostics.Metrics` telemetry support across all transports, resilient protocol, and MQTT. See [Telemetry Meters](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Telemetry/Meters.md).
 - MQTT V3 and V5 support. (Server and Client) – Over any transport supported by Beskar.
 - No external runtime dependencies besides .NET and Beskar.
 
@@ -127,12 +128,15 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
     - [**Client**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.Chat.Client): Interactive chat client using `ResilientClient<BeskarPacket>` that reconnects and re-authenticates/joins automatically when connection is lost.
   - [**Simple Ping-Pong**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.PingPong): Demonstrates basic ping-pong message exchange using `ResilientServer` and `ResilientClient` with default framing over TCP port 9001.
   - [**Authentication Challenge-Response**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.Authentication): Highlights pre-handshake HMAC-SHA256 signature challenge-response authentication, showing both success and server-denial test cases on TCP port 9002.
+- [**Telemetry & OpenTelemetry Console**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Telemetry/Beskar.Example.Telemetry): Demonstrates how to subscribe to all native telemetry meters using `MeterListener` or OpenTelemetry exporters, showing real-time event streaming and a live metrics summary dashboard as operations occur.
 
 ---
 
-## Documenation
+## Documentation
 
 You can find detailed documentation for `Beskar.Networking` [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation).
+
+- [**Telemetry Meters Reference**](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Telemetry/Meters.md): Detailed reference of all OpenTelemetry and `System.Diagnostics.Metrics` meters, instruments, types, units, and descriptions across MQTT, Resilient, and Transports.
 
 Or you can find examples directly [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples).
 
@@ -178,7 +182,7 @@ for building extremely fast network applications across multiple transport proto
 - **Modern .NET 10 Stack**: Heavily leverages `System.IO.Pipelines` (decoupling IO thread queues from application processing), `Span<T>`, `ReadOnlySpan<T>`, and direct memory pooling to achieve zero/near-zero allocations.
 - **TLS/SSL Encryption**: Full native SSL/TLS wrapping for TCP and WebSocket transports out of the box.
 - **Non-blocking IO Queueing**: Highly-optimized custom IO queues (like `TcpIoQueueRegistry` / `TcpIoQueue`) to handle asynchronous reading and writing concurrently.
-- **Full MQTT**:
-- **Other Features**: Additional features and capabilities that make this library unique and valuable.
+- **Native OpenTelemetry & Metrics**: Built-in `System.Diagnostics.Metrics` meters and instruments tracking live active connections, streams, byte throughput, MQTT broker sessions/retries/retained messages, and resilient RTT/reconnections. See [Telemetry Meters Reference](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Telemetry/Meters.md).
+- **Full MQTT**: Complete MQTT v3.1.1 and v5.0 server broker and client support over any transport.
 
 ---

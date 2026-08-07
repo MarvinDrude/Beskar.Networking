@@ -13,6 +13,7 @@ using Beskar.Networking.Protocol;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Protocol.Utilities;
 using Beskar.Networking.Resilient.Common.Enums;
+using Beskar.Networking.Resilient.Common.Telemetry;
 using Beskar.Networking.Resilient.Client.Contexts;
 using Beskar.Networking.Resilient.Client.Services;
 using Beskar.Utilities.Tracing;
@@ -59,9 +60,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private volatile int _state = (int)ResilientClientState.Disconnected;
    private int _disconnectedEventFired;
    private volatile int _handshakeAckReceived;
+   private int _isSessionActiveRecorded;
 
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
    private long _lastTouchMs = Environment.TickCount64;
+   internal long LastPingSentTicks;
 
    private EndPoint? _remoteEndPoint;
    private INetworkStream? _controlStream;
@@ -235,6 +238,10 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
          State = ResilientClientState.Connected;
          ConnectedAt = DateTimeOffset.UtcNow;
+         if (Interlocked.Exchange(ref _isSessionActiveRecorded, 1) == 0)
+         {
+            ResilientMetrics.RecordSessionStateChange(1, isClient: true);
+         }
          TraceLogger.LogClientInfo("ResilientClient: Connected successfully to {0}. State is Connected.", endPoint);
 
          _disconnectedEventFired = 0;
@@ -326,6 +333,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private async ValueTask DisconnectInternalAsync(DisconnectPacketPayload? disconnectPayload,
       bool raiseDisconnectedEvent = true)
    {
+      if (Interlocked.Exchange(ref _isSessionActiveRecorded, 0) == 1)
+      {
+         ResilientMetrics.RecordSessionStateChange(-1, isClient: true);
+      }
+
       try
       {
          try
@@ -669,6 +681,12 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                }
                else if (frameKind is ResilientFrameKind.Pong)
                {
+                  var lastPing = Volatile.Read(ref LastPingSentTicks);
+                  if (lastPing > 0)
+                  {
+                     var rttMs = (DateTimeOffset.UtcNow.Ticks - lastPing) / (double)TimeSpan.TicksPerMillisecond;
+                     ResilientMetrics.RecordPingRtt(rttMs, isClient: true);
+                  }
                   TouchActivity();
                }
                else if (frameKind is ResilientFrameKind.ConnectAcknowledged)
@@ -850,7 +868,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                      CancellationTokenSource.CreateLinkedTokenSource(newCts.Token, masterCt);
                   var attemptCt = attemptCts.Token;
 
+                  var startMs = Environment.TickCount64;
                   var result = await ConnectInternalAsync(_remoteEndPoint, attemptCt, isReconnect: true);
+                  var durationMs = Environment.TickCount64 - startMs;
+                  ResilientMetrics.RecordReconnectAttempt(!result.Failed, durationMs);
+
                   if (!result.Failed)
                   {
                      if (Volatile.Read(ref _disposedState) == 1 ||

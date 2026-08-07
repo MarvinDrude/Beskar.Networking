@@ -1,17 +1,13 @@
-using System;
 using System.Collections.Concurrent;
-using System.IO;
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Udp;
 using Beskar.Networking.Transports.Ws;
@@ -26,6 +22,10 @@ namespace Beskar.Networking.Transports.ChaosSimulator;
 
 public static class Program
 {
+   private static readonly ConcurrentDictionary<string, long> TelemetryGauges = new();
+   private static readonly ConcurrentDictionary<string, long> TelemetryCounters = new();
+   private static readonly MeterListener MeterListener = new();
+
    // Statistics counters
    private static long _clientConnectionAttempts;
    private static long _clientConnectionFailures;
@@ -55,6 +55,35 @@ public static class Program
    {
       // Disable noisy internal trace logging to clean up output
       TraceLogger.IsEnabled = false;
+
+      MeterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == TransportMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+
+      MeterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         var name = instrument.Name;
+         if (instrument is UpDownCounter<long>)
+         {
+            TelemetryGauges.AddOrUpdate(name, measurement, (_, prev) => prev + measurement);
+         }
+         else if (instrument is Counter<long>)
+         {
+            TelemetryCounters.AddOrUpdate(name, measurement, (_, prev) => prev + measurement);
+         }
+      });
+
+      MeterListener.SetMeasurementEventCallback<double>((instrument, measurement, tags, state) =>
+      {
+         var name = instrument.Name;
+         TelemetryGauges.AddOrUpdate(name, (long)measurement, (_, _) => (long)measurement);
+      });
+
+      MeterListener.Start();
 
       SafeClear();
 
@@ -593,6 +622,24 @@ public static class Program
             Console.WriteLine($"Fault Metrics:      ChecksumFailures={Volatile.Read(ref _checksumFailures)} Gaps(Drops)={Volatile.Read(ref _droppedPackets)} OutOfOrder={Volatile.Read(ref _outOfOrderPackets)}");
             Console.WriteLine($"Latency (ms):       Min={minLat} Max={maxLat} Avg={avgLatency:F1}");
             Console.WriteLine("[---------------------------------------]");
+
+            // Render Live System.Diagnostics.Metrics OpenTelemetry table
+            var transportActiveConns = TelemetryGauges.GetValueOrDefault("beskar.transport.connections.active", 0);
+            var transportOpenedConns = TelemetryCounters.GetValueOrDefault("beskar.transport.connections.opened", 0);
+            var transportClosedConns = TelemetryCounters.GetValueOrDefault("beskar.transport.connections.closed", 0);
+            var transportBytesSent = TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.sent", 0);
+            var transportBytesRecv = TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.received", 0);
+
+            ConsoleRender.CreateTable()
+               .SetBorderColor(ConsoleColor.Magenta)
+               .AddColumn("OpenTelemetry Meter", Alignment.Left, ConsoleColor.Magenta)
+               .AddColumn("Instrument Name", Alignment.Left, ConsoleColor.Yellow)
+               .AddColumn("Type / Unit", Alignment.Left, ConsoleColor.Cyan)
+               .AddColumn("Live Value", Alignment.Right, ConsoleColor.White)
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.active", "UpDownCounter {connection}", transportActiveConns.ToString())
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.opened/closed", "Counter {connection}", $"Opened: {transportOpenedConns} | Closed: {transportClosedConns}")
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.bytes.sent/received", "Counter By", $"Sent: {transportBytesSent:N0} B | Recv: {transportBytesRecv:N0} B")
+               .Render();
          }
       }
    }

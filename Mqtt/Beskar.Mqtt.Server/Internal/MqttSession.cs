@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Beskar.Mqtt.Common.Generators;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Server.Enums;
 using Beskar.Networking.Abstractions.Comparers;
 
@@ -176,6 +177,7 @@ public sealed partial class MqttSession : IAsyncDisposable
       lock (_unacknowledgedPublishesLock)
       {
          _unacknowledgedPublishes.Add(pendingPublish);
+         MqttMetrics.RecordQosInflightChange(1);
       }
    }
 
@@ -187,6 +189,7 @@ public sealed partial class MqttSession : IAsyncDisposable
          if (found is not null)
          {
             _unacknowledgedPublishes.Remove(found);
+            MqttMetrics.RecordQosInflightChange(-1);
          }
 
          return found;
@@ -214,6 +217,19 @@ public sealed partial class MqttSession : IAsyncDisposable
       lock (_unacknowledgedPublishesLock)
       {
          return [.. _unacknowledgedPublishes];
+      }
+   }
+
+   internal void ClearUnacknowledgedPublishes()
+   {
+      lock (_unacknowledgedPublishesLock)
+      {
+         var count = _unacknowledgedPublishes.Count;
+         if (count > 0)
+         {
+            _unacknowledgedPublishes.Clear();
+            MqttMetrics.RecordQosInflightChange(-count);
+         }
       }
    }
 

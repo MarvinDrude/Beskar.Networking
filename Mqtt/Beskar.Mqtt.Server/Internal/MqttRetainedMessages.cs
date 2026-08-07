@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Server.Enumerators;
@@ -27,6 +28,10 @@ public sealed class MqttRetainedMessages : IDisposable
       {
          var enumerator = new TopicLevelEnumerator(Encoding.UTF8.GetBytes(message.Topic));
          RemoveMessageRecursive(_rootNode, ref enumerator, out var changed);
+         if (changed)
+         {
+            MqttMetrics.RecordRetainedMessageChange(-1);
+         }
          return changed;
       }
       else
@@ -52,7 +57,12 @@ public sealed class MqttRetainedMessages : IDisposable
             node = child;
          }
 
-         var changed = node.Message is null || !ReferenceEquals(node.Message, message);
+         var isNew = node.Message is null;
+         var changed = isNew || !ReferenceEquals(node.Message, message);
+         if (isNew)
+         {
+            MqttMetrics.RecordRetainedMessageChange(1);
+         }
          node.Message = message;
 
          return changed;
@@ -88,6 +98,10 @@ public sealed class MqttRetainedMessages : IDisposable
             node = child;
          }
 
+         if (node.Message is null)
+         {
+            MqttMetrics.RecordRetainedMessageChange(1);
+         }
          node.Message = message;
       }
    }
@@ -234,8 +248,17 @@ public sealed class MqttRetainedMessages : IDisposable
    public void Clear()
    {
       using var disposer = _lock.EnterWriteLock();
+      var messages = new List<MqttPublishMessage>();
+      CollectAllRecursive(_rootNode, messages);
+      var count = messages.Count;
+
       _rootNode.Children.Clear();
       _rootNode.Message = null;
+
+      if (count > 0)
+      {
+         MqttMetrics.RecordRetainedMessageChange(-count);
+      }
    }
 
    public void Dispose()

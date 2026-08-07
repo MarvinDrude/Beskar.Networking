@@ -4,6 +4,7 @@ using Beskar.Memory.Threading;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Encoders.Properties;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Models;
@@ -36,6 +37,11 @@ public sealed partial class ServerPacketHandler
          MqttSession session,
          CancellationToken ct)
       {
+         if (packet.Dup)
+         {
+            MqttMetrics.RecordQosRetry();
+         }
+
          var isQos1Or2 = packet.QualityOfService > QualityOfServiceType.AtMostOnce;
          var wasIncremented = false;
 
@@ -80,6 +86,7 @@ public sealed partial class ServerPacketHandler
                         return;
                      }
 
+                     MqttMetrics.RecordTopicAliasHit();
                      resolvedTopicBytes = topicBytes;
                   }
                   else

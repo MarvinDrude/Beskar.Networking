@@ -8,6 +8,7 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Protocol;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Protocol.Utilities;
+using Beskar.Networking.Resilient.Common.Telemetry;
 
 namespace Beskar.Networking.Resilient.Server.Models;
 
@@ -124,6 +125,13 @@ public sealed class ResilientServerClient<TFrame>(
    internal void SetHandshakeResult(bool success)
    {
       _isHandshakeCompleted = success;
+      if (success && Volatile.Read(ref _disposedState) == 0)
+      {
+         if (Interlocked.Exchange(ref _isSessionActiveRecorded, 1) == 0)
+         {
+            ResilientMetrics.RecordSessionStateChange(1, isClient: false);
+         }
+      }
 
       _handshakeTcs.TrySetResult(success);
       ControlPayloadChannel.Writer.TryComplete();
@@ -135,6 +143,7 @@ public sealed class ResilientServerClient<TFrame>(
 
    private volatile bool _isHandshakeCompleted;
    private int _disposedState;
+   private int _isSessionActiveRecorded;
 
    /// <summary>
    /// Updates the last activity timestamp. Throttled to prevent high system call overhead per frame.
@@ -273,7 +282,16 @@ public sealed class ResilientServerClient<TFrame>(
 
       if (Interlocked.Exchange(ref _disposedState, 1) == 1)
       {
+         if (Interlocked.Exchange(ref _isSessionActiveRecorded, 0) == 1)
+         {
+            ResilientMetrics.RecordSessionStateChange(-1, isClient: false);
+         }
          return;
+      }
+
+      if (Interlocked.Exchange(ref _isSessionActiveRecorded, 0) == 1)
+      {
+         ResilientMetrics.RecordSessionStateChange(-1, isClient: false);
       }
 
       OnDisposing?.Invoke(Id);

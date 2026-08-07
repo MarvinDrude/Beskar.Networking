@@ -1,14 +1,18 @@
 using System.Buffers;
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Quic;
 using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Protocol;
 using Beskar.Networking.Protocol.Frames;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Client;
+using Beskar.Networking.Resilient.Common.Telemetry;
 using Beskar.Networking.Resilient.Server;
 using Beskar.Utilities.Console.Rendering;
 using Beskar.Utilities.Tracing;
@@ -17,6 +21,10 @@ namespace Beskar.Resilient.ChaosSimulator;
 
 public static class Program
 {
+   internal static readonly ConcurrentDictionary<string, long> TelemetryGauges = new();
+   internal static readonly ConcurrentDictionary<string, long> TelemetryCounters = new();
+   private static readonly MeterListener MeterListener = new();
+
    private const int ServerPortTcp = 5000;
    private const int ServerPortWs = 5080;
    private const int ServerPortQuic = 5880;
@@ -48,6 +56,35 @@ public static class Program
       TraceLogger.IsEnabled = false;
 
       IsQuietMode = true;
+
+      MeterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name is TransportMetrics.MeterName or ResilientMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+
+      MeterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         var name = instrument.Name;
+         if (instrument is UpDownCounter<long>)
+         {
+            TelemetryGauges.AddOrUpdate(name, measurement, (_, prev) => prev + measurement);
+         }
+         else if (instrument is Counter<long>)
+         {
+            TelemetryCounters.AddOrUpdate(name, measurement, (_, prev) => prev + measurement);
+         }
+      });
+
+      MeterListener.SetMeasurementEventCallback<double>((instrument, measurement, tags, state) =>
+      {
+         var name = instrument.Name;
+         TelemetryGauges.AddOrUpdate(name, (long)measurement, (_, _) => (long)measurement);
+      });
+
+      MeterListener.Start();
 
       try
       {

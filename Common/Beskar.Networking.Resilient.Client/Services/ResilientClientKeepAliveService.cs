@@ -79,6 +79,7 @@ public sealed class ResilientClientKeepAliveService<TFrame>(ResilientClient<TFra
             {
                try
                {
+                  Volatile.Write(ref _client.LastPingSentTicks, DateTimeOffset.UtcNow.Ticks);
                   var pingFrame = TFrame.CreateFrame(ResilientFrameKind.Ping);
                   await _client.SendAsync(pingFrame, ct);
                }

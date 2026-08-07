@@ -76,6 +76,41 @@ public static class StatsReporter
                .AddRow("KeepAlive Pings", "", Program.ClientPingsSent.ToString())
                .Render();
 
+            // Render Live System.Diagnostics.Metrics OpenTelemetry table
+            var transportActiveConns = Program.TelemetryGauges.GetValueOrDefault("beskar.transport.connections.active", 0);
+            var transportOpenedConns = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.connections.opened", 0);
+            var transportClosedConns = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.connections.closed", 0);
+            var transportBytesSent = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.sent", 0);
+            var transportBytesRecv = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.received", 0);
+
+            var mqttConnectedClients = Program.TelemetryGauges.GetValueOrDefault("beskar.mqtt.server.clients.connected", 0);
+            var mqttActiveSessions = Program.TelemetryGauges.GetValueOrDefault("beskar.mqtt.server.sessions.active", 0);
+            var mqttActiveSubs = Program.TelemetryGauges.GetValueOrDefault("beskar.mqtt.subscriptions.active", 0);
+            var mqttRetainedMsgs = Program.TelemetryGauges.GetValueOrDefault("beskar.mqtt.retained_messages.active", 0);
+            var mqttPublished = Program.TelemetryCounters.GetValueOrDefault("beskar.mqtt.messages.published", 0);
+            var mqttQosInflight = Program.TelemetryGauges.GetValueOrDefault("beskar.mqtt.qos.inflight", 0);
+            var mqttQosRetries = Program.TelemetryCounters.GetValueOrDefault("beskar.mqtt.qos.retries", 0);
+            var mqttTopicAliasHits = Program.TelemetryCounters.GetValueOrDefault("beskar.mqtt.topic_alias.hits", 0);
+
+            ConsoleRender.CreateTable()
+               .SetBorderColor(ConsoleColor.Magenta)
+               .AddColumn("OpenTelemetry Meter", Alignment.Left, ConsoleColor.Magenta)
+               .AddColumn("Instrument Name", Alignment.Left, ConsoleColor.Yellow)
+               .AddColumn("Type / Unit", Alignment.Left, ConsoleColor.Cyan)
+               .AddColumn("Live Value", Alignment.Right, ConsoleColor.White)
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.active", "UpDownCounter {connection}", transportActiveConns.ToString())
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.opened/closed", "Counter {connection}", $"Opened: {transportOpenedConns} | Closed: {transportClosedConns}")
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.bytes.sent/received", "Counter By", $"Sent: {transportBytesSent:N0} B | Recv: {transportBytesRecv:N0} B")
+               .AddRow("Beskar.Mqtt", "beskar.mqtt.server.clients.connected", "UpDownCounter {client}", mqttConnectedClients.ToString())
+               .AddRow("Beskar.Mqtt", "beskar.mqtt.server.sessions.active", "UpDownCounter {session}", mqttActiveSessions.ToString())
+               .AddRow("Beskar.Mqtt", "beskar.mqtt.subscriptions.active", "UpDownCounter {subscription}", mqttActiveSubs.ToString())
+               .AddRow("Beskar.Mqtt", "beskar.mqtt.retained_messages.active", "UpDownCounter {message}", mqttRetainedMsgs.ToString())
+               .AddRow("Beskar.Mqtt", "beskar.mqtt.messages.published", "Counter {message}", mqttPublished.ToString())
+               .AddRow("Beskar.Mqtt", "beskar.mqtt.qos.inflight", "UpDownCounter {message}", mqttQosInflight.ToString())
+               .AddRow("Beskar.Mqtt", "beskar.mqtt.qos.retries", "Counter {retry}", mqttQosRetries.ToString())
+               .AddRow("Beskar.Mqtt", "beskar.mqtt.topic_alias.hits", "Counter {hit}", mqttTopicAliasHits.ToString())
+               .Render();
+
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("==================================================================================");
             Console.ResetColor();

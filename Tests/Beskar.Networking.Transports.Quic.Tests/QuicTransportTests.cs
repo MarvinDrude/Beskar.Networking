@@ -1,9 +1,11 @@
 using System.Buffers;
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
 using System.Net.Sockets;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Quic.Tests;
 
@@ -501,5 +503,114 @@ public class QuicTransportTests
       await serverSession1.DisposeAsync();
       await serverSession2.DisposeAsync();
       await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task QuicClientServer_WithMeterListener_TracksConnectionsStreamsAndBytes()
+   {
+      if (!QuicConnection.IsSupported || !QuicListener.IsSupported)
+      {
+         return;
+      }
+
+      long recordedConnectionsOpened = 0;
+      long recordedConnectionsClosed = 0;
+      long recordedConnectionsActiveDelta = 0;
+      long recordedStreamsActiveDelta = 0;
+      long recordedBytesSent = 0;
+      long recordedBytesReceived = 0;
+
+      using var meterListener = new MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == TransportMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.transport.connections.opened")
+         {
+            Interlocked.Add(ref recordedConnectionsOpened, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.connections.closed")
+         {
+            Interlocked.Add(ref recordedConnectionsClosed, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.connections.active")
+         {
+            Interlocked.Add(ref recordedConnectionsActiveDelta, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.streams.active")
+         {
+            Interlocked.Add(ref recordedStreamsActiveDelta, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.bytes.sent")
+         {
+            Interlocked.Add(ref recordedBytesSent, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.bytes.received")
+         {
+            Interlocked.Add(ref recordedBytesReceived, measurement);
+         }
+      });
+      meterListener.Start();
+
+      var clientSslOptions = new SslClientAuthenticationOptions
+      {
+         ApplicationProtocols = [new SslApplicationProtocol("beskar-quic")],
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+      };
+      var options = new QuicTransportOptions
+      {
+         SslClientOptions = clientSslOptions
+      };
+      var listener = new QuicNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var initialOpened = Volatile.Read(ref recordedConnectionsOpened);
+      var initialClosed = Volatile.Read(ref recordedConnectionsClosed);
+      var initialActive = Volatile.Read(ref recordedConnectionsActiveDelta);
+      var initialStreamsActive = Volatile.Read(ref recordedStreamsActiveDelta);
+
+      var client = new QuicNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      var openedDelta = Volatile.Read(ref recordedConnectionsOpened) - initialOpened;
+      await Assert.That(openedDelta).IsGreaterThanOrEqualTo(2);
+
+      var activeDuringConnection = Volatile.Read(ref recordedConnectionsActiveDelta) - initialActive;
+      await Assert.That(activeDuringConnection).IsGreaterThanOrEqualTo(2);
+
+      var clientStream = (await clientSession.OpenStreamAsync()).Success!;
+      var payload = "QUIC Telemetry Payload"u8.ToArray();
+      await clientStream.Transport.Output.WriteAsync(payload);
+      await clientStream.Transport.Output.FlushAsync();
+
+      var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
+
+      var streamsActiveDelta = Volatile.Read(ref recordedStreamsActiveDelta) - initialStreamsActive;
+      await Assert.That(streamsActiveDelta).IsGreaterThanOrEqualTo(2);
+
+      var readResult = await serverStream.Transport.Input.ReadAsync();
+      serverStream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+
+      await Assert.That(recordedBytesSent).IsGreaterThanOrEqualTo(payload.Length);
+      await Assert.That(recordedBytesReceived).IsGreaterThanOrEqualTo(payload.Length);
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+
+      var closedDelta = Volatile.Read(ref recordedConnectionsClosed) - initialClosed;
+      await Assert.That(closedDelta).IsGreaterThanOrEqualTo(2);
    }
 }

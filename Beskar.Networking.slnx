@@ -41,6 +41,9 @@
     <File Path="Documentation/Resilient/Events.md" />
     <File Path="Documentation/Resilient/Overview.md" />
   </Folder>
+  <Folder Name="/Documentation/Telemetry/">
+    <File Path="Documentation/Telemetry/Meters.md" />
+  </Folder>
   <Folder Name="/Examples/" />
   <Folder Name="/Examples/Advanced/">
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Client/Beskar.Adv.Chat.Client.csproj" />
@@ -67,6 +70,9 @@
   </Folder>
   <Folder Name="/Examples/Simple/">
     <Project Path="Examples/Simple/Beskar.Bare.PingPongMessage/Beskar.Bare.PingPongMessage.csproj" />
+  </Folder>
+  <Folder Name="/Examples/Telemetry/">
+    <Project Path="Examples/Telemetry/Beskar.Example.Telemetry/Beskar.Example.Telemetry.csproj" />
   </Folder>
   <Folder Name="/Experiments/">
     <Project Path="Experiments/Beskar.Resilient.ChaosSimulator/Beskar.Resilient.ChaosSimulator.csproj" />

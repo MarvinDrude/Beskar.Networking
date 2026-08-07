@@ -3,6 +3,7 @@ using System.IO.Pipelines;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Abstractions.Threading;
 using Beskar.Networking.Transports.Ws.Enums;
 using Beskar.Utilities.Tracing;
@@ -48,17 +49,20 @@ public sealed class WsNetworkStream : INetworkStream
    {
       Interlocked.Add(ref _bytesReceived, bytes);
       Volatile.Write(ref _lastReceivedTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      TransportMetrics.RecordBytesReceived(bytes, Session.Transport);
    }
 
    public void IncrementBytesSent(long bytes)
    {
       Interlocked.Add(ref _bytesSent, bytes);
       Volatile.Write(ref _lastSentTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      TransportMetrics.RecordBytesSent(bytes, Session.Transport);
    }
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
 
    private readonly IDuplexPipe _rawTransport;
+   private int _disposed;
 
    public WsNetworkStream(INetworkSession session, IDuplexPipe transport)
    {
@@ -66,6 +70,7 @@ public sealed class WsNetworkStream : INetworkStream
       
       Session = session;
       Transport = new StatsTrackingDuplexPipe(transport, this);
+      TransportMetrics.RecordStreamOpened(session.Transport);
    }
 
    private readonly AsyncLock _asyncLock = new();
@@ -77,6 +82,12 @@ public sealed class WsNetworkStream : INetworkStream
 
    public ValueTask DisposeAsync()
    {
+      if (Interlocked.Exchange(ref _disposed, 1) == 1)
+      {
+         return ValueTask.CompletedTask;
+      }
+
+      TransportMetrics.RecordStreamClosed(Session.Transport);
       TraceLogger.LogNeutralInfo("WS Stream: Disposing stream wrapper for session {0}", Session.Id);
       return ValueTask.CompletedTask;
    }

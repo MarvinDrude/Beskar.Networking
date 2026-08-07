@@ -7,6 +7,7 @@ using Beskar.Memory.Writers;
 using Beskar.Utilities.Tracing;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Server.Contexts;
@@ -93,6 +94,12 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
          _sessions.Update(serverClient.ClientIdUtf8Bytes.Span, session);
          serverClient.MqttSession = session;
          session.Client = serverClient;
+
+         MqttMetrics.RecordClientConnectedChange(1);
+         if (!isSessionPresent)
+         {
+            MqttMetrics.RecordActiveSessionChange(1);
+         }
 
          var willAlternateLookup = _pendingWillMessages.GetAlternateLookup<ReadOnlySpan<byte>>();
          if (willAlternateLookup.TryRemove(serverClient.ClientIdUtf8Bytes.Span, out var oldWill))
@@ -245,6 +252,8 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
             return;
          }
 
+         MqttMetrics.RecordClientConnectedChange(-1);
+
          if (client.DisconnectOptions is not null && _server.Options.SupportPersistentSessions)
          {
             if (client.DisconnectOptions.SessionExpiryInterval.HasValue)
@@ -282,6 +291,7 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
          if (session.ExpiryInterval == 0)
          {
             _sessions.TryRemove(client.ClientIdUtf8Bytes.Span, out _);
+            MqttMetrics.RecordActiveSessionChange(-1);
 
             _ = Task.Run(async () =>
             {
@@ -309,7 +319,10 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
             alternateLookup.Remove(session.ClientIdUtf8Bytes);
          }
 
-         _sessions.TryRemove(session.ClientIdUtf8Bytes, out _);
+         if (_sessions.TryRemove(session.ClientIdUtf8Bytes, out _))
+         {
+            MqttMetrics.RecordActiveSessionChange(-1);
+         }
 
          _ = Task.Run(async () =>
          {
@@ -333,6 +346,10 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
       using (await _initiateLock.LockAsync())
       {
          expiredSessions = _sessions.RemoveAndGetExpiredSessions();
+         if (expiredSessions.Count > 0)
+         {
+            MqttMetrics.RecordActiveSessionChange(-expiredSessions.Count);
+         }
       }
 
       if (expiredSessions.Count > 0)

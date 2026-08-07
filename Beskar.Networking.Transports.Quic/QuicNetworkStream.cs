@@ -3,6 +3,7 @@ using System.Net.Quic;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Abstractions.Threading;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
@@ -53,12 +54,14 @@ public sealed class QuicNetworkStream : INetworkStream
    {
       Interlocked.Add(ref _bytesReceived, bytes);
       Volatile.Write(ref _lastReceivedTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      TransportMetrics.RecordBytesReceived(bytes, Session.Transport);
    }
 
    public void IncrementBytesSent(long bytes)
    {
       Interlocked.Add(ref _bytesSent, bytes);
       Volatile.Write(ref _lastSentTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      TransportMetrics.RecordBytesSent(bytes, Session.Transport);
    }
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
@@ -70,6 +73,7 @@ public sealed class QuicNetworkStream : INetworkStream
       _connection = connection;
 
       Transport = new StatsTrackingDuplexPipe(connection, this);
+      TransportMetrics.RecordStreamOpened(TransportKind.Quic);
    }
 
    public NetworkStreamDirection Direction => _quicStream.Type == QuicStreamType.Bidirectional
@@ -87,6 +91,8 @@ public sealed class QuicNetworkStream : INetworkStream
       {
          return;
       }
+
+      TransportMetrics.RecordStreamClosed(TransportKind.Quic);
 
       TraceLogger.LogNeutralInfo("QUIC Stream: Disposing stream wrapper {0} (Direction: {1}) for session {2}", StreamId, Direction, Session.Id);
 

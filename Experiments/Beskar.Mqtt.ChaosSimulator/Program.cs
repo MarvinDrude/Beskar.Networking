@@ -1,4 +1,6 @@
 using System.Buffers;
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Quic;
 using System.Text;
@@ -6,11 +8,14 @@ using Beskar.Mqtt.Client;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Options;
+using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server;
 using Beskar.Mqtt.Server.Enums;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Telemetry;
+using Beskar.Networking.Resilient.Common.Telemetry;
 using Beskar.Utilities.Console.Rendering;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
@@ -21,6 +26,9 @@ namespace Beskar.Mqtt.ChaosSimulator;
 
 public static class Program
 {
+   internal static readonly ConcurrentDictionary<string, long> TelemetryGauges = new();
+   internal static readonly ConcurrentDictionary<string, long> TelemetryCounters = new();
+   private static readonly MeterListener MeterListener = new();
    private const int ServerPortTcp = 1883;
    private const int ServerPortWs = 8083;
    private const int ServerPortQuic = 8883;
@@ -65,6 +73,35 @@ public static class Program
       IsQuietMode = true;
       TargetConcurrentClients = 200;
       StatsIntervalSeconds = 5;
+
+      MeterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name is TransportMetrics.MeterName or ResilientMetrics.MeterName or MqttMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+
+      MeterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         var name = instrument.Name;
+         if (instrument is UpDownCounter<long>)
+         {
+            TelemetryGauges.AddOrUpdate(name, measurement, (_, prev) => prev + measurement);
+         }
+         else if (instrument is Counter<long>)
+         {
+            TelemetryCounters.AddOrUpdate(name, measurement, (_, prev) => prev + measurement);
+         }
+      });
+
+      MeterListener.SetMeasurementEventCallback<double>((instrument, measurement, tags, state) =>
+      {
+         var name = instrument.Name;
+         TelemetryGauges.AddOrUpdate(name, (long)measurement, (_, _) => (long)measurement);
+      });
+
+      MeterListener.Start();
 
       try
       {

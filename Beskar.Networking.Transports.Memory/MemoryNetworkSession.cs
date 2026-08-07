@@ -4,6 +4,7 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 
@@ -61,6 +62,7 @@ public sealed class MemoryNetworkSession : INetworkSession
 
       _cts = new CancellationTokenSource();
       SessionClosedToken = _cts.Token;
+      TransportMetrics.RecordConnectionOpened(TransportKind.Memory);
    }
 
    internal void SetPeer(MemoryNetworkSession peer)
@@ -101,6 +103,8 @@ public sealed class MemoryNetworkSession : INetworkSession
       {
          return;
       }
+
+      TransportMetrics.RecordConnectionClosed(TransportKind.Memory);
 
       TraceLogger.LogInfo("Disposing active Memory session {0}", TraceLogOrigin.None, Id);
 
