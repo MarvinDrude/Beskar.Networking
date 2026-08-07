@@ -91,6 +91,10 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
       static async ValueTask Awaited(MqttClient client, PublishPacket packet, CancellationToken ct)
       {
          MqttMetrics.RecordPublished(isInbound: true, qos: (int)packet.QualityOfService, isRetained: packet.Retain);
+         if (packet.Dup)
+         {
+            MqttMetrics.RecordQosRetry();
+         }
 
          var resolvedPacket = packet;
 

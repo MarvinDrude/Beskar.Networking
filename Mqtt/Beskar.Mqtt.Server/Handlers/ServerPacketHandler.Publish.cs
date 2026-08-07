@@ -37,6 +37,11 @@ public sealed partial class ServerPacketHandler
          MqttSession session,
          CancellationToken ct)
       {
+         if (packet.Dup)
+         {
+            MqttMetrics.RecordQosRetry();
+         }
+
          var isQos1Or2 = packet.QualityOfService > QualityOfServiceType.AtMostOnce;
          var wasIncremented = false;
 

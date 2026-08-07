@@ -617,8 +617,13 @@ public sealed class ResilientServer<TFrame>
                      }
                      else if (!client.HandshakeCompletedTask.IsCompleted)
                      {
-                        if (!client.PreHandshakeFrameChannel.Writer.TryWrite((frame, streamContext.Stream)))
+                        if (client.PreHandshakeFrameChannel.Writer.TryWrite((frame, streamContext.Stream)))
                         {
+                           ResilientMetrics.RecordOfflineQueueSizeChange(1);
+                        }
+                        else
+                        {
+                           ResilientMetrics.RecordOfflineQueueDropped(1);
                            if (client.IsHandshakeCompleted)
                            {
                               if (!client.DrainingTask.IsCompleted)
@@ -675,6 +680,7 @@ public sealed class ResilientServer<TFrame>
          {
             while (reader.TryRead(out var item))
             {
+               ResilientMetrics.RecordOfflineQueueSizeChange(-1);
                if (Events.FrameReceived.Count > 0)
                {
                   var eventContext = new ResilientFrameReceivedContext<TFrame>
