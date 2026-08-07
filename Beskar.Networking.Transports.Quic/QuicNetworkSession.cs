@@ -5,6 +5,7 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
@@ -14,11 +15,7 @@ namespace Beskar.Networking.Transports.Quic;
 /// <summary>
 /// Represents a QUIC network session that supports stream multiplexing.
 /// </summary>
-public sealed class QuicNetworkSession(
-   QuicConnection connection,
-   QuicTransportOptions options,
-   QuicIoQueueRegistry ioQueueRegistry)
-   : INetworkSession
+public sealed class QuicNetworkSession : INetworkSession
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 
@@ -98,9 +95,9 @@ public sealed class QuicNetworkSession(
       }
    }
 
-   private readonly QuicConnection _connection = connection;
-   private readonly QuicTransportOptions _options = options;
-   private readonly QuicIoQueueRegistry _ioQueueRegistry = ioQueueRegistry;
+   private readonly QuicConnection _connection;
+   private readonly QuicTransportOptions _options;
+   private readonly QuicIoQueueRegistry _ioQueueRegistry;
    private readonly CancellationTokenSource _cts = new();
 
    private readonly ConcurrentDictionary<long, QuicNetworkStream> _activeStreams = new();
@@ -113,6 +110,18 @@ public sealed class QuicNetworkSession(
    private readonly Lock _statsLock = new();
    private DateTimeOffset? _accumulatedLastReceivedTimestamp;
    private DateTimeOffset? _accumulatedLastSentTimestamp;
+
+   public QuicNetworkSession(
+      QuicConnection connection,
+      QuicTransportOptions options,
+      QuicIoQueueRegistry ioQueueRegistry)
+   {
+      _connection = connection;
+      _options = options;
+      _ioQueueRegistry = ioQueueRegistry;
+
+      TransportMetrics.RecordConnectionOpened(TransportKind.Quic);
+   }
 
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
@@ -268,6 +277,8 @@ public sealed class QuicNetworkSession(
       {
          return;
       }
+
+      TransportMetrics.RecordConnectionClosed(TransportKind.Quic);
 
       TraceLogger.LogNeutralInfo("QUIC Session: Disposing and shutting down active session {0} (Remote: {1}, Local: {2})", Id, RemoteAddress, LocalAddress);
 

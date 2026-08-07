@@ -4,6 +4,7 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 
@@ -12,17 +13,12 @@ namespace Beskar.Networking.Transports.NamedPipes;
 /// <summary>
 /// Represents a Named Pipe network session wrapping a single transport connection.
 /// </summary>
-public sealed class NamedPipeNetworkSession(
-   EndPoint localAddress,
-   EndPoint remoteAddress,
-   IDuplexPipe connection,
-   Func<IDuplexPipe, ValueTask>? onDisposeAsync = null)
-   : INetworkSession
+public sealed class NamedPipeNetworkSession : INetworkSession
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 
-   public EndPoint RemoteAddress { get; } = remoteAddress;
-   public EndPoint LocalAddress { get; } = localAddress;
+   public EndPoint RemoteAddress { get; }
+   public EndPoint LocalAddress { get; }
 
    public bool IsSupportingMultiplexing => false;
    public bool IsSupportingUnidirectional => false;
@@ -51,11 +47,25 @@ public sealed class NamedPipeNetworkSession(
 
    public NetworkSecurityInfo SecurityInfo => new(IsEncrypted: false);
 
-   private readonly IDuplexPipe _connection = connection;
+   private readonly IDuplexPipe _connection;
+   private readonly Func<IDuplexPipe, ValueTask>? _onDisposeAsync;
    private readonly CancellationTokenSource _cts = new();
 
    private NamedPipeNetworkStream? _stream;
    private int _disposed;
+
+   public NamedPipeNetworkSession(
+      EndPoint localAddress,
+      EndPoint remoteAddress,
+      IDuplexPipe connection,
+      Func<IDuplexPipe, ValueTask>? onDisposeAsync = null)
+   {
+      LocalAddress = localAddress;
+      RemoteAddress = remoteAddress;
+      _connection = connection;
+      _onDisposeAsync = onDisposeAsync;
+      TransportMetrics.RecordConnectionOpened(TransportKind.NamedPipe);
+   }
 
    /// <inheritdoc />
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(
@@ -92,7 +102,8 @@ public sealed class NamedPipeNetworkSession(
          return;
       }
 
-      var origin = onDisposeAsync is not null ? TraceLogOrigin.Server : TraceLogOrigin.Client;
+      TransportMetrics.RecordConnectionClosed(TransportKind.NamedPipe);
+      var origin = _onDisposeAsync is not null ? TraceLogOrigin.Server : TraceLogOrigin.Client;
       TraceLogger.LogInfo("Disposing and shutting down active Named Pipe session {0}", origin, Id);
 
       try
@@ -118,9 +129,9 @@ public sealed class NamedPipeNetworkSession(
          }
       }
 
-      if (onDisposeAsync is not null)
+      if (_onDisposeAsync is not null)
       {
-         await onDisposeAsync(_connection);
+         await _onDisposeAsync(_connection);
       }
    }
 }

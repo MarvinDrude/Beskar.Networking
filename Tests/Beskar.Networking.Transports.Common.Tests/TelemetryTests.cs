@@ -13,6 +13,8 @@ public class TelemetryTests
    {
       long recordedBytesSent = 0;
       long recordedBytesReceived = 0;
+      long recordedConnectionsOpened = 0;
+      long recordedConnectionsClosed = 0;
 
       using var listener = new MeterListener();
       listener.InstrumentPublished = (instrument, meterListener) =>
@@ -32,18 +34,30 @@ public class TelemetryTests
          {
             Interlocked.Add(ref recordedBytesReceived, measurement);
          }
+         else if (instrument.Name == "beskar.transport.connections.opened")
+         {
+            Interlocked.Add(ref recordedConnectionsOpened, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.connections.closed")
+         {
+            Interlocked.Add(ref recordedConnectionsClosed, measurement);
+         }
       });
       listener.Start();
 
       // Act
       TransportMetrics.RecordBytesSent(1024, TransportKind.Tcp);
       TransportMetrics.RecordBytesReceived(2048, TransportKind.Tcp);
+      TransportMetrics.RecordConnectionOpened(TransportKind.Tcp);
+      TransportMetrics.RecordConnectionClosed(TransportKind.Tcp);
 
       listener.RecordObservableInstruments();
 
       // Assert
       await Assert.That(recordedBytesSent).IsEqualTo(1024);
       await Assert.That(recordedBytesReceived).IsEqualTo(2048);
+      await Assert.That(recordedConnectionsOpened).IsEqualTo(1);
+      await Assert.That(recordedConnectionsClosed).IsEqualTo(1);
    }
 
    [Test]

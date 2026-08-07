@@ -6,6 +6,7 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 
@@ -93,6 +94,7 @@ public sealed class UdpNetworkSession : INetworkSession
       _stream = new UdpNetworkStream(this, sessionPipe);
 
       Volatile.Write(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
+      TransportMetrics.RecordConnectionOpened(TransportKind.Udp);
 
       _sendLoopTask = Task.Run(() => ProcessSendLoopClientAsync(options.MaxPacketSize));
       _receiveLoopTask = Task.Run(ProcessReceiveLoopClientAsync);
@@ -125,6 +127,7 @@ public sealed class UdpNetworkSession : INetworkSession
       _stream = new UdpNetworkStream(this, sessionPipe);
 
       Volatile.Write(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
+      TransportMetrics.RecordConnectionOpened(TransportKind.Udp);
 
       _sendLoopTask = Task.Run(() => ProcessSendLoopServerAsync(options.MaxPacketSize));
    }
@@ -423,6 +426,8 @@ public sealed class UdpNetworkSession : INetworkSession
       {
          return;
       }
+
+      TransportMetrics.RecordConnectionClosed(TransportKind.Udp);
 
       TraceLogger.LogNeutralInfo("UDP Session: Disposing active UDP session {0}", Id);
 

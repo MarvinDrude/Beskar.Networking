@@ -5,6 +5,7 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
@@ -14,17 +15,12 @@ namespace Beskar.Networking.Transports.Tcp;
 /// <summary>
 /// Represents a TCP network session wrapping a single transport connection.
 /// </summary>
-public sealed class TcpNetworkSession(
-   EndPoint localAddress,
-   EndPoint remoteAddress,
-   IDuplexPipe connection,
-   Func<IDuplexPipe, ValueTask>? onDisposeAsync = null)
-   : INetworkSession
+public sealed class TcpNetworkSession : INetworkSession
 {
    public Guid Id { get; } = Guid.CreateVersion7();
 
-   public EndPoint RemoteAddress { get; } = remoteAddress;
-   public EndPoint LocalAddress { get; } = localAddress;
+   public EndPoint RemoteAddress { get; }
+   public EndPoint LocalAddress { get; }
 
    public bool IsSupportingMultiplexing => false;
    public bool IsSupportingUnidirectional => false;
@@ -74,11 +70,26 @@ public sealed class TcpNetworkSession(
       }
    }
 
-   private readonly IDuplexPipe _connection = connection;
+   private readonly IDuplexPipe _connection;
+   private readonly Func<IDuplexPipe, ValueTask>? _onDisposeAsync;
    private readonly CancellationTokenSource _cts = new();
 
    private TcpNetworkStream? _stream;
    private int _disposed;
+
+   public TcpNetworkSession(
+      EndPoint localAddress,
+      EndPoint remoteAddress,
+      IDuplexPipe connection,
+      Func<IDuplexPipe, ValueTask>? onDisposeAsync = null)
+   {
+      LocalAddress = localAddress;
+      RemoteAddress = remoteAddress;
+      _connection = connection;
+      _onDisposeAsync = onDisposeAsync;
+
+      TransportMetrics.RecordConnectionOpened(TransportKind.Tcp);
+   }
 
    /// <inheritdoc />
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(
@@ -115,7 +126,8 @@ public sealed class TcpNetworkSession(
          return;
       }
 
-      var origin = onDisposeAsync is not null ? TraceLogOrigin.Server : TraceLogOrigin.Client;
+      TransportMetrics.RecordConnectionClosed(TransportKind.Tcp);
+      var origin = _onDisposeAsync is not null ? TraceLogOrigin.Server : TraceLogOrigin.Client;
       TraceLogger.LogInfo("Disposing and shutting down active TCP session {0}", origin, Id);
 
       try
@@ -141,9 +153,9 @@ public sealed class TcpNetworkSession(
          }
       }
 
-      if (onDisposeAsync is not null)
+      if (_onDisposeAsync is not null)
       {
-         await onDisposeAsync(_connection);
+         await _onDisposeAsync(_connection);
       }
    }
 }

@@ -4,6 +4,7 @@ using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
+using Beskar.Networking.Abstractions.Telemetry;
 using System.IO.Pipelines;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
@@ -66,6 +67,8 @@ public sealed class WsNetworkSession : INetworkSession
          wsDuplexPipe.SetSession(this);
       }
 
+      TransportMetrics.RecordConnectionOpened(TransportKind.WebSocket);
+
       _tcpSession.SessionClosedToken.Register(() =>
       {
          try
@@ -113,6 +116,8 @@ public sealed class WsNetworkSession : INetworkSession
       {
          return;
       }
+
+      TransportMetrics.RecordConnectionClosed(TransportKind.WebSocket);
 
       TraceLogger.LogNeutralInfo("WS Session: Disposing and shutting down active WebSocket session {0} (Remote: {1}, Local: {2})", Id, RemoteAddress, LocalAddress);
 
