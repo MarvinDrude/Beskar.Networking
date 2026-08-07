@@ -120,8 +120,11 @@ await clientStream.Transport.Output.WriteAsync(bytes);
 var endPoint = new IPEndPoint(IPAddress.Loopback, 1883);
 
 // 1. Spin up MQTT Server / Broker
-var broker = MqttServerFactory.CreateBuilder().UseTcp(endPoint.Port).Build();
-await broker.StartAsync();
+var broker = MqttServerFactory.CreateBuilder()
+   .WithDefaultClientIdGenerator()
+   .UseTcp(endPoint.Port)
+   .Build();
+var startResult = await broker.StartAsync();
 
 // 2. Subscriber Client
 await using var subClient = MqttClientFactory.CreateTcp();
@@ -129,17 +132,23 @@ subClient.AddMessageReceiveHandler((ctx, ct) => {
     Console.WriteLine($"Received [{ctx.Message.Topic}]: {Encoding.UTF8.GetString(ctx.Message.Payload.Span)}");
     return ValueTask.CompletedTask;
 });
-await subClient.ConnectAsync(new ConnectOptions { EndPoint = endPoint, ProtocolVersion = MqttProtocolVersion.V50 });
-await subClient.SubscribeAsync(SubscribeOptions.Create().WithTopicFilter("sensors/temp").Build());
+var connectResult = await subClient.ConnectAsync(new ConnectOptions { EndPoint = endPoint, ProtocolVersion = MqttProtocolVersion.V50 });
+await subClient.SubscribeAsync(SubscribeOptions.Create().WithTopicFilter("sensors/temp", QualityOfServiceType.AtLeastOnce).Build());
 
 // 3. Publisher Client
 await using var pubClient = MqttClientFactory.CreateTcp();
-await pubClient.ConnectAsync(new ConnectOptions { EndPoint = endPoint, ProtocolVersion = MqttProtocolVersion.V50 });
-await pubClient.PublishAsync(PublishOptions.Create()
+var pubConnResult = await pubClient.ConnectAsync(new ConnectOptions { EndPoint = endPoint, ProtocolVersion = MqttProtocolVersion.V50 });
+var pubResult = await pubClient.PublishAsync(PublishOptions.Create()
     .WithTopic("sensors/temp")
     .WithPayload("{ \"celsius\": 22.5 }")
     .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
     .Build());
+
+await Task.Delay(500);
+
+await subClient.DisconnectAsync(new DisconnectOptions());
+await pubClient.DisconnectAsync(new DisconnectOptions());
+await broker.StopAsync();
 ```
 
 ### Resilient Managed Engine (High-Level Event-Driven)
@@ -148,31 +157,39 @@ await pubClient.PublishAsync(PublishOptions.Create()
 > and framing serialization. Ideal for multiplayer games, chat applications, and financial streaming.
 
 ```csharp
-var endPoint = new IPEndPoint(IPAddress.Loopback, 9001);
+var endPoint = new IPEndPoint(IPAddress.Loopback, 9005);
 
 // 1. Resilient Server
 var server = ResilientServerFactory.CreateBuilder().UseTcp(endPoint).Build();
-server.Events.FrameReceived.Add((ctx, ct) => {
-    var text = Encoding.UTF8.GetString(ctx.Frame.GetPayloadSequence().ToArray());
-    Console.WriteLine($"Server received: {text}");
+server.Events.FrameReceived.Add((ctx, ct) =>
+{
+   var text = Encoding.UTF8.GetString(ctx.Frame.GetPayloadSequence().ToArray());
+   Console.WriteLine($"Server received: {text}");
 
-    // Echo response frame back
-    return ctx.Client.SendAsync(BeskarPacket.CreateMessage("Pong!"u8.ToArray()), ct);
+   // Echo response frame back
+   return ctx.Client.SendAsync(BeskarPacket.CreateMessage("Pong!"u8.ToArray()), ct);
 });
 await server.StartAsync();
 
 // 2. Resilient Client (with Auto-Reconnect enabled)
-var client = ResilientClientFactory.CreateTcp<BeskarPacket>(clientOptions: new ResilientClientOptions {
-    Reconnecting = new ResilientClientReconnectionOptions { AutoReconnect = true }
+var client = ResilientClientFactory.CreateTcp<BeskarPacket>(clientOptions: new ResilientClientOptions
+{
+   Reconnecting = new ResilientClientReconnectionOptions { AutoReconnect = true }
 });
 
-client.Events.FrameReceived.Add((ctx, ct) => {
-    Console.WriteLine($"Client received: {Encoding.UTF8.GetString(ctx.Frame.GetPayloadSequence().ToArray())}");
-    return ValueTask.CompletedTask;
+client.Events.FrameReceived.Add((ctx, ct) =>
+{
+   Console.WriteLine($"Client received: {Encoding.UTF8.GetString(ctx.Frame.GetPayloadSequence().ToArray())}");
+   return ValueTask.CompletedTask;
 });
 
 await client.ConnectAsync(endPoint);
 await client.SendAsync(BeskarPacket.CreateMessage("Ping!"u8.ToArray()));
+
+await Task.Delay(500);
+
+await client.DisposeAsync();
+await server.DisposeAsync();
 ```
 
 ---
