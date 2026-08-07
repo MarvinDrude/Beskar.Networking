@@ -142,6 +142,10 @@ Or you can find examples directly [here](https://github.com/MarvinDrude/Beskar.N
 
 ## Performance Benchmarks
 
+<a href="https://www.http-arena.com/#scope=ws&type=experimental,flagship">
+  <img src="https://cdn.jsdelivr.net/gh/MDA2AV/httparena-badge/wordmark.svg" alt="Benchmarked by HttpArena" height="44">
+</a>
+
 Engineered from the ground up for maximum throughput and minimum allocation overhead.
 > [!NOTE]\
 > **Computer Specs:**<br/>
