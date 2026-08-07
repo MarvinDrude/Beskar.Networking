@@ -474,15 +474,16 @@ public class ResilientTests
       };
 
       var client = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+
+      await client.ConnectAsync(endpoint);
+      await Assert.That(client.IsConnected).IsTrue();
+
       var reconnectedTcs = new TaskCompletionSource();
       client.Events.OnConnected.Add((ctx, _) =>
       {
          if (ctx.Client.State == ResilientClientState.Connected) reconnectedTcs.TrySetResult();
          return ValueTask.CompletedTask;
       });
-
-      await client.ConnectAsync(endpoint);
-      await Assert.That(client.IsConnected).IsTrue();
 
       // Kill the connection to force a reconnect
       var serverClient = server.Clients.GetAll().First();
