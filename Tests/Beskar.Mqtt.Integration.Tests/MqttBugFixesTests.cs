@@ -185,8 +185,11 @@ public class MqttBugFixesTests
    public async Task MqttServerClient_WithMeterListener_TracksMqttMetrics()
    {
       long recordedClientsDelta = 0;
+      long recordedSessionsDelta = 0;
       long recordedSubscriptionsDelta = 0;
+      long recordedRetainedDelta = 0;
       long recordedMessagesPublished = 0;
+      long recordedQosInflightDelta = 0;
 
       using var meterListener = new MeterListener();
       meterListener.InstrumentPublished = (instrument, listener) =>
@@ -202,13 +205,25 @@ public class MqttBugFixesTests
          {
             Interlocked.Add(ref recordedClientsDelta, measurement);
          }
+         else if (instrument.Name == "beskar.mqtt.server.sessions.active")
+         {
+            Interlocked.Add(ref recordedSessionsDelta, measurement);
+         }
          else if (instrument.Name == "beskar.mqtt.subscriptions.active")
          {
             Interlocked.Add(ref recordedSubscriptionsDelta, measurement);
          }
+         else if (instrument.Name == "beskar.mqtt.retained_messages.active")
+         {
+            Interlocked.Add(ref recordedRetainedDelta, measurement);
+         }
          else if (instrument.Name == "beskar.mqtt.messages.published")
          {
             Interlocked.Add(ref recordedMessagesPublished, measurement);
+         }
+         else if (instrument.Name == "beskar.mqtt.qos.inflight")
+         {
+            Interlocked.Add(ref recordedQosInflightDelta, measurement);
          }
       });
       meterListener.Start();
@@ -225,7 +240,9 @@ public class MqttBugFixesTests
       {
          var localAddress = (IPEndPoint)server.Listeners[0].LocalAddress;
          var initialClients = Volatile.Read(ref recordedClientsDelta);
+         var initialSessions = Volatile.Read(ref recordedSessionsDelta);
          var initialSubs = Volatile.Read(ref recordedSubscriptionsDelta);
+         var initialRetained = Volatile.Read(ref recordedRetainedDelta);
 
          var client = MqttClientFactory.CreateTcp();
          var connectOptions = new ConnectOptionsBuilder(localAddress)
@@ -241,8 +258,12 @@ public class MqttBugFixesTests
          var clientsDelta = Volatile.Read(ref recordedClientsDelta) - initialClients;
          await Assert.That(clientsDelta).IsGreaterThanOrEqualTo(1);
 
+         var sessionsDelta = Volatile.Read(ref recordedSessionsDelta) - initialSessions;
+         await Assert.That(sessionsDelta).IsGreaterThanOrEqualTo(1);
+
+         // Subscribe to topic
          var subOptions = new SubscribeOptionsBuilder()
-            .WithTopicFilter("telemetry/topic", QualityOfServiceType.AtMostOnce)
+            .WithTopicFilter("telemetry/topic", QualityOfServiceType.AtLeastOnce)
             .Build();
 
          var subResult = await client.SubscribeAsync(subOptions);
@@ -251,16 +272,31 @@ public class MqttBugFixesTests
          var subsDelta = Volatile.Read(ref recordedSubscriptionsDelta) - initialSubs;
          await Assert.That(subsDelta).IsGreaterThanOrEqualTo(1);
 
+         // Publish Retained message to trigger retained message active metric
+         var retainedPubOptions = new PublishOptionsBuilder()
+            .WithTopic("telemetry/retained/topic")
+            .WithPayload("Retained Payload")
+            .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+            .WithRetain(true)
+            .Build();
+
+         var retainedResult = await client.PublishAsync(retainedPubOptions);
+         await Assert.That(retainedResult.Failed).IsFalse();
+
+         var retainedDelta = Volatile.Read(ref recordedRetainedDelta) - initialRetained;
+         await Assert.That(retainedDelta).IsGreaterThanOrEqualTo(1);
+
+         // Publish standard message
          var pubOptions = new PublishOptionsBuilder()
             .WithTopic("telemetry/topic")
             .WithPayload("Telemetry Payload Data")
-            .WithQualityOfService(QualityOfServiceType.AtMostOnce)
+            .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
             .Build();
 
          var pubResult = await client.PublishAsync(pubOptions);
          await Assert.That(pubResult.Failed).IsFalse();
 
-         await Assert.That(recordedMessagesPublished).IsGreaterThanOrEqualTo(1);
+         await Assert.That(recordedMessagesPublished).IsGreaterThanOrEqualTo(2);
 
          await client.DisconnectAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.NormalDisconnection });
          await client.DisposeAsync();

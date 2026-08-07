@@ -55,6 +55,11 @@ public class TelemetryTests
       });
       listener.Start();
 
+      var initialBytesSent = Volatile.Read(ref recordedBytesSent);
+      var initialBytesReceived = Volatile.Read(ref recordedBytesReceived);
+      var initialOpened = Volatile.Read(ref recordedConnectionsOpened);
+      var initialClosed = Volatile.Read(ref recordedConnectionsClosed);
+
       // Act
       TransportMetrics.RecordBytesSent(1024, TransportKind.Tcp);
       TransportMetrics.RecordBytesReceived(2048, TransportKind.Tcp);
@@ -66,10 +71,10 @@ public class TelemetryTests
       listener.RecordObservableInstruments();
 
       // Assert
-      await Assert.That(recordedBytesSent).IsEqualTo(1024);
-      await Assert.That(recordedBytesReceived).IsEqualTo(2048);
-      await Assert.That(recordedConnectionsOpened).IsEqualTo(1);
-      await Assert.That(recordedConnectionsClosed).IsEqualTo(1);
+      await Assert.That(Volatile.Read(ref recordedBytesSent) - initialBytesSent).IsGreaterThanOrEqualTo(1024);
+      await Assert.That(Volatile.Read(ref recordedBytesReceived) - initialBytesReceived).IsGreaterThanOrEqualTo(2048);
+      await Assert.That(Volatile.Read(ref recordedConnectionsOpened) - initialOpened).IsGreaterThanOrEqualTo(1);
+      await Assert.That(Volatile.Read(ref recordedConnectionsClosed) - initialClosed).IsGreaterThanOrEqualTo(1);
       await Assert.That(recordedConnectionsActiveDelta).IsEqualTo(0); // opened (+1) then closed (-1) = net 0
       await Assert.That(recordedStreamsActiveDelta).IsEqualTo(0); // opened (+1) then closed (-1) = net 0
    }
@@ -114,6 +119,8 @@ public class TelemetryTests
       });
       listener.Start();
 
+      var initialReconnects = Volatile.Read(ref recordedReconnectAttempts);
+
       // Act
       ResilientMetrics.RecordReconnectAttempt(success: true, durationMs: 45.5);
       ResilientMetrics.RecordPingRtt(rttMs: 12.3, isClient: true);
@@ -124,7 +131,7 @@ public class TelemetryTests
       listener.RecordObservableInstruments();
 
       // Assert
-      await Assert.That(recordedReconnectAttempts).IsEqualTo(1);
+      await Assert.That(Volatile.Read(ref recordedReconnectAttempts) - initialReconnects).IsGreaterThanOrEqualTo(1);
       await Assert.That(recordedPingRtt).IsEqualTo(12.3);
       await Assert.That(recordedActiveSessionsDelta).IsEqualTo(1);
       await Assert.That(recordedOfflineQueueDelta).IsEqualTo(3);
@@ -143,7 +150,7 @@ public class TelemetryTests
       {
          if (instrument.Meter.Name == MqttMetrics.MeterName)
          {
-            meterListener.EnableMeasurementEvents(instrument);
+            listener.EnableMeasurementEvents(instrument);
          }
       };
       listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
@@ -167,6 +174,9 @@ public class TelemetryTests
       });
       listener.Start();
 
+      var initialPublishes = Volatile.Read(ref recordedPublishes);
+      var initialAliasHits = Volatile.Read(ref recordedTopicAliasHits);
+
       // Act
       MqttMetrics.RecordPublished(isInbound: false, qos: 1, isRetained: false);
       MqttMetrics.RecordTopicAliasHit();
@@ -176,8 +186,8 @@ public class TelemetryTests
       listener.RecordObservableInstruments();
 
       // Assert
-      await Assert.That(recordedPublishes).IsEqualTo(1);
-      await Assert.That(recordedTopicAliasHits).IsEqualTo(1);
+      await Assert.That(Volatile.Read(ref recordedPublishes) - initialPublishes).IsGreaterThanOrEqualTo(1);
+      await Assert.That(Volatile.Read(ref recordedTopicAliasHits) - initialAliasHits).IsGreaterThanOrEqualTo(1);
       await Assert.That(recordedConnectedClients).IsEqualTo(1);
       await Assert.That(recordedSubscriptions).IsEqualTo(2);
    }

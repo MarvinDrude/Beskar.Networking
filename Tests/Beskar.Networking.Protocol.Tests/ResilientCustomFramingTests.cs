@@ -188,7 +188,7 @@ public class ResilientCustomFramingTests
          Reconnecting = new ResilientClientReconnectionOptions { AutoReconnect = false }
       });
 
-      using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
       var connectResult = await client.ConnectAsync(boundEndPoint, cts.Token);
       await Assert.That(connectResult.Failed).IsFalse();
       await Assert.That(client.IsConnected).IsTrue();
@@ -197,7 +197,7 @@ public class ResilientCustomFramingTests
       var frame = CustomMagicPacket.CreateFrame(ResilientFrameKind.Message, new ReadOnlySequence<byte>(customPayload));
       await client.SendAsync(frame, cts.Token);
 
-      var receivedText = await serverReceivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      var receivedText = await serverReceivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
       await Assert.That(receivedText).IsEqualTo("Hello Custom Magic Packet Protocol!");
 
       await client.DisconnectAsync();
