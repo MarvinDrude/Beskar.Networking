@@ -714,6 +714,7 @@ public class TcpTransportTests
       long recordedConnectionsOpened = 0;
       long recordedConnectionsClosed = 0;
       long recordedConnectionsActiveDelta = 0;
+      long recordedStreamsActiveDelta = 0;
       long recordedBytesSent = 0;
       long recordedBytesReceived = 0;
 
@@ -739,6 +740,10 @@ public class TcpTransportTests
          {
             Interlocked.Add(ref recordedConnectionsActiveDelta, measurement);
          }
+         else if (instrument.Name == "beskar.transport.streams.active")
+         {
+            Interlocked.Add(ref recordedStreamsActiveDelta, measurement);
+         }
          else if (instrument.Name == "beskar.transport.bytes.sent")
          {
             Interlocked.Add(ref recordedBytesSent, measurement);
@@ -757,6 +762,7 @@ public class TcpTransportTests
       var initialOpened = Volatile.Read(ref recordedConnectionsOpened);
       var initialClosed = Volatile.Read(ref recordedConnectionsClosed);
       var initialActive = Volatile.Read(ref recordedConnectionsActiveDelta);
+      var initialStreamsActive = Volatile.Read(ref recordedStreamsActiveDelta);
 
       var client = new TcpNetworkClient(options);
       var connectResult = await client.ConnectAsync(listener.LocalAddress);
@@ -777,6 +783,9 @@ public class TcpTransportTests
 
       var clientStream = (await clientSession.OpenStreamAsync()).Success!;
       var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
+
+      var streamsActiveDelta = Volatile.Read(ref recordedStreamsActiveDelta) - initialStreamsActive;
+      await Assert.That(streamsActiveDelta).IsGreaterThanOrEqualTo(2);
 
       // Client writes to server
       var payload = "Integration Telemetry Payload"u8.ToArray();

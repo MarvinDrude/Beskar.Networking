@@ -51,6 +51,22 @@ public static class TransportMetrics
       "Current count of active open network streams.");
 
    /// <summary>
+   /// Total number of streams opened.
+   /// </summary>
+   public static readonly Counter<long> StreamsOpened = Meter.CreateCounter<long>(
+      "beskar.transport.streams.opened",
+      "{stream}",
+      "Total number of network streams opened.");
+
+   /// <summary>
+   /// Total number of streams closed.
+   /// </summary>
+   public static readonly Counter<long> StreamsClosed = Meter.CreateCounter<long>(
+      "beskar.transport.streams.closed",
+      "{stream}",
+      "Total number of network streams closed.");
+
+   /// <summary>
    /// Total payload and frame bytes sent across network pipelines.
    /// </summary>
    public static readonly Counter<long> BytesSent = Meter.CreateCounter<long>(
@@ -131,17 +147,27 @@ public static class TransportMetrics
 
    public static void RecordStreamOpened(TransportKind kind)
    {
+      var tags = GetTransportTags(kind);
+      if (StreamsOpened.Enabled)
+      {
+         StreamsOpened.Add(1, tags);
+      }
       if (StreamsActive.Enabled)
       {
-         StreamsActive.Add(1, GetTransportTags(kind));
+         StreamsActive.Add(1, tags);
       }
    }
 
    public static void RecordStreamClosed(TransportKind kind)
    {
+      var tags = GetTransportTags(kind);
+      if (StreamsClosed.Enabled)
+      {
+         StreamsClosed.Add(1, tags);
+      }
       if (StreamsActive.Enabled)
       {
-         StreamsActive.Add(-1, GetTransportTags(kind));
+         StreamsActive.Add(-1, tags);
       }
    }
 }
