@@ -134,4 +134,51 @@ public class ResilientTelemetryTests
       await client.DisposeAsync();
       await server.DisposeAsync();
    }
+
+   [Test]
+   public async Task ResilientServer_HandshakeAndDisconnect_TracksServerRoleSessionState()
+   {
+      long serverRoleSessionDelta = 0;
+
+      using var meterListener = new MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == ResilientMetrics.MeterName &&
+             instrument.Name == "beskar.resilient.sessions.active")
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         foreach (var tag in tags)
+         {
+            if (tag.Key == "role" && Equals(tag.Value, "server"))
+            {
+               Interlocked.Add(ref serverRoleSessionDelta, measurement);
+            }
+         }
+      });
+
+      meterListener.Start();
+
+      var endpoint = new MemoryEndPoint($"resilient_server_telemetry_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<CustomMagicPacket>([listener], new ResilientServerOptions());
+      await server.StartAsync();
+
+      var client = ResilientClientFactory.CreateMemory<CustomMagicPacket>();
+      using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+      var connectResult = await client.ConnectAsync(endpoint, cts.Token);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      await Assert.That(Volatile.Read(ref serverRoleSessionDelta)).IsGreaterThanOrEqualTo(1);
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
 }
