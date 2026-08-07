@@ -317,6 +317,16 @@ public sealed class QuicNetworkSession : INetworkSession
 
       try
       {
+         using var closeCts = new CancellationTokenSource(50);
+         await _connection.CloseAsync(_options.DefaultCloseErrorCode, closeCts.Token);
+      }
+      catch
+      {
+         // Ignored
+      }
+
+      try
+      {
          await _connection.DisposeAsync();
       }
       catch (Exception ex)
