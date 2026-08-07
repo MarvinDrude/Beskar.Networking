@@ -17,8 +17,6 @@
    ·
    <a href="#roslyn-source-generators">Source Generators</a>
    ·
-   <a href="#chaos-engineering">Chaos Engineering</a>
-   ·
    <a href="#transport-comparison">Transports</a>
    ·
    <a href="#examples">Examples</a>
