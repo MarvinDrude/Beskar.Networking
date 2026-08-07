@@ -19,6 +19,14 @@ public static class TransportMetrics
    public static readonly Meter Meter = new(MeterName, "1.0.0");
 
    /// <summary>
+   /// Current count of active open connections.
+   /// </summary>
+   public static readonly UpDownCounter<long> ConnectionsActive = Meter.CreateUpDownCounter<long>(
+      "beskar.transport.connections.active",
+      "{connection}",
+      "Current count of active open network connections.");
+
+   /// <summary>
    /// Total number of connection attempts opened.
    /// </summary>
    public static readonly Counter<long> ConnectionsOpened = Meter.CreateCounter<long>(
@@ -33,6 +41,14 @@ public static class TransportMetrics
       "beskar.transport.connections.closed",
       "{connection}",
       "Total number of network connections closed.");
+
+   /// <summary>
+   /// Current count of active open streams.
+   /// </summary>
+   public static readonly UpDownCounter<long> StreamsActive = Meter.CreateUpDownCounter<long>(
+      "beskar.transport.streams.active",
+      "{stream}",
+      "Current count of active open network streams.");
 
    /// <summary>
    /// Total payload and frame bytes sent across network pipelines.
@@ -105,17 +121,43 @@ public static class TransportMetrics
 
    public static void RecordConnectionOpened(TransportKind kind)
    {
+      var tags = GetTransportTags(kind);
       if (ConnectionsOpened.Enabled)
       {
-         ConnectionsOpened.Add(1, GetTransportTags(kind));
+         ConnectionsOpened.Add(1, tags);
+      }
+      if (ConnectionsActive.Enabled)
+      {
+         ConnectionsActive.Add(1, tags);
       }
    }
 
    public static void RecordConnectionClosed(TransportKind kind)
    {
+      var tags = GetTransportTags(kind);
       if (ConnectionsClosed.Enabled)
       {
-         ConnectionsClosed.Add(1, GetTransportTags(kind));
+         ConnectionsClosed.Add(1, tags);
+      }
+      if (ConnectionsActive.Enabled)
+      {
+         ConnectionsActive.Add(-1, tags);
+      }
+   }
+
+   public static void RecordStreamOpened(TransportKind kind)
+   {
+      if (StreamsActive.Enabled)
+      {
+         StreamsActive.Add(1, GetTransportTags(kind));
+      }
+   }
+
+   public static void RecordStreamClosed(TransportKind kind)
+   {
+      if (StreamsActive.Enabled)
+      {
+         StreamsActive.Add(-1, GetTransportTags(kind));
       }
    }
 }

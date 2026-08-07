@@ -18,6 +18,14 @@ public static class ResilientMetrics
    public static readonly Meter Meter = new(MeterName, "1.0.0");
 
    /// <summary>
+   /// Current count of active resilient sessions.
+   /// </summary>
+   public static readonly UpDownCounter<long> SessionsActive = Meter.CreateUpDownCounter<long>(
+      "beskar.resilient.sessions.active",
+      "{session}",
+      "Current count of active resilient sessions.");
+
+   /// <summary>
    /// Total number of auto-reconnect attempts triggered.
    /// </summary>
    public static readonly Counter<long> ReconnectAttempts = Meter.CreateCounter<long>(
@@ -58,6 +66,14 @@ public static class ResilientMetrics
       "Total challenge authentication attempts.");
 
    /// <summary>
+   /// Current size of offline message queue buffering during disconnects.
+   /// </summary>
+   public static readonly UpDownCounter<long> OfflineQueueSize = Meter.CreateUpDownCounter<long>(
+      "beskar.resilient.offline_queue.size",
+      "{frame}",
+      "Current count of buffered frames in offline queue.");
+
+   /// <summary>
    /// Total frames dropped from offline buffer during disconnection.
    /// </summary>
    public static readonly Counter<long> OfflineQueueDropped = Meter.CreateCounter<long>(
@@ -69,6 +85,14 @@ public static class ResilientMetrics
    private static readonly KeyValuePair<string, object?>[] TagFailed = [new KeyValuePair<string, object?>("status", "failed")];
    private static readonly KeyValuePair<string, object?>[] TagRoleClient = [new KeyValuePair<string, object?>("role", "client")];
    private static readonly KeyValuePair<string, object?>[] TagRoleServer = [new KeyValuePair<string, object?>("role", "server")];
+
+   public static void RecordSessionStateChange(int delta, bool isClient)
+   {
+      if (SessionsActive.Enabled)
+      {
+         SessionsActive.Add(delta, isClient ? TagRoleClient : TagRoleServer);
+      }
+   }
 
    public static void RecordReconnectAttempt(bool success, double durationMs)
    {
@@ -104,6 +128,14 @@ public static class ResilientMetrics
       if (AuthAttempts.Enabled)
       {
          AuthAttempts.Add(1, success ? TagSuccess : TagFailed);
+      }
+   }
+
+   public static void RecordOfflineQueueSizeChange(int delta)
+   {
+      if (OfflineQueueSize.Enabled && delta != 0)
+      {
+         OfflineQueueSize.Add(delta);
       }
    }
 

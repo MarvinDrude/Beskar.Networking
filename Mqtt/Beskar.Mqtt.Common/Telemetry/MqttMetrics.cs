@@ -3,7 +3,7 @@ using System.Diagnostics.Metrics;
 namespace Beskar.Mqtt.Common.Telemetry;
 
 /// <summary>
-/// Contains System.Diagnostics.Metrics telemetry meters and instruments for MQTT client and broker/server.
+/// Contains System.Diagnostics.Metrics telemetry meters and instruments for MQTT client and broker operations.
 /// </summary>
 public static class MqttMetrics
 {
@@ -18,23 +18,55 @@ public static class MqttMetrics
    public static readonly Meter Meter = new(MeterName, "1.0.0");
 
    /// <summary>
-   /// Total number of PUBLISH packets processed by broker or client.
+   /// Current count of connected MQTT clients on broker.
+   /// </summary>
+   public static readonly UpDownCounter<long> ConnectedClients = Meter.CreateUpDownCounter<long>(
+      "beskar.mqtt.server.clients.connected",
+      "{client}",
+      "Current count of connected MQTT clients on server.");
+
+   /// <summary>
+   /// Current count of active stored sessions on broker.
+   /// </summary>
+   public static readonly UpDownCounter<long> ActiveSessions = Meter.CreateUpDownCounter<long>(
+      "beskar.mqtt.server.sessions.active",
+      "{session}",
+      "Current count of stored MQTT sessions on server.");
+
+   /// <summary>
+   /// Current count of active topic subscriptions on broker.
+   /// </summary>
+   public static readonly UpDownCounter<long> SubscriptionsActive = Meter.CreateUpDownCounter<long>(
+      "beskar.mqtt.subscriptions.active",
+      "{subscription}",
+      "Current count of active topic subscriptions on server.");
+
+   /// <summary>
+   /// Current count of stored retained messages on broker.
+   /// </summary>
+   public static readonly UpDownCounter<long> RetainedMessagesActive = Meter.CreateUpDownCounter<long>(
+      "beskar.mqtt.retained_messages.active",
+      "{message}",
+      "Current count of stored retained messages on server.");
+
+   /// <summary>
+   /// Total MQTT PUBLISH messages sent or received.
    /// </summary>
    public static readonly Counter<long> MessagesPublished = Meter.CreateCounter<long>(
       "beskar.mqtt.messages.published",
       "{message}",
-      "Total MQTT PUBLISH packets sent or received.");
+      "Total MQTT PUBLISH messages sent or received.");
 
    /// <summary>
-   /// In-flight QoS 1/2 packets waiting for acknowledgment.
+   /// Current count of QoS 1/2 messages awaiting ACK/COMPLETION.
    /// </summary>
    public static readonly UpDownCounter<long> QosInflightCount = Meter.CreateUpDownCounter<long>(
-      "beskar.mqtt.qos.inflight.count",
-      "{packet}",
-      "Number of in-flight QoS 1/2 packets waiting for acknowledgment.");
+      "beskar.mqtt.qos.inflight",
+      "{message}",
+      "Current count of unacknowledged QoS 1/2 messages in-flight.");
 
    /// <summary>
-   /// Total QoS 1/2 retransmissions triggered.
+   /// Total QoS 1/2 retransmissions.
    /// </summary>
    public static readonly Counter<long> QosRetries = Meter.CreateCounter<long>(
       "beskar.mqtt.qos.retries",
@@ -42,74 +74,78 @@ public static class MqttMetrics
       "Total QoS 1/2 retransmission attempts.");
 
    /// <summary>
-   /// Total PUBLISH packets utilizing topic alias compression.
+   /// Total topic alias cache hits during packet encoding/decoding.
    /// </summary>
    public static readonly Counter<long> TopicAliasHits = Meter.CreateCounter<long>(
       "beskar.mqtt.topic_alias.hits",
       "{hit}",
-      "Total PUBLISH packets using Topic Alias optimization.");
+      "Total topic alias cache hits.");
 
    /// <summary>
-   /// Total Last Will and Testament (LWT) messages dispatched.
+   /// Total Last Will and Testament (LWT) messages triggered on unexpected client disconnects.
    /// </summary>
    public static readonly Counter<long> LastWillTriggered = Meter.CreateCounter<long>(
       "beskar.mqtt.last_will.triggered",
       "{will}",
-      "Total Last Will messages triggered by ungraceful client disconnects.");
+      "Total Last Will and Testament (LWT) messages published.");
 
-   private static readonly KeyValuePair<string, object?>[][][] PublishTags = [
-      // Outbound (isInbound = false)
-      [
-         [new KeyValuePair<string, object?>("direction", "outbound"), new KeyValuePair<string, object?>("qos", 0), new KeyValuePair<string, object?>("retained", false)],
-         [new KeyValuePair<string, object?>("direction", "outbound"), new KeyValuePair<string, object?>("qos", 0), new KeyValuePair<string, object?>("retained", true)]
-      ],
-      [
-         [new KeyValuePair<string, object?>("direction", "outbound"), new KeyValuePair<string, object?>("qos", 1), new KeyValuePair<string, object?>("retained", false)],
-         [new KeyValuePair<string, object?>("direction", "outbound"), new KeyValuePair<string, object?>("qos", 1), new KeyValuePair<string, object?>("retained", true)]
-      ],
-      [
-         [new KeyValuePair<string, object?>("direction", "outbound"), new KeyValuePair<string, object?>("qos", 2), new KeyValuePair<string, object?>("retained", false)],
-         [new KeyValuePair<string, object?>("direction", "outbound"), new KeyValuePair<string, object?>("qos", 2), new KeyValuePair<string, object?>("retained", true)]
-      ],
-      // Inbound (isInbound = true)
-      [
-         [new KeyValuePair<string, object?>("direction", "inbound"), new KeyValuePair<string, object?>("qos", 0), new KeyValuePair<string, object?>("retained", false)],
-         [new KeyValuePair<string, object?>("direction", "inbound"), new KeyValuePair<string, object?>("qos", 0), new KeyValuePair<string, object?>("retained", true)]
-      ],
-      [
-         [new KeyValuePair<string, object?>("direction", "inbound"), new KeyValuePair<string, object?>("qos", 1), new KeyValuePair<string, object?>("retained", false)],
-         [new KeyValuePair<string, object?>("direction", "inbound"), new KeyValuePair<string, object?>("qos", 1), new KeyValuePair<string, object?>("retained", true)]
-      ],
-      [
-         [new KeyValuePair<string, object?>("direction", "inbound"), new KeyValuePair<string, object?>("qos", 2), new KeyValuePair<string, object?>("retained", false)],
-         [new KeyValuePair<string, object?>("direction", "inbound"), new KeyValuePair<string, object?>("qos", 2), new KeyValuePair<string, object?>("retained", true)]
-      ]
-   ];
+   private static readonly KeyValuePair<string, object?>[] TagInbound = [new KeyValuePair<string, object?>("direction", "inbound")];
+   private static readonly KeyValuePair<string, object?>[] TagOutbound = [new KeyValuePair<string, object?>("direction", "outbound")];
+
+   public static void RecordClientConnectedChange(int delta)
+   {
+      if (ConnectedClients.Enabled && delta != 0)
+      {
+         ConnectedClients.Add(delta);
+      }
+   }
+
+   public static void RecordActiveSessionChange(int delta)
+   {
+      if (ActiveSessions.Enabled && delta != 0)
+      {
+         ActiveSessions.Add(delta);
+      }
+   }
+
+   public static void RecordSubscriptionChange(int delta)
+   {
+      if (SubscriptionsActive.Enabled && delta != 0)
+      {
+         SubscriptionsActive.Add(delta);
+      }
+   }
+
+   public static void RecordRetainedMessageChange(int delta)
+   {
+      if (RetainedMessagesActive.Enabled && delta != 0)
+      {
+         RetainedMessagesActive.Add(delta);
+      }
+   }
 
    public static void RecordPublished(bool isInbound, int qos, bool isRetained)
    {
       if (MessagesPublished.Enabled)
       {
-         var qosIndex = Math.Clamp(qos, 0, 2);
-         var groupIndex = isInbound ? 3 + qosIndex : qosIndex;
-         var retainedIndex = isRetained ? 1 : 0;
-         MessagesPublished.Add(1, PublishTags[groupIndex][retainedIndex]);
+         var tags = isInbound ? TagInbound : TagOutbound;
+         MessagesPublished.Add(1, tags);
       }
    }
 
-   public static void RecordQosInflightChange(int delta, int qos)
+   public static void RecordQosInflightChange(int delta)
    {
-      if (QosInflightCount.Enabled)
+      if (QosInflightCount.Enabled && delta != 0)
       {
-         QosInflightCount.Add(delta, new KeyValuePair<string, object?>("qos", qos));
+         QosInflightCount.Add(delta);
       }
    }
 
-   public static void RecordQosRetry(int qos)
+   public static void RecordQosRetry()
    {
       if (QosRetries.Enabled)
       {
-         QosRetries.Add(1, new KeyValuePair<string, object?>("qos", qos));
+         QosRetries.Add(1);
       }
    }
 
