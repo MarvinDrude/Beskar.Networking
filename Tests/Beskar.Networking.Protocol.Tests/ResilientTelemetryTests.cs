@@ -59,8 +59,13 @@ public class ResilientTelemetryTests
       var connectResult = await client.ConnectAsync(endpoint, cts.Token);
       await Assert.That(connectResult.Failed).IsFalse();
 
+      var sessionsDelta = Volatile.Read(ref recordedSessionsActive) - initialSessions;
+      await Assert.That(sessionsDelta).IsGreaterThanOrEqualTo(1);
+
       var authDelta = Volatile.Read(ref recordedAuthAttempts) - initialAuth;
       await Assert.That(authDelta).IsGreaterThanOrEqualTo(1);
+
+      await Assert.That(Volatile.Read(ref recordedPingTimeouts)).IsEqualTo(0);
 
       await client.DisconnectAsync();
       await server.StopAsync();

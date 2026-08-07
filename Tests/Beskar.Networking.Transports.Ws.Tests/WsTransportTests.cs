@@ -704,7 +704,7 @@ public class WsTransportTests
       var buffer = new byte[1024];
       var read = await stream.ReadAsync(buffer);
       var responseText = System.Text.Encoding.ASCII.GetString(buffer, 0, read);
-      
+
       // The response must contain "\r\n\r\n" separating headers and body
       await Assert.That(responseText).Contains("\r\n\r\nOnly GET requests are allowed.");
 
@@ -1110,6 +1110,11 @@ public class WsTransportTests
       };
       meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
       {
+         if (tags.Length != 1 || tags[0].Key != "transport" || tags[0].Value is not string transport || transport != "websocket")
+         {
+            return;
+         }
+
          if (instrument.Name == "beskar.transport.connections.opened")
          {
             Interlocked.Add(ref recordedConnectionsOpened, measurement);
@@ -1157,7 +1162,7 @@ public class WsTransportTests
       var serverSession = acceptResult.Success!;
 
       var openedDelta = Volatile.Read(ref recordedConnectionsOpened) - initialOpened;
-      await Assert.That(openedDelta).IsGreaterThanOrEqualTo(1);
+      await Assert.That(openedDelta).IsGreaterThanOrEqualTo(2);
 
       var clientStream = (await clientSession.AcceptStreamAsync()).Success!;
       var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
@@ -1177,7 +1182,7 @@ public class WsTransportTests
       await listener.UnbindAsync();
 
       var closedDelta = Volatile.Read(ref recordedConnectionsClosed) - initialClosed;
-      await Assert.That(closedDelta).IsGreaterThanOrEqualTo(1);
+      await Assert.That(closedDelta).IsGreaterThanOrEqualTo(2);
    }
 }
 

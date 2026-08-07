@@ -329,7 +329,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private async ValueTask DisconnectInternalAsync(DisconnectPacketPayload? disconnectPayload,
       bool raiseDisconnectedEvent = true)
    {
-      ResilientMetrics.RecordSessionStateChange(-1, isClient: true);
+      if (State is ResilientClientState.Connected or ResilientClientState.Disconnecting)
+      {
+         ResilientMetrics.RecordSessionStateChange(-1, isClient: true);
+      }
+
       try
       {
          try
