@@ -59,10 +59,13 @@ public sealed class NamedPipeNetworkStream : INetworkStream
 
    public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
 
+   private int _disposed;
+
    public NamedPipeNetworkStream(INetworkSession session, IDuplexPipe transport)
    {
       Session = session;
       Transport = new StatsTrackingDuplexPipe(transport, this);
+      TransportMetrics.RecordStreamOpened(session.Transport);
    }
 
    private readonly AsyncLock _asyncLock = new();
@@ -74,6 +77,12 @@ public sealed class NamedPipeNetworkStream : INetworkStream
 
    public ValueTask DisposeAsync()
    {
+      if (Interlocked.Exchange(ref _disposed, 1) == 1)
+      {
+         return ValueTask.CompletedTask;
+      }
+
+      TransportMetrics.RecordStreamClosed(Session.Transport);
       TraceLogger.LogNeutralInfo("NamedPipe Stream: Disposing stream wrapper for session {0}", Session.Id);
       return ValueTask.CompletedTask;
    }

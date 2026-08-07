@@ -73,6 +73,7 @@ public sealed class QuicNetworkStream : INetworkStream
       _connection = connection;
 
       Transport = new StatsTrackingDuplexPipe(connection, this);
+      TransportMetrics.RecordStreamOpened(TransportKind.Quic);
    }
 
    public NetworkStreamDirection Direction => _quicStream.Type == QuicStreamType.Bidirectional
@@ -90,6 +91,8 @@ public sealed class QuicNetworkStream : INetworkStream
       {
          return;
       }
+
+      TransportMetrics.RecordStreamClosed(TransportKind.Quic);
 
       TraceLogger.LogNeutralInfo("QUIC Stream: Disposing stream wrapper {0} (Direction: {1}) for session {2}", StreamId, Direction, Session.Id);
 

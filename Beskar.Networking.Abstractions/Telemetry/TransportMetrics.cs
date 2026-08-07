@@ -66,22 +66,6 @@ public static class TransportMetrics
       "By",
       "Total bytes received over network pipelines.");
 
-   /// <summary>
-   /// Total packets or frames sent.
-   /// </summary>
-   public static readonly Counter<long> PacketsSent = Meter.CreateCounter<long>(
-      "beskar.transport.packets.sent",
-      "{packet}",
-      "Total frames/packets sent over transport streams.");
-
-   /// <summary>
-   /// Total packets or frames received.
-   /// </summary>
-   public static readonly Counter<long> PacketsReceived = Meter.CreateCounter<long>(
-      "beskar.transport.packets.received",
-      "{packet}",
-      "Total frames/packets received over transport streams.");
-
    private static readonly KeyValuePair<string, object?>[][] TransportTags = [
       [new KeyValuePair<string, object?>("transport", "unknown")],
       [new KeyValuePair<string, object?>("transport", "tcp")],

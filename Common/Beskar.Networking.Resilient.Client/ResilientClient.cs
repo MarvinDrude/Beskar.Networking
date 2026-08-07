@@ -853,7 +853,11 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                      CancellationTokenSource.CreateLinkedTokenSource(newCts.Token, masterCt);
                   var attemptCt = attemptCts.Token;
 
+                  var startMs = Environment.TickCount64;
                   var result = await ConnectInternalAsync(_remoteEndPoint, attemptCt, isReconnect: true);
+                  var durationMs = Environment.TickCount64 - startMs;
+                  ResilientMetrics.RecordReconnectAttempt(!result.Failed, durationMs);
+
                   if (!result.Failed)
                   {
                      if (Volatile.Read(ref _disposedState) == 1 ||
