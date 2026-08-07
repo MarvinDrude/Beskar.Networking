@@ -125,9 +125,12 @@ public sealed class ResilientServerClient<TFrame>(
    internal void SetHandshakeResult(bool success)
    {
       _isHandshakeCompleted = success;
-      if (success && Interlocked.Exchange(ref _isSessionActiveRecorded, 1) == 0)
+      if (success && Volatile.Read(ref _disposedState) == 0)
       {
-         ResilientMetrics.RecordSessionStateChange(1, isClient: false);
+         if (Interlocked.Exchange(ref _isSessionActiveRecorded, 1) == 0)
+         {
+            ResilientMetrics.RecordSessionStateChange(1, isClient: false);
+         }
       }
 
       _handshakeTcs.TrySetResult(success);
@@ -277,14 +280,18 @@ public sealed class ResilientServerClient<TFrame>(
    {
       _handshakeTcs.TrySetResult(false);
 
+      if (Interlocked.Exchange(ref _disposedState, 1) == 1)
+      {
+         if (Interlocked.Exchange(ref _isSessionActiveRecorded, 0) == 1)
+         {
+            ResilientMetrics.RecordSessionStateChange(-1, isClient: false);
+         }
+         return;
+      }
+
       if (Interlocked.Exchange(ref _isSessionActiveRecorded, 0) == 1)
       {
          ResilientMetrics.RecordSessionStateChange(-1, isClient: false);
-      }
-
-      if (Interlocked.Exchange(ref _disposedState, 1) == 1)
-      {
-         return;
       }
 
       OnDisposing?.Invoke(Id);
