@@ -53,5 +53,3 @@ Meter Name: `Beskar.Networking.Transport` (Version `1.0.0`)
 | `beskar.transport.streams.closed` | `Counter<long>` | `{stream}` | Total number of network streams closed. |
 | `beskar.transport.bytes.sent` | `Counter<long>` | `By` | Total bytes sent over network pipelines. |
 | `beskar.transport.bytes.received` | `Counter<long>` | `By` | Total bytes received over network pipelines. |
-| `beskar.transport.packets.sent` | `Counter<long>` | `{packet}` | Total frames/packets sent over transport streams. |
-| `beskar.transport.packets.received` | `Counter<long>` | `{packet}` | Total frames/packets received over transport streams. |
