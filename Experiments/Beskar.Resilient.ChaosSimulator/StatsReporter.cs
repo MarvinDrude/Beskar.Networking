@@ -57,6 +57,35 @@ public static class StatsReporter
                .AddRow("KeepAlive/Ping Transmitted", "", Program.ClientPingsSent.ToString())
                .Render();
 
+            // Render Live System.Diagnostics.Metrics OpenTelemetry table
+            var transportActiveConns = Program.TelemetryGauges.GetValueOrDefault("beskar.transport.connections.active", 0);
+            var transportOpenedConns = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.connections.opened", 0);
+            var transportClosedConns = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.connections.closed", 0);
+            var transportBytesSent = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.sent", 0);
+            var transportBytesRecv = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.received", 0);
+
+            var resilientActiveSessions = Program.TelemetryGauges.GetValueOrDefault("beskar.resilient.sessions.active", 0);
+            var resilientReconnectAttempts = Program.TelemetryCounters.GetValueOrDefault("beskar.resilient.reconnect.attempts", 0);
+            var resilientAuthAttempts = Program.TelemetryCounters.GetValueOrDefault("beskar.resilient.auth.attempts", 0);
+            var resilientOfflineQueueSize = Program.TelemetryGauges.GetValueOrDefault("beskar.resilient.offline_queue.size", 0);
+            var resilientOfflineQueueDropped = Program.TelemetryCounters.GetValueOrDefault("beskar.resilient.offline_queue.dropped", 0);
+
+            ConsoleRender.CreateTable()
+               .SetBorderColor(ConsoleColor.Magenta)
+               .AddColumn("OpenTelemetry Meter", Alignment.Left, ConsoleColor.Magenta)
+               .AddColumn("Instrument Name", Alignment.Left, ConsoleColor.Yellow)
+               .AddColumn("Type / Unit", Alignment.Left, ConsoleColor.Cyan)
+               .AddColumn("Live Value", Alignment.Right, ConsoleColor.White)
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.active", "UpDownCounter {connection}", transportActiveConns.ToString())
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.opened/closed", "Counter {connection}", $"Opened: {transportOpenedConns} | Closed: {transportClosedConns}")
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.bytes.sent/received", "Counter By", $"Sent: {transportBytesSent:N0} B | Recv: {transportBytesRecv:N0} B")
+               .AddRow("Beskar.Networking.Resilient", "beskar.resilient.sessions.active", "UpDownCounter {session}", resilientActiveSessions.ToString())
+               .AddRow("Beskar.Networking.Resilient", "beskar.resilient.reconnect.attempts", "Counter {attempt}", resilientReconnectAttempts.ToString())
+               .AddRow("Beskar.Networking.Resilient", "beskar.resilient.auth.attempts", "Counter {attempt}", resilientAuthAttempts.ToString())
+               .AddRow("Beskar.Networking.Resilient", "beskar.resilient.offline_queue.size", "UpDownCounter {message}", resilientOfflineQueueSize.ToString())
+               .AddRow("Beskar.Networking.Resilient", "beskar.resilient.offline_queue.dropped", "Counter {message}", resilientOfflineQueueDropped.ToString())
+               .Render();
+
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("==================================================================================");
             Console.ResetColor();
