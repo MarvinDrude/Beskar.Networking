@@ -2,9 +2,10 @@ using System.Net;
 using Beskar.Mqtt.Client;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
-using Beskar.Mqtt.Common.Options;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Server;
+using Beskar.Networking.Abstractions.Backoffs;
+using Beskar.Networking.Abstractions.Options;
 using Beskar.Utilities.Tracing;
 
 TraceLogger.IsEnabled = true;
@@ -30,68 +31,31 @@ if (startResult.Failed)
 }
 TraceLogger.LogServerInfo($"Server: Running on port {Port}.");
 
-// Setup Client
+// Setup Client with Built-in Auto-Reconnection and Jittered Exponential Backoff
 await using var mqttClient = MqttClientFactory.CreateTcp();
 
-var connectOptions = new ConnectOptions
-{
-   EndPoint = new IPEndPoint(IPAddress.Loopback, Port),
-   ProtocolVersion = MqttProtocolVersion.V50
-};
+var connectOptions = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, Port))
+   .WithProtocolVersion(MqttProtocolVersion.V50)
+   .WithCleanSession()
+   .WithAutoReconnect(new AutoReconnectOptions
+   {
+      IsEnabled = true,
+      MaxRetryAttempts = 10,
+      BackoffPolicy = new ExponentialBackoffPolicy(TimeSpan.FromSeconds(1)).WithFullJitter()
+   })
+   .Build();
 
 // Register Client Event Handlers
-var isGracefulDisconnect = false;
-var isReconnecting = false;
-Lock reconnectLock = new();
-
 using var connectedToken = mqttClient.AddConnectedHandler((context, ct) =>
 {
    TraceLogger.LogClientInfo("Client Event: [Connected] Handshake complete.");
    return ValueTask.CompletedTask;
 });
 
-using var disconnectedToken = mqttClient.AddDisconnectedHandler(async (context, ct) =>
+using var disconnectedToken = mqttClient.AddDisconnectedHandler((context, ct) =>
 {
    TraceLogger.LogClientWarning($"Client Event: [Disconnected] ReasonCode = {context.ReasonCode}, BeforeConnected = {context.BeforeConnected}");
-
-   // Check if the disconnect was unexpected/accidental
-   if (!isGracefulDisconnect)
-   {
-      lock (reconnectLock)
-      {
-         if (isReconnecting) return;
-         isReconnecting = true;
-      }
-
-      TraceLogger.LogClientWarning("Client Event: Connection lost unexpectedly! Starting auto-reconnect loop...");
-
-      try
-      {
-         var attempt = 0;
-         while (true)
-         {
-            attempt++;
-            TraceLogger.LogClientInfo("Client Event: Attempting reconnect #{0}...", attempt);
-
-            var result = await mqttClient.ConnectAsync(connectOptions);
-            if (!result.Failed)
-            {
-               TraceLogger.LogClientInfo("Client Event: Reconnected successfully!");
-               break;
-            }
-
-            TraceLogger.LogClientWarning("Client Event: Reconnect failed ({0}). Retrying in 1.5 seconds...", result.Error.Detail);
-            await Task.Delay(1500, ct);
-         }
-      }
-      finally
-      {
-         lock (reconnectLock)
-         {
-            isReconnecting = false;
-         }
-      }
-   }
+   return ValueTask.CompletedTask;
 });
 
 // Initial Connection
@@ -108,7 +72,7 @@ await Task.Delay(500);
 TraceLogger.LogInfo("\n--- Simulating Connection Loss (Stopping Server) ---");
 await mqttServer.StopAsync();
 
-// Wait to let the client detect connection loss and start reconnect attempts
+// Wait to let the client detect connection loss and start reconnect attempts using backoff policy
 await Task.Delay(3000);
 
 // Restore Connection by Restarting the Server
@@ -124,7 +88,6 @@ await Task.Delay(3000);
 
 // Cleanup & Graceful Disconnect
 TraceLogger.LogInfo("\n--- Performing Graceful Disconnect ---");
-isGracefulDisconnect = true;
 await mqttClient.DisconnectAsync(new DisconnectOptions());
 
 await Task.Delay(500);

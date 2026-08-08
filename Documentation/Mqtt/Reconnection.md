@@ -1,13 +1,51 @@
 # MQTT Auto-Reconnection & Client Events
 
-In real-world scenarios, network connections are unstable. A production-ready MQTT client must monitor its connection status using client events and perform automatic reconnection when disconnected unexpectedly.
+In real-world scenarios, network connections are unstable. `Beskar.Mqtt` provides **built-in automatic reconnection**
+with pluggable backoff policies (`IBackoffPolicy`, jitter support, retry attempt caps) directly configurable via `ConnectOptions`.
 
 ---
 
-## 1. Subscribing to Client Events
+## 1. Built-in Auto-Reconnection & Backoff Policies
+
+`MqttClient` handles connection recovery automatically upon ungraceful connection loss. You can configure retry limits
+and backoff behavior using `AutoReconnectOptions` on `ConnectOptionsBuilder`:
+
+```csharp
+using System.Net;
+using Beskar.Mqtt.Client;
+using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Networking.Abstractions.Backoffs;
+using Beskar.Networking.Abstractions.Options;
+
+await using var mqttClient = MqttClientFactory.CreateTcp();
+
+var connectOptions = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, 1883))
+   .WithCleanSession()
+   .WithAutoReconnect(new AutoReconnectOptions
+   {
+      IsEnabled = true,
+      MaxRetryAttempts = 10,
+      BackoffPolicy = new ExponentialBackoffPolicy(TimeSpan.FromSeconds(1)).WithFullJitter()
+   })
+   .Build();
+
+await mqttClient.ConnectAsync(connectOptions);
+```
+
+### Supported Backoff Strategies
+- **`ExponentialBackoffPolicy`**: Exponentially increases delays ($2^n \times \text{initial}$).
+- **`LinearBackoffPolicy`**: Linearly increases delays by a fixed increment per attempt.
+- **`ConstantBackoffPolicy`**: Fixed interval between attempts.
+- **`DecorrelatedJitterBackoffPolicy`**: AWS decorrelated jitter algorithm.
+- **Fluent Jitter Extensions**: `.WithJitter()`, `.WithFullJitter()`, `.WithEqualJitter()` decorators to prevent thundering herd reconnection spikes.
+
+---
+
+## 2. Subscribing to Client Events
 
 Beskar.Mqtt provides client-side lifecycle callbacks that you can register using fluent handler registration:
 
+- `AddConnectingHandler`: Triggered when client starts connecting or auto-reconnecting.
 - `AddConnectedHandler`: Triggered when the initial or subsequent connection handshake completes successfully.
 - `AddDisconnectedHandler`: Triggered whenever the client transitions to a disconnected state.
 
@@ -16,7 +54,7 @@ using Beskar.Mqtt.Client;
 
 await using var mqttClient = MqttClientFactory.CreateTcp();
 
-// Connection established
+// Connection established / reconnected
 using var connectedToken = mqttClient.AddConnectedHandler((context, ct) =>
 {
    Console.WriteLine("Client connected successfully.");
@@ -33,73 +71,10 @@ using var disconnectedToken = mqttClient.AddDisconnectedHandler((context, ct) =>
 
 ---
 
-## 2. Implementing Robust Auto-Reconnection
-
-When implementing auto-reconnect, it is critical to:
-1. **Distinguish intentional disconnects** (user clicked disconnect) from **unintentional disconnections** (network loss).
-2. **Prevent parallel reconnection tasks** (cascading loops) since a failed reconnect attempt triggers the disconnected event again.
-
-This is achieved using a graceful disconnect flag and a thread-safe reconnection lock:
-
-```csharp
-bool isGracefulDisconnect = false;
-bool isReconnecting = false;
-object reconnectLock = new();
-
-using var disconnectedToken = mqttClient.AddDisconnectedHandler((context, ct) =>
-{
-   // 1. Ignore if we intentionally disconnected the client
-   if (!isGracefulDisconnect)
-   {
-      lock (reconnectLock)
-      {
-         // 2. Prevent spawning another loop if one is already running
-         if (isReconnecting) return ValueTask.CompletedTask;
-         isReconnecting = true;
-      }
-
-      Console.WriteLine("Connection lost unexpectedly! Starting reconnect loop...");
-
-      _ = Task.Run(async () =>
-      {
-         try
-         {
-            int attempt = 0;
-            while (true)
-            {
-               attempt++;
-               Console.WriteLine($"Attempting reconnect #{attempt}...");
-
-               var result = await mqttClient.ConnectAsync(connectOptions);
-               if (!result.Failed)
-               {
-                  Console.WriteLine("Reconnected successfully!");
-                  break;
-               }
-
-               Console.WriteLine($"Reconnect failed: {result.Error.Detail}. Retrying in 1.5s...");
-               await Task.Delay(1500);
-            }
-         }
-         finally
-         {
-            lock (reconnectLock)
-            {
-               isReconnecting = false;
-            }
-         }
-      });
-   }
-
-   return ValueTask.CompletedTask;
-});
-```
-
----
-
 ## 3. Complete Simulation Example
 
-The following code starts a local server, connects a client, shuts down the server to trigger an unexpected disconnect, restarts the server, and verifies the client successfully reconnects:
+The following example spins up a local broker, connects an `MqttClient` with built-in auto-reconnect and jittered
+exponential backoff, stops the server to simulate connection loss, restarts it, and verifies auto-reconnection:
 
 ```csharp
 using System.Net;
@@ -107,9 +82,10 @@ using System.Threading.Tasks;
 using Beskar.Mqtt.Client;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
-using Beskar.Mqtt.Common.Options;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Server;
+using Beskar.Networking.Abstractions.Backoffs;
+using Beskar.Networking.Abstractions.Options;
 
 const int Port = 8005;
 
@@ -119,18 +95,17 @@ var mqttServer = MqttServerFactory.CreateBuilder()
    .Build();
 await mqttServer.StartAsync();
 
-// Setup Client
+// Setup Client with Built-in Auto-Reconnect
 await using var mqttClient = MqttClientFactory.CreateTcp();
-var connectOptions = new ConnectOptions
-{
-   EndPoint = new IPEndPoint(IPAddress.Loopback, Port),
-   ProtocolVersion = MqttProtocolVersion.V50
-};
-
-// Auto-Reconnect Logic
-bool isGracefulDisconnect = false;
-bool isReconnecting = false;
-object reconnectLock = new();
+var connectOptions = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, Port))
+   .WithProtocolVersion(MqttProtocolVersion.V50)
+   .WithAutoReconnect(new AutoReconnectOptions
+   {
+      IsEnabled = true,
+      MaxRetryAttempts = 10,
+      BackoffPolicy = new ExponentialBackoffPolicy(TimeSpan.FromSeconds(1)).WithFullJitter()
+   })
+   .Build();
 
 using var connectedToken = mqttClient.AddConnectedHandler((context, ct) =>
 {
@@ -141,47 +116,6 @@ using var connectedToken = mqttClient.AddConnectedHandler((context, ct) =>
 using var disconnectedToken = mqttClient.AddDisconnectedHandler((context, ct) =>
 {
    Console.WriteLine($"Client Event: [Disconnected] ReasonCode = {context.ReasonCode}");
-
-   if (!isGracefulDisconnect)
-   {
-      lock (reconnectLock)
-      {
-         if (isReconnecting) return ValueTask.CompletedTask;
-         isReconnecting = true;
-      }
-
-      Console.WriteLine("Client Event: Connection lost unexpectedly! Starting auto-reconnect loop...");
-
-      _ = Task.Run(async () =>
-      {
-         try
-         {
-            int attempt = 0;
-            while (true)
-            {
-               attempt++;
-               Console.WriteLine($"Client Event: Attempting reconnect #{attempt}...");
-
-               var result = await mqttClient.ConnectAsync(connectOptions);
-               if (!result.Failed)
-               {
-                  Console.WriteLine("Client Event: Reconnected successfully!");
-                  break;
-               }
-
-               Console.WriteLine($"Client Event: Reconnect failed. Retrying in 1.5 seconds...");
-               await Task.Delay(1500);
-            }
-         }
-         finally
-         {
-            lock (reconnectLock)
-            {
-               isReconnecting = false;
-            }
-         }
-      });
-   }
    return ValueTask.CompletedTask;
 });
 
@@ -197,8 +131,7 @@ await Task.Delay(3000);
 await mqttServer.StartAsync();
 await Task.Delay(3000);
 
-// Graceful Disconnect
-isGracefulDisconnect = true;
+// Graceful Disconnect (Cancels Auto-Reconnect)
 await mqttClient.DisconnectAsync(new DisconnectOptions());
 await Task.Delay(500);
 
