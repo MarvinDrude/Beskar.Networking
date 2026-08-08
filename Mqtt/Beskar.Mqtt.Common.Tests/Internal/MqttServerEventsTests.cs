@@ -308,6 +308,52 @@ public class MqttServerEventsTests
    }
 
    [Test]
+   public async Task Publish_WhenInterceptedAndBlocked_DoesNotRouteToSubscribersOrUpdateRetained()
+   {
+      var (server, client, handler, stream) = SetupEnvironment(MqttProtocolVersion.V50);
+      var session = client.MqttSession;
+
+      var interceptFired = false;
+      server.Events.OnPublishIntercept.Add((ctx, ct) =>
+      {
+         interceptFired = true;
+         if (ctx.PublishMessage.Topic == "blocked/topic")
+         {
+            ctx.Block(reasonCode: (byte)PubAckReasonCode.NotAuthorized);
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      var noSubFired = false;
+      server.Events.OnNoSubscriberMessage.Add((ctx, ct) =>
+      {
+         noSubFired = true;
+         return ValueTask.CompletedTask;
+      });
+
+      // 1. Publish blocked message with Retain = true
+      var pubPacket = new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtLeastOnce,
+         Retain = true,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>("blocked/topic"u8.ToArray()),
+         Payload = new ReadOnlySequence<byte>("secret payload"u8.ToArray()),
+         PacketIdentifier = 101
+      };
+
+      await handler.ExecuteAsync(stream, pubPacket);
+
+      // Verify intercept fired
+      await Assert.That(interceptFired).IsTrue();
+      // Verify message was blocked and not passed to OnNoSubscriberMessage
+      await Assert.That(noSubFired).IsFalse();
+      // Verify message was not saved to retained messages store
+      var retained = server.RetainedMessages.GetMessages();
+      await Assert.That(retained.Count).IsEqualTo(0);
+   }
+
+   [Test]
    public async Task RetainedMessageEvents_ShouldFireCorrectly()
    {
       var (server, client, handler, stream) = SetupEnvironment(MqttProtocolVersion.V50);
