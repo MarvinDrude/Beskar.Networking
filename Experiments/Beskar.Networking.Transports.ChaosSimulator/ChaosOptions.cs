@@ -88,4 +88,14 @@ public class ChaosOptions
       MaxReadBytesPerSecond = 100 * 1024, // 100 KB/s
       MaxWriteBytesPerSecond = 100 * 1024 // 100 KB/s
    };
+
+   public static readonly ChaosOptions ChurnAndLeak = new()
+   {
+      ProfileName = "Stream & Connection Churn (High Churn Memory Leak Isolation)",
+      ConnectFailureRate = 0.05,
+      SessionAbruptDisconnectRate = 0.5,
+      SessionLifetimeMin = TimeSpan.FromMilliseconds(200),
+      SessionLifetimeMax = TimeSpan.FromMilliseconds(800),
+      StreamOpenFailureRate = 0.05
+   };
 }

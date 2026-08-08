@@ -141,9 +141,10 @@ public static class Program
          Console.WriteLine("  4. Corrupted Link (Adds random 3% payload bit-flip corruption)");
          Console.WriteLine("  5. Throttled Pipe (Enforces 50 KB/s bandwidth limits and minor latency)");
          Console.WriteLine("  6. TOTAL CHAOS (Runs all profiles concurrently - disconnects, drops, latency, throttling, corruption)");
-         Console.Write("\nSelect Option (1-6): ");
+         Console.WriteLine("  7. Stream & Connection Churn (High connection & stream creation/abrupt disconnects for memory leak testing)");
+         Console.Write("\nSelect Option (1-7): ");
          var chaosInput = Console.ReadLine();
-         if (int.TryParse(chaosInput, out var cOpt) && cOpt >= 1 && cOpt <= 6)
+         if (int.TryParse(chaosInput, out var cOpt) && cOpt >= 1 && cOpt <= 7)
          {
             chaosOption = cOpt;
          }
@@ -168,6 +169,7 @@ public static class Program
          4 => ChaosOptions.Corrupt,
          5 => ChaosOptions.Throttled,
          6 => ChaosOptions.TotalChaos,
+         7 => ChaosOptions.ChurnAndLeak,
          _ => ChaosOptions.Clean
       };
 
@@ -532,6 +534,27 @@ public static class Program
 
                await using (stream)
                {
+                  if (session.IsSupportingMultiplexing && chaosOpts == ChaosOptions.ChurnAndLeak)
+                  {
+                     // Open extra multiplexed stream inline to stress test stream creation & disposal without thread pool exhaustion
+                     try
+                     {
+                        using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct, session.SessionClosedToken);
+                        var stResult = await session.OpenStreamAsync(NetworkStreamDirection.Bidirectional, streamCts.Token);
+                        if (!stResult.Failed)
+                        {
+                           await using var subStream = stResult.Success;
+                           await ChaosPacket.WriteAsync(subStream.Transport.Output, currentSeq, payload, streamCts.Token);
+                           Interlocked.Increment(ref _packetsSent);
+                           currentSeq++;
+                        }
+                     }
+                     catch
+                     {
+                        // Ignored
+                     }
+                  }
+
                   while (!ct.IsCancellationRequested && !session.SessionClosedToken.IsCancellationRequested)
                   {
                      // Send framed packet
@@ -566,7 +589,8 @@ public static class Program
          }
 
          // Wait briefly before reconnecting
-         await Task.Delay(Random.Shared.Next(1000, 2000), ct);
+         var delayMs = chaosOpts == ChaosOptions.ChurnAndLeak ? Random.Shared.Next(20, 100) : Random.Shared.Next(1000, 2000);
+         await Task.Delay(delayMs, ct);
       }
    }
 
@@ -582,7 +606,7 @@ public static class Program
             AlpnProtocol = "chaos-quic",
             SslClientOptions = new System.Net.Security.SslClientAuthenticationOptions
             {
-               ApplicationProtocols = [new SslApplicationProtocol("chaos-quic")],
+               ApplicationProtocols = [new System.Net.Security.SslApplicationProtocol("chaos-quic")],
                RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
             }
          }),
@@ -618,7 +642,12 @@ public static class Program
             Console.WriteLine($"Connection Stats:   Attempts={Volatile.Read(ref _clientConnectionAttempts)} Failures={Volatile.Read(ref _clientConnectionFailures)} Established={Volatile.Read(ref _clientConnectionsEstablished)} Lost={Volatile.Read(ref _clientConnectionsLost)}");
             Console.WriteLine($"Data Sent/Recv:     Sent={Volatile.Read(ref _packetsSent)} Recv={Volatile.Read(ref _packetsReceived)} Speed={speedKB:F1} KB/s");
             var poolStats = Beskar.Networking.Transports.Common.Options.SharedTransportMemoryPool.GetStats();
+            var proc = System.Diagnostics.Process.GetCurrentProcess();
+            var workingSetMB = proc.WorkingSet64 / (1024.0 * 1024.0);
+            var privateBytesMB = proc.PrivateMemorySize64 / (1024.0 * 1024.0);
+            var gcHeapMB = GC.GetTotalMemory(false) / (1024.0 * 1024.0);
             Console.WriteLine($"Memory Pools:       Rented={poolStats.Rented} Cached/InStore={poolStats.InStore} Created={poolStats.Created}");
+            Console.WriteLine($"Process Memory:     WorkingSet={workingSetMB:F1} MB | PrivateBytes={privateBytesMB:F1} MB | GC Heap={gcHeapMB:F1} MB");
             Console.WriteLine($"Fault Metrics:      ChecksumFailures={Volatile.Read(ref _checksumFailures)} Gaps(Drops)={Volatile.Read(ref _droppedPackets)} OutOfOrder={Volatile.Read(ref _outOfOrderPackets)}");
             Console.WriteLine($"Latency (ms):       Min={minLat} Max={maxLat} Avg={avgLatency:F1}");
             Console.WriteLine("[---------------------------------------]");

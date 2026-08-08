@@ -63,6 +63,7 @@ public static class Program
 
    internal static readonly Lock LogLock = new();
    internal static bool IsQuietMode { get; set; }
+   internal static int TransportMode { get; set; } = 0; // 0 = Mixed, 1 = QUIC Only, 2 = TCP Only, 3 = WS Only
    internal static int TargetConcurrentClients { get; set; } = 20;
    internal static int StatsIntervalSeconds { get; set; } = 10;
 
@@ -124,24 +125,20 @@ public static class Program
       var isQuicSupported = QuicConnection.IsSupported;
       if (isQuicSupported)
       {
-         var excludeQuic = PromptInt("Exclude QUIC transport? (0 = No, 1 = Yes)", 0) == 1;
-         if (excludeQuic)
-         {
-            isQuicSupported = false;
-            ConsoleRender.Warning("QUIC transport has been excluded by user option.");
-         }
-      }
+         Console.WriteLine("Select Transport Mode:");
+         Console.WriteLine("  0. Mixed Transports (TCP, WS, QUIC)");
+         Console.WriteLine("  1. QUIC ONLY");
+         Console.WriteLine("  2. TCP ONLY");
+         Console.WriteLine("  3. WebSocket ONLY");
+         TransportMode = PromptInt("Transport Mode", 0);
 
-      if (!isQuicSupported)
-      {
-         if (!QuicConnection.IsSupported)
-         {
-            ConsoleRender.Warning("QUIC is not supported on this platform/OS. QUIC simulation will be disabled.");
-         }
+         if (TransportMode == 1) ConsoleRender.Success("QUIC ONLY mode selected for all clients.");
+         else if (TransportMode == 2) ConsoleRender.Info("TCP ONLY mode selected for all clients.");
+         else if (TransportMode == 3) ConsoleRender.Info("WebSocket ONLY mode selected for all clients.");
       }
       else
       {
-         ConsoleRender.Success("QUIC transport is supported and enabled.");
+         ConsoleRender.Warning("QUIC is not supported on this platform/OS. Defaulting to TCP & WS.");
       }
 
       ConsoleRender.Info("Starting MQTT Server...");
@@ -457,8 +454,25 @@ public static class Program
    private static async Task RunClientScenarioAsync(int clientIndex, bool isQuicSupported, CancellationToken ct)
    {
       // Select Transport
-      var transports = new List<TransportKind> { TransportKind.Tcp, TransportKind.WebSocket };
-      if (isQuicSupported) transports.Add(TransportKind.Quic);
+      var transports = new List<TransportKind>();
+      if (TransportMode == 1 && isQuicSupported)
+      {
+         transports.Add(TransportKind.Quic);
+      }
+      else if (TransportMode == 2)
+      {
+         transports.Add(TransportKind.Tcp);
+      }
+      else if (TransportMode == 3)
+      {
+         transports.Add(TransportKind.WebSocket);
+      }
+      else
+      {
+         transports.Add(TransportKind.Tcp);
+         transports.Add(TransportKind.WebSocket);
+         if (isQuicSupported) transports.Add(TransportKind.Quic);
+      }
       var transport = transports[Random.Shared.Next(transports.Count)];
 
       // Select Version

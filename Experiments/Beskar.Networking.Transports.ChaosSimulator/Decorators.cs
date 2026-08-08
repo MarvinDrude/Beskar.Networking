@@ -160,23 +160,12 @@ public sealed class ChaosNetworkSession : INetworkSession
 
       if (_options.SessionAbruptDisconnectRate > 0 && Random.Shared.NextDouble() < _options.SessionAbruptDisconnectRate)
       {
-         var minMs = (int)Math.Max(500, _options.SessionLifetimeMin.TotalMilliseconds);
-         var maxMs = (int)Math.Max(2000, _options.SessionLifetimeMax.TotalMilliseconds);
-         if (maxMs < minMs) maxMs = minMs + 1000;
+         var minMs = (int)Math.Max(200, _options.SessionLifetimeMin.TotalMilliseconds);
+         var maxMs = (int)Math.Max(800, _options.SessionLifetimeMax.TotalMilliseconds);
+         if (maxMs < minMs) maxMs = minMs + 200;
 
          var lifetimeMs = Random.Shared.Next(minMs, maxMs);
-         _ = Task.Run(async () =>
-         {
-            try
-            {
-               await Task.Delay(lifetimeMs, _sessionClosedCts.Token);
-               await DisposeAsync();
-            }
-            catch (TaskCanceledException)
-            {
-               // Session was closed normally
-            }
-         });
+         _sessionClosedCts.CancelAfter(lifetimeMs);
       }
    }
 
