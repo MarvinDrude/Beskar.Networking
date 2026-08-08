@@ -22,10 +22,10 @@ ConsoleLogger.Write(" Beskar MQTT High-Scale Job Status Updates Experiment      
 ConsoleLogger.Write("========================================================================");
 
 const int Port = 8025;
-const int WorkerCount = 10;
-const int ListenerCount = 10;
-const int JobsPerWorker = 50;
-const int UpdatesPerJob = 10;
+const int WorkerCount = 20;
+const int ListenerCount = 20;
+const int JobsPerWorker = 30;
+const int UpdatesPerJob = 20;
 const int TotalJobs = WorkerCount * JobsPerWorker; // 500 unique job topics
 const int TotalUpdates = TotalJobs * UpdatesPerJob; // 5,000 status update publishes
 
