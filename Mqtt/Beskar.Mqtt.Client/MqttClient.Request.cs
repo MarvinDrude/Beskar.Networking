@@ -20,8 +20,8 @@ public sealed partial class MqttClient
    {
       if (message.CorrelationData is { IsEmpty: false })
       {
-         var correlationId = Encoding.UTF8.GetString(message.CorrelationData.Value.Span);
-         if (_pendingRequests.TryRemove(correlationId, out var tcs))
+         var correlationKey = Convert.ToBase64String(message.CorrelationData.Value.Span);
+         if (_pendingRequests.TryRemove(correlationKey, out var tcs))
          {
             return tcs.TrySetResult(message);
          }
@@ -60,7 +60,7 @@ public sealed partial class MqttClient
       }
 
       string responseTopic;
-      string correlationId;
+      string correlationKey;
 
       PublishOptions effectiveOptions;
 
@@ -70,6 +70,7 @@ public sealed partial class MqttClient
       if (needsNewTopic || needsNewCorr)
       {
          var builder = PublishOptions.Create()
+            .WithDup(options.Dup)
             .WithTopic(options.TopicUtf8Bytes)
             .WithPayload(options.Payload)
             .WithQualityOfService(options.QualityOfService)
@@ -125,12 +126,15 @@ public sealed partial class MqttClient
 
          if (needsNewCorr)
          {
-            correlationId = Guid.NewGuid().ToString("N");
-            builder.WithCorrelationData(Encoding.UTF8.GetBytes(correlationId));
+            correlationKey = Guid.NewGuid().ToString("N");
+            var corrBytes = Encoding.UTF8.GetBytes(correlationKey);
+
+            builder.WithCorrelationData(corrBytes);
+            correlationKey = Convert.ToBase64String(corrBytes);
          }
          else
          {
-            correlationId = Encoding.UTF8.GetString(options.CorrelationData.Span);
+            correlationKey = Convert.ToBase64String(options.CorrelationData.Span);
             builder.WithCorrelationData(options.CorrelationData);
          }
 
@@ -139,14 +143,18 @@ public sealed partial class MqttClient
       else
       {
          responseTopic = Encoding.UTF8.GetString(options.ResponseTopicUtf8Bytes.Span);
-         correlationId = Encoding.UTF8.GetString(options.CorrelationData.Span);
+         correlationKey = Convert.ToBase64String(options.CorrelationData.Span);
          effectiveOptions = options;
       }
 
       var tcs = new TaskCompletionSource<MqttPublishMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-      _pendingRequests[correlationId] = tcs;
+      if (!_pendingRequests.TryAdd(correlationKey, tcs))
+      {
+         return new StringError($"A pending request with correlation ID '{correlationKey}' is already in progress.");
+      }
 
       var startTimestamp = Stopwatch.GetTimestamp();
+
       try
       {
          if (!_subscribedResponseTopics.ContainsKey(responseTopic))
@@ -200,13 +208,13 @@ public sealed partial class MqttClient
          return new MqttResponseContext
          {
             Message = responseMessage,
-            CorrelationId = correlationId,
+            CorrelationId = correlationKey,
             Elapsed = elapsed
          };
       }
       finally
       {
-         _pendingRequests.TryRemove(correlationId, out _);
+         _pendingRequests.TryRemove(correlationKey, out _);
       }
    }
 
