@@ -37,7 +37,9 @@ public sealed class DecorrelatedJitterBackoffPolicy : IBackoffPolicy
       randomValue = Math.Clamp(randomValue, 0.0, 1.0);
 
       var minTicks = _initialDelay.Ticks;
-      var maxRangeTicks = Math.Min(_maxDelay.Ticks, _lastDelay.Ticks * 3);
+      var lastTicks = _lastDelay.Ticks;
+      var tripleTicks = lastTicks > long.MaxValue / 3 ? long.MaxValue : lastTicks * 3;
+      var maxRangeTicks = Math.Min(_maxDelay.Ticks, tripleTicks);
 
       if (maxRangeTicks <= minTicks)
       {

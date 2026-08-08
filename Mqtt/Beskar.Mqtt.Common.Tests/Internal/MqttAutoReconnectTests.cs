@@ -43,7 +43,7 @@ public class MqttAutoReconnectTests
          .Build();
 
       var client = (MqttClient)MqttClientFactory.CreateTcp();
-      var reconnectedTcs = new TaskCompletionSource();
+      var reconnectedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
       var connectCount = 0;
 
       client.Events.OnClientConnected.Add((_, _) =>
@@ -106,7 +106,7 @@ public class MqttAutoReconnectTests
          .Build();
 
       var client = (MqttClient)MqttClientFactory.CreateTcp();
-      var disconnectedTcs = new TaskCompletionSource();
+      var disconnectedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
       client.Events.OnClientDisconnected.Add((_, _) =>
       {
@@ -255,7 +255,7 @@ public class MqttAutoReconnectTests
       // Perform 3 sequential ungraceful drops
       for (var i = 0; i < 3; i++)
       {
-         var reconnectedTcs = new TaskCompletionSource();
+         var reconnectedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
          using var handlerToken = client.Events.OnClientConnected.Add((_, _) =>
          {
             reconnectedTcs.TrySetResult();
