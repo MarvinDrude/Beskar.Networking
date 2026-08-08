@@ -1,3 +1,5 @@
+using Beskar.Networking.Abstractions.Interfaces.Misc;
+
 namespace Beskar.Networking.Resilient.Client;
 
 /// <summary>
@@ -16,6 +18,12 @@ public sealed class ResilientClientReconnectionOptions
    /// Default is 3 seconds.
    /// </summary>
    public TimeSpan RetryInterval { get; set; } = TimeSpan.FromSeconds(3);
+
+   /// <summary>
+   /// Gets or sets an optional <see cref="IBackoffPolicy"/> used to dynamically compute delay for each reconnection attempt.
+   /// If null, <see cref="RetryInterval"/> is used as a constant delay between attempts.
+   /// </summary>
+   public IBackoffPolicy? BackoffPolicy { get; set; }
 
    /// <summary>
    /// Gets or sets the maximum number of reconnection attempts before giving up.

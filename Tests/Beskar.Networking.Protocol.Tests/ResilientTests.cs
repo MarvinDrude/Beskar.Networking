@@ -1070,6 +1070,75 @@ public class ResilientTests
       await server.DisposeAsync();
    }
 
+   [Test]
+   public async Task AutoReconnect_ShouldUseCustomBackoffPolicy_WhenConfigured()
+   {
+      var endpoint = new MemoryEndPoint($"reconnect_backoff_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+      await server.StartAsync();
+
+      var attemptsEvaluated = new List<int>();
+      var mockPolicy = new TestBackoffPolicy((attempt) =>
+      {
+         lock (attemptsEvaluated) attemptsEvaluated.Add(attempt);
+         return TimeSpan.FromMilliseconds(50);
+      });
+
+      var clientOptions = new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            BackoffPolicy = mockPolicy,
+            MaxRetries = 5
+         }
+      };
+
+      var client = ResilientClientFactory.CreateMemory<BeskarPacket>(clientOptions: clientOptions);
+      var reconnectedTcs = new TaskCompletionSource();
+      var connectCount = 0;
+
+      client.Events.OnConnected.Add((ctx, _) =>
+      {
+         if (Interlocked.Increment(ref connectCount) == 2)
+         {
+            reconnectedTcs.TrySetResult();
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      await client.ConnectAsync(endpoint);
+
+      // Force reconnect
+      var serverClient = server.Clients.GetAll().First();
+      await serverClient.Session.DisposeAsync();
+
+      await reconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(client.IsConnected).IsTrue();
+
+      int evaluatedCount;
+      int firstAttempt;
+      lock (attemptsEvaluated)
+      {
+         evaluatedCount = attemptsEvaluated.Count;
+         firstAttempt = evaluatedCount > 0 ? attemptsEvaluated[0] : -1;
+      }
+
+      await Assert.That(evaluatedCount).IsGreaterThan(0);
+      await Assert.That(firstAttempt).IsEqualTo(1);
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
+   private class TestBackoffPolicy(Func<int, TimeSpan> getDelay) : Beskar.Networking.Abstractions.Interfaces.Misc.IBackoffPolicy
+   {
+      public TimeSpan GetNextDelay(int attempt) => getDelay(attempt);
+   }
+
    private class ExceptionThrowingNetworkClient(INetworkClient inner) : INetworkClient
    {
       public TransportKind Transport => inner.Transport;

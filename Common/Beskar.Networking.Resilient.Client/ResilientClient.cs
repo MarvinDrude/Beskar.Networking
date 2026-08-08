@@ -841,7 +841,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                      break;
                   }
 
-                  var retryInterval = Options.Reconnecting.RetryInterval;
+                  var retryInterval = Options.Reconnecting.BackoffPolicy?.GetNextDelay(attempt) ?? Options.Reconnecting.RetryInterval;
                   if (retryInterval < TimeSpan.Zero && retryInterval != Timeout.InfiniteTimeSpan)
                   {
                      retryInterval = TimeSpan.FromSeconds(1);
