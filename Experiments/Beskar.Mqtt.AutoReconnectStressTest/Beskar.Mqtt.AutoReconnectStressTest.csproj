@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>Exe</OutputType>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj"/>
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj"/>
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Server\Beskar.Mqtt.Server.csproj"/>
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Client\Beskar.Mqtt.Client.csproj"/>
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj"/>
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj"/>
+   </ItemGroup>
+
+</Project>
