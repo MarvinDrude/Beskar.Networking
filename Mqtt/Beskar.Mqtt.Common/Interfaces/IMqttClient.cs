@@ -6,6 +6,7 @@ using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Handlers.Contexts;
+using Beskar.Mqtt.Common.Models;
 using Beskar.Mqtt.Protocol.Results;
 
 namespace Beskar.Mqtt.Common.Interfaces;
@@ -42,6 +43,25 @@ public interface IMqttClient : IAsyncDisposable
    /// </summary>
    public Task<Result<PublishResult, StringError>> PublishAsync(
       PublishOptions options, CancellationToken ct = default);
+
+   /// <summary>
+   /// Sends a PUBLISH request packet and awaits the subscriber's response matching ResponseTopic and CorrelationData.
+   /// </summary>
+   /// <param name="options">The publish options for the request.</param>
+   /// <param name="timeout">Maximum time to wait for a response before timing out. Defaults to 10 seconds if default.</param>
+   /// <param name="ct">Cancellation token.</param>
+   public Task<Result<MqttResponseContext, StringError>> RequestAsync(
+      PublishOptions options, TimeSpan timeout = default, CancellationToken ct = default);
+
+   /// <summary>
+   /// Sends a PUBLISH request packet to the specified topic and awaits the subscriber's response.
+   /// </summary>
+   /// <param name="topic">The target topic to publish to.</param>
+   /// <param name="payload">The request payload.</param>
+   /// <param name="timeout">Maximum time to wait for a response before timing out. Defaults to 10 seconds if default.</param>
+   /// <param name="ct">Cancellation token.</param>
+   public Task<Result<MqttResponseContext, StringError>> RequestAsync(
+      string topic, ReadOnlyMemory<byte> payload, TimeSpan timeout = default, CancellationToken ct = default);
 
    /// <summary>
    /// Send a new SUBSCRIBE Packet given the input options.
