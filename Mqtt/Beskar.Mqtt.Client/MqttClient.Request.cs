@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
@@ -48,6 +49,11 @@ public sealed partial class MqttClient
       var validRes = ValidateClient();
       if (validRes.Failed) return validRes.Error;
 
+      if (_protocolVersion is not MqttProtocolVersion.V50)
+      {
+         return new StringError("RequestAsync requires MQTT 5.0 protocol version for ResponseTopic and CorrelationData support.");
+      }
+
       if (timeout == TimeSpan.Zero || timeout <= TimeSpan.Zero)
       {
          timeout = TimeSpan.FromSeconds(10);
@@ -83,6 +89,22 @@ public sealed partial class MqttClient
          if (!options.ContentTypeUtf8Bytes.IsEmpty)
          {
             builder.WithContentType(options.ContentTypeUtf8Bytes);
+         }
+
+         if (options.UserProperties.Count > 0)
+         {
+            foreach (var prop in options.UserProperties)
+            {
+               builder.WithUserProperty(prop.KeyUtf8Bytes, prop.ValueBytes);
+            }
+         }
+
+         if (options.SubscriptionIdentifiers.Count > 0)
+         {
+            foreach (var subId in options.SubscriptionIdentifiers)
+            {
+               builder.WithSubscriptionIdentifier(subId);
+            }
          }
 
          if (needsNewTopic)
@@ -124,8 +146,7 @@ public sealed partial class MqttClient
       var tcs = new TaskCompletionSource<MqttPublishMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
       _pendingRequests[correlationId] = tcs;
 
-      var startTime = DateTime.UtcNow;
-
+      var startTimestamp = Stopwatch.GetTimestamp();
       try
       {
          if (!_subscribedResponseTopics.ContainsKey(responseTopic))
@@ -173,7 +194,9 @@ public sealed partial class MqttClient
                $"Request timed out after {timeout.TotalMilliseconds}ms waiting for response on topic '{responseTopic}'.");
          }
 
-         var elapsed = DateTime.UtcNow - startTime;
+         var elapsedTicks = Stopwatch.GetTimestamp() - startTimestamp;
+         var elapsed = TimeSpan.FromSeconds((double)elapsedTicks / Stopwatch.Frequency);
+
          return new MqttResponseContext
          {
             Message = responseMessage,
