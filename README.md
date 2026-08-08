@@ -305,6 +305,15 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
 
 You can find detailed documentation for `Beskar.Networking` [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation).
 
+- [**Basics & Architecture**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Basics): Overview of core interfaces (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`).
+- [**Dedicated Transport Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Transports):
+  - [TCP Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Tcp.md)
+  - [WebSocket Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Ws.md)
+  - [QUIC Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Quic.md)
+  - [UDP Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Udp.md)
+  - [Unix Domain Sockets (UDS) Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Uds.md)
+  - [Named Pipes Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/NamedPipes.md)
+  - [In-Memory Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Memory.md)
 - [**Telemetry Meters Reference**](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Telemetry/Meters.md): Detailed reference of all OpenTelemetry and `System.Diagnostics.Metrics` meters, instruments, types, units, and descriptions across MQTT, Resilient, and Transports.
 
 Or you can find examples directly [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples).

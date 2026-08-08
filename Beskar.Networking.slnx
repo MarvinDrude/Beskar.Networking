@@ -25,6 +25,15 @@
     <File Path="Documentation/Basics/Abstractions.md" />
     <File Path="Documentation/Basics/Transports.md" />
   </Folder>
+  <Folder Name="/Documentation/Transports/">
+    <File Path="Documentation/Transports/Tcp.md" />
+    <File Path="Documentation/Transports/Ws.md" />
+    <File Path="Documentation/Transports/Quic.md" />
+    <File Path="Documentation/Transports/Udp.md" />
+    <File Path="Documentation/Transports/Uds.md" />
+    <File Path="Documentation/Transports/NamedPipes.md" />
+    <File Path="Documentation/Transports/Memory.md" />
+  </Folder>
   <Folder Name="/Documentation/Mqtt/">
     <File Path="Documentation/Mqtt/Authentication.md" />
     <File Path="Documentation/Mqtt/PubSub.md" />
