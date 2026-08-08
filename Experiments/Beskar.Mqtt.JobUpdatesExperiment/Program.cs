@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
-using System.Text;
 using Beskar.Mqtt.Client;
 using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Interfaces;
@@ -13,6 +13,8 @@ using Beskar.Utilities.Tracing;
 
 // Disable raw trace logger to use clean, synchronized Console output
 TraceLogger.IsEnabled = false;
+
+var totalProgramSw = Stopwatch.StartNew();
 
 ConsoleLogger.Write();
 ConsoleLogger.Write("========================================================================");
@@ -54,23 +56,20 @@ var connectOptions = new ConnectOptions
    ProtocolVersion = MqttProtocolVersion.V50
 };
 
-// 2. Initialize Listener Clients and subscribe each to its subset of jobs
-ConsoleLogger.WriteColor(ConsoleColor.Yellow, "\n[Setup] Initializing & Connecting Listener Clients...");
+// 2. Initialize Listener Clients in parallel
+ConsoleLogger.WriteColor(ConsoleColor.Yellow, "\n[Setup] Initializing & Connecting Listener Clients in parallel...");
 var listeners = new IMqttClient[ListenerCount];
 var targetedReceivedCount = 0L;
 var totalLatencyTicks = 0L;
 
 for (var i = 0; i < ListenerCount; i++)
 {
-   var listenerId = i;
    listeners[i] = MqttClientFactory.CreateTcp();
-   await listeners[i].ConnectAsync(connectOptions);
-
    listeners[i].AddMessageReceiveHandler((ctx, ct) =>
    {
       Interlocked.Increment(ref targetedReceivedCount);
 
-      if (ctx.Message.CorrelationData.HasValue && ctx.Message.CorrelationData.Value.Length >= 8)
+      if (ctx.Message.CorrelationData is { Length: >= 8 })
       {
          var sendTimestamp = BitConverter.ToInt64(ctx.Message.CorrelationData.Value.Span);
          var elapsedTicks = Stopwatch.GetTimestamp() - sendTimestamp;
@@ -81,21 +80,31 @@ for (var i = 0; i < ListenerCount; i++)
    });
 }
 
-// Subscribe listeners to their assigned dynamic topics (jobs/status/JOB-xxxx)
-ConsoleLogger.WriteColor(ConsoleColor.Yellow, "[Setup] Subscribing Listeners to specific dynamic job topics...");
-for (var jobId = 0; jobId < TotalJobs; jobId++)
+await Task.WhenAll(listeners.Select(l => l.ConnectAsync(connectOptions)));
+
+// 3. Batched dynamic topic subscriptions per listener client
+ConsoleLogger.WriteColor(ConsoleColor.Yellow, "[Setup] Subscribing Listeners to dynamic topics (Batched)...");
+var listenerSubTasks = new Task[ListenerCount];
+for (var i = 0; i < ListenerCount; i++)
 {
-   var assignedListenerIndex = jobId % ListenerCount;
-   var topic = $"jobs/status/JOB-{jobId:D4}";
+   var listenerIndex = i;
+   var listenerClient = listeners[i];
 
-   var subOptions = SubscribeOptions.Create()
-      .WithTopicFilter(topic, QualityOfServiceType.AtLeastOnce)
-      .Build();
+   listenerSubTasks[i] = Task.Run(async () =>
+   {
+      var subBuilder = SubscribeOptions.Create();
+      for (var jobId = listenerIndex; jobId < TotalJobs; jobId += ListenerCount)
+      {
+         subBuilder.WithTopicFilter($"jobs/status/JOB-{jobId:D4}", QualityOfServiceType.AtLeastOnce);
+      }
 
-   await listeners[assignedListenerIndex].SubscribeAsync(subOptions);
+      await listenerClient.SubscribeAsync(subBuilder.Build());
+   });
 }
 
-// 3. Initialize Global Monitor Client subscribing to wildcard 'jobs/status/+'
+await Task.WhenAll(listenerSubTasks);
+
+// 4. Initialize Global Monitor Client subscribing to wildcard 'jobs/status/+'
 ConsoleLogger.WriteColor(ConsoleColor.Yellow, "[Setup] Connecting Global Wildcard Monitor Client ('jobs/status/+')...");
 await using var globalMonitorClient = MqttClientFactory.CreateTcp();
 await globalMonitorClient.ConnectAsync(connectOptions);
@@ -112,16 +121,17 @@ var monitorSubOptions = SubscribeOptions.Create()
    .Build();
 await globalMonitorClient.SubscribeAsync(monitorSubOptions);
 
-// 4. Initialize Worker Clients
-ConsoleLogger.WriteColor(ConsoleColor.Green, "\n[Setup] Initializing & Connecting Background Worker Clients...");
+// 5. Initialize Worker Clients in parallel
+ConsoleLogger.WriteColor(ConsoleColor.Green, "\n[Setup] Initializing & Connecting Background Worker Clients in parallel...");
 var workers = new IMqttClient[WorkerCount];
 for (var i = 0; i < WorkerCount; i++)
 {
    workers[i] = MqttClientFactory.CreateTcp();
-   await workers[i].ConnectAsync(connectOptions);
 }
 
-// 5. Execute High-Scale Job Status Updates Experiment
+await Task.WhenAll(workers.Select(w => w.ConnectAsync(connectOptions)));
+
+// 6. Execute High-Scale Job Status Updates Experiment
 ConsoleLogger.WriteColor(ConsoleColor.Magenta, "\n========================================================================");
 ConsoleLogger.WriteColor(ConsoleColor.Magenta, " STARTING EXPERIMENT: Pushing Job Status Updates across Workers...");
 ConsoleLogger.WriteColor(ConsoleColor.Magenta, "========================================================================");
@@ -169,7 +179,7 @@ await Task.WhenAll(workerTasks);
 sw.Stop();
 
 // Wait briefly for all in-flight messages to reach targeted subscribers and monitor
-await Task.Delay(500);
+await Task.Delay(200);
 
 var elapsedSec = sw.Elapsed.TotalSeconds;
 var pubThroughput = publishedCount / elapsedSec;
@@ -184,11 +194,11 @@ if (totalRec > 0)
    avgLatencyMs = (avgTicks / Stopwatch.Frequency) * 1000.0;
 }
 
-// 6. Print Benchmark Results
+// 7. Print Benchmark Results
 ConsoleLogger.WriteColor(ConsoleColor.Green, "\n========================================================================");
 ConsoleLogger.WriteColor(ConsoleColor.Green, " EXPERIMENT RESULTS SUMMARY");
 ConsoleLogger.WriteColor(ConsoleColor.Green, "========================================================================");
-ConsoleLogger.Write($"  - Elapsed Time:                    {elapsedSec:F3} seconds");
+ConsoleLogger.Write($"  - Experiment Execution Time:       {elapsedSec:F3} seconds");
 ConsoleLogger.Write($"  - Total Status Updates Published:   {publishedCount:N0} msgs");
 ConsoleLogger.Write($"  - Publish Throughput:              {pubThroughput:N1} msgs/sec");
 ConsoleLogger.Write($"  - Targeted Listeners Received:      {targetedReceivedCount:N0} msgs ({targetedThroughput:N1} msgs/sec)");
@@ -196,24 +206,22 @@ ConsoleLogger.Write($"  - Wildcard Monitor Received:        {globalReceivedCount
 ConsoleLogger.Write($"  - Average Round-Trip Delivery RTT: {avgLatencyMs:F3} ms");
 ConsoleLogger.WriteColor(ConsoleColor.Green, "========================================================================");
 
-// 7. Cleanup
-ConsoleLogger.Write("\n--- Cleaning Up Clients and Broker ---");
-for (var i = 0; i < WorkerCount; i++)
+// 8. Parallel Cleanup
+ConsoleLogger.Write("\n--- Cleaning Up Clients and Broker in parallel ---");
+var disconnectOptions = new DisconnectOptions();
+var cleanupTasks = workers.Concat(listeners).Select(async c =>
 {
-   await workers[i].DisconnectAsync(new Beskar.Mqtt.Common.Builders.Disconnecting.DisconnectOptions());
-   await workers[i].DisposeAsync();
-}
+   await c.DisconnectAsync(disconnectOptions);
+   await c.DisposeAsync();
+});
 
-for (var i = 0; i < ListenerCount; i++)
-{
-   await listeners[i].DisconnectAsync(new Beskar.Mqtt.Common.Builders.Disconnecting.DisconnectOptions());
-   await listeners[i].DisposeAsync();
-}
-
+await Task.WhenAll(cleanupTasks);
 await mqttServer.StopAsync();
 
+totalProgramSw.Stop();
+
 ConsoleLogger.Write("========================================================================");
-ConsoleLogger.Write(" Job Updates Experiment Finished Successfully.");
+ConsoleLogger.Write($" Job Updates Experiment Finished in {totalProgramSw.Elapsed.TotalSeconds:F2} seconds total.");
 ConsoleLogger.Write("========================================================================");
 
 /// <summary>
