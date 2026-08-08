@@ -234,3 +234,47 @@ public sealed class AuthHandler : IMqttAuthenticationHandler
    }
 }
 ```
+
+---
+
+## 3. Server-Side Message Interception & Topic Authorization (`OnPublishIntercept`)
+
+To enforce fine-grained topic authorization or block specific incoming published messages before they reach subscribers
+or retained message stores, subscribe to the `OnPublishIntercept` event.
+
+### Intercepting & Blocking Published Messages
+
+```csharp
+using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Server.Contexts;
+
+// Register incoming publish interceptor
+mqttServer.Events.OnPublishIntercept.Add((ctx, ct) =>
+{
+   var topic = ctx.PublishMessage.Topic;
+   var clientId = ctx.Client.ClientId;
+
+   // 1. Topic authorization: restrict admin topics to specific client IDs
+   if (topic.StartsWith("admin/") && clientId != "authorized_admin")
+   {
+      // Block the message and return NotAuthorized to QoS 1/2 publishers
+      ctx.Block(reasonCode: (byte)PubAckReasonCode.NotAuthorized);
+      return ValueTask.CompletedTask;
+   }
+
+   // 2. Block/ignore spam or malformed topics (silent drop)
+   if (topic.StartsWith("spam/"))
+   {
+      ctx.Block(); // Defaults to PubAckReasonCode.Success (silent drop)
+      return ValueTask.CompletedTask;
+   }
+
+   return ValueTask.CompletedTask;
+});
+```
+
+When `ctx.IsBlocked` or `ctx.Block()` is executed:
+- The message is **ignored** and will not be dispatched to subscribers.
+- The message is **not stored** in the retained messages cache.
+- For QoS 1 & QoS 2 publishes, an acknowledgment (`PUBACK` / `PUBREC`) is sent back with the specified `ReasonCode` to prevent publisher client hangs.
+
