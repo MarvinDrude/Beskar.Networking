@@ -201,6 +201,8 @@ public sealed partial class MqttClient
             _topicAliases.Clear();
          }
 
+         CancelPendingRequestsOnDisconnect();
+
          try
          {
             var sem = _inFlightSemaphore;

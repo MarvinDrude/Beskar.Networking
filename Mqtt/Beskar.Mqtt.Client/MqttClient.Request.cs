@@ -13,10 +13,11 @@ namespace Beskar.Mqtt.Client;
 public sealed partial class MqttClient
 {
    private readonly ConcurrentDictionary<string, TaskCompletionSource<MqttPublishMessage>> _pendingRequests = new();
+   private readonly ConcurrentDictionary<string, byte> _subscribedResponseTopics = new();
 
    internal bool TryDispatchResponse(MqttPublishMessage message)
    {
-      if (message.CorrelationData.HasValue)
+      if (message.CorrelationData is { IsEmpty: false })
       {
          var correlationId = Encoding.UTF8.GetString(message.CorrelationData.Value.Span);
          if (_pendingRequests.TryRemove(correlationId, out var tcs))
@@ -26,6 +27,19 @@ public sealed partial class MqttClient
       }
 
       return false;
+   }
+
+   internal void CancelPendingRequestsOnDisconnect()
+   {
+      _subscribedResponseTopics.Clear();
+
+      foreach (var kvp in _pendingRequests)
+      {
+         if (_pendingRequests.TryRemove(kvp.Key, out var tcs))
+         {
+            tcs.TrySetException(new OperationCanceledException("Client disconnected while awaiting request response."));
+         }
+      }
    }
 
    public async Task<Result<MqttResponseContext, StringError>> RequestAsync(
@@ -40,42 +54,71 @@ public sealed partial class MqttClient
       }
 
       string responseTopic;
-      if (options.ResponseTopicUtf8Bytes.IsEmpty)
+      string correlationId;
+
+      PublishOptions effectiveOptions;
+
+      var needsNewTopic = options.ResponseTopicUtf8Bytes.IsEmpty;
+      var needsNewCorr = options.CorrelationData.IsEmpty;
+
+      if (needsNewTopic || needsNewCorr)
       {
-         var clientIdStr = Encoding.UTF8.GetString(_connectOptions.ClientIdUtf8Bytes.Span);
-         if (string.IsNullOrEmpty(clientIdStr))
+         var builder = PublishOptions.Create()
+            .WithTopic(options.TopicUtf8Bytes)
+            .WithPayload(options.Payload)
+            .WithQualityOfService(options.QualityOfService)
+            .WithRetain(options.Retain)
+            .WithPayloadFormat(options.PayloadFormat);
+
+         if (options.MessageExpiryInterval.HasValue)
          {
-            clientIdStr = Guid.NewGuid().ToString("N");
+            builder.WithMessageExpiryInterval(options.MessageExpiryInterval.Value);
          }
 
-         responseTopic = $"clients/{clientIdStr}/response";
-         options.ResponseTopicUtf8Bytes = Encoding.UTF8.GetBytes(responseTopic);
+         if (options.TopicAlias.HasValue)
+         {
+            builder.WithTopicAlias(options.TopicAlias.Value);
+         }
+
+         if (!options.ContentTypeUtf8Bytes.IsEmpty)
+         {
+            builder.WithContentType(options.ContentTypeUtf8Bytes);
+         }
+
+         if (needsNewTopic)
+         {
+            var clientIdStr = Encoding.UTF8.GetString(_connectOptions.ClientIdUtf8Bytes.Span);
+            if (string.IsNullOrEmpty(clientIdStr))
+            {
+               clientIdStr = Guid.NewGuid().ToString("N");
+            }
+            responseTopic = $"clients/{clientIdStr}/response";
+            builder.WithResponseTopic(responseTopic);
+         }
+         else
+         {
+            responseTopic = Encoding.UTF8.GetString(options.ResponseTopicUtf8Bytes.Span);
+            builder.WithResponseTopic(options.ResponseTopicUtf8Bytes);
+         }
+
+         if (needsNewCorr)
+         {
+            correlationId = Guid.NewGuid().ToString("N");
+            builder.WithCorrelationData(Encoding.UTF8.GetBytes(correlationId));
+         }
+         else
+         {
+            correlationId = Encoding.UTF8.GetString(options.CorrelationData.Span);
+            builder.WithCorrelationData(options.CorrelationData);
+         }
+
+         effectiveOptions = builder.Build();
       }
       else
       {
          responseTopic = Encoding.UTF8.GetString(options.ResponseTopicUtf8Bytes.Span);
-      }
-
-      string correlationId;
-      if (options.CorrelationData.IsEmpty)
-      {
-         correlationId = Guid.NewGuid().ToString("N");
-         options.CorrelationData = Encoding.UTF8.GetBytes(correlationId);
-      }
-      else
-      {
          correlationId = Encoding.UTF8.GetString(options.CorrelationData.Span);
-      }
-
-      // Auto-subscribe client to response topic
-      var subOptions = SubscribeOptions.Create()
-         .WithTopicFilter(responseTopic, QualityOfServiceType.AtLeastOnce)
-         .Build();
-
-      var subResult = await SubscribeAsync(subOptions, ct);
-      if (subResult.Failed)
-      {
-         return subResult.Error;
+         effectiveOptions = options;
       }
 
       var tcs = new TaskCompletionSource<MqttPublishMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -85,10 +128,24 @@ public sealed partial class MqttClient
 
       try
       {
-         var pubResult = await PublishAsync(options, ct);
+         if (!_subscribedResponseTopics.ContainsKey(responseTopic))
+         {
+            var subOptions = SubscribeOptions.Create()
+               .WithTopicFilter(responseTopic, QualityOfServiceType.AtLeastOnce)
+               .Build();
+
+            var subResult = await SubscribeAsync(subOptions, ct);
+            if (subResult.Failed)
+            {
+               return subResult.Error;
+            }
+
+            _subscribedResponseTopics[responseTopic] = 1;
+         }
+
+         var pubResult = await PublishAsync(effectiveOptions, ct);
          if (pubResult.Failed)
          {
-            _pendingRequests.TryRemove(correlationId, out _);
             return pubResult.Error;
          }
 
@@ -100,12 +157,16 @@ public sealed partial class MqttClient
          {
             responseMessage = await tcs.Task.WaitAsync(combinedCts.Token);
          }
-         catch (OperationCanceledException)
+         catch (OperationCanceledException ex)
          {
-            _pendingRequests.TryRemove(correlationId, out _);
             if (ct.IsCancellationRequested)
             {
                return new StringError("Request was cancelled.");
+            }
+
+            if (!IsConnected)
+            {
+               return new StringError($"Request cancelled: {ex.Message}");
             }
 
             return new StringError(
