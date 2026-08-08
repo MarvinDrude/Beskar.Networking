@@ -41,6 +41,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    internal MqttProtocolVersion ProtocolVersion => _protocolVersion;
    internal ConnectOptions CurrentConnectOptions => _connectOptions;
+   internal INetworkClient NetworkClient => _networkClient;
 
    private readonly INetworkClient _networkClient;
    private INetworkSession? _networkSession;
@@ -123,8 +124,13 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       var disposedResult = ValidateDisposed();
       if (disposedResult.Failed) return disposedResult.Error;
 
-      if (CompareExchangeState(MqttClientConnectionState.Connecting, MqttClientConnectionState.Disconnected)
-          is not MqttClientConnectionState.Disconnected)
+      var currentState = (MqttClientConnectionState)_state;
+      if (currentState is not (MqttClientConnectionState.Disconnected or MqttClientConnectionState.Reconnecting))
+      {
+         return new StringError("ConnectAsync called while not being in disconnected state.");
+      }
+
+      if (CompareExchangeState(MqttClientConnectionState.Connecting, currentState) != currentState)
       {
          return new StringError("ConnectAsync called while not being in disconnected state.");
       }
@@ -552,7 +558,6 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                      break;
                   }
 
-                  _state = (int)MqttClientConnectionState.Disconnected;
                   var result = await ConnectAsync(_connectOptions, masterCt);
 
                   if (!result.Failed)
@@ -602,6 +607,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          {
             // Ignored
          }
+         reconnectCts.Dispose();
       }
 
       try
@@ -611,6 +617,19 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       catch
       {
          // Ignored
+      }
+
+      var reconnectTask = _reconnectTask;
+      if (reconnectTask is not null)
+      {
+         try
+         {
+            await reconnectTask;
+         }
+         catch
+         {
+            // Ignored
+         }
       }
 
       _signalBroker.Dispose();

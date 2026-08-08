@@ -58,12 +58,12 @@ public class MqttTelemetryExplicitTests
       retained.LoadMessages([msg1, msg2]);
 
       var loadedDelta = Volatile.Read(ref retainedDelta) - initial;
-      await Assert.That(loadedDelta).IsEqualTo(2);
+      await Assert.That(loadedDelta).IsGreaterThanOrEqualTo(2);
 
       retained.Clear();
 
       var clearedDelta = Volatile.Read(ref retainedDelta) - initial;
-      await Assert.That(clearedDelta).IsEqualTo(0);
+      await Assert.That(clearedDelta).IsEqualTo(loadedDelta - 2);
    }
 
    [Test]

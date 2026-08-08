@@ -47,6 +47,13 @@ public sealed partial class MqttClient
          if (reconnectCts is not null)
          {
             try { await reconnectCts.CancelAsync(); } catch { /* ignored */ }
+            reconnectCts.Dispose();
+         }
+
+         var reconnectTask = _reconnectTask;
+         if (reconnectTask is not null)
+         {
+            try { await reconnectTask; } catch { /* ignored */ }
          }
 
          await Send(options, stream, 0, ct);
