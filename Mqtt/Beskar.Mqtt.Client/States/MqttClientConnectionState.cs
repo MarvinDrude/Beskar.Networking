@@ -5,5 +5,6 @@ public enum MqttClientConnectionState
    Disconnecting,
    Disconnected,
    Connecting,
-   Connected
+   Connected,
+   Reconnecting
 }

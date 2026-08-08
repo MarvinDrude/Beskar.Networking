@@ -1,5 +1,4 @@
 using System.Buffers;
-using Beskar.Memory.Owners;
 using Beskar.Memory.Threading;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
@@ -148,6 +147,45 @@ public sealed partial class ServerPacketHandler
                return;
             }
 
+            if (server.Events.OnPublishIntercept.Count > 0)
+            {
+               var publishMsg = CreatePublishMessage(in packet, resolvedTopicBytes);
+               var interceptCtx = new MqttPublishInterceptContext
+               {
+                  Client = client,
+                  Session = session,
+                  PublishMessage = publishMsg
+               };
+
+               await server.Events.OnPublishIntercept.ExecuteAsync(interceptCtx, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+
+               if (interceptCtx.IsBlocked)
+               {
+                  TraceLogger.LogServerWarning("ServerPacketHandler.Publish: Incoming publish packet to topic '{0}' was blocked by OnPublishIntercept pipeline.", publishMsg.Topic);
+
+                  if (packet.QualityOfService is QualityOfServiceType.AtLeastOnce)
+                  {
+                     var pubAck = new PubAckPacket
+                     {
+                        PacketIdentifier = packet.PacketIdentifier,
+                        ReasonCode = (PubAckReasonCode)interceptCtx.ReasonCode
+                     };
+                     await stream.Send(in pubAck, client.ProtocolVersion, ct);
+                  }
+                  else if (packet.QualityOfService is QualityOfServiceType.ExactlyOnce)
+                  {
+                     var pubRec = new PubRecPacket
+                     {
+                        PacketIdentifier = packet.PacketIdentifier,
+                        ReasonCode = (PubRecReasonCode)interceptCtx.ReasonCode
+                     };
+                     await stream.Send(in pubRec, client.ProtocolVersion, ct);
+                  }
+
+                  return;
+               }
+            }
+
             switch (packet.QualityOfService)
             {
                case QualityOfServiceType.AtMostOnce: // QoS 0
@@ -281,7 +319,7 @@ public sealed partial class ServerPacketHandler
 
    private static MqttPublishMessage CreatePublishMessage(in PublishPacket packet, byte[] resolvedTopicBytes)
    {
-      var topicSequence = new System.Buffers.ReadOnlySequence<byte>(resolvedTopicBytes);
+      var topicSequence = new ReadOnlySequence<byte>(resolvedTopicBytes);
       return new MqttPublishMessage(new PublishPacket
       {
          Dup = packet.Dup,

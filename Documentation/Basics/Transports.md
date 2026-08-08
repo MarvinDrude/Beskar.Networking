@@ -1,6 +1,7 @@
 # Transports & Transport-Agnostic Design
 
-Beskar.Networking separates transport-specific details (like sockets, framing, and protocols) from your application logic. This allows you to write your protocol handlers once and run them on top of TCP, WebSockets, or QUIC interchangeably.
+Beskar.Networking separates transport-specific details (like sockets, framing, and protocols) from your application logic.
+This allows you to write your protocol handlers once and run them on top of TCP, WebSockets, or QUIC interchangeably.
 
 ---
 
@@ -200,3 +201,19 @@ public sealed class ApplicationServer
    }
 }
 ```
+
+---
+
+## 4. Dedicated Transport Guides
+
+For in-depth platform differences (Linux vs Windows), socket buffer tuning, security configurations,
+and advanced pipeline settings, refer to the dedicated transport guides:
+
+- [**TCP Transport Guide**](../Transports/Tcp.md): High-throughput stream socket networking and TLS options.
+- [**WebSocket Transport Guide**](../Transports/Ws.md): Browser-compatible duplex streaming, CORS allowed origins, and Nginx setup.
+- [**QUIC Transport Guide**](../Transports/Quic.md): UDP multiplexing, ALPN negotiation, and MsQuic platform setup.
+- [**UDP Transport Guide**](../Transports/Udp.md): Virtualized datagram sessions, socket buffer caps, and MTU tuning.
+- [**Unix Domain Sockets (UDS) Guide**](../Transports/Uds.md): Ultra-low latency local IPC and file permission security.
+- [**Named Pipes Transport Guide**](../Transports/NamedPipes.md): Windows kernel named pipes and cross-platform IPC.
+- [**In-Memory Transport Guide**](../Transports/Memory.md): Zero-allocation in-process channel pipelines for testing and modular apps.
+

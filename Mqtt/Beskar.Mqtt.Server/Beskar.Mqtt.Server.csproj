@@ -15,6 +15,7 @@
    <ItemGroup>
       <InternalsVisibleTo Include="Beskar.Mqtt.Common.Tests" />
       <InternalsVisibleTo Include="Beskar.Mqtt.Integration.Tests" />
+      <InternalsVisibleTo Include="Beskar.Mqtt.AutoReconnectStressTest" />
    </ItemGroup>
 
 </Project>

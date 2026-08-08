@@ -16,6 +16,12 @@ public sealed class ServerEvents
    public readonly HandlerPipeline<MqttConnectInterceptContext> OnConnectIntercept = new();
 
    /// <summary>
+   /// Pipeline fired when an incoming PUBLISH packet is received from a client before routing to subscribers or updating retained messages.
+   /// Allows intercepting, inspecting, modifying, or blocking (ignoring) incoming published messages.
+   /// </summary>
+   public readonly HandlerPipeline<MqttPublishInterceptContext> OnPublishIntercept = new();
+
+   /// <summary>
    /// Pipeline fired when a new session is being created for a client.
    /// Called inside the session manager (MqttClientSessions.GetOrCreateSessionAsync) when no matching persistent session exists
    /// or when the client requests a clean start.

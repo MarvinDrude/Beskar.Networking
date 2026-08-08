@@ -43,6 +43,19 @@ public sealed partial class MqttClient
          _gracefulDisconnect = true;
          _disconnectReason = new MqttClientDisconnectReason(true, (int)options.ReasonCode);
 
+         var reconnectCts = Interlocked.Exchange(ref _reconnectCts, null);
+         if (reconnectCts is not null)
+         {
+            try { await reconnectCts.CancelAsync(); } catch { /* ignored */ }
+            reconnectCts.Dispose();
+         }
+
+         var reconnectTask = _reconnectTask;
+         if (reconnectTask is not null)
+         {
+            try { await reconnectTask; } catch { /* ignored */ }
+         }
+
          await Send(options, stream, 0, ct);
          await stream.Transport.Output.CompleteAsync();
       }
@@ -227,6 +240,11 @@ public sealed partial class MqttClient
                   TraceLogger.LogClientError("MqttClient: Error executing OnClientDisconnected handler: {0}", ex.Message);
                }
             });
+         }
+
+         if (!_gracefulDisconnect && _connectOptions.AutoReconnect is { IsEnabled: true } && Volatile.Read(ref _disposedState) == 0)
+         {
+            _ = TriggerAutoReconnectAsync(_disconnectException);
          }
       }
    }

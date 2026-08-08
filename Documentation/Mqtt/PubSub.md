@@ -109,7 +109,30 @@ await publisherClient.DisconnectAsync(new DisconnectOptions());
 
 ---
 
-## 5. Complete Example
+## 5. Server-Side Interception & Blocking (`OnPublishIntercept`)
+
+The server can inspect and block (ignore) incoming publish messages before they are delivered to subscribers or stored
+as retained messages by registering a handler on `Events.OnPublishIntercept`:
+
+```csharp
+using Beskar.Mqtt.Protocol.Enums;
+
+// Block incoming messages matching specific criteria
+mqttServer.Events.OnPublishIntercept.Add((context, ct) =>
+{
+   if (context.PublishMessage.Topic.StartsWith("blocked/"))
+   {
+      // Ignore message and send NotAuthorized ack for QoS 1/2
+      context.Block(reasonCode: (byte)PubAckReasonCode.NotAuthorized);
+   }
+
+   return ValueTask.CompletedTask;
+});
+```
+
+---
+
+## 6. Complete Example
 
 Below is the complete code for a self-contained local pub-sub demonstration:
 

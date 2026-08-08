@@ -5,6 +5,9 @@ using System.Text;
 using Beskar.Mqtt.Common.Builders.Common;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Networking.Abstractions.Backoffs;
+using Beskar.Networking.Abstractions.Interfaces.Misc;
+using Beskar.Networking.Abstractions.Options;
 
 namespace Beskar.Mqtt.Common.Builders.Connecting;
 
@@ -613,6 +616,34 @@ public sealed class ConnectOptionsBuilder(IPEndPoint endPoint, ConnectOptions? o
    public ConnectOptionsBuilder WithAuthHandler(IMqttAuthenticationHandler authHandler)
    {
       _options.AuthenticationHandler = authHandler;
+      return this;
+   }
+
+   /// <summary>
+   /// Sets the auto-reconnection configuration for client connection drops.
+   /// </summary>
+   public ConnectOptionsBuilder WithAutoReconnect(AutoReconnectOptions options)
+   {
+      _options.AutoReconnect = options;
+      return this;
+   }
+
+   /// <summary>
+   /// Configures auto-reconnection settings with retry count and backoff policy.
+   /// </summary>
+   public ConnectOptionsBuilder WithAutoReconnect(
+      bool enabled = true,
+      int maxRetries = 5,
+      IBackoffPolicy? backoffPolicy = null)
+   {
+      _options.AutoReconnect = new AutoReconnectOptions
+      {
+         IsEnabled = enabled,
+         MaxRetryAttempts = maxRetries,
+         BackoffPolicy = backoffPolicy ?? _options.AutoReconnect?.BackoffPolicy
+            ?? new LinearBackoffPolicy(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1))
+      };
+
       return this;
    }
 }
