@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using Beskar.Mqtt.Client;
@@ -43,47 +42,19 @@ ConsoleLogger.Write("\n--- Initializing MQTT Clients ---");
 await using var publisherClient = MqttClientFactory.CreateTcp();
 await using var subscriberWorkerClient = MqttClientFactory.CreateTcp();
 
-// Thread-safe collection to track pending acknowledgments for published tasks
-var pendingAcknowledgements = new ConcurrentDictionary<string, TaskCompletionSource<string>>();
-
-// Register handler on Publisher Client to listen for Subscriber Acknowledgments on 'tasks/orders/ack'
-using var pubAckHandlerToken = publisherClient.AddMessageReceiveHandler((context, ct) =>
-{
-   var ackPayload = Encoding.UTF8.GetString(context.Message.Payload.Span);
-   string? correlationId = null;
-
-   if (context.Message.CorrelationData.HasValue)
-   {
-      correlationId = Encoding.UTF8.GetString(context.Message.CorrelationData.Value.Span);
-   }
-
-   ConsoleLogger.WriteColor(
-      ConsoleColor.Green,
-      $"[Dispatcher Publisher] Received ACK on topic '{context.Message.Topic}' | CorrelationId: '{correlationId ?? "(none)"}' | Payload: {ackPayload}");
-
-   // Complete the corresponding pending task if correlation ID matches
-   if (correlationId != null && pendingAcknowledgements.TryRemove(correlationId, out var tcs))
-   {
-      tcs.TrySetResult(ackPayload);
-   }
-
-   return ValueTask.CompletedTask;
-});
-
-// Register handler on Subscriber (Worker) Client to process messages and return an Application ACK
+// Register handler on Subscriber (Worker) Client to process requests and return an Application ACK via context.RespondAsync
 using var subReceiveHandlerToken = subscriberWorkerClient.AddMessageReceiveHandler(async (context, ct) =>
 {
    var requestPayload = Encoding.UTF8.GetString(context.Message.Payload.Span);
-   var responseTopic = context.Message.ResponseTopic;
    byte[]? correlationDataBytes = context.Message.CorrelationData?.ToArray();
    var correlationId = correlationDataBytes != null ? Encoding.UTF8.GetString(correlationDataBytes) : null;
 
    ConsoleLogger.WriteColor(
       ConsoleColor.Yellow,
-      $"[Worker Subscriber] Received message on '{context.Message.Topic}' with QoS {context.Message.QualityOfService} | CorrelationId: '{correlationId ?? "(none)"}' | Payload: {requestPayload}");
+      $"[Worker Subscriber] Received message on '{context.Message.Topic}' | CorrelationId: '{correlationId ?? "(none)"}' | Payload: {requestPayload}");
 
-   // Construct and send application-level acknowledgment back to the publisher via ResponseTopic
-   if (!string.IsNullOrEmpty(responseTopic))
+   // Process request and send application ACK back using context.RespondAsync(...)
+   if (!string.IsNullOrEmpty(context.Message.ResponseTopic))
    {
       var isOrderValid = !requestPayload.Contains("\"invalid\"");
       var ackStatus = isOrderValid ? "ACKNOWLEDGED" : "REJECTED_INVALID_DATA";
@@ -91,19 +62,9 @@ using var subReceiveHandlerToken = subscriberWorkerClient.AddMessageReceiveHandl
 
       ConsoleLogger.WriteColor(
          ConsoleColor.Yellow,
-         $"[Worker Subscriber] Sending application ACK back to topic '{responseTopic}' for CorrelationId '{correlationId ?? "(none)"}'...");
+         $"[Worker Subscriber] Sending reply via context.RespondAsync to topic '{context.Message.ResponseTopic}'...");
 
-      var ackPublishOptionsBuilder = PublishOptions.Create()
-         .WithTopic(responseTopic)
-         .WithPayload(ackMessage)
-         .WithQualityOfService(QualityOfServiceType.AtLeastOnce);
-
-      if (correlationDataBytes != null)
-      {
-         ackPublishOptionsBuilder.WithCorrelationData(correlationDataBytes);
-      }
-
-      var ackResult = await subscriberWorkerClient.PublishAsync(ackPublishOptionsBuilder.Build(), ct);
+      var ackResult = await context.RespondAsync(ackMessage, ct: ct);
       if (ackResult.Failed)
       {
          ConsoleLogger.WriteColor(ConsoleColor.Red, $"[Worker Subscriber] Failed to send ACK: {ackResult.Error.Detail}");
@@ -125,30 +86,21 @@ await publisherClient.ConnectAsync(connectOptions);
 ConsoleLogger.Write("[Worker Subscriber] Connecting...");
 await subscriberWorkerClient.ConnectAsync(connectOptions);
 
-// 4. Subscribe Publisher to ACK topic & Subscriber to Command topic
+// 4. Subscribe Subscriber to Command topic
 ConsoleLogger.Write("\n--- Subscribing Topics ---");
-var pubAckSubOptions = SubscribeOptions.Create()
-   .WithTopicFilter(AckTopic, QualityOfServiceType.AtLeastOnce)
-   .Build();
-await publisherClient.SubscribeAsync(pubAckSubOptions);
-ConsoleLogger.Write($"[Dispatcher Publisher] Subscribed to response topic '{AckTopic}'");
-
 var workerSubOptions = SubscribeOptions.Create()
    .WithTopicFilter(CommandTopic, QualityOfServiceType.AtLeastOnce)
    .Build();
 await subscriberWorkerClient.SubscribeAsync(workerSubOptions);
 ConsoleLogger.Write($"[Worker Subscriber] Subscribed to command topic '{CommandTopic}'");
 
-// 5. Publish Tasks and Wait for Subscriber Acknowledgments
-ConsoleLogger.Write("\n--- Publishing Tasks with Acknowledgment Requirement ---");
+// 5. Publish Tasks and Wait for Subscriber Acknowledgments using publisherClient.RequestAsync(...)
+ConsoleLogger.Write("\n--- Publishing Tasks with RequestAsync Acknowledgment ---");
 
 async Task PublishAndAwaitAckAsync(string taskId, string jsonPayload)
 {
    var correlationId = $"req-{taskId}";
-   var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-   pendingAcknowledgements[correlationId] = tcs;
-
-   var publishOptions = PublishOptions.Create()
+   var requestOptions = PublishOptions.Create()
       .WithTopic(CommandTopic)
       .WithPayload(jsonPayload)
       .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
@@ -158,27 +110,21 @@ async Task PublishAndAwaitAckAsync(string taskId, string jsonPayload)
 
    ConsoleLogger.WriteColor(
       ConsoleColor.Blue,
-      $"[Dispatcher Publisher] Publishing task '{taskId}' (CorrelationId: '{correlationId}')...");
+      $"[Dispatcher Publisher] Sending request '{taskId}' via publisherClient.RequestAsync...");
 
-   var pubResult = await publisherClient.PublishAsync(publishOptions);
-   if (pubResult.Failed)
+   var responseResult = await publisherClient.RequestAsync(requestOptions, timeout: TimeSpan.FromSeconds(5));
+
+   if (responseResult.Failed)
    {
-      ConsoleLogger.WriteColor(ConsoleColor.Red, $"[Dispatcher Publisher] Publish failed: {pubResult.Error.Detail}");
-      return;
+      ConsoleLogger.WriteColor(ConsoleColor.Red, $"[Dispatcher Publisher] Request failed: {responseResult.Error.Detail}");
    }
-
-   // Await subscriber acknowledgment with timeout safety
-   using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-   try
+   else
    {
-      var ackPayload = await tcs.Task.WaitAsync(timeoutCts.Token);
+      var response = responseResult.Success;
+      var ackPayload = Encoding.UTF8.GetString(response.Payload.Span);
       ConsoleLogger.WriteColor(
-         ConsoleColor.Magenta,
-         $"[Dispatcher Publisher] SUCCESS! Received subscriber acknowledgment for task '{taskId}':\n   -> {ackPayload}\n");
-   }
-   catch (TimeoutException)
-   {
-      ConsoleLogger.WriteColor(ConsoleColor.Red, $"[Dispatcher Publisher] TIMEOUT waiting for subscriber acknowledgment for task '{taskId}'!");
+         ConsoleColor.Green,
+         $"[Dispatcher Publisher] SUCCESS! Received subscriber acknowledgment in {response.Elapsed.TotalMilliseconds:F1}ms for '{taskId}':\n   -> {ackPayload}\n");
    }
 }
 
@@ -195,7 +141,6 @@ var unsubOptions = UnsubscribeOptions.Create()
    .Build();
 
 await subscriberWorkerClient.UnsubscribeAsync(unsubOptions);
-await publisherClient.UnsubscribeAsync(UnsubscribeOptions.Create().WithTopicFilter(AckTopic).Build());
 
 await publisherClient.DisconnectAsync(new DisconnectOptions());
 await subscriberWorkerClient.DisconnectAsync(new DisconnectOptions());

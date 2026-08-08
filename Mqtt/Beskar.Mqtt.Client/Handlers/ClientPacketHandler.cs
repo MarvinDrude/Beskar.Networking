@@ -182,10 +182,16 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             resolvedPacket.QualityOfService);
 
          var converted = new MqttPublishMessage(resolvedPacket);
+         if (client.TryDispatchResponse(converted))
+         {
+            return;
+         }
+
          var context = new MessageReceiveContext()
          {
             Message = converted,
-            PacketSender = client
+            PacketSender = client,
+            Client = client
          };
 
          var handlerTask = client.Events.OnMessageReceive.ExecuteAsync(

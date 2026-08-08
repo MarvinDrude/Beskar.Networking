@@ -1,10 +1,14 @@
 using System.Text;
+using Beskar.Memory.Results;
+using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Builders.Common;
+using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Mqtt.Protocol.Results;
 
 namespace Beskar.Mqtt.Common.Handlers.Contexts;
 
@@ -39,6 +43,11 @@ public sealed class MessageReceiveContext
    public required IMqttPacketSender PacketSender { get; init; }
 
    /// <summary>
+   /// The MQTT client instance associated with this message context, used for responding to request messages.
+   /// </summary>
+   public IMqttClient? Client { get; init; }
+
+   /// <summary>
    /// The current client identifier (must be unique)
    /// </summary>
    public string? ClientId { get; init; }
@@ -52,6 +61,52 @@ public sealed class MessageReceiveContext
    /// Used to add new user properties which are send to the server.
    /// </summary>
    public UserPropertyListBuilder ResponseUserProperties { get; set; } = new();
+
+   /// <summary>
+   /// Sends an application reply/acknowledgment back to the publisher using the received message's ResponseTopic 
+   /// and copying its CorrelationData.
+   /// </summary>
+   public ValueTask<Result<PublishResult, StringError>> RespondAsync(
+      ReadOnlyMemory<byte> payload,
+      QualityOfServiceType qos = QualityOfServiceType.AtLeastOnce,
+      CancellationToken ct = default)
+   {
+      if (string.IsNullOrEmpty(Message.ResponseTopic))
+      {
+         return ValueTask.FromResult<Result<PublishResult, StringError>>(
+            new StringError("Cannot send response: Message does not specify a ResponseTopic."));
+      }
+
+      if (Client is null)
+      {
+         return ValueTask.FromResult<Result<PublishResult, StringError>>(
+            new StringError("Cannot send response: MqttClient instance is not attached to MessageReceiveContext."));
+      }
+
+      var publishOptionsBuilder = PublishOptions.Create()
+         .WithTopic(Message.ResponseTopic)
+         .WithPayload(payload)
+         .WithQualityOfService(qos);
+
+      if (Message.CorrelationData.HasValue)
+      {
+         publishOptionsBuilder.WithCorrelationData(Message.CorrelationData.Value);
+      }
+
+      return new ValueTask<Result<PublishResult, StringError>>(
+         Client.PublishAsync(publishOptionsBuilder.Build(), ct));
+   }
+
+   /// <summary>
+   /// Overload accepting a string response payload.
+   /// </summary>
+   public ValueTask<Result<PublishResult, StringError>> RespondAsync(
+      string payload,
+      QualityOfServiceType qos = QualityOfServiceType.AtLeastOnce,
+      CancellationToken ct = default)
+   {
+      return RespondAsync(Encoding.UTF8.GetBytes(payload), qos, ct);
+   }
 
    /// <summary>
    /// Sends the appropiate ack packages to the server if HasFailed is not true.
