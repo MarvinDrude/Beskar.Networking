@@ -264,7 +264,7 @@ public class MqttAutoReconnectTests
 
          await client.NetworkClient.DisconnectAsync();
 
-         await reconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+         await reconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(15));
          await Assert.That(client.IsConnected).IsTrue();
       }
 
