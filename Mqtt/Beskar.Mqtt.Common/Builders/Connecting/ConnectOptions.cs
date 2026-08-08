@@ -5,6 +5,7 @@ using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Networking.Abstractions.Options;
 
 namespace Beskar.Mqtt.Common.Builders.Connecting;
 
@@ -20,6 +21,11 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    /// The endpoint of the MQTT Server to connect to.
    /// </summary>
    public required IPEndPoint EndPoint { get; set; }
+
+   /// <summary>
+   /// The auto-reconnection configuration for client connection drops.
+   /// </summary>
+   public AutoReconnectOptions? AutoReconnect { get; set; }
 
    /// <summary>
    /// The MQTT protocol version to use for the connection.
@@ -230,6 +236,7 @@ public sealed class ConnectOptions(int builderCapacity = -1)
 
       CredentialsProvider = null;
       AuthenticationHandler = null;
+      AutoReconnect = null;
    }
 
    /// <summary>

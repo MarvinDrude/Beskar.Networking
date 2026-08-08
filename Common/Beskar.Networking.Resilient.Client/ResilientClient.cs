@@ -195,10 +195,12 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          _controlStream = streamResult.Success;
 
          // Start background listen task on control stream
+         // ReSharper disable once MethodSupportsCancellation
          _ = Task.Run(() => RunClientListenTask(_controlStream, handshakeChannel, connectionCts.Token));
 
          if (session.IsSupportingMultiplexing)
          {
+            // ReSharper disable once MethodSupportsCancellation
             _ = Task.Run(() => RunAcceptMultiplexedStreamsTask(connectionCts.Token));
          }
 

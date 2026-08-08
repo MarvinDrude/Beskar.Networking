@@ -76,6 +76,11 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private SemaphoreSlim? _inFlightSemaphore;
    private int _incomingInFlightCount;
 
+   private readonly Lock _reconnectLock = new();
+   private Task? _reconnectTask;
+   private bool _isReconnecting;
+   private CancellationTokenSource? _reconnectCts;
+
    /// <summary>
    /// Initializes a new instance of the <see cref="MqttClient"/> class using the specified network client transport.
    /// </summary>
@@ -124,7 +129,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          return new StringError("ConnectAsync called while not being in disconnected state.");
       }
 
-      TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Connecting to {0} (ProtocolVersion: {1})", options.EndPoint, options.ProtocolVersion);
+      TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Connecting to {0} (ProtocolVersion: {1})", options.EndPoint,
+         options.ProtocolVersion);
 
       try
       {
@@ -190,7 +196,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             _incomingInFlightCount = 0;
          }
 
-         TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Successfully connected. Assigned KeepAlive: {0}s", connectResult.ServerKeepAlive > 0 ? connectResult.ServerKeepAlive : _connectOptions.KeepAlivePeriod);
+         TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Successfully connected. Assigned KeepAlive: {0}s",
+            connectResult.ServerKeepAlive > 0 ? connectResult.ServerKeepAlive : _connectOptions.KeepAlivePeriod);
          CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting);
 
          await DispatchConnectedAsync(connectResult);
@@ -289,7 +296,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
 
       _controlStream = streamRes.Success;
-      TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Opened bidirectional control stream (StreamId: {0}).", _controlStream.StreamId);
+      TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Opened bidirectional control stream (StreamId: {0}).",
+         _controlStream.StreamId);
       _receiveTask = RunMessageReceive(_controlStream, _clientTokenSource.Token);
 
       if (_connectOptions.CredentialsProvider is { } credProvider)
@@ -316,7 +324,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
          if (first)
          {
-            TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Sending CONNECT packet (ClientId: {0})...", Encoding.UTF8.GetString(_connectOptions.ClientIdUtf8Bytes.Span));
+            TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Sending CONNECT packet (ClientId: {0})...",
+               Encoding.UTF8.GetString(_connectOptions.ClientIdUtf8Bytes.Span));
             await SendConnect(_controlStream, _connectOptions, combined.Token);
             first = false;
          }
@@ -325,7 +334,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             if (_connectOptions.AuthenticationHandler is { } handler
                 && authResult is not null)
             {
-               TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Executing authentication handler for incoming AUTH packet...");
+               TraceLogger.LogClientInfo(
+                  "MqttClient.ConnectInternalAsync: Executing authentication handler for incoming AUTH packet...");
                await handler.ExecuteAsync(new MqttAuthContext()
                {
                   AuthPacket = authResult,
@@ -356,7 +366,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
          if (completedTask == _receiveTask)
          {
-            TraceLogger.LogClientError("MqttClient.ConnectInternalAsync: Receiver task exited unexpectedly during handshake.");
+            TraceLogger.LogClientError(
+               "MqttClient.ConnectInternalAsync: Receiver task exited unexpectedly during handshake.");
             await _receiveTask;
 
             return new StringError("Connection closed unexpectedly during handshake.");
@@ -371,11 +382,15 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             {
                await authTask;
             }
-            catch { /* ignored */ }
+            catch
+            {
+               /* ignored */
+            }
 
             if (_protocolVersion is MqttProtocolVersion.V50)
             {
-               TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received CONNACK (Reason: {0}).", connAckResult.ReasonCode);
+               TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received CONNACK (Reason: {0}).",
+                  connAckResult.ReasonCode);
                if (connAckResult.ReasonCode is not ConnectReasonCode.Success)
                {
                   return new StringError($"Connection refused: {connAckResult.ReasonCode}");
@@ -383,7 +398,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             }
             else
             {
-               TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received CONNACK (ReturnCode: {0}).", connAckResult.ReturnCode);
+               TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received CONNACK (ReturnCode: {0}).",
+                  connAckResult.ReturnCode);
                if (connAckResult.ReturnCode is not ConnectReturnCode.Accepted)
                {
                   return new StringError($"Connection refused: {connAckResult.ReturnCode}");
@@ -400,7 +416,10 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          {
             await connAckTask;
          }
-         catch { /* ignored */ }
+         catch
+         {
+            /* ignored */
+         }
 
          TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Received AUTH packet.");
          if (_connectOptions.AuthenticationMethodUtf8Bytes.IsEmpty)
@@ -463,9 +482,127 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          ref _state, (int)state, (int)compareState);
    }
 
+   internal Task TriggerAutoReconnectAsync(Exception? cause)
+   {
+      if (_gracefulDisconnect || Volatile.Read(ref _disposedState) == 1)
+         return Task.CompletedTask;
+
+      lock (_reconnectLock)
+      {
+         if (_isReconnecting)
+            return _reconnectTask ?? Task.CompletedTask;
+
+         _isReconnecting = true;
+         _reconnectTask = Task.Run(async () =>
+         {
+            try
+            {
+               var autoReconnect = _connectOptions.AutoReconnect;
+               if (autoReconnect is not { IsEnabled: true } || Volatile.Read(ref _disposedState) == 1)
+               {
+                  return;
+               }
+
+               TraceLogger.LogClientWarning("MqttClient: Connection lost ({0}). Triggering auto-reconnect to {1}...",
+                  cause?.Message ?? "Transport closed", _connectOptions.EndPoint);
+
+               _state = (int)MqttClientConnectionState.Reconnecting;
+
+               var newReconnectCts = new CancellationTokenSource();
+               var oldReconnectCts = Interlocked.Exchange(ref _reconnectCts, newReconnectCts);
+               oldReconnectCts?.Dispose();
+               var masterCt = newReconnectCts.Token;
+
+               var attempt = 0;
+               var maxRetries = autoReconnect.MaxRetryAttempts;
+               var backoff = autoReconnect.BackoffPolicy;
+
+               while (!masterCt.IsCancellationRequested && Volatile.Read(ref _disposedState) == 0 &&
+                      (MqttClientConnectionState)_state == MqttClientConnectionState.Reconnecting)
+               {
+                  attempt++;
+                  if (maxRetries > 0 && attempt > maxRetries)
+                  {
+                     TraceLogger.LogClientError("MqttClient: Max reconnect attempts ({0}) reached for {1}. Stopping.",
+                        maxRetries, _connectOptions.EndPoint);
+                     break;
+                  }
+
+                  var retryInterval = backoff != null ? backoff.GetNextDelay(attempt) : TimeSpan.FromSeconds(1);
+                  if (retryInterval < TimeSpan.Zero && retryInterval != Timeout.InfiniteTimeSpan)
+                  {
+                     retryInterval = TimeSpan.FromSeconds(1);
+                  }
+
+                  TraceLogger.LogClientInfo("MqttClient: Auto-reconnect attempt #{0} (Max: {1}) to {2} in {3}ms...",
+                     attempt, maxRetries, _connectOptions.EndPoint, retryInterval.TotalMilliseconds);
+
+                  try
+                  {
+                     await Task.Delay(retryInterval, masterCt);
+                  }
+                  catch (OperationCanceledException)
+                  {
+                     break;
+                  }
+
+                  if ((MqttClientConnectionState)_state != MqttClientConnectionState.Reconnecting ||
+                      Volatile.Read(ref _disposedState) == 1)
+                  {
+                     break;
+                  }
+
+                  _state = (int)MqttClientConnectionState.Disconnected;
+                  var result = await ConnectAsync(_connectOptions, masterCt);
+
+                  if (!result.Failed)
+                  {
+                     TraceLogger.LogClientInfo("MqttClient: Auto-reconnect attempt #{0} to {1} SUCCEEDED!", attempt,
+                        _connectOptions.EndPoint);
+                     return;
+                  }
+
+                  _state = (int)MqttClientConnectionState.Reconnecting;
+               }
+
+               if ((MqttClientConnectionState)_state == MqttClientConnectionState.Reconnecting)
+               {
+                  _state = (int)MqttClientConnectionState.Disconnected;
+               }
+            }
+            finally
+            {
+               var reconnectCts = Interlocked.Exchange(ref _reconnectCts, null);
+               reconnectCts?.Dispose();
+
+               lock (_reconnectLock)
+               {
+                  _isReconnecting = false;
+                  _reconnectTask = null;
+               }
+            }
+         });
+
+         return _reconnectTask;
+      }
+   }
+
    public async ValueTask DisposeAsync()
    {
       if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
+
+      var reconnectCts = Interlocked.Exchange(ref _reconnectCts, null);
+      if (reconnectCts is not null)
+      {
+         try
+         {
+            await reconnectCts.CancelAsync();
+         }
+         catch
+         {
+            // Ignored
+         }
+      }
 
       try
       {
