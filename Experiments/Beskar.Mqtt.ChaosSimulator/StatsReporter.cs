@@ -83,6 +83,11 @@ public static class StatsReporter
             var transportBytesSent = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.sent", 0);
             var transportBytesRecv = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.received", 0);
 
+            var poolBlocksActive = Program.TelemetryGauges.GetValueOrDefault("beskar.transport.memorypool.blocks.active", 0);
+            var poolBlocksRented = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.memorypool.blocks.rented", 0);
+            var poolBlocksReturned = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.memorypool.blocks.returned", 0);
+            var poolBlocksCreated = Program.TelemetryCounters.GetValueOrDefault("beskar.transport.memorypool.blocks.created", 0);
+
             var mqttConnectedClients = Program.TelemetryGauges.GetValueOrDefault("beskar.mqtt.server.clients.connected", 0);
             var mqttActiveSessions = Program.TelemetryGauges.GetValueOrDefault("beskar.mqtt.server.sessions.active", 0);
             var mqttActiveSubs = Program.TelemetryGauges.GetValueOrDefault("beskar.mqtt.subscriptions.active", 0);
@@ -101,6 +106,8 @@ public static class StatsReporter
                .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.active", "UpDownCounter {connection}", transportActiveConns.ToString())
                .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.opened/closed", "Counter {connection}", $"Opened: {transportOpenedConns} | Closed: {transportClosedConns}")
                .AddRow("Beskar.Networking.Transport", "beskar.transport.bytes.sent/received", "Counter By", $"Sent: {transportBytesSent:N0} B | Recv: {transportBytesRecv:N0} B")
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.memorypool.blocks.active", "UpDownCounter {block}", poolBlocksActive.ToString())
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.memorypool.blocks.rented/returned/created", "Counter {block}", $"Rented: {poolBlocksRented} | Returned: {poolBlocksReturned} | Created: {poolBlocksCreated}")
                .AddRow("Beskar.Mqtt", "beskar.mqtt.server.clients.connected", "UpDownCounter {client}", mqttConnectedClients.ToString())
                .AddRow("Beskar.Mqtt", "beskar.mqtt.server.sessions.active", "UpDownCounter {session}", mqttActiveSessions.ToString())
                .AddRow("Beskar.Mqtt", "beskar.mqtt.subscriptions.active", "UpDownCounter {subscription}", mqttActiveSubs.ToString())

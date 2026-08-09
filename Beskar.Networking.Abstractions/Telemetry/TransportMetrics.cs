@@ -82,6 +82,38 @@ public static class TransportMetrics
       "By",
       "Total bytes received over network pipelines.");
 
+   /// <summary>
+   /// Total number of memory pool blocks created.
+   /// </summary>
+   public static readonly Counter<long> MemoryPoolBlocksCreated = Meter.CreateCounter<long>(
+      "beskar.transport.memorypool.blocks.created",
+      "{block}",
+      "Total number of memory pool blocks created.");
+
+   /// <summary>
+   /// Total number of memory pool block rent operations.
+   /// </summary>
+   public static readonly Counter<long> MemoryPoolBlocksRented = Meter.CreateCounter<long>(
+      "beskar.transport.memorypool.blocks.rented",
+      "{block}",
+      "Total number of memory pool block rent operations.");
+
+   /// <summary>
+   /// Total number of memory pool block return operations.
+   /// </summary>
+   public static readonly Counter<long> MemoryPoolBlocksReturned = Meter.CreateCounter<long>(
+      "beskar.transport.memorypool.blocks.returned",
+      "{block}",
+      "Total number of memory pool block return operations.");
+
+   /// <summary>
+   /// Current count of active rented memory pool blocks.
+   /// </summary>
+   public static readonly UpDownCounter<long> MemoryPoolBlocksActive = Meter.CreateUpDownCounter<long>(
+      "beskar.transport.memorypool.blocks.active",
+      "{block}",
+      "Current count of active rented memory pool blocks.");
+
    private static readonly KeyValuePair<string, object?>[][] TransportTags = [
       [new KeyValuePair<string, object?>("transport", "unknown")],
       [new KeyValuePair<string, object?>("transport", "tcp")],
@@ -168,6 +200,38 @@ public static class TransportMetrics
       if (StreamsActive.Enabled)
       {
          StreamsActive.Add(-1, tags);
+      }
+   }
+
+   public static void RecordMemoryPoolBlockCreated()
+   {
+      if (MemoryPoolBlocksCreated.Enabled)
+      {
+         MemoryPoolBlocksCreated.Add(1);
+      }
+   }
+
+   public static void RecordMemoryPoolBlockRented()
+   {
+      if (MemoryPoolBlocksRented.Enabled)
+      {
+         MemoryPoolBlocksRented.Add(1);
+      }
+      if (MemoryPoolBlocksActive.Enabled)
+      {
+         MemoryPoolBlocksActive.Add(1);
+      }
+   }
+
+   public static void RecordMemoryPoolBlockReturned()
+   {
+      if (MemoryPoolBlocksReturned.Enabled)
+      {
+         MemoryPoolBlocksReturned.Add(1);
+      }
+      if (MemoryPoolBlocksActive.Enabled)
+      {
+         MemoryPoolBlocksActive.Add(-1);
       }
    }
 }

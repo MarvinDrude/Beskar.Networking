@@ -53,3 +53,7 @@ Meter Name: `Beskar.Networking.Transport` (Version `1.0.0`)
 | `beskar.transport.streams.closed` | `Counter<long>` | `{stream}` | Total number of network streams closed. |
 | `beskar.transport.bytes.sent` | `Counter<long>` | `By` | Total bytes sent over network pipelines. |
 | `beskar.transport.bytes.received` | `Counter<long>` | `By` | Total bytes received over network pipelines. |
+| `beskar.transport.memorypool.blocks.created` | `Counter<long>` | `{block}` | Total number of memory pool blocks created. |
+| `beskar.transport.memorypool.blocks.rented` | `Counter<long>` | `{block}` | Total number of memory pool block rent operations. |
+| `beskar.transport.memorypool.blocks.returned` | `Counter<long>` | `{block}` | Total number of memory pool block return operations. |
+| `beskar.transport.memorypool.blocks.active` | `UpDownCounter<long>` | `{block}` | Current count of active rented memory pool blocks. |

@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Common.Pipelines;
 
@@ -72,10 +73,15 @@ public sealed class NetworkPinnedBlockMemoryPool : MemoryPool<byte>
 
       if (_blocks.Reader.TryRead(out var block))
       {
+         TransportMetrics.RecordMemoryPoolBlockRented();
          return block;
       }
 
       Interlocked.Increment(ref _createdBlocksCount);
+
+      TransportMetrics.RecordMemoryPoolBlockCreated();
+      TransportMetrics.RecordMemoryPoolBlockRented();
+
       return new NetworkMemoryPoolBlock(this, BlockSize);
    }
 
@@ -91,6 +97,7 @@ public sealed class NetworkPinnedBlockMemoryPool : MemoryPool<byte>
       if (!_isDisposed)
       {
          _blocks.Writer.TryWrite(block);
+         TransportMetrics.RecordMemoryPoolBlockReturned();
       }
    }
 

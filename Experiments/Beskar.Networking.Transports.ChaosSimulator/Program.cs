@@ -659,6 +659,11 @@ public static class Program
             var transportBytesSent = TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.sent", 0);
             var transportBytesRecv = TelemetryCounters.GetValueOrDefault("beskar.transport.bytes.received", 0);
 
+            var poolBlocksActive = TelemetryGauges.GetValueOrDefault("beskar.transport.memorypool.blocks.active", 0);
+            var poolBlocksRented = TelemetryCounters.GetValueOrDefault("beskar.transport.memorypool.blocks.rented", 0);
+            var poolBlocksReturned = TelemetryCounters.GetValueOrDefault("beskar.transport.memorypool.blocks.returned", 0);
+            var poolBlocksCreated = TelemetryCounters.GetValueOrDefault("beskar.transport.memorypool.blocks.created", 0);
+
             ConsoleRender.CreateTable()
                .SetBorderColor(ConsoleColor.Magenta)
                .AddColumn("OpenTelemetry Meter", Alignment.Left, ConsoleColor.Magenta)
@@ -668,6 +673,8 @@ public static class Program
                .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.active", "UpDownCounter {connection}", transportActiveConns.ToString())
                .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.opened/closed", "Counter {connection}", $"Opened: {transportOpenedConns} | Closed: {transportClosedConns}")
                .AddRow("Beskar.Networking.Transport", "beskar.transport.bytes.sent/received", "Counter By", $"Sent: {transportBytesSent:N0} B | Recv: {transportBytesRecv:N0} B")
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.memorypool.blocks.active", "UpDownCounter {block}", poolBlocksActive.ToString())
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.memorypool.blocks.rented/returned/created", "Counter {block}", $"Rented: {poolBlocksRented} | Returned: {poolBlocksReturned} | Created: {poolBlocksCreated}")
                .Render();
          }
       }
