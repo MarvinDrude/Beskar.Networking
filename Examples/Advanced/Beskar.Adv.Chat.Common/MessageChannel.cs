@@ -26,23 +26,33 @@ public sealed class MessageChannel(IDuplexPipe transport)
 
    public async Task<ChatPacket?> ReadPacketAsync(CancellationToken ct = default)
    {
-      while (true)
+      try
       {
-         var result = await _reader.ReadAsync(ct);
-         var buffer = result.Buffer;
-
-         if (FrameParser.TryParseFrame(ref buffer, out var packet, out var consumedPosition))
+         while (!ct.IsCancellationRequested)
          {
-            _reader.AdvanceTo(consumedPosition, consumedPosition);
-            return packet;
-         }
-
-         _reader.AdvanceTo(buffer.Start, buffer.End);
-
-         if (result.IsCompleted)
-         {
-            return null;
+            var result = await _reader.ReadAsync(ct);
+            var buffer = result.Buffer;
+            if (FrameParser.TryParseFrame(ref buffer, out var packet, out var consumedPosition))
+            {
+               _reader.AdvanceTo(consumedPosition, consumedPosition);
+               return packet;
+            }
+            _reader.AdvanceTo(buffer.Start, buffer.End);
+            if (result.IsCompleted || result.IsCanceled)
+            {
+               return null;
+            }
          }
       }
+      catch (InvalidOperationException ex) when (ex.Message.Contains("completed"))
+      {
+         return null;
+      }
+      catch (OperationCanceledException)
+      {
+         return null;
+      }
+
+      return null;
    }
 }
