@@ -261,18 +261,18 @@ public sealed partial class MqttServer : IAsyncDisposable
          return;
       }
 
-      var controlStream = await session.AcceptStreamAsync(ct);
-      if (controlStream.Failed)
-      {
-         await session.DisposeAsync();
-         return;
-      }
-
       MqttServerClient? client = null;
       ServerPacketHandler? packetHandler = null;
 
       try
       {
+         var controlStream = await session.AcceptStreamAsync(ct);
+         if (controlStream.Failed)
+         {
+            await session.DisposeAsync();
+            return;
+         }
+
          var connectionContext = new NetworkServerConnectionContext(listener, session);
          var streamContext = new NetworkServerStreamContext(connectionContext, controlStream.Success);
 

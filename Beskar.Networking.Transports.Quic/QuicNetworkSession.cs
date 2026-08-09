@@ -317,7 +317,7 @@ public sealed class QuicNetworkSession : INetworkSession
 
       try
       {
-         using var closeCts = new CancellationTokenSource(50);
+         using var closeCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
          await _connection.CloseAsync(_options.DefaultCloseErrorCode, closeCts.Token);
       }
       catch

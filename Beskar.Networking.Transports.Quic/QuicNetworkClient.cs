@@ -79,19 +79,36 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
          }
 
          var connection = await QuicConnection.ConnectAsync(clientOptions, ct);
-         var session = new QuicNetworkSession(connection, _options, _ioQueueRegistry);
+         QuicNetworkSession? session = null;
 
-         var oldSession = Interlocked.Exchange(ref _activeSession, session);
-         if (oldSession is not null)
+         try
          {
-            await oldSession.DisposeAsync();
+            session = new QuicNetworkSession(connection, _options, _ioQueueRegistry);
+
+            var oldSession = Interlocked.Exchange(ref _activeSession, session);
+            if (oldSession is not null)
+            {
+               await oldSession.DisposeAsync();
+            }
+
+            Interlocked.Increment(ref _connectionsEstablished);
+            session.SessionClosedToken.Register(() => Interlocked.Increment(ref _connectionsLost));
+
+            TraceLogger.LogClientInfo("QUIC ConnectAsync: Successfully established QUIC session {0} (Remote: {1}, Local: {2})", session.Id, connection.RemoteEndPoint, connection.LocalEndPoint);
+            return session;
          }
-
-         Interlocked.Increment(ref _connectionsEstablished);
-         session.SessionClosedToken.Register(() => Interlocked.Increment(ref _connectionsLost));
-
-         TraceLogger.LogClientInfo("QUIC ConnectAsync: Successfully established QUIC session {0} (Remote: {1}, Local: {2})", session.Id, connection.RemoteEndPoint, connection.LocalEndPoint);
-         return session;
+         catch
+         {
+            if (session is not null)
+            {
+               await session.DisposeAsync();
+            }
+            else
+            {
+               await connection.DisposeAsync();
+            }
+            throw;
+         }
       }
       catch (QuicException ex)
       {
