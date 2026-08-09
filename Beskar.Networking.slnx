@@ -111,6 +111,7 @@
     <Project Path="Experiments/Beskar.Networking.Clients/Beskar.Networking.Clients.csproj" />
     <Project Path="Experiments/Beskar.Mqtt.JobUpdatesExperiment/Beskar.Mqtt.JobUpdatesExperiment.csproj" />
     <Project Path="Experiments/Beskar.Networking.ChurnBenchmark/Beskar.Networking.ChurnBenchmark.csproj" />
+    <Project Path="Experiments/Beskar.Networking.ChurnRecoveryBenchmark/Beskar.Networking.ChurnRecoveryBenchmark.csproj" />
   </Folder>
   <Folder Name="/Mqtt/">
     <Project Path="Mqtt/Beskar.Mqtt.Client/Beskar.Mqtt.Client.csproj" />
