@@ -272,6 +272,113 @@ public class MqttAutoReconnectTests
       await server.StopAsync();
    }
 
+   [Test]
+   public async Task Client_ConnectEvent_CalledAfterReconnect()
+   {
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(0)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
+
+      var connectOptions = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
+         .WithCleanSession()
+         .WithClientId($"auto-reconnect-event-{Guid.NewGuid():N}")
+         .WithAutoReconnect(new AutoReconnectOptions
+         {
+            IsEnabled = true,
+            MaxRetryAttempts = 5,
+            BackoffPolicy = new ConstantBackoffPolicy(TimeSpan.FromMilliseconds(50))
+         })
+         .Build();
+
+      var client = (MqttClient)MqttClientFactory.CreateTcp();
+      var connectedCount = 0;
+      var reconnectedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      client.Events.OnClientConnected.Add((_, _) =>
+      {
+         var count = Interlocked.Increment(ref connectedCount);
+         if (count == 2)
+         {
+            reconnectedTcs.TrySetResult();
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      var connectResult = await client.ConnectAsync(connectOptions);
+      await Assert.That(connectResult.Failed).IsFalse();
+      await Assert.That(connectedCount).IsEqualTo(1);
+
+      // Trigger ungraceful disconnect from server side
+      using (var clients = await server.ClientSessions.GetClients())
+      {
+         await clients.WrittenSpan[0].Session.DisposeAsync();
+      }
+
+      await reconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(connectedCount).IsEqualTo(2);
+      await Assert.That(client.IsConnected).IsTrue();
+
+      await client.DisconnectAsync(new DisconnectOptions());
+      await server.StopAsync();
+   }
+
+   [Test]
+   public async Task Client_InitialConnectFails_RetriesInBackgroundWhenAutoReconnectEnabled()
+   {
+      // Use an unused port first
+      var portFinderListener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+      portFinderListener.Start();
+      var port = ((IPEndPoint)portFinderListener.LocalEndpoint).Port;
+      portFinderListener.Stop();
+
+      var connectOptions = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
+         .WithCleanSession()
+         .WithClientId($"auto-reconnect-init-fail-{Guid.NewGuid():N}")
+         .WithAutoReconnect(new AutoReconnectOptions
+         {
+            IsEnabled = true,
+            MaxRetryAttempts = 10,
+            BackoffPolicy = new ConstantBackoffPolicy(TimeSpan.FromMilliseconds(50))
+         })
+         .Build();
+
+      var client = (MqttClient)MqttClientFactory.CreateTcp();
+      var connectedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      client.Events.OnClientConnected.Add((_, _) =>
+      {
+         connectedTcs.TrySetResult();
+         return ValueTask.CompletedTask;
+      });
+
+      // Initial connect fails because server is not running yet
+      var connectResult = await client.ConnectAsync(connectOptions);
+      await Assert.That(connectResult.Failed).IsTrue();
+      await Assert.That(client.IsConnected).IsFalse();
+
+      // Now start the server on that port
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(port)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      // Background auto-reconnect loop should retry and connect successfully
+      await connectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(15));
+      await Assert.That(client.IsConnected).IsTrue();
+
+      await client.DisconnectAsync(new DisconnectOptions());
+      await server.StopAsync();
+   }
+
    private class TestBackoffPolicy(Func<int, TimeSpan> getDelay) : IBackoffPolicy
    {
       public TimeSpan GetNextDelay(int attempt) => getDelay(attempt);

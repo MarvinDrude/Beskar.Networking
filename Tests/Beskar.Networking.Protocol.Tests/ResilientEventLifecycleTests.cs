@@ -3,6 +3,7 @@ using System.Net;
 using Beskar.Networking.Protocol.Frames;
 using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Client;
+using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Server;
 
 namespace Beskar.Networking.Protocol.Tests;
@@ -202,8 +203,107 @@ public class ResilientEventLifecycleTests
       await client.DisconnectAsync();
       await server.StopAsync();
       await client.DisposeAsync();
-      await server.DisposeAsync();
-
       await Assert.That(conditionMet).IsTrue();
+   }
+
+   [Test]
+   public async Task Client_ConnectEvent_CalledAfterReconnect()
+   {
+      var listenerEndPoint = new IPEndPoint(IPAddress.Loopback, 0);
+      var server = ResilientServerFactory.CreateBuilder<BeskarPacket>()
+         .UseTcp(listenerEndPoint)
+         .Build();
+
+      await server.StartAsync();
+      var boundEndPoint = (IPEndPoint)server.Listeners.First().LocalAddress!;
+
+      var connectedCount = 0;
+      var reconnectedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      var client = ResilientClientFactory.CreateTcp<BeskarPacket>(clientOptions: new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            RetryInterval = TimeSpan.FromMilliseconds(50),
+            MaxRetries = 5
+         }
+      });
+
+      client.Events.OnConnected.Add((_, _) =>
+      {
+         var count = Interlocked.Increment(ref connectedCount);
+         if (count == 2)
+         {
+            reconnectedTcs.TrySetResult();
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      var connectResult = await client.ConnectAsync(boundEndPoint);
+      await Assert.That(connectResult.Failed).IsFalse();
+      await Assert.That(connectedCount).IsEqualTo(1);
+      await Assert.That(client.IsConnected).IsTrue();
+
+      // Abruptly close server side session to trigger reconnect
+      var serverClient = server.Clients.GetAll().First();
+      await serverClient.ControlStream.Transport.Output.CompleteAsync();
+      await serverClient.Session.DisposeAsync();
+
+      await reconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(connectedCount).IsEqualTo(2);
+      await Assert.That(client.IsConnected).IsTrue();
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
+   }
+
+   [Test]
+   public async Task Client_InitialConnectFails_RetriesInBackgroundWhenAutoReconnectEnabled()
+   {
+      // Pick an unused endpoint
+      var portFinderListener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+      portFinderListener.Start();
+      var unusedEndPoint = (IPEndPoint)portFinderListener.LocalEndpoint;
+      portFinderListener.Stop();
+
+      var client = ResilientClientFactory.CreateTcp<BeskarPacket>(clientOptions: new ResilientClientOptions
+      {
+         Reconnecting = new ResilientClientReconnectionOptions
+         {
+            AutoReconnect = true,
+            RetryInterval = TimeSpan.FromMilliseconds(50),
+            MaxRetries = 10
+         }
+      });
+
+      var connectedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      client.Events.OnConnected.Add((_, _) =>
+      {
+         connectedTcs.TrySetResult();
+         return ValueTask.CompletedTask;
+      });
+
+      var connectResult = await client.ConnectAsync(unusedEndPoint);
+      await Assert.That(connectResult.Failed).IsTrue();
+      await Assert.That(client.IsConnected).IsFalse();
+
+      // Now start a server on that endpoint
+      var server = ResilientServerFactory.CreateBuilder<BeskarPacket>()
+         .UseTcp(unusedEndPoint)
+         .Build();
+
+      await server.StartAsync();
+
+      // Background auto-reconnect loop should retry and connect successfully
+      await connectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That(client.IsConnected).IsTrue();
+
+      await client.DisconnectAsync();
+      await server.StopAsync();
+      await client.DisposeAsync();
+      await server.DisposeAsync();
    }
 }

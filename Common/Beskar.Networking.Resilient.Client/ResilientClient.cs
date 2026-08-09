@@ -136,6 +136,10 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       if (result.Failed)
       {
          State = ResilientClientState.Disconnected;
+         if (Options.Reconnecting.AutoReconnect)
+         {
+            _ = TriggerAutoReconnectAsync(new Exception(result.Error.Detail));
+         }
          return result;
       }
 
@@ -795,7 +799,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
 
    private Task TriggerAutoReconnectAsync(Exception? cause)
    {
-      if (State is ResilientClientState.Disconnecting or ResilientClientState.Disconnected)
+      if (State is ResilientClientState.Disconnecting)
          return Task.CompletedTask;
 
       lock (_reconnectLock)
