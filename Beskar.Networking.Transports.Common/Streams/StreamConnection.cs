@@ -307,19 +307,18 @@ public sealed class StreamConnection(
       await writer.CompleteAsync(error);
    }
 
-   private Task SetBuffer(Stream stream, in ReadOnlySequence<byte> data)
+   private ValueTask SetBuffer(Stream stream, in ReadOnlySequence<byte> data)
    {
       TraceLogger.LogNeutralInfo("StreamConnection: Transmitting {0} bytes to stream", data.Length);
       if (data.IsSingleSegment)
       {
-         var vtask = stream.WriteAsync(data.First, _cts.Token);
-         return vtask.IsCompletedSuccessfully ? Task.CompletedTask : vtask.AsTask();
+         return stream.WriteAsync(data.First, _cts.Token);
       }
 
       return SetBufferSegments(stream, data);
    }
 
-   private async Task SetBufferSegments(Stream stream, ReadOnlySequence<byte> data)
+   private async ValueTask SetBufferSegments(Stream stream, ReadOnlySequence<byte> data)
    {
       foreach (var segment in data)
       {
