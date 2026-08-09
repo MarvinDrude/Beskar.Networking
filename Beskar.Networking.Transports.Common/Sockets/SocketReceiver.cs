@@ -127,14 +127,18 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
 
       Stop();
 
-      while (Pipe.Reader.TryRead(out var result))
+      try
       {
-         Pipe.Reader.AdvanceTo(result.Buffer.End);
+         Pipe.Writer.Complete();
+
+         while (Pipe.Reader.TryRead(out var result))
+         {
+            Pipe.Reader.AdvanceTo(result.Buffer.End);
+         }
       }
+      catch (Exception) { /* ignored */ }
 
-      Pipe.Writer.Complete();
       Pipe.Reader.Complete();
-
       Pipe.Reset();
       //Pipe = new Pipe(pipeOptions);
 

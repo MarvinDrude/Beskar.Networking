@@ -197,21 +197,25 @@ public sealed class StreamConnection(
 
       Stop();
 
-      while (_readPipe.Reader.TryRead(out var result))
+      try
       {
-         _readPipe.Reader.AdvanceTo(result.Buffer.End);
+         _readPipe.Writer.Complete();
+         _writePipe.Writer.Complete();
+
+         while (_readPipe.Reader.TryRead(out var result))
+         {
+            _readPipe.Reader.AdvanceTo(result.Buffer.End);
+         }
+
+         while (_writePipe.Reader.TryRead(out var writeResult))
+         {
+            _writePipe.Reader.AdvanceTo(writeResult.Buffer.End);
+         }
+
+         _readPipe.Reader.Complete();
+         _writePipe.Reader.Complete();
       }
-
-      while (_writePipe.Reader.TryRead(out var writeResult))
-      {
-         _writePipe.Reader.AdvanceTo(writeResult.Buffer.End);
-      }
-
-      _readPipe.Writer.Complete();
-      _readPipe.Reader.Complete();
-
-      _writePipe.Writer.Complete();
-      _writePipe.Reader.Complete();
+      catch (Exception) { /* ignored */ }
 
       _readPipe.Reset();
       _writePipe.Reset();
