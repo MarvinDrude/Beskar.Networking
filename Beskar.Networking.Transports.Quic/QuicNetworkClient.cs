@@ -39,6 +39,7 @@ public sealed class QuicNetworkClient : INetworkClient
    private readonly QuicTransportOptions _options;
    private readonly QuicIoQueueRegistry _ioQueueRegistry;
    private readonly SslClientAuthenticationOptions _clientAuthOptions;
+   private readonly QuicClientConnectionOptions _clientConnectionOptions;
 
    private QuicNetworkSession? _activeSession;
 
@@ -51,6 +52,22 @@ public sealed class QuicNetworkClient : INetworkClient
       var alpn = new SslApplicationProtocol(_options.AlpnProtocol);
       _clientAuthOptions.ApplicationProtocols ??= [alpn];
       _clientAuthOptions.RemoteCertificateValidationCallback ??= (sender, cert, chain, errors) => true;
+
+      _clientConnectionOptions = new QuicClientConnectionOptions
+      {
+         DefaultStreamErrorCode = _options.DefaultStreamErrorCode,
+         DefaultCloseErrorCode = _options.DefaultCloseErrorCode,
+         MaxInboundBidirectionalStreams = _options.MaxInboundBidirectionalStreams,
+         MaxInboundUnidirectionalStreams = _options.MaxInboundUnidirectionalStreams,
+         ClientAuthenticationOptions = _clientAuthOptions,
+         IdleTimeout = _options.IdleTimeout,
+         HandshakeTimeout = _options.HandshakeTimeout
+      };
+
+      if (_options.KeepAliveInterval.HasValue)
+      {
+         _clientConnectionOptions.KeepAliveInterval = _options.KeepAliveInterval.Value;
+      }
    }
 
    /// <inheritdoc />
@@ -66,24 +83,8 @@ public sealed class QuicNetworkClient : INetworkClient
       {
          TraceLogger.LogClientInfo("QUIC ConnectAsync: Initiating QUIC connection to {0} (ALPN: {1})", endPoint, _options.AlpnProtocol);
 
-         var clientOptions = new QuicClientConnectionOptions
-         {
-            RemoteEndPoint = endPoint,
-            DefaultStreamErrorCode = _options.DefaultStreamErrorCode,
-            DefaultCloseErrorCode = _options.DefaultCloseErrorCode,
-            MaxInboundBidirectionalStreams = _options.MaxInboundBidirectionalStreams,
-            MaxInboundUnidirectionalStreams = _options.MaxInboundUnidirectionalStreams,
-            ClientAuthenticationOptions = _clientAuthOptions,
-            IdleTimeout = _options.IdleTimeout,
-            HandshakeTimeout = _options.HandshakeTimeout
-         };
-
-         if (_options.KeepAliveInterval.HasValue)
-         {
-            clientOptions.KeepAliveInterval = _options.KeepAliveInterval.Value;
-         }
-
-         var connection = await QuicConnection.ConnectAsync(clientOptions, ct);
+         _clientConnectionOptions.RemoteEndPoint = endPoint;
+         var connection = await QuicConnection.ConnectAsync(_clientConnectionOptions, ct);
          QuicNetworkSession? session = null;
 
          try

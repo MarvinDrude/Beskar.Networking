@@ -23,8 +23,8 @@ public static class Program
       Console.ForegroundColor = ConsoleColor.Cyan;
       Console.WriteLine("╔═══════════════════════════════════════════════════════════════════════════════════════╗");
       Console.WriteLine("║                                                                                       ║");
-      Console.WriteLine("║                  BESKAR REAL-WORLD USER WAVES CLIENT PROCESS                          ║");
-      Console.WriteLine("║     Dedicated Client Process: Simulates Waves of Connecting & Disconnecting Users     ║");
+      Console.WriteLine("║            BESKAR REAL-WORLD CLIENT-POOLED USER WAVES BENCHMARK                       ║");
+      Console.WriteLine("║     Dedicated Client Process: Reuses Pooled Client Instances Across Waves             ║");
       Console.WriteLine("║                                                                                       ║");
       Console.WriteLine("╚═══════════════════════════════════════════════════════════════════════════════════════╝");
       Console.ResetColor();
@@ -40,6 +40,34 @@ public static class Program
       Console.WriteLine();
 
       var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      // Pre-create pooled client instances for the batch size
+      var clientPool = new INetworkClient[usersPerWave];
+      for (int i = 0; i < usersPerWave; i++)
+      {
+         if (transportName == "QUIC")
+         {
+            var quicOptions = new QuicTransportOptions
+            {
+               IdleTimeout = TimeSpan.FromSeconds(30),
+               HandshakeTimeout = TimeSpan.FromSeconds(5),
+               SslClientOptions = new SslClientAuthenticationOptions
+               {
+                  TargetHost = "localhost",
+                  RemoteCertificateValidationCallback = (_, _, _, _) => true
+               }
+            };
+            clientPool[i] = new QuicNetworkClient(quicOptions);
+         }
+         else if (transportName == "TCP")
+         {
+            clientPool[i] = new TcpNetworkClient(new TcpTransportOptions());
+         }
+         else if (transportName == "WS")
+         {
+            clientPool[i] = new WsNetworkClient(new WsTransportOptions());
+         }
+      }
 
       // Measure baseline memory before waves start
       GC.Collect();
@@ -66,7 +94,8 @@ public static class Program
          for (int userIdx = 0; userIdx < usersPerWave; userIdx++)
          {
             int userId = (wave - 1) * usersPerWave + userIdx + 1;
-            userTasks.Add(SimulateSingleUserAsync(endPoint, transportName, userId, messagesPerUser));
+            var client = clientPool[userIdx];
+            userTasks.Add(SimulateSingleUserWithPooledClientAsync(client, endPoint, userId, messagesPerUser));
          }
 
          await Task.WhenAll(userTasks);
@@ -89,6 +118,12 @@ public static class Program
       Console.WriteLine("└──────────┴─────────────────┴────────────────────┴─────────────────────┴──────────────────┴─────────────────┘");
       Console.WriteLine();
 
+      // Clean up pooled clients
+      foreach (var client in clientPool)
+      {
+         await client.DisposeAsync();
+      }
+
       GC.Collect();
       GC.WaitForPendingFinalizers();
       GC.Collect();
@@ -100,37 +135,11 @@ public static class Program
       Console.ResetColor();
    }
 
-   private static async Task SimulateSingleUserAsync(
-      EndPoint endPoint, string transportName, int userId, int messageCount)
+   private static async Task SimulateSingleUserWithPooledClientAsync(
+      INetworkClient client, EndPoint endPoint, int userId, int messageCount)
    {
-      INetworkClient? client = null;
       try
       {
-         if (transportName == "QUIC")
-         {
-            var quicOptions = new QuicTransportOptions
-            {
-               IdleTimeout = TimeSpan.FromSeconds(30),
-               HandshakeTimeout = TimeSpan.FromSeconds(5),
-               SslClientOptions = new SslClientAuthenticationOptions
-               {
-                  TargetHost = "localhost",
-                  RemoteCertificateValidationCallback = (_, _, _, _) => true
-               }
-            };
-            client = new QuicNetworkClient(quicOptions);
-         }
-         else if (transportName == "TCP")
-         {
-            client = new TcpNetworkClient(new TcpTransportOptions());
-         }
-         else if (transportName == "WS")
-         {
-            client = new WsNetworkClient(new WsTransportOptions());
-         }
-
-         if (client is null) return;
-
          var connectResult = await client.ConnectAsync(endPoint);
          if (connectResult.Failed || connectResult.Success is null) return;
 
@@ -160,13 +169,6 @@ public static class Program
       catch
       {
          // Ignored
-      }
-      finally
-      {
-         if (client is not null)
-         {
-            await client.DisposeAsync();
-         }
       }
    }
 }
