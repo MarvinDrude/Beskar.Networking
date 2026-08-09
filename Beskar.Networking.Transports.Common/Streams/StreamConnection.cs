@@ -197,11 +197,27 @@ public sealed class StreamConnection(
 
       Stop();
 
+      while (_readPipe.Reader.TryRead(out var result))
+      {
+         _readPipe.Reader.AdvanceTo(result.Buffer.End);
+      }
+
+      while (_writePipe.Reader.TryRead(out var writeResult))
+      {
+         _writePipe.Reader.AdvanceTo(writeResult.Buffer.End);
+      }
+
+      _readPipe.Writer.Complete();
+      _readPipe.Reader.Complete();
+
+      _writePipe.Writer.Complete();
+      _writePipe.Reader.Complete();
+
       _readPipe.Reset();
       _writePipe.Reset();
 
-      _readPipe = new Pipe(readOptions);
-      _writePipe = new Pipe(writeOptions);
+      //_readPipe = new Pipe(readOptions);
+      //_writePipe = new Pipe(writeOptions);
 
       InnerStream = null;
       AllowFlushOnStop = true;
