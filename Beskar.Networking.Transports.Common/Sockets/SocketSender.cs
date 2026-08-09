@@ -179,8 +179,13 @@ public sealed class SocketSender(PipeOptions pipeOptions)
 
       Stop();
 
+      if (Pipe.Reader.TryRead(out var result))
+      {
+         Pipe.Reader.AdvanceTo(result.Buffer.End);
+      }
+
       Pipe.Reset();
-      Pipe = new Pipe(pipeOptions);
+      //Pipe = new Pipe(pipeOptions);
 
       _connection = null;
       _socket = null;

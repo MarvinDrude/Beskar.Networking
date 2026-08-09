@@ -70,7 +70,7 @@ public class QuicTransportOptions
    /// The maximum idle timeout for the QUIC connection. Inactive connections will be closed automatically.
    /// Defaults to 30 seconds.
    /// </summary>
-   public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(5);
+   public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(60);
 
    /// <summary>
    /// The handshake timeout for the QUIC connection.
