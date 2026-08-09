@@ -20,6 +20,12 @@ public partial class MqttTopicGeneratorTests
         out ReadOnlySpan<char> sensorType);
 
     [GeneratedMqttTopic("devices/{deviceId}/sensors/{sensorType}")]
+    public static partial bool IsMatchSensorTopic(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("devices/{deviceId}/sensors/{sensorType}")]
+    public static partial bool IsMatchSensorTopic(ReadOnlySpan<byte> topic);
+
+    [GeneratedMqttTopic("devices/{deviceId}/sensors/{sensorType}")]
     public static partial bool TryParseSensorTopicBytes(
         ReadOnlySpan<byte> topic,
         out int deviceId,
@@ -201,6 +207,12 @@ public partial class MqttTopicGeneratorTests
         await Assert.That(hasThrowOpcode).IsTrue();
     }
 
+    [GeneratedMqttTopic("telemetry/{location}/data")]
+    public static partial bool IsMatchTelemetryTopic(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("telemetry/{location}/data")]
+    public static partial bool IsMatchTelemetryTopic(ReadOnlySpan<byte> topic);
+
     [Test]
     public async Task TryFormatNonAsciiTopicBytes_ShouldFormatCorrectly()
     {
@@ -211,5 +223,33 @@ public partial class MqttTopicGeneratorTests
 
         var formatted = Encoding.UTF8.GetString(buffer, 0, bytesWritten);
         await Assert.That(formatted).IsEqualTo("devices/äöü/status");
+    }
+
+    [Test]
+    public async Task IsMatch_WithCharSpan_ShouldMatchCorrectly()
+    {
+        await Assert.That(IsMatchSensorTopic("devices/42/sensors/temperature".AsSpan())).IsTrue();
+        await Assert.That(IsMatchSensorTopic("devices/999/sensors/pressure".AsSpan())).IsTrue();
+        await Assert.That(IsMatchSensorTopic("devices//sensors/temperature".AsSpan())).IsFalse();
+        await Assert.That(IsMatchSensorTopic("devices/42/sensors/".AsSpan())).IsFalse();
+        await Assert.That(IsMatchSensorTopic("invalid/42/sensors/temperature".AsSpan())).IsFalse();
+        await Assert.That(IsMatchSensorTopic("".AsSpan())).IsFalse();
+
+        await Assert.That(IsMatchTelemetryTopic("telemetry/room1/data".AsSpan())).IsTrue();
+        await Assert.That(IsMatchTelemetryTopic("telemetry//data".AsSpan())).IsFalse();
+    }
+
+    [Test]
+    public async Task IsMatch_WithByteSpan_ShouldMatchCorrectly()
+    {
+        await Assert.That(IsMatchSensorTopic("devices/42/sensors/temperature"u8)).IsTrue();
+        await Assert.That(IsMatchSensorTopic("devices/999/sensors/pressure"u8)).IsTrue();
+        await Assert.That(IsMatchSensorTopic("devices//sensors/temperature"u8)).IsFalse();
+        await Assert.That(IsMatchSensorTopic("devices/42/sensors/"u8)).IsFalse();
+        await Assert.That(IsMatchSensorTopic("invalid/42/sensors/temperature"u8)).IsFalse();
+        await Assert.That(IsMatchSensorTopic(""u8)).IsFalse();
+
+        await Assert.That(IsMatchTelemetryTopic("telemetry/room1/data"u8)).IsTrue();
+        await Assert.That(IsMatchTelemetryTopic("telemetry//data"u8)).IsFalse();
     }
 }

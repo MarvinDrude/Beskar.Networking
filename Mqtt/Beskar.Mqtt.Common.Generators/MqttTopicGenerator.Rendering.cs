@@ -101,7 +101,28 @@ public partial class MqttTopicGenerator
                      p.RefKind == "out" && string.Equals(p.Name, paramName, StringComparison.OrdinalIgnoreCase));
 
                if (argParam.Name is null)
+               {
+                  writer.WriteLineInterpolated($"// Validate dynamic segment for {{{paramName}}}");
+                  if (isLast)
+                  {
+                     writer.WriteLine(isByteSpan
+                        ? "if (remaining.IsEmpty || remaining.IndexOf((byte)'/') >= 0) return false;"
+                        : "if (remaining.IsEmpty || remaining.IndexOf('/') >= 0) return false;");
+                  }
+                  else
+                  {
+                     if (isByteSpan)
+                        writer.WriteLineInterpolated($"int nextSlash_{i} = remaining.IndexOf((byte)'/');");
+                     else
+                        writer.WriteLineInterpolated($"int nextSlash_{i} = remaining.IndexOf('/');");
+
+                     writer.WriteLineInterpolated($"if (nextSlash_{i} <= 0) return false;");
+                     writer.WriteLineInterpolated($"remaining = remaining.Slice(nextSlash_{i} + 1);");
+                  }
+
+                  if (isLast) writer.WriteLine("return true;");
                   continue;
+               }
 
                var name = argParam.Name;
                var outParamType = argParam.Type;
@@ -247,6 +268,8 @@ public partial class MqttTopicGenerator
 
          writer.WriteLine("return false;");
          writer.CloseBody();
+
+         GenerateIsMatchHelpers(writer, model);
 
          return writer.ToString();
       }
@@ -621,5 +644,163 @@ public partial class MqttTopicGenerator
       {
          writer.Dispose();
       }
+   }
+
+   private static void GenerateIsMatchHelpers(CodeTextWriter writer, GeneratedMethodModel model)
+   {
+      var methodName = model.MethodName;
+      var helperMethodName = methodName;
+
+      if (helperMethodName.StartsWith("TryFormat", StringComparison.OrdinalIgnoreCase))
+         helperMethodName = "IsMatch" + helperMethodName.Substring(9);
+      else if (helperMethodName.StartsWith("Format", StringComparison.OrdinalIgnoreCase))
+         helperMethodName = "IsMatch" + helperMethodName.Substring(6);
+      else if (helperMethodName.StartsWith("TryParse", StringComparison.OrdinalIgnoreCase))
+         helperMethodName = "IsMatch" + helperMethodName.Substring(8);
+      else if (helperMethodName.StartsWith("Parse", StringComparison.OrdinalIgnoreCase))
+         helperMethodName = "IsMatch" + helperMethodName.Substring(5);
+      else if (!helperMethodName.StartsWith("IsMatch", StringComparison.OrdinalIgnoreCase))
+         helperMethodName = "IsMatch" + helperMethodName;
+
+      var isSameName = string.Equals(methodName, helperMethodName, StringComparison.Ordinal);
+      if (isSameName)
+      {
+         return;
+      }
+
+      var modifiers = model.MethodModifiers.Replace("partial", "").Trim();
+      if (string.IsNullOrEmpty(modifiers)) modifiers = "public static";
+
+      writer.WriteLine();
+      GenerateIsMatchBody(writer, helperMethodName, model.Pattern, isByteSpan: false, modifiers);
+
+      writer.WriteLine();
+      GenerateIsMatchBody(writer, helperMethodName, model.Pattern, isByteSpan: true, modifiers);
+   }
+
+   private static void GenerateIsMatchBody(
+      CodeTextWriter writer,
+      string methodName,
+      string pattern,
+      bool isByteSpan,
+      string modifiers)
+   {
+      var paramType = isByteSpan ? "System.ReadOnlySpan<byte>" : "System.ReadOnlySpan<char>";
+      writer.WriteLineInterpolated($"{modifiers} bool {methodName}({paramType} topic)");
+      writer.OpenBody();
+
+      writer.WriteLine("if (topic.IsEmpty) return false;");
+      writer.WriteLine("var remaining = topic;");
+      writer.WriteLine();
+
+      var segments = pattern.Split('/');
+      var totalSegments = segments.Length;
+
+      for (var i = 0; i < totalSegments; i++)
+      {
+         var segment = segments[i];
+         var isLast = i == totalSegments - 1;
+         var nextIsWildcardHash = !isLast && segments[i + 1] == "#";
+
+         if (segment == "#")
+         {
+            writer.WriteLine("return true;");
+            break;
+         }
+
+         if (segment == "+")
+         {
+            if (isLast)
+            {
+               writer.WriteLine(isByteSpan
+                  ? "return !remaining.IsEmpty && remaining.IndexOf((byte)'/') < 0;"
+                  : "return !remaining.IsEmpty && remaining.IndexOf('/') < 0;");
+            }
+            else
+            {
+               writer.WriteLine(isByteSpan
+                  ? $"int nextSlash_{i} = remaining.IndexOf((byte)'/');"
+                  : $"int nextSlash_{i} = remaining.IndexOf('/');");
+
+               writer.WriteLineInterpolated($"if (nextSlash_{i} < 0) return false;");
+               writer.WriteLineInterpolated($"remaining = remaining.Slice(nextSlash_{i} + 1);");
+            }
+
+            continue;
+         }
+
+         if (segment.StartsWith("{") && segment.EndsWith("}"))
+         {
+            if (isLast)
+            {
+               writer.WriteLine(isByteSpan
+                  ? "return !remaining.IsEmpty && remaining.IndexOf((byte)'/') < 0;"
+                  : "return !remaining.IsEmpty && remaining.IndexOf('/') < 0;");
+            }
+            else
+            {
+               writer.WriteLine(isByteSpan
+                  ? $"int nextSlash_{i} = remaining.IndexOf((byte)'/');"
+                  : $"int nextSlash_{i} = remaining.IndexOf('/');");
+
+               writer.WriteLineInterpolated($"if (nextSlash_{i} <= 0) return false;");
+               writer.WriteLineInterpolated($"remaining = remaining.Slice(nextSlash_{i} + 1);");
+            }
+
+            continue;
+         }
+
+         var escapedSegment = SymbolDisplay.FormatLiteral(segment, true);
+         writer.WriteLineInterpolated($"// Match literal segment: {escapedSegment}");
+         if (isLast)
+         {
+            if (isByteSpan)
+            {
+               writer.WriteLineInterpolated($"return remaining.SequenceEqual({escapedSegment}u8);");
+            }
+            else
+            {
+               writer.WriteLineInterpolated($"return remaining.Equals({escapedSegment}, StringComparison.Ordinal);");
+            }
+         }
+         else if (nextIsWildcardHash)
+         {
+            var escapedSegmentSlash = SymbolDisplay.FormatLiteral(segment + "/", true);
+            if (isByteSpan)
+            {
+               writer.WriteLineInterpolated($"if (remaining.SequenceEqual({escapedSegment}u8)) return true;");
+               writer.WriteLineInterpolated($"if (!remaining.StartsWith({escapedSegmentSlash}u8)) return false;");
+            }
+            else
+            {
+               writer.WriteLineInterpolated(
+                  $"if (remaining.Equals({escapedSegment}, StringComparison.Ordinal)) return true;");
+               writer.WriteLineInterpolated(
+                  $"if (!remaining.StartsWith({escapedSegmentSlash}, StringComparison.Ordinal)) return false;");
+            }
+
+            var sliceLength = isByteSpan ? System.Text.Encoding.UTF8.GetByteCount(segment) + 1 : segment.Length + 1;
+            writer.WriteLineInterpolated($"remaining = remaining.Slice({sliceLength});");
+         }
+         else
+         {
+            var escapedSegmentSlash = SymbolDisplay.FormatLiteral(segment + "/", true);
+            if (isByteSpan)
+            {
+               var sliceLength = System.Text.Encoding.UTF8.GetByteCount(segment) + 1;
+               writer.WriteLineInterpolated($"if (!remaining.StartsWith({escapedSegmentSlash}u8)) return false;");
+               writer.WriteLineInterpolated($"remaining = remaining.Slice({sliceLength});");
+            }
+            else
+            {
+               writer.WriteLineInterpolated(
+                  $"if (!remaining.StartsWith({escapedSegmentSlash}, StringComparison.Ordinal)) return false;");
+               writer.WriteLineInterpolated($"remaining = remaining.Slice({segment.Length + 1});");
+            }
+         }
+      }
+
+      writer.WriteLine("return false;");
+      writer.CloseBody();
    }
 }

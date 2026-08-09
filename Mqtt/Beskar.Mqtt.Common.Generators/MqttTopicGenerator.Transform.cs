@@ -144,7 +144,9 @@ public partial class MqttTopicGenerator
          if (hasNamespace) writer.CloseBody();
 
          var typePrefix = string.Join("_", model.NestingTypes.Select(t => t.Name));
-         var hintName = $"{typePrefix}_{model.MethodName}.g.cs";
+         var rawHint = $"{typePrefix}_{model.MethodName}_{string.Join("_", model.Parameters.Select(p => p.Type))}";
+         var safeHint = new string(rawHint.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
+         var hintName = $"{safeHint}.g.cs";
 
          spc.AddSource(hintName, SourceText.From(writer.ToString(), Encoding.UTF8));
       }
