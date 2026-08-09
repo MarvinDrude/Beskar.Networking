@@ -806,5 +806,162 @@ public class TcpTransportTests
       var closedDelta = Volatile.Read(ref recordedConnectionsClosed) - initialClosed;
       await Assert.That(closedDelta).IsGreaterThanOrEqualTo(2);
    }
+
+   [Test]
+   public async Task TcpClientServer_SocketMode_AbruptDisconnectAndReconnect_DataExchangedSuccessfully()
+   {
+      var options = new TcpTransportOptions
+      {
+         ForceStreamBased = false
+      };
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      // Client 1 connects and exchanges initial message
+      var client1 = new TcpNetworkClient(options);
+      var connectResult1 = await client1.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult1.Failed).IsFalse();
+
+      var acceptResult1 = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult1.Failed).IsFalse();
+
+      var clientSession1 = connectResult1.Success!;
+      var serverSession1 = acceptResult1.Success!;
+
+      var clientStream1 = (await clientSession1.OpenStreamAsync()).Success!;
+      var serverStream1 = (await serverSession1.AcceptStreamAsync()).Success!;
+
+      var payload1 = "Message from Client 1"u8.ToArray();
+      await clientStream1.Transport.Output.WriteAsync(payload1);
+      await clientStream1.Transport.Output.FlushAsync();
+
+      var serverRead1 = await serverStream1.Transport.Input.ReadAsync();
+      await Assert.That(serverRead1.Buffer.ToArray()).IsEquivalentTo(payload1);
+      serverStream1.Transport.Input.AdvanceTo(serverRead1.Buffer.End);
+
+      // Client 1 abruptly disconnects (simulating abrupt socket closure)
+      await clientSession1.DisposeAsync();
+      await serverSession1.DisposeAsync();
+
+      // Client 2 connects to the server (reusing pooled connection in Socket mode)
+      var client2 = new TcpNetworkClient(options);
+      var connectResult2 = await client2.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult2.Failed).IsFalse();
+
+      var acceptResult2 = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult2.Failed).IsFalse();
+
+      var clientSession2 = connectResult2.Success!;
+      var serverSession2 = acceptResult2.Success!;
+
+      var clientStream2 = (await clientSession2.OpenStreamAsync()).Success!;
+      var serverStream2 = (await serverSession2.AcceptStreamAsync()).Success!;
+
+      // Client 2 sends payload
+      var payload2 = "Message from Client 2 after abrupt reconnect"u8.ToArray();
+      await clientStream2.Transport.Output.WriteAsync(payload2);
+      await clientStream2.Transport.Output.FlushAsync();
+
+      var serverRead2 = await serverStream2.Transport.Input.ReadAsync();
+      await Assert.That(serverRead2.Buffer.ToArray()).IsEquivalentTo(payload2);
+      serverStream2.Transport.Input.AdvanceTo(serverRead2.Buffer.End);
+
+      // Server echoes back to Client 2
+      var echoPayload = "Echo to Client 2"u8.ToArray();
+      await serverStream2.Transport.Output.WriteAsync(echoPayload);
+      await serverStream2.Transport.Output.FlushAsync();
+
+      var clientRead2 = await clientStream2.Transport.Input.ReadAsync();
+      await Assert.That(clientRead2.Buffer.ToArray()).IsEquivalentTo(echoPayload);
+      clientStream2.Transport.Input.AdvanceTo(clientRead2.Buffer.End);
+
+      // Cleanup
+      await clientSession2.DisposeAsync();
+      await serverSession2.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task TcpClientServer_SslStreamMode_AbruptDisconnectAndReconnect_DataExchangedSuccessfully()
+   {
+      using var certificate = CertificateUtility.GenerateSelfSignedCertificate();
+
+      var serverSslOptions = new SslServerAuthenticationOptions
+      {
+         ServerCertificate = certificate,
+         ClientCertificateRequired = false
+      };
+
+      var clientSslOptions = new SslClientAuthenticationOptions
+      {
+         TargetHost = "localhost",
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+      };
+
+      var options = new TcpTransportOptions
+      {
+         UseSsl = true,
+         SslServerOptions = serverSslOptions,
+         SslClientOptions = clientSslOptions
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      // Client 1 connects over SSL and exchanges data
+      var client1 = new TcpNetworkClient(options);
+      var connectResult1 = await client1.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult1.Failed).IsFalse();
+
+      var acceptResult1 = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult1.Failed).IsFalse();
+
+      var clientSession1 = connectResult1.Success!;
+      var serverSession1 = acceptResult1.Success!;
+
+      var clientStream1 = (await clientSession1.AcceptStreamAsync()).Success!;
+      var serverStream1 = (await serverSession1.AcceptStreamAsync()).Success!;
+
+      var payload1 = "SSL Message from Client 1"u8.ToArray();
+      await clientStream1.Transport.Output.WriteAsync(payload1);
+      await clientStream1.Transport.Output.FlushAsync();
+
+      var serverRead1 = await serverStream1.Transport.Input.ReadAsync();
+      await Assert.That(serverRead1.Buffer.ToArray()).IsEquivalentTo(payload1);
+      serverStream1.Transport.Input.AdvanceTo(serverRead1.Buffer.End);
+
+      // Client 1 abruptly disconnects
+      await clientSession1.DisposeAsync();
+      await serverSession1.DisposeAsync();
+
+      // Client 2 connects over SSL (reusing pooled stream connection)
+      var client2 = new TcpNetworkClient(options);
+      var connectResult2 = await client2.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult2.Failed).IsFalse();
+
+      var acceptResult2 = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult2.Failed).IsFalse();
+
+      var clientSession2 = connectResult2.Success!;
+      var serverSession2 = acceptResult2.Success!;
+
+      var clientStream2 = (await clientSession2.AcceptStreamAsync()).Success!;
+      var serverStream2 = (await serverSession2.AcceptStreamAsync()).Success!;
+
+      var payload2 = "SSL Message from Client 2 after abrupt reconnect"u8.ToArray();
+      await clientStream2.Transport.Output.WriteAsync(payload2);
+      await clientStream2.Transport.Output.FlushAsync();
+
+      var serverRead2 = await serverStream2.Transport.Input.ReadAsync();
+      await Assert.That(serverRead2.Buffer.ToArray()).IsEquivalentTo(payload2);
+      serverStream2.Transport.Input.AdvanceTo(serverRead2.Buffer.End);
+
+      // Cleanup
+      await clientSession2.DisposeAsync();
+      await serverSession2.DisposeAsync();
+      await listener.UnbindAsync();
+   }
 }
 

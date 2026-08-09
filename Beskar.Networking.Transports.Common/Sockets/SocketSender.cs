@@ -177,7 +177,11 @@ public sealed class SocketSender(PipeOptions pipeOptions)
          return false;
       }
 
-      Stop();
+      lock (_cts)
+      {
+         _stopped = true;
+         _cts.Cancel();
+      }
 
       try
       {
@@ -186,13 +190,13 @@ public sealed class SocketSender(PipeOptions pipeOptions)
          while (Pipe.Reader.TryRead(out var result))
          {
             Pipe.Reader.AdvanceTo(result.Buffer.End);
+            if (result.IsCompleted || result.Buffer.IsEmpty) break;
          }
       }
       catch (Exception) { /* ignored */ }
 
       Pipe.Reader.Complete();
       Pipe.Reset();
-      //Pipe = new Pipe(pipeOptions);
 
       _connection = null;
       _socket = null;

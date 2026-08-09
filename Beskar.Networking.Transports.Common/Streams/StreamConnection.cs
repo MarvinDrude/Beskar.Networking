@@ -195,33 +195,39 @@ public sealed class StreamConnection(
          return false;
       }
 
-      Stop();
+      lock (_lock)
+      {
+         _stopped = true;
+         _cts.Cancel();
+      }
 
       try
       {
          _readPipe.Writer.Complete();
-         _writePipe.Writer.Complete();
-
-         while (_readPipe.Reader.TryRead(out var result))
+         while (_readPipe.Reader.TryRead(out var rResult))
          {
-            _readPipe.Reader.AdvanceTo(result.Buffer.End);
+            _readPipe.Reader.AdvanceTo(rResult.Buffer.End);
+            if (rResult.IsCompleted || rResult.Buffer.IsEmpty) break;
          }
-
-         while (_writePipe.Reader.TryRead(out var writeResult))
-         {
-            _writePipe.Reader.AdvanceTo(writeResult.Buffer.End);
-         }
-
-         _readPipe.Reader.Complete();
-         _writePipe.Reader.Complete();
       }
-      catch (Exception) { /* ignored */ }
+      catch { /* ignored */ }
+
+      try
+      {
+         _writePipe.Writer.Complete();
+         while (_writePipe.Reader.TryRead(out var wResult))
+         {
+            _writePipe.Reader.AdvanceTo(wResult.Buffer.End);
+            if (wResult.IsCompleted || wResult.Buffer.IsEmpty) break;
+         }
+      }
+      catch { /* ignored */ }
+
+      _readPipe.Reader.Complete();
+      _writePipe.Reader.Complete();
 
       _readPipe.Reset();
       _writePipe.Reset();
-
-      //_readPipe = new Pipe(readOptions);
-      //_writePipe = new Pipe(writeOptions);
 
       InnerStream = null;
       AllowFlushOnStop = true;
