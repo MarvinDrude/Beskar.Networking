@@ -282,6 +282,9 @@ public sealed class QuicNetworkSession : INetworkSession
       await _ioQueueRegistry.ReturnAsync(connection);
    }
 
+   private readonly Lock _shutdownLock = new();
+   private Task? _closeTask;
+
    public async ValueTask DisposeAsync()
    {
       if (Interlocked.Exchange(ref _disposed, 1) == 1)
@@ -314,6 +317,21 @@ public sealed class QuicNetworkSession : INetworkSession
          }
       }
       _activeStreams.Clear();
+
+      try
+      {
+         lock (_shutdownLock)
+         {
+            // ReSharper disable once MethodSupportsCancellation
+            _closeTask ??= _connection.CloseAsync(_options.DefaultCloseErrorCode).AsTask();
+         }
+
+         await _closeTask;
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogNeutralWarning("QUIC Session {0}: Error closing connection: {1}", Id, ex.Message);
+      }
 
       try
       {
