@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
+using Beskar.Networking.Transports.Common.Options;
 
 namespace Beskar.Networking.Benchmarks.Common;
 
@@ -259,8 +260,9 @@ public static class GenericThroughputBenchmarkRunner
             var sentMbRate = diffSent / elapsedSeconds / (1024 * 1024);
             var receivedMbRate = diffReceived / elapsedSeconds / (1024 * 1024);
 
+            var poolStats = SharedTransportMemoryPool.GetStats();
             Console.WriteLine(
-               $"[{stopwatch.Elapsed:hh\\:mm\\:ss}] Sent: {sentMbRate:F2} MB/s | Received: {receivedMbRate:F2} MB/s");
+               $"[{stopwatch.Elapsed:hh\\:mm\\:ss}] Sent: {sentMbRate:F2} MB/s | Received: {receivedMbRate:F2} MB/s | Blocks [Rented: {poolStats.Rented:N0}, InStore: {poolStats.InStore:N0}, Created: {poolStats.Created:N0}]");
          }
       });
 
@@ -337,6 +339,8 @@ public static class GenericThroughputBenchmarkRunner
       var sentMsgRate = finalSentPackets / actualDuration;
       var receivedMsgRate = finalReceivedPackets / actualDuration;
 
+      var finalPoolStats = SharedTransportMemoryPool.GetStats();
+
       Console.ForegroundColor = ConsoleColor.Cyan;
       Console.WriteLine();
       Console.WriteLine("==================================================================");
@@ -346,6 +350,7 @@ public static class GenericThroughputBenchmarkRunner
       Console.WriteLine($"Actual Test Duration:    {actualDuration:F2} seconds");
       Console.WriteLine($"Total Packets Sent:      {finalSentPackets:N0}");
       Console.WriteLine($"Total Packets Received:  {finalReceivedPackets:N0}");
+      Console.WriteLine($"Memory Block Pool Stats: Rented: {finalPoolStats.Rented:N0} | InStore: {finalPoolStats.InStore:N0} | Created: {finalPoolStats.Created:N0}");
       Console.WriteLine();
       Console.ForegroundColor = ConsoleColor.Green;
       Console.WriteLine($"Average Sent Throughput: {sentMsgRate:F0} packets/s ({sentMbRate:F2} MB/s)");
