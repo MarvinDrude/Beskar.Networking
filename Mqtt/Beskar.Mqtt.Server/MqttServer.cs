@@ -241,8 +241,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             var session = await listener.AcceptSessionAsync(ct);
             if (session.Failed) continue;
 
-            _ = Task.Factory.StartNew(
-               () => RunClientTask(listener, session.Success, ct), TaskCreationOptions.PreferFairness);
+            _ = Task.Run(() => RunClientTask(listener, session.Success, ct), ct);
          }
          catch (Exception)
          {
