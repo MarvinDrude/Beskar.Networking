@@ -112,6 +112,9 @@
     <Project Path="Experiments/Beskar.Mqtt.JobUpdatesExperiment/Beskar.Mqtt.JobUpdatesExperiment.csproj" />
     <Project Path="Experiments/Beskar.Networking.ChurnBenchmark/Beskar.Networking.ChurnBenchmark.csproj" />
     <Project Path="Experiments/Beskar.Networking.ChurnRecoveryBenchmark/Beskar.Networking.ChurnRecoveryBenchmark.csproj" />
+    <Project Path="Experiments/Beskar.Networking.RealWorldWavesBenchmark/Beskar.Networking.RealWorldWavesBenchmark.csproj" />
+    <Project Path="Experiments/Beskar.Networking.RealWorldWavesServer/Beskar.Networking.RealWorldWavesServer.csproj" />
+    <Project Path="Experiments/Beskar.Networking.RealWorldWavesClient/Beskar.Networking.RealWorldWavesClient.csproj" />
   </Folder>
   <Folder Name="/Mqtt/">
     <Project Path="Mqtt/Beskar.Mqtt.Client/Beskar.Mqtt.Client.csproj" />

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>Exe</OutputType>
+      <IsPackable>false</IsPackable>
+      <TargetFramework>net10.0</TargetFramework>
+      <ImplicitUsings>enable</ImplicitUsings>
+      <Nullable>enable</Nullable>
+   </PropertyGroup>
+
+   <ItemGroup>
+     <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+     <ProjectReference Include="..\..\Beskar.Networking.Transports.Quic\Beskar.Networking.Transports.Quic.csproj" />
+     <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj" />
+     <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj" />
+     <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Console\Beskar.Utilities.Console.csproj" />
+     <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
+   </ItemGroup>
+
+</Project>
