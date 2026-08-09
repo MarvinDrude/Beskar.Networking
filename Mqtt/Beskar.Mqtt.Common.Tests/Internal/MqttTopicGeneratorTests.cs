@@ -252,4 +252,120 @@ public partial class MqttTopicGeneratorTests
         await Assert.That(IsMatchTelemetryTopic("telemetry/room1/data"u8)).IsTrue();
         await Assert.That(IsMatchTelemetryTopic("telemetry//data"u8)).IsFalse();
     }
+
+    [GeneratedMqttTopic("sensors/+/temperature")]
+    public static partial bool IsMatchSingleWildcardMiddle(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("sensors/+/temperature")]
+    public static partial bool IsMatchSingleWildcardMiddle(ReadOnlySpan<byte> topic);
+
+    [GeneratedMqttTopic("+/status")]
+    public static partial bool IsMatchSingleWildcardStart(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("+/status")]
+    public static partial bool IsMatchSingleWildcardStart(ReadOnlySpan<byte> topic);
+
+    [GeneratedMqttTopic("devices/+")]
+    public static partial bool IsMatchSingleWildcardEnd(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("devices/+")]
+    public static partial bool IsMatchSingleWildcardEnd(ReadOnlySpan<byte> topic);
+
+    [GeneratedMqttTopic("finance/#")]
+    public static partial bool IsMatchMultiWildcard(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("finance/#")]
+    public static partial bool IsMatchMultiWildcard(ReadOnlySpan<byte> topic);
+
+    [GeneratedMqttTopic("#")]
+    public static partial bool IsMatchRootWildcard(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("#")]
+    public static partial bool IsMatchRootWildcard(ReadOnlySpan<byte> topic);
+
+    [GeneratedMqttTopic("building/+/floor/+/room/#")]
+    public static partial bool IsMatchCombinedWildcards(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("building/+/floor/+/room/#")]
+    public static partial bool IsMatchCombinedWildcards(ReadOnlySpan<byte> topic);
+
+    [Test]
+    public async Task IsMatch_WildcardsCharSpan_ShouldMatchCorrectly()
+    {
+        // Single wildcard + in middle
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors/room1/temperature".AsSpan())).IsTrue();
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors/building2/temperature".AsSpan())).IsTrue();
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors//temperature".AsSpan())).IsFalse();
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors/room1/sub/temperature".AsSpan())).IsFalse();
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors/temperature".AsSpan())).IsFalse();
+
+        // Single wildcard + at start
+        await Assert.That(IsMatchSingleWildcardStart("device1/status".AsSpan())).IsTrue();
+        await Assert.That(IsMatchSingleWildcardStart("device2/status".AsSpan())).IsTrue();
+        await Assert.That(IsMatchSingleWildcardStart("device1/sub/status".AsSpan())).IsFalse();
+        await Assert.That(IsMatchSingleWildcardStart("status".AsSpan())).IsFalse();
+
+        // Single wildcard + at end
+        await Assert.That(IsMatchSingleWildcardEnd("devices/1".AsSpan())).IsTrue();
+        await Assert.That(IsMatchSingleWildcardEnd("devices/abc".AsSpan())).IsTrue();
+        await Assert.That(IsMatchSingleWildcardEnd("devices/1/2".AsSpan())).IsFalse();
+        await Assert.That(IsMatchSingleWildcardEnd("devices/".AsSpan())).IsFalse();
+
+        // Multi wildcard #
+        await Assert.That(IsMatchMultiWildcard("finance".AsSpan())).IsTrue();
+        await Assert.That(IsMatchMultiWildcard("finance/".AsSpan())).IsTrue();
+        await Assert.That(IsMatchMultiWildcard("finance/stocks".AsSpan())).IsTrue();
+        await Assert.That(IsMatchMultiWildcard("finance/stocks/nasdaq/aapl".AsSpan())).IsTrue();
+        await Assert.That(IsMatchMultiWildcard("financial/stocks".AsSpan())).IsFalse();
+
+        // Root wildcard #
+        await Assert.That(IsMatchRootWildcard("anything".AsSpan())).IsTrue();
+        await Assert.That(IsMatchRootWildcard("a/b/c/d".AsSpan())).IsTrue();
+
+        // Combined wildcards + and #
+        await Assert.That(IsMatchCombinedWildcards("building/A/floor/3/room/101".AsSpan())).IsTrue();
+        await Assert.That(IsMatchCombinedWildcards("building/A/floor/3/room/101/sensor/temp".AsSpan())).IsTrue();
+        await Assert.That(IsMatchCombinedWildcards("building/A/floor/3/room".AsSpan())).IsTrue();
+        await Assert.That(IsMatchCombinedWildcards("building/A/floor/room/101".AsSpan())).IsFalse();
+    }
+
+    [Test]
+    public async Task IsMatch_WildcardsByteSpan_ShouldMatchCorrectly()
+    {
+        // Single wildcard + in middle
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors/room1/temperature"u8)).IsTrue();
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors/building2/temperature"u8)).IsTrue();
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors//temperature"u8)).IsFalse();
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors/room1/sub/temperature"u8)).IsFalse();
+        await Assert.That(IsMatchSingleWildcardMiddle("sensors/temperature"u8)).IsFalse();
+
+        // Single wildcard + at start
+        await Assert.That(IsMatchSingleWildcardStart("device1/status"u8)).IsTrue();
+        await Assert.That(IsMatchSingleWildcardStart("device2/status"u8)).IsTrue();
+        await Assert.That(IsMatchSingleWildcardStart("device1/sub/status"u8)).IsFalse();
+        await Assert.That(IsMatchSingleWildcardStart("status"u8)).IsFalse();
+
+        // Single wildcard + at end
+        await Assert.That(IsMatchSingleWildcardEnd("devices/1"u8)).IsTrue();
+        await Assert.That(IsMatchSingleWildcardEnd("devices/abc"u8)).IsTrue();
+        await Assert.That(IsMatchSingleWildcardEnd("devices/1/2"u8)).IsFalse();
+        await Assert.That(IsMatchSingleWildcardEnd("devices/"u8)).IsFalse();
+
+        // Multi wildcard #
+        await Assert.That(IsMatchMultiWildcard("finance"u8)).IsTrue();
+        await Assert.That(IsMatchMultiWildcard("finance/"u8)).IsTrue();
+        await Assert.That(IsMatchMultiWildcard("finance/stocks"u8)).IsTrue();
+        await Assert.That(IsMatchMultiWildcard("finance/stocks/nasdaq/aapl"u8)).IsTrue();
+        await Assert.That(IsMatchMultiWildcard("financial/stocks"u8)).IsFalse();
+
+        // Root wildcard #
+        await Assert.That(IsMatchRootWildcard("anything"u8)).IsTrue();
+        await Assert.That(IsMatchRootWildcard("a/b/c/d"u8)).IsTrue();
+
+        // Combined wildcards + and #
+        await Assert.That(IsMatchCombinedWildcards("building/A/floor/3/room/101"u8)).IsTrue();
+        await Assert.That(IsMatchCombinedWildcards("building/A/floor/3/room/101/sensor/temp"u8)).IsTrue();
+        await Assert.That(IsMatchCombinedWildcards("building/A/floor/3/room"u8)).IsTrue();
+        await Assert.That(IsMatchCombinedWildcards("building/A/floor/room/101"u8)).IsFalse();
+    }
 }

@@ -83,7 +83,7 @@ public partial class MqttTopicGenerator
                      ? $"int nextSlash_{i} = remaining.IndexOf((byte)'/');"
                      : $"int nextSlash_{i} = remaining.IndexOf('/');");
 
-                  writer.WriteLineInterpolated($"if (nextSlash_{i} < 0) return false;");
+                  writer.WriteLineInterpolated($"if (nextSlash_{i} <= 0) return false;");
                   writer.WriteLineInterpolated($"remaining = remaining.Slice(nextSlash_{i} + 1);");
                }
 
@@ -722,7 +722,7 @@ public partial class MqttTopicGenerator
                   ? $"int nextSlash_{i} = remaining.IndexOf((byte)'/');"
                   : $"int nextSlash_{i} = remaining.IndexOf('/');");
 
-               writer.WriteLineInterpolated($"if (nextSlash_{i} < 0) return false;");
+               writer.WriteLineInterpolated($"if (nextSlash_{i} <= 0) return false;");
                writer.WriteLineInterpolated($"remaining = remaining.Slice(nextSlash_{i} + 1);");
             }
 
