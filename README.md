@@ -249,7 +249,7 @@ For more details, see the [Resilient Documentation](https://github.com/MarvinDru
 and string formatting overhead to compile-time:
 
 * **`[GenerateFramingProtocol]` (`FramingProtocolGenerator`)**: Zero-boilerplate compilation of custom wire framing protocols.
-* **`[GeneratedMqttTopic]` (`MqttTopicGenerator`)**: Compile-time MQTT topic path validation and generation of zero-allocation `ReadOnlySpan<byte>` publishing overloads.
+* **`[GeneratedMqttTopic]` (`MqttTopicGenerator`)**: Compile-time MQTT topic path validation, zero-allocation topic matching (`IsMatch`), and generation of zero-allocation `ReadOnlySpan<byte>` publishing overloads.
 
 ---
 

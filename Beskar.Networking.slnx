@@ -41,6 +41,7 @@
     <File Path="Documentation/Mqtt/Reconnection.md" />
     <File Path="Documentation/Mqtt/DisconnectionSafety.md" />
     <File Path="Documentation/Mqtt/LastWill.md" />
+    <File Path="Documentation/Mqtt/TopicGenerator.md" />
     <File Path="Documentation/Mqtt/UserProperties.md" />
     <File Path="Documentation/Mqtt/TopicAliases.md" />
   </Folder>

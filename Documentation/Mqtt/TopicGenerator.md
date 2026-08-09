@@ -56,13 +56,28 @@ public static string FormatStatus(int deviceId, bool isOk);
 * **Under the Hood**: Uses `TextWriterIndentSlim` with a stack-allocated buffer of 256 characters.
 * **Benefits**: Allocation-free formatting up to the stack buffer size, returning only the final constructed string.
 
-### B. Byte Array-Returning Helper (Preferred)
+### C. Zero-Allocation Topic Matching (`IsMatch`)
+For every topic pattern declaration (or explicit `IsMatch` partial method), the generator outputs zero-allocation
+topic matching method overloads for both `ReadOnlySpan<char>` and `ReadOnlySpan<byte>`:
+
 ```csharp
-public static byte[] FormatStatusToBytes(int deviceId, bool isOk);
+public static bool IsMatchStatus(ReadOnlySpan<char> topic);
+public static bool IsMatchStatus(ReadOnlySpan<byte> topic);
 ```
-* **Under the Hood**: Uses `BufferWriter<byte>` with a stack-allocated buffer of 256 bytes (automatically resizing if exceeded).
-Primitives are written natively using `Utf8Formatter.TryFormat`, strings are converted to UTF-8 in-place, and literals use `u8` string constants.
-* **Benefits**: Zero temporary allocations, returning only the final `byte[]`.
+
+You can also declare explicit `IsMatch` partial methods directly for custom topic matcher routines (including wildcard patterns `#` and `+`):
+
+```csharp
+[GeneratedMqttTopic("alerts/+/critical/#")]
+public static partial bool IsCriticalAlert(ReadOnlySpan<char> topic);
+
+[GeneratedMqttTopic("alerts/+/critical/#")]
+public static partial bool IsCriticalAlert(ReadOnlySpan<byte> topic);
+```
+
+* **Under the Hood**: Operates entirely via zero-allocation span slicing and character/byte boundary comparisons (`IndexOf('/')`, `StartsWith`, `Equals`, `SequenceEqual`).
+* **Supported Patterns**: Dynamic placeholders (`{deviceId}`), single-level wildcards (`+`), multi-level wildcards (`#`), and literal paths.
+* **Benefits**: Evaluates incoming topic strings or `u8` UTF-8 byte spans with **zero heap allocations**.
 
 ---
 
@@ -91,9 +106,9 @@ await publisherClient.PublishAsync(publishOptions);
 
 ---
 
-## 4. Wildcard Subscriptions and Parsing Example
+## 4. Wildcard Subscriptions and Zero-Allocation Matching Example
 
-Below is a typical real-time telemetry processing loop demonstrating wildcard subscriptions and generated topic matching:
+Below is a typical real-time telemetry processing loop demonstrating wildcard subscriptions, zero-allocation topic matching (`IsMatch`), and generated parameter parsing (`TryParse`):
 
 > [!NOTE]
 > Usually it is preferable to use the payload for data and not put everything in the topic like here.
@@ -109,12 +124,15 @@ await subscriberClient.SubscribeAsync(subscribeOptions);
 subscriberClient.AddMessageReceiveHandler((context, ct) =>
 {
    var topicSpan = context.Message.Topic.AsSpan();
-   var payload = Encoding.UTF8.GetString(context.Message.Payload.Span);
 
-   // Parse topic fields using the generated TryParse method
-   if (Topics.TryParseStatus(topicSpan, out var deviceId, out var isOk))
+   // Fast zero-allocation check before parsing
+   if (Topics.IsMatchStatus(topicSpan))
    {
-      Console.WriteLine($"Device {deviceId} status updated: IsOk = {isOk}");
+      // Parse topic fields using the generated TryParse method
+      if (Topics.TryParseStatus(topicSpan, out var deviceId, out var isOk))
+      {
+         Console.WriteLine($"Device {deviceId} status updated: IsOk = {isOk}");
+      }
    }
 
    return ValueTask.CompletedTask;
