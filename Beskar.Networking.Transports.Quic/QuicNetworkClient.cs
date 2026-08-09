@@ -14,8 +14,7 @@ namespace Beskar.Networking.Transports.Quic;
 /// <summary>
 /// A high-performance QUIC client implementation built on native System.Net.Quic.
 /// </summary>
-public sealed class QuicNetworkClient(QuicTransportOptions options)
-   : INetworkClient
+public sealed class QuicNetworkClient : INetworkClient
 {
    public TransportKind Transport => TransportKind.Quic;
 
@@ -37,10 +36,22 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
       ConnectionsLost = Interlocked.Read(ref _connectionsLost)
    };
 
-   private readonly QuicTransportOptions _options = options;
-   private readonly QuicIoQueueRegistry _ioQueueRegistry = new(options);
+   private readonly QuicTransportOptions _options;
+   private readonly QuicIoQueueRegistry _ioQueueRegistry;
+   private readonly SslClientAuthenticationOptions _clientAuthOptions;
 
    private QuicNetworkSession? _activeSession;
+
+   public QuicNetworkClient(QuicTransportOptions options)
+   {
+      _options = options;
+      _ioQueueRegistry = new QuicIoQueueRegistry(options);
+      _clientAuthOptions = options.SslClientOptions ?? new SslClientAuthenticationOptions();
+
+      var alpn = new SslApplicationProtocol(_options.AlpnProtocol);
+      _clientAuthOptions.ApplicationProtocols ??= [alpn];
+      _clientAuthOptions.RemoteCertificateValidationCallback ??= (sender, cert, chain, errors) => true;
+   }
 
    /// <inheritdoc />
    public async ValueTask<Result<INetworkSession, NetworkCodeError>> ConnectAsync(
@@ -54,12 +65,6 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
       try
       {
          TraceLogger.LogClientInfo("QUIC ConnectAsync: Initiating QUIC connection to {0} (ALPN: {1})", endPoint, _options.AlpnProtocol);
-         var alpn = new SslApplicationProtocol(_options.AlpnProtocol);
-
-         var clientAuthOptions = _options.SslClientOptions ?? new SslClientAuthenticationOptions();
-
-         clientAuthOptions.ApplicationProtocols ??= [alpn];
-         clientAuthOptions.RemoteCertificateValidationCallback ??= (sender, cert, chain, errors) => true;
 
          var clientOptions = new QuicClientConnectionOptions
          {
@@ -68,7 +73,7 @@ public sealed class QuicNetworkClient(QuicTransportOptions options)
             DefaultCloseErrorCode = _options.DefaultCloseErrorCode,
             MaxInboundBidirectionalStreams = _options.MaxInboundBidirectionalStreams,
             MaxInboundUnidirectionalStreams = _options.MaxInboundUnidirectionalStreams,
-            ClientAuthenticationOptions = clientAuthOptions,
+            ClientAuthenticationOptions = _clientAuthOptions,
             IdleTimeout = _options.IdleTimeout,
             HandshakeTimeout = _options.HandshakeTimeout
          };

@@ -87,30 +87,27 @@ public sealed class QuicNetworkListener(
             serverAuthOptions.ServerCertificate = _generatedCertificate;
          }
 
+         var serverConnectionOptions = new QuicServerConnectionOptions
+         {
+            DefaultStreamErrorCode = _options.DefaultStreamErrorCode,
+            DefaultCloseErrorCode = _options.DefaultCloseErrorCode,
+            MaxInboundBidirectionalStreams = _options.MaxInboundBidirectionalStreams,
+            MaxInboundUnidirectionalStreams = _options.MaxInboundUnidirectionalStreams,
+            ServerAuthenticationOptions = serverAuthOptions,
+            IdleTimeout = _options.IdleTimeout,
+            HandshakeTimeout = _options.HandshakeTimeout
+         };
+
+         if (_options.KeepAliveInterval.HasValue)
+         {
+            serverConnectionOptions.KeepAliveInterval = _options.KeepAliveInterval.Value;
+         }
+
          var listenerOptions = new QuicListenerOptions
          {
             ListenEndPoint = ipEndPoint,
             ApplicationProtocols = [alpn],
-            ConnectionOptionsCallback = (connection, helloInfo, token) =>
-            {
-               var serverOptions = new QuicServerConnectionOptions
-               {
-                  DefaultStreamErrorCode = _options.DefaultStreamErrorCode,
-                  DefaultCloseErrorCode = _options.DefaultCloseErrorCode,
-                  MaxInboundBidirectionalStreams = _options.MaxInboundBidirectionalStreams,
-                  MaxInboundUnidirectionalStreams = _options.MaxInboundUnidirectionalStreams,
-                  ServerAuthenticationOptions = serverAuthOptions,
-                  IdleTimeout = _options.IdleTimeout,
-                  HandshakeTimeout = _options.HandshakeTimeout
-               };
-
-               if (_options.KeepAliveInterval.HasValue)
-               {
-                  serverOptions.KeepAliveInterval = _options.KeepAliveInterval.Value;
-               }
-
-               return ValueTask.FromResult(serverOptions);
-            }
+            ConnectionOptionsCallback = (_, _, _) => ValueTask.FromResult(serverConnectionOptions)
          };
 
          _listener = await QuicListener.ListenAsync(listenerOptions, ct);

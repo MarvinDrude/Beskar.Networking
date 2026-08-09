@@ -158,6 +158,11 @@ public static class Program
                cert = CertificateHelper.GenerateSelfSignedCertificate();
                var quicOptions = new QuicTransportOptions
                {
+                  IdleTimeout = TimeSpan.FromSeconds(5),
+                  HandshakeTimeout = TimeSpan.FromSeconds(3),
+                  MaxPendingConnections = 64,
+                  MaxInboundBidirectionalStreams = 10,
+                  MaxInboundUnidirectionalStreams = 10,
                   SslServerOptions = new SslServerAuthenticationOptions
                   {
                      ServerCertificate = cert

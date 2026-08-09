@@ -115,6 +115,15 @@ public sealed class QuicNetworkStream : INetworkStream
          // Ignored
       }
 
+      try
+      {
+         await _quicStream.DisposeAsync();
+      }
+      catch
+      {
+         // Ignored
+      }
+
       await _session.ReturnConnectionAsync(this, _connection);
    }
 }
