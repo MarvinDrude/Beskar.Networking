@@ -7,6 +7,7 @@ using Beskar.Networking.Transports.Memory;
 
 namespace Beskar.Networking.Transports.Memory.Tests;
 
+[NotInParallel]
 public class MemoryTransportTests
 {
    [Test]

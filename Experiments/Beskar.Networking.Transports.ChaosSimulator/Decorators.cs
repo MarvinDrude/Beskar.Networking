@@ -11,6 +11,7 @@ using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Threading;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.ChaosSimulator;
 
@@ -34,6 +35,7 @@ public sealed class ChaosNetworkClient(INetworkClient inner, ChaosOptions option
    {
       if (Random.Shared.NextDouble() < _options.ConnectFailureRate)
       {
+         TransportMetrics.RecordConnectionFailed(Transport, "ChaosDesignatedConnectFailure");
          return new NetworkCodeError(-100, "Chaos: Connection attempt failed by design.");
       }
 
@@ -172,6 +174,11 @@ public sealed class ChaosNetworkSession : INetworkSession
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(ChaosNetworkSession));
+      }
+
       using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _sessionClosedCts.Token);
 
       if (Random.Shared.NextDouble() < _options.StreamOpenFailureRate)
@@ -206,6 +213,11 @@ public sealed class ChaosNetworkSession : INetworkSession
       NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(ChaosNetworkSession));
+      }
+
       using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _sessionClosedCts.Token);
 
       // Simulate stream open failures/delays

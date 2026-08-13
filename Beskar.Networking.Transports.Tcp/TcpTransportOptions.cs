@@ -1,5 +1,6 @@
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using Beskar.Networking.Transports.Common.Options;
 
 namespace Beskar.Networking.Transports.Tcp;
@@ -99,4 +100,89 @@ public class TcpTransportOptions
    /// Defaults to 10 seconds.
    /// </summary>
    public TimeSpan SslHandshakeTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+   /// <summary>
+   /// Whether to enable TCP keep-alive probes. Defaults to false.
+   /// </summary>
+   public bool KeepAlive { get; set; }
+
+   /// <summary>
+   /// The number of seconds a connection will remain idle before the first keep-alive probe is sent.
+   /// Set null to use the OS default.
+   /// </summary>
+   public int? KeepAliveTime { get; set; }
+
+   /// <summary>
+   /// The number of seconds between subsequent keep-alive probes if no acknowledgment is received.
+   /// Set null to use the OS default.
+   /// </summary>
+   public int? KeepAliveInterval { get; set; }
+
+   /// <summary>
+   /// The number of keep-alive probes to send before the connection is declared dead.
+   /// Set null to use the OS default.
+   /// </summary>
+   public int? KeepAliveRetryCount { get; set; }
+
+   /// <summary>
+   /// Whether a client certificate is required for SSL/TLS connections.
+   /// If configured, overrides SslServerOptions.ClientCertificateRequired.
+   /// </summary>
+   public bool? ClientCertificateRequired { get; set; }
+
+   /// <summary>
+   /// A custom callback to validate client certificates.
+   /// If configured, overrides SslServerOptions.RemoteCertificateValidationCallback.
+   /// </summary>
+   public RemoteCertificateValidationCallback? ClientCertificateValidationCallback { get; set; }
+
+   /// <summary>
+   /// The certificate revocation mode for client certificate validation.
+   /// If configured, overrides SslServerOptions.CertificateRevocationMode.
+   /// </summary>
+   public X509RevocationMode? ClientCertificateRevocationMode { get; set; }
+
+   /// <summary>
+   /// Configures standard TCP socket options on the specified socket.
+   /// </summary>
+   /// <param name="socket">The socket to configure.</param>
+   public void ConfigureSocket(Socket socket)
+   {
+      if (NoDelay)
+      {
+         socket.NoDelay = true;
+      }
+      if (SendBufferSize.HasValue)
+      {
+         socket.SendBufferSize = SendBufferSize.Value;
+      }
+      if (ReceiveBufferSize.HasValue)
+      {
+         socket.ReceiveBufferSize = ReceiveBufferSize.Value;
+      }
+      if (LingerState is not null)
+      {
+         socket.LingerState = LingerState;
+      }
+
+      if (KeepAlive || KeepAliveTime.HasValue || KeepAliveInterval.HasValue || KeepAliveRetryCount.HasValue)
+      {
+         socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+
+         if (KeepAliveTime.HasValue)
+         {
+            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, KeepAliveTime.Value);
+         }
+
+         if (KeepAliveInterval.HasValue)
+         {
+            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, KeepAliveInterval.Value);
+         }
+
+         if (KeepAliveRetryCount.HasValue)
+         {
+            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, KeepAliveRetryCount.Value);
+         }
+      }
+   }
 }

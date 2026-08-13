@@ -114,6 +114,62 @@ public static class TransportMetrics
       "{block}",
       "Current count of active rented memory pool blocks.");
 
+    /// <summary>
+    /// Current count of active listeners.
+    /// </summary>
+    public static readonly UpDownCounter<long> ListenersActive = Meter.CreateUpDownCounter<long>(
+       "beskar.transport.listeners.active",
+       "{listener}",
+       "Current count of active bound listener sockets.");
+
+    /// <summary>
+    /// Total failed connection or accept attempts.
+    /// </summary>
+    public static readonly Counter<long> ConnectionsFailed = Meter.CreateCounter<long>(
+       "beskar.transport.connections.failed",
+       "{connection}",
+       "Total failed connection or accept attempts.");
+
+    /// <summary>
+    /// Duration of TLS handshakes.
+    /// </summary>
+    public static readonly Histogram<double> TlsHandshakeDuration = Meter.CreateHistogram<double>(
+       "beskar.transport.tls.handshake.duration",
+       "ms",
+       "Duration of TLS handshakes.");
+
+    /// <summary>
+    /// Total failed TLS handshakes.
+    /// </summary>
+    public static readonly Counter<long> TlsHandshakeFailures = Meter.CreateCounter<long>(
+       "beskar.transport.tls.handshake.failures",
+       "{failure}",
+       "Total failed TLS handshakes.");
+
+    /// <summary>
+    /// Duration of WebSocket upgrade handshakes.
+    /// </summary>
+    public static readonly Histogram<double> WsHandshakeDuration = Meter.CreateHistogram<double>(
+       "beskar.transport.ws.handshake.duration",
+       "ms",
+       "Duration of WebSocket upgrade handshakes.");
+
+    /// <summary>
+    /// Total failed WebSocket upgrade handshakes.
+    /// </summary>
+    public static readonly Counter<long> WsHandshakeFailures = Meter.CreateCounter<long>(
+       "beskar.transport.ws.handshake.failures",
+       "{failure}",
+       "Total failed WebSocket upgrade handshakes.");
+
+    /// <summary>
+    /// Total number of UDP packets dropped due to full pipeline buffer.
+    /// </summary>
+    public static readonly Counter<long> UdpPacketsDropped = Meter.CreateCounter<long>(
+       "beskar.transport.udp.packets.dropped",
+       "{packet}",
+       "Total number of UDP packets dropped due to full pipeline buffer.");
+
    private static readonly KeyValuePair<string, object?>[][] TransportTags = [
       [new KeyValuePair<string, object?>("transport", "unknown")],
       [new KeyValuePair<string, object?>("transport", "tcp")],
@@ -232,6 +288,73 @@ public static class TransportMetrics
       if (MemoryPoolBlocksActive.Enabled)
       {
          MemoryPoolBlocksActive.Add(-1);
+      }
+   }
+
+   public static void RecordListenerStarted(TransportKind kind)
+   {
+      if (ListenersActive.Enabled)
+      {
+         ListenersActive.Add(1, GetTransportTags(kind));
+      }
+   }
+
+   public static void RecordListenerStopped(TransportKind kind)
+   {
+      if (ListenersActive.Enabled)
+      {
+         ListenersActive.Add(-1, GetTransportTags(kind));
+      }
+   }
+
+   public static void RecordConnectionFailed(TransportKind kind, string failureReason)
+   {
+      if (ConnectionsFailed.Enabled)
+      {
+         var tags = GetTransportTags(kind);
+         ConnectionsFailed.Add(1,
+            tags[0],
+            new KeyValuePair<string, object?>("failure", failureReason));
+      }
+   }
+
+   public static void RecordTlsHandshakeDuration(double milliseconds)
+   {
+      if (TlsHandshakeDuration.Enabled)
+      {
+         TlsHandshakeDuration.Record(milliseconds);
+      }
+   }
+
+   public static void RecordTlsHandshakeFailure(string failureReason)
+   {
+      if (TlsHandshakeFailures.Enabled)
+      {
+         TlsHandshakeFailures.Add(1, new KeyValuePair<string, object?>("failure", failureReason));
+      }
+   }
+
+   public static void RecordWsHandshakeDuration(double milliseconds)
+   {
+      if (WsHandshakeDuration.Enabled)
+      {
+         WsHandshakeDuration.Record(milliseconds);
+      }
+   }
+
+   public static void RecordWsHandshakeFailure(string failureReason)
+   {
+      if (WsHandshakeFailures.Enabled)
+      {
+         WsHandshakeFailures.Add(1, new KeyValuePair<string, object?>("failure", failureReason));
+      }
+   }
+
+   public static void RecordUdpPacketDropped()
+   {
+      if (UdpPacketsDropped.Enabled)
+      {
+         UdpPacketsDropped.Add(1);
       }
    }
 }

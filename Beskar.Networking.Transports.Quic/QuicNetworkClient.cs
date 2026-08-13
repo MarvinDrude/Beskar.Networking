@@ -8,6 +8,7 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Quic;
 
@@ -118,11 +119,13 @@ public sealed class QuicNetworkClient : INetworkClient
       }
       catch (QuicException ex)
       {
+         TransportMetrics.RecordConnectionFailed(TransportKind.Quic, ex.QuicError.ToString());
          TraceLogger.LogClientError("QUIC ConnectAsync: QUIC exception connecting to {0} (Code: {1}): {2}", endPoint, (int)ex.QuicError, ex.Message);
          return new NetworkCodeError((int)ex.QuicError, ex.Message);
       }
       catch (Exception ex)
       {
+         TransportMetrics.RecordConnectionFailed(TransportKind.Quic, ex.GetType().Name);
          TraceLogger.LogClientError("QUIC ConnectAsync: Unexpected exception connecting to {0}: {1}", endPoint, ex.Message);
          return new NetworkCodeError(-1, ex.Message);
       }

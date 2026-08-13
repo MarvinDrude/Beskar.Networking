@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Generic;
 using System.IO.Pipelines;
 using System.Net;
 using System.Security.Cryptography;
@@ -49,7 +50,7 @@ public static class WsHandshake
    /// <summary>
    /// Performs the server-side HTTP/1.1 WebSocket upgrade handshake.
    /// </summary>
-   public static async Task<string?> ServerHandshakeAsync(
+   public static async Task<(string? AcceptKey, Dictionary<string, string>? Headers, Dictionary<string, string>? Cookies)> ServerHandshakeAsync(
       IDuplexPipe tcpPipe,
       WsTransportOptions options,
       CancellationToken ct)
@@ -69,29 +70,59 @@ public static class WsHandshake
       catch (OperationCanceledException)
       {
          TraceLogger.LogServerError("WS Handshake: Failed to read HTTP headers. Handshake timed out.");
-         return null;
+         return (null, null, null);
       }
 
       if (headersText == null)
       {
          TraceLogger.LogServerError("WS Handshake: Failed to read HTTP headers from client or headers exceeded limits.");
-         return null;
+         return (null, null, null);
       }
 
-      var lines = headersText.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
-      if (lines.Length == 0 || !lines[0].StartsWith("GET ", StringComparison.OrdinalIgnoreCase))
+      var remaining = headersText.AsSpan();
+
+      // Parse the first line (GET /path HTTP/1.1)
+      var firstLineEnd = remaining.IndexOf("\r\n".AsSpan());
+      ReadOnlySpan<char> firstLine;
+      if (firstLineEnd == -1)
+      {
+         firstLine = remaining;
+         remaining = default;
+      }
+      else
+      {
+         firstLine = remaining[..firstLineEnd];
+         remaining = remaining[(firstLineEnd + 2)..];
+      }
+
+      if (!firstLine.StartsWith("GET ".AsSpan(), StringComparison.OrdinalIgnoreCase))
       {
          TraceLogger.LogServerError("WS Handshake: Server handshake failed: only GET requests are allowed.");
          await SendErrorResponseAsync(writer, "400 Bad Request", "Only GET requests are allowed.");
-         return null;
+         return (null, null, null);
       }
 
-      var path = lines[0].Split(' ')[1];
-      if (path != options.Path)
+      var firstSpace = firstLine.IndexOf(' ');
+      if (firstSpace == -1)
       {
-         TraceLogger.LogServerError("WS Handshake: Server handshake failed: specified path {0} does not match expected path {1}", path, options.Path);
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: invalid GET request format.");
+         return (null, null, null);
+      }
+
+      var afterGet = firstLine[(firstSpace + 1)..];
+      var secondSpace = afterGet.IndexOf(' ');
+      if (secondSpace == -1)
+      {
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: invalid GET request format.");
+         return (null, null, null);
+      }
+
+      var pathSpan = afterGet[..secondSpace];
+      if (!pathSpan.Equals(options.Path.AsSpan(), StringComparison.Ordinal))
+      {
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: specified path does not match expected path.");
          await SendErrorResponseAsync(writer, "404 Not Found", "Specified path is not found.");
-         return null;
+         return (null, null, null);
       }
 
       string? clientKey = null;
@@ -99,30 +130,94 @@ public static class WsHandshake
       var isConnectionUpgrade = false;
       string? origin = null;
 
-      for (var i = 1; i < lines.Length; i++)
+      Dictionary<string, string>? requestHeaders = null;
+      Dictionary<string, string>? requestCookies = null;
+
+      while (!remaining.IsEmpty)
       {
-         var line = lines[i];
+         var lineEnd = remaining.IndexOf("\r\n".AsSpan());
+         ReadOnlySpan<char> line;
+         if (lineEnd == -1)
+         {
+            line = remaining;
+            remaining = default;
+         }
+         else
+         {
+            line = remaining[..lineEnd];
+            remaining = remaining[(lineEnd + 2)..];
+         }
+
+         if (line.IsEmpty) continue;
+
          var colonIdx = line.IndexOf(':');
          if (colonIdx == -1) continue;
 
-         var headerName = line[..colonIdx].Trim().ToLowerInvariant();
-         var headerValue = line[(colonIdx + 1)..].Trim();
+         var headerNameSpan = line[..colonIdx].Trim();
+         var headerValueSpan = line[(colonIdx + 1)..].Trim();
 
-         if (headerName == "upgrade" && headerValue.Equals("websocket", StringComparison.OrdinalIgnoreCase))
+         if (options.GatherHeaders)
          {
-            isUpgrade = true;
+            requestHeaders ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var lookup = requestHeaders.GetAlternateLookup<ReadOnlySpan<char>>();
+            lookup[headerNameSpan] = headerValueSpan.ToString();
          }
-         else if (headerName == "connection" && headerValue.Contains("upgrade", StringComparison.OrdinalIgnoreCase))
+
+         if (headerNameSpan.Equals("upgrade".AsSpan(), StringComparison.OrdinalIgnoreCase))
          {
-            isConnectionUpgrade = true;
+            if (headerValueSpan.Equals("websocket".AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+               isUpgrade = true;
+            }
          }
-         else if (headerName == "sec-websocket-key")
+         else if (headerNameSpan.Equals("connection".AsSpan(), StringComparison.OrdinalIgnoreCase))
          {
-            clientKey = headerValue;
+            if (headerValueSpan.Contains("upgrade".AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+               isConnectionUpgrade = true;
+            }
          }
-         else if (headerName == "origin")
+         else if (headerNameSpan.Equals("sec-websocket-key".AsSpan(), StringComparison.OrdinalIgnoreCase))
          {
-            origin = headerValue;
+            clientKey = headerValueSpan.ToString();
+         }
+         else if (headerNameSpan.Equals("origin".AsSpan(), StringComparison.OrdinalIgnoreCase))
+         {
+            origin = headerValueSpan.ToString();
+         }
+         else if (headerNameSpan.Equals("cookie".AsSpan(), StringComparison.OrdinalIgnoreCase) && options.GatherCookies)
+         {
+            requestCookies ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var lookup = requestCookies.GetAlternateLookup<ReadOnlySpan<char>>();
+
+            var cookieRemaining = headerValueSpan;
+            while (!cookieRemaining.IsEmpty)
+            {
+               var semiIdx = cookieRemaining.IndexOf(';');
+               ReadOnlySpan<char> cookiePair;
+
+               if (semiIdx == -1)
+               {
+                  cookiePair = cookieRemaining;
+                  cookieRemaining = default;
+               }
+               else
+               {
+                  cookiePair = cookieRemaining[..semiIdx];
+                  cookieRemaining = cookieRemaining[(semiIdx + 1)..];
+               }
+
+               cookiePair = cookiePair.Trim();
+               if (cookiePair.IsEmpty) continue;
+
+               var eqIdx = cookiePair.IndexOf('=');
+               if (eqIdx != -1)
+               {
+                  var nameSpan = cookiePair[..eqIdx].Trim();
+                  var valueSpan = cookiePair[(eqIdx + 1)..].Trim();
+                  lookup[nameSpan] = valueSpan.ToString();
+               }
+            }
          }
       }
 
@@ -132,7 +227,7 @@ public static class WsHandshake
          {
             TraceLogger.LogServerError("WS Handshake: Server handshake failed: Origin header is missing but AllowedOrigins is configured.");
             await SendErrorResponseAsync(writer, "400 Bad Request", "Origin header is required.");
-            return null;
+            return (null, requestHeaders, requestCookies);
          }
 
          var matched = false;
@@ -149,7 +244,7 @@ public static class WsHandshake
          {
             TraceLogger.LogServerError("WS Handshake: Server handshake failed: origin '{0}' is not allowed.", origin);
             await SendErrorResponseAsync(writer, "403 Forbidden", "Origin is not allowed.");
-            return null;
+            return (null, requestHeaders, requestCookies);
          }
       }
 
@@ -157,13 +252,13 @@ public static class WsHandshake
       {
          TraceLogger.LogServerError("WS Handshake: Server handshake failed: missing, invalid, or too long WebSocket upgrade headers.");
          await SendErrorResponseAsync(writer, "400 Bad Request", "Invalid WebSocket upgrade headers.");
-         return null;
+         return (null, requestHeaders, requestCookies);
       }
 
       // Complete handshake
       var acceptKey = ComputeAcceptKey(clientKey);
       {
-         var response = new TextWriterIndentSlim(stackalloc char[256], stackalloc char[1]);
+         var response = new TextWriterIndentSlim(stackalloc char[512], stackalloc char[1]);
          try
          {
             response.Write("HTTP/1.1 101 Switching Protocols\r\n");
@@ -199,7 +294,7 @@ public static class WsHandshake
       await writer.FlushAsync(ct);
 
       TraceLogger.LogServerInfo("WS Handshake: Server WebSocket upgrade handshake successful (Accept Key: {0})", acceptKey);
-      return acceptKey;
+      return (acceptKey, requestHeaders, requestCookies);
    }
 
    /// <summary>
@@ -224,7 +319,7 @@ public static class WsHandshake
       TraceLogger.LogClientInfo("WS Handshake: Starting client WebSocket handshake with host {0} on path {1}", host, options.Path);
 
       {
-         var request = new TextWriterIndentSlim(stackalloc char[512], stackalloc char[1]);
+         var request = new TextWriterIndentSlim(stackalloc char[1024], stackalloc char[1]);
          try
          {
             request.Write("GET ");
@@ -252,6 +347,36 @@ public static class WsHandshake
                request.Write(options.Origin);
                request.Write("\r\n");
             }
+
+            if (options.Headers is not null)
+            {
+               foreach (var (key, value) in options.Headers)
+               {
+                  request.Write(key);
+                  request.Write(": ");
+                  request.Write(value);
+                  request.Write("\r\n");
+               }
+            }
+
+            if (options.Cookies is not null && options.Cookies.Count > 0)
+            {
+               request.Write("Cookie: ");
+               var first = true;
+               foreach (var (name, value) in options.Cookies)
+               {
+                  if (!first)
+                  {
+                     request.Write("; ");
+                  }
+                  request.Write(name);
+                  request.Write("=");
+                  request.Write(value);
+                  first = false;
+               }
+               request.Write("\r\n");
+            }
+
             request.Write("\r\n");
 
             var writtenSpan = request.WrittenSpan;
@@ -286,6 +411,7 @@ public static class WsHandshake
       }
 
       var serverAcceptKeyMatched = false;
+
       for (var i = 1; i < lines.Length; i++)
       {
          var line = lines[i];

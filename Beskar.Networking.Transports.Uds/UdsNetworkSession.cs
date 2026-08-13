@@ -72,6 +72,11 @@ public sealed class UdsNetworkSession : INetworkSession
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(UdsNetworkSession));
+      }
+
       if (_stream is null)
       {
          TraceLogger.LogServerInfo("UDS Session {0}: Instantiating UDS stream wrapper", Id);
@@ -86,6 +91,11 @@ public sealed class UdsNetworkSession : INetworkSession
       NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(UdsNetworkSession));
+      }
+
       if (_stream is null)
       {
          TraceLogger.LogClientInfo("UDS Session {0}: Opening UDS stream connection", Id);

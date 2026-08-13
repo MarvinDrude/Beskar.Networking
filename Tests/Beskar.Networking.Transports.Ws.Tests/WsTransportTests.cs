@@ -10,6 +10,7 @@ using Beskar.Networking.Transports.Tcp;
 
 namespace Beskar.Networking.Transports.Ws.Tests;
 
+[NotInParallel]
 public class WsTransportTests
 {
    [Test]
@@ -1269,6 +1270,187 @@ public class WsTransportTests
 
       var closedDelta = Volatile.Read(ref recordedConnectionsClosed) - initialClosed;
       await Assert.That(closedDelta).IsGreaterThanOrEqualTo(2);
+   }
+
+   [Test]
+   public async Task WebSocketHandshake_CustomHeadersAndCookies_SentAndValidatedSuccessfully()
+   {
+      var serverOptions = new WsTransportOptions
+      {
+         Path = "/custom",
+         GatherHeaders = true,
+         GatherCookies = true
+      };
+
+      var clientOptions = new WsTransportOptions
+      {
+         Path = "/custom",
+         Headers = new Dictionary<string, string>
+         {
+            { "X-Custom-Auth", "SuperSecretToken" },
+            { "X-Requested-By", "ClientApp" }
+         },
+         Cookies = new Dictionary<string, string>
+         {
+            { "SessionId", "xyz987" },
+            { "UserRole", "Admin" }
+         }
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), serverOptions);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(clientOptions);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var serverSession = acceptResult.Success!;
+      var clientSession = connectResult.Success!;
+
+      // Verify server session parsed and stored headers and cookies
+      await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestHeaders", out var headers)).IsTrue();
+      await Assert.That(headers).IsNotNull();
+      await Assert.That(headers!.ContainsKey("X-Custom-Auth")).IsTrue();
+      await Assert.That(headers["X-Custom-Auth"]).IsEqualTo("SuperSecretToken");
+      await Assert.That(headers.ContainsKey("X-Requested-By")).IsTrue();
+      await Assert.That(headers["X-Requested-By"]).IsEqualTo("ClientApp");
+
+      await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestCookies", out var cookies)).IsTrue();
+      await Assert.That(cookies).IsNotNull();
+      await Assert.That(cookies!.ContainsKey("SessionId")).IsTrue();
+      await Assert.That(cookies["SessionId"]).IsEqualTo("xyz987");
+      await Assert.That(cookies.ContainsKey("UserRole")).IsTrue();
+      await Assert.That(cookies["UserRole"]).IsEqualTo("Admin");
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WebSocketHandshake_DefaultOptions_DoesNotGatherHeadersOrCookies()
+   {
+      var serverOptions = new WsTransportOptions
+      {
+         Path = "/default"
+      };
+
+      var clientOptions = new WsTransportOptions
+      {
+         Path = "/default",
+         Headers = new Dictionary<string, string>
+         {
+            { "X-Custom-Auth", "SuperSecretToken" }
+         },
+         Cookies = new Dictionary<string, string>
+         {
+            { "SessionId", "xyz987" }
+         }
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), serverOptions);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(clientOptions);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var serverSession = acceptResult.Success!;
+      var clientSession = connectResult.Success!;
+
+      // Verify server session properties do not contain the keys
+      await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestHeaders", out _)).IsFalse();
+      await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestCookies", out _)).IsFalse();
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WebSocketSession_ThrowsObjectDisposedException_AfterDisposed()
+   {
+      var options = new WsTransportOptions { Path = "/disposed" };
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var client = new WsNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      // Dispose the sessions
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+
+      // Subsequent AcceptStreamAsync/OpenStreamAsync calls should throw ObjectDisposedException
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await clientSession.AcceptStreamAsync());
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await clientSession.OpenStreamAsync());
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await serverSession.AcceptStreamAsync());
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await serverSession.OpenStreamAsync());
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsClientServer_FailedWsHandshake_IncrementsWsFailuresMetrics()
+   {
+      long wsFailures = 0;
+      using var meterListener = new MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == TransportMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.transport.ws.handshake.failures")
+         {
+            Interlocked.Add(ref wsFailures, measurement);
+         }
+      });
+      meterListener.Start();
+
+      var options = new WsTransportOptions();
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      // Connect to WS listener using a standard TCP client and send a non-GET HTTP request to trigger server handshake failure
+      var tcpOptions = new TcpTransportOptions();
+      var tcpClient = new TcpNetworkClient(tcpOptions);
+      var connectResult = await tcpClient.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var tcpSession = connectResult.Success!;
+      var tcpStream = (await tcpSession.OpenStreamAsync()).Success!;
+
+      // Send a POST request to trigger the server handshake failure
+      var invalidRequest = "POST / HTTP/1.1\r\nHost: localhost\r\n\r\n"u8.ToArray();
+      await tcpStream.Transport.Output.WriteAsync(invalidRequest);
+      await tcpStream.Transport.Output.FlushAsync();
+
+      // Wait briefly for server-side to reject the handshake and record the telemetry
+      await Task.Delay(200);
+
+      var currentFailures = Volatile.Read(ref wsFailures);
+      await Assert.That(currentFailures).IsGreaterThanOrEqualTo(1);
+
+      await tcpSession.DisposeAsync();
+      await tcpClient.DisposeAsync();
+      await listener.DisposeAsync();
    }
 }
 

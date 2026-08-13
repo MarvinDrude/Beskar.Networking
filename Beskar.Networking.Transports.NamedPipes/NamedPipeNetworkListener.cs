@@ -8,6 +8,7 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.NamedPipes;
 
@@ -78,6 +79,7 @@ public sealed class NamedPipeNetworkListener(
          _ = AcceptLoopAsync(namedPipeEndPoint, _acceptCts.Token);
          TraceLogger.LogServerInfo("NamedPipe Listener: Successfully bound and waiting for connections on {0}", namedPipeEndPoint);
          Interlocked.Increment(ref _binds);
+         TransportMetrics.RecordListenerStarted(TransportKind.NamedPipe);
 
          return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
@@ -115,6 +117,7 @@ public sealed class NamedPipeNetworkListener(
 
          TraceLogger.LogServerInfo("NamedPipe Listener: Successfully unbound");
          Interlocked.Increment(ref _unbinds);
+         TransportMetrics.RecordListenerStopped(TransportKind.NamedPipe);
 
          return true;
       }

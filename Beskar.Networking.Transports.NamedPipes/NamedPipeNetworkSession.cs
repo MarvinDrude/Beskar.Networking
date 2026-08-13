@@ -71,6 +71,11 @@ public sealed class NamedPipeNetworkSession : INetworkSession
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(NamedPipeNetworkSession));
+      }
+
       if (_stream is null)
       {
          TraceLogger.LogServerInfo("NamedPipe Session {0}: Instantiating Named Pipe stream wrapper", Id);
@@ -85,6 +90,11 @@ public sealed class NamedPipeNetworkSession : INetworkSession
       NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(NamedPipeNetworkSession));
+      }
+
       if (_stream is null)
       {
          TraceLogger.LogClientInfo("NamedPipe Session {0}: Opening Named Pipe stream connection", Id);

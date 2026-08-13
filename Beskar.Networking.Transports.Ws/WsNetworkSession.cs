@@ -96,6 +96,11 @@ public sealed class WsNetworkSession : INetworkSession
 
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(WsNetworkSession));
+      }
+
       TraceLogger.LogServerInfo("WS Session {0}: Instantiating WebSocket stream wrapper", Id);
       Interlocked.Increment(ref _streamsAccepted);
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);
@@ -105,6 +110,11 @@ public sealed class WsNetworkSession : INetworkSession
       NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(WsNetworkSession));
+      }
+
       TraceLogger.LogClientInfo("WS Session {0}: Opening WebSocket stream wrapper", Id);
       Interlocked.Increment(ref _streamsOpened);
       return new ValueTask<Result<INetworkStream, NetworkCodeError>>(_stream);

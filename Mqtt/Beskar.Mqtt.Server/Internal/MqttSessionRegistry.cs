@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Beskar.Networking.Abstractions.Comparers;
+using Beskar.Networking.Abstractions.Extensions;
 
 namespace Beskar.Mqtt.Server.Internal;
 
@@ -70,11 +71,7 @@ public sealed class MqttSessionRegistry : IAsyncDisposable
 
    public async ValueTask DisposeAsync()
    {
-      foreach (var (_, value) in _sessions)
-      {
-         await value.DisposeAsync();
-      }
-
+      await _sessions.Values.DisposeAllAsync();
       _sessions.Clear();
    }
 }

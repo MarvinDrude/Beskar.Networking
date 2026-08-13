@@ -9,6 +9,8 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using System.Diagnostics;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Tcp;
 
@@ -80,7 +82,9 @@ public sealed class TcpNetworkListener(
 
          _ = AcceptLoopAsync(socket, _acceptCts.Token);
          TraceLogger.LogServerInfo("TCP Listener: Successfully bound and listening on {0}", LocalAddress);
+
          Interlocked.Increment(ref _binds);
+         TransportMetrics.RecordListenerStarted(TransportKind.Tcp);
 
          return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
@@ -127,6 +131,7 @@ public sealed class TcpNetworkListener(
 
          TraceLogger.LogServerInfo("TCP Listener: Successfully unbound from {0}", LocalAddress);
          Interlocked.Increment(ref _unbinds);
+         TransportMetrics.RecordListenerStopped(TransportKind.Tcp);
 
          return true;
       }
@@ -183,22 +188,7 @@ public sealed class TcpNetworkListener(
 
             try
             {
-               if (_options.NoDelay)
-               {
-                  clientSocket.NoDelay = true;
-               }
-               if (_options.SendBufferSize.HasValue)
-               {
-                  clientSocket.SendBufferSize = _options.SendBufferSize.Value;
-               }
-               if (_options.ReceiveBufferSize.HasValue)
-               {
-                  clientSocket.ReceiveBufferSize = _options.ReceiveBufferSize.Value;
-               }
-               if (_options.LingerState is not null)
-               {
-                  clientSocket.LingerState = _options.LingerState;
-               }
+               _options.ConfigureSocket(clientSocket);
 
                var localEndPoint = clientSocket.LocalEndPoint;
                if (localEndPoint is null)
@@ -216,6 +206,7 @@ public sealed class TcpNetworkListener(
                {
                   TraceLogger.LogServerError("TCP Listener: Rejected connection. Failed to get remote endpoint.");
                   WriteToSessionChannel(new NetworkCodeError(-1, "Failed to get remote endpoint."));
+                  TransportMetrics.RecordConnectionFailed(TransportKind.Tcp, "NoRemoteEndPoint");
 
                   clientSocket.Dispose();
                   semaphore.Release();
@@ -261,6 +252,7 @@ public sealed class TcpNetworkListener(
                break;
             }
 
+            TransportMetrics.RecordConnectionFailed(TransportKind.Tcp, ex.SocketErrorCode.ToString());
             TraceLogger.LogServerError("TCP Listener: Socket error accepting client: {0}", ex.Message);
             WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, $"Listener acceptance error: {ex.Message}"));
 
@@ -273,6 +265,7 @@ public sealed class TcpNetworkListener(
                break;
             }
 
+            TransportMetrics.RecordConnectionFailed(TransportKind.Tcp, ex.GetType().Name);
             TraceLogger.LogServerError("TCP Listener: Unexpected error accepting client: {0}", ex.Message);
             WriteToSessionChannel(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
 
@@ -312,7 +305,30 @@ public sealed class TcpNetworkListener(
                return;
             }
 
-            await sslStream.AuthenticateAsServerAsync(sslOptions, handshakeTimeoutCts.Token);
+            if (_options.ClientCertificateRequired.HasValue)
+            {
+               sslOptions.ClientCertificateRequired = _options.ClientCertificateRequired.Value;
+            }
+            if (_options.ClientCertificateValidationCallback is not null)
+            {
+               sslOptions.RemoteCertificateValidationCallback = _options.ClientCertificateValidationCallback;
+            }
+            if (_options.ClientCertificateRevocationMode.HasValue)
+            {
+               sslOptions.CertificateRevocationCheckMode = _options.ClientCertificateRevocationMode.Value;
+            }
+
+            var start = Stopwatch.GetTimestamp();
+            try
+            {
+               await sslStream.AuthenticateAsServerAsync(sslOptions, handshakeTimeoutCts.Token);
+               TransportMetrics.RecordTlsHandshakeDuration(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            }
+            catch (Exception ex)
+            {
+               TransportMetrics.RecordTlsHandshakeFailure(ex.Message);
+               throw;
+            }
             stream = sslStream;
 
             TraceLogger.LogServerInfo("TCP Listener: SSL server successfully authenticated client {0}", remoteEndPoint);
@@ -339,11 +355,13 @@ public sealed class TcpNetworkListener(
       {
          TraceLogger.LogServerError("TCP Listener: Socket error during handshake for client {0}: {1}", remoteEndPoint, ex.Message);
          WriteToSessionChannel(new NetworkCodeError(ex.ErrorCode, ex.Message));
+         TransportMetrics.RecordConnectionFailed(TransportKind.Tcp, ex.SocketErrorCode.ToString());
       }
       catch (Exception ex)
       {
          TraceLogger.LogServerError("TCP Listener: Unexpected error during handshake for client {0}: {1}", remoteEndPoint, ex.Message);
          WriteToSessionChannel(new NetworkCodeError(-1, ex.Message));
+         TransportMetrics.RecordConnectionFailed(TransportKind.Tcp, ex.GetType().Name);
       }
       finally
       {

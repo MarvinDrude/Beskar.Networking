@@ -57,3 +57,10 @@ Meter Name: `Beskar.Networking.Transport` (Version `1.0.0`)
 | `beskar.transport.memorypool.blocks.rented` | `Counter<long>` | `{block}` | Total number of memory pool block rent operations. |
 | `beskar.transport.memorypool.blocks.returned` | `Counter<long>` | `{block}` | Total number of memory pool block return operations. |
 | `beskar.transport.memorypool.blocks.active` | `UpDownCounter<long>` | `{block}` | Current count of active rented memory pool blocks. |
+| `beskar.transport.listeners.active` | `UpDownCounter<long>` | `{listener}` | Current count of active bound listener sockets. |
+| `beskar.transport.connections.failed` | `Counter<long>` | `{connection}` | Total failed connection or accept attempts. |
+| `beskar.transport.tls.handshake.duration` | `Histogram<double>` | `ms` | Duration of TLS handshakes in milliseconds. |
+| `beskar.transport.tls.handshake.failures` | `Counter<long>` | `{failure}` | Total failed TLS handshakes. |
+| `beskar.transport.ws.handshake.duration` | `Histogram<double>` | `ms` | Duration of WebSocket upgrade handshakes in milliseconds. |
+| `beskar.transport.ws.handshake.failures` | `Counter<long>` | `{failure}` | Total failed WebSocket upgrade handshakes. |
+| `beskar.transport.udp.packets.dropped` | `Counter<long>` | `{packet}` | Total number of UDP packets dropped due to full pipeline buffer. |

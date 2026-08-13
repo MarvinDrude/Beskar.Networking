@@ -10,6 +10,7 @@ using Beskar.Networking.Transports.Udp.Extensions;
 
 namespace Beskar.Networking.Transports.Udp.Tests;
 
+[NotInParallel]
 public class UdpTransportTests
 {
    [Test]

@@ -7,6 +7,8 @@ using Beskar.Networking.Transports.Tcp;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using System.Diagnostics;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Ws;
 
@@ -68,6 +70,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
       TraceLogger.LogServerInfo("WS Listener: Successfully bound and listening on {0}", LocalAddress);
       Interlocked.Increment(ref _binds);
+      TransportMetrics.RecordListenerStarted(TransportKind.WebSocket);
       return true;
    }
 
@@ -107,6 +110,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
 
          TraceLogger.LogServerInfo("WS Listener: Successfully unbound from {0}", LocalAddress);
          Interlocked.Increment(ref _unbinds);
+         TransportMetrics.RecordListenerStopped(TransportKind.WebSocket);
          return true;
       }
       catch (Exception ex)
@@ -170,12 +174,38 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   if (tcpStreamResult.Failed)
                   {
                      TraceLogger.LogServerError("WS Listener: Failed to accept TCP stream for handshake from {0}: {1}", tcpSession.RemoteAddress, tcpStreamResult.Error.Message);
+                     TransportMetrics.RecordConnectionFailed(TransportKind.WebSocket, "TcpStreamFailed");
                      await tcpSession.DisposeAsync();
                      return;
                   }
 
                   var tcpPipe = tcpStreamResult.Success.Transport;
-                  var acceptKey = await WsHandshake.ServerHandshakeAsync(tcpPipe, _options, handshakeTimeoutCts.Token);
+                  
+                  var start = Stopwatch.GetTimestamp();
+                  string? acceptKey;
+                  Dictionary<string, string>? requestHeaders;
+                  Dictionary<string, string>? requestCookies;
+                  try
+                  {
+                     (acceptKey, requestHeaders, requestCookies)
+                        = await WsHandshake.ServerHandshakeAsync(tcpPipe, _options, handshakeTimeoutCts.Token);
+                     
+                     if (acceptKey != null)
+                     {
+                        TransportMetrics.RecordWsHandshakeDuration(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+                     }
+                     else
+                     {
+                        TransportMetrics.RecordWsHandshakeFailure("HandshakeFailed");
+                        TransportMetrics.RecordConnectionFailed(TransportKind.WebSocket, "HandshakeFailed");
+                     }
+                  }
+                  catch (Exception ex)
+                  {
+                     TransportMetrics.RecordWsHandshakeFailure(ex.GetType().Name);
+                     TransportMetrics.RecordConnectionFailed(TransportKind.WebSocket, ex.GetType().Name);
+                     throw;
+                  }
 
                   if (acceptKey == null)
                   {
@@ -185,9 +215,18 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   }
 
                   var session = wsSession;
-                  var wsPipe = new WsDuplexPipe(tcpPipe, tcpSession, maskOutgoing: false, _options, () => session);
+                  var wsPipe = new WsDuplexPipe(tcpPipe, tcpSession, maskOutgoing: false, _options,
+                     () => session);
 
                   wsSession = new WsNetworkSession(tcpSession, wsPipe);
+                  if (requestHeaders is not null)
+                  {
+                     wsSession.Properties.Set("HttpRequestHeaders", requestHeaders);
+                  }
+                  if (requestCookies is not null)
+                  {
+                     wsSession.Properties.Set("HttpRequestCookies", requestCookies);
+                  }
 
                   TraceLogger.LogServerInfo("WS Listener: WebSocket server handshake successfully completed for client {0}. Enqueuing session {1}", tcpSession.RemoteAddress, wsSession.Id);
                   Interlocked.Increment(ref _sessionsAccepted);
@@ -195,6 +234,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                }
                catch (Exception ex)
                {
+                  TransportMetrics.RecordConnectionFailed(TransportKind.WebSocket, ex.GetType().Name);
                   TraceLogger.LogServerError("WS Listener: Unexpected exception during WebSocket handshake for client {0}: {1}", tcpSession.RemoteAddress, ex.Message);
                   if (wsSession != null)
                   {

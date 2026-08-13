@@ -3,12 +3,14 @@ using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Transports.Quic;
 
 namespace Beskar.Networking.Transports.Tcp.Tests;
 
+[NotInParallel]
 public class TcpTransportTests
 {
 
@@ -962,6 +964,256 @@ public class TcpTransportTests
       await clientSession2.DisposeAsync();
       await serverSession2.DisposeAsync();
       await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task TcpClientServer_KeepAliveOptionsConfigured_SucceedsAndAppliesToSockets()
+   {
+      var options = new TcpTransportOptions
+      {
+         KeepAlive = true,
+         KeepAliveTime = 3,
+         KeepAliveInterval = 1,
+         KeepAliveRetryCount = 2
+      };
+
+      // Test helper configuration directly
+      using (var testSocket = new Socket(SocketType.Stream, ProtocolType.Tcp))
+      {
+         options.ConfigureSocket(testSocket);
+         
+         var keepAliveOption = testSocket.GetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive);
+         await Assert.That(keepAliveOption).IsNotNull();
+         await Assert.That((int)keepAliveOption!).IsNotEqualTo(0);
+         
+         var keepAliveTime = testSocket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime);
+         await Assert.That(keepAliveTime).IsNotNull();
+         await Assert.That((int)keepAliveTime!).IsEqualTo(3);
+         
+         var keepAliveInterval = testSocket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval);
+         await Assert.That(keepAliveInterval).IsNotNull();
+         await Assert.That((int)keepAliveInterval!).IsEqualTo(1);
+         
+         var keepAliveRetryCount = testSocket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount);
+         await Assert.That(keepAliveRetryCount).IsNotNull();
+         await Assert.That((int)keepAliveRetryCount!).IsEqualTo(2);
+      }
+
+      // End-to-end data exchange test using keep-alive options
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new TcpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      var clientStream = (await clientSession.OpenStreamAsync()).Success!;
+      var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
+
+      var payload = "Keep-alive message"u8.ToArray();
+      await clientStream.Transport.Output.WriteAsync(payload);
+      await clientStream.Transport.Output.FlushAsync();
+
+      var readResult = await serverStream.Transport.Input.ReadAsync();
+      var readBytes = readResult.Buffer.ToArray();
+      serverStream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+
+      await Assert.That(readBytes).IsEquivalentTo(payload);
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task TcpClientServer_TlsClientCertificateAuth_ValidatesClientCertificateSuccessfully()
+   {
+      using var serverCert = CertificateUtility.GenerateSelfSignedCertificate();
+      using var clientCert = CertificateUtility.GenerateSelfSignedCertificate();
+
+      var serverSslOptions = new SslServerAuthenticationOptions
+      {
+         ServerCertificate = serverCert
+      };
+
+      var clientSslOptionsWithCert = new SslClientAuthenticationOptions
+      {
+         TargetHost = "localhost",
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true,
+         ClientCertificates = new X509Certificate2Collection(clientCert)
+      };
+
+      var optionsWithClientCert = new TcpTransportOptions
+      {
+         UseSsl = true,
+         SslServerOptions = serverSslOptions,
+         SslClientOptions = clientSslOptionsWithCert,
+         ClientCertificateRequired = true,
+         ClientCertificateValidationCallback = (sender, cert, chain, errors) =>
+         {
+            return cert != null;
+         }
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), optionsWithClientCert);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      // Test 1: Client provides certificate -> Connects and exchanges data successfully
+      var clientWithCert = new TcpNetworkClient(optionsWithClientCert);
+      var connectResult = await clientWithCert.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      var clientStream = (await clientSession.OpenStreamAsync()).Success!;
+      var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
+      
+      var payload = "Secure Client Cert Message"u8.ToArray();
+      await clientStream.Transport.Output.WriteAsync(payload);
+      await clientStream.Transport.Output.FlushAsync();
+      
+      var readResult = await serverStream.Transport.Input.ReadAsync();
+      await Assert.That(readResult.Buffer.ToArray()).IsEquivalentTo(payload);
+      serverStream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+
+      // Test 2: Client does NOT provide certificate -> Connection handshake fails
+      var clientSslOptionsNoCert = new SslClientAuthenticationOptions
+      {
+         TargetHost = "localhost",
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+      };
+
+      var optionsNoClientCert = new TcpTransportOptions
+      {
+         UseSsl = true,
+         SslServerOptions = new SslServerAuthenticationOptions { ServerCertificate = serverCert },
+         SslClientOptions = clientSslOptionsNoCert,
+         ClientCertificateRequired = true,
+         ClientCertificateValidationCallback = (sender, cert, chain, errors) =>
+         {
+            Console.WriteLine($"[DEBUG] NoCert Callback: cert is {(cert == null ? "null" : cert.Subject)}, errors: {errors}");
+            return cert != null;
+         }
+      };
+
+      var clientNoCert = new TcpNetworkClient(optionsNoClientCert);
+      var connectResult2 = await clientNoCert.ConnectAsync(listener.LocalAddress);
+      
+      // On the client, ConnectAsync may succeed initially due to TLS 1.3 pipelined handshakes,
+      // but the server's handshake task will fail and write a failed result to the session channel.
+      var acceptResult2 = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult2.Failed).IsTrue();
+
+      // Clean up the client session if it was established on the client side
+      if (!connectResult2.Failed)
+      {
+         await connectResult2.Success!.DisposeAsync();
+      }
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task TcpSession_ThrowsObjectDisposedException_AfterDisposed()
+   {
+      var options = new TcpTransportOptions();
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var client = new TcpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      // Dispose the sessions
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+
+      // Subsequent AcceptStreamAsync/OpenStreamAsync calls should throw ObjectDisposedException
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await clientSession.AcceptStreamAsync());
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await clientSession.OpenStreamAsync());
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await serverSession.AcceptStreamAsync());
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await serverSession.OpenStreamAsync());
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task TcpClientServer_FailedTlsHandshake_IncrementsTlsFailuresMetrics()
+   {
+      long tlsFailures = 0;
+      using var meterListener = new MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == TransportMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.transport.tls.handshake.failures")
+         {
+            Interlocked.Add(ref tlsFailures, measurement);
+         }
+      });
+      meterListener.Start();
+
+      using var certificate = CertificateUtility.GenerateSelfSignedCertificate();
+      var options = new TcpTransportOptions
+      {
+         UseSsl = true,
+         SslServerOptions = new SslServerAuthenticationOptions
+         {
+            ServerCertificate = certificate,
+            ClientCertificateRequired = false
+         },
+         SslClientOptions = new SslClientAuthenticationOptions
+         {
+            TargetHost = "localhost",
+            // Explicitly fail validation callback to cause TLS handshake failure
+            RemoteCertificateValidationCallback = (sender, cert, chain, errors) => false
+         }
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var client = new TcpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      
+      // Connection should fail because TLS handshake fails
+      await Assert.That(connectResult.Failed).IsTrue();
+
+      // Wait briefly for server-side to handle the handshake exception
+      await Task.Delay(200);
+
+      // Verify that TLS handshake failures were recorded
+      var currentFailures = Volatile.Read(ref tlsFailures);
+      await Assert.That(currentFailures).IsGreaterThanOrEqualTo(1);
+
+      await client.DisposeAsync();
+      await listener.DisposeAsync();
    }
 }
 
