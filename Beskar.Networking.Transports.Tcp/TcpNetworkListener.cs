@@ -297,6 +297,19 @@ public sealed class TcpNetworkListener(
                return;
             }
 
+            if (_options.ClientCertificateRequired.HasValue)
+            {
+               sslOptions.ClientCertificateRequired = _options.ClientCertificateRequired.Value;
+            }
+            if (_options.ClientCertificateValidationCallback is not null)
+            {
+               sslOptions.RemoteCertificateValidationCallback = _options.ClientCertificateValidationCallback;
+            }
+            if (_options.ClientCertificateRevocationMode.HasValue)
+            {
+               sslOptions.CertificateRevocationCheckMode = _options.ClientCertificateRevocationMode.Value;
+            }
+
             await sslStream.AuthenticateAsServerAsync(sslOptions, handshakeTimeoutCts.Token);
             stream = sslStream;
 

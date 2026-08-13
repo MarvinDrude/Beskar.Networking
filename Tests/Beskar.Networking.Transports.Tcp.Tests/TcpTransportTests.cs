@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Transports.Quic;
@@ -1027,6 +1028,102 @@ public class TcpTransportTests
 
       await clientSession.DisposeAsync();
       await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task TcpClientServer_TlsClientCertificateAuth_ValidatesClientCertificateSuccessfully()
+   {
+      using var serverCert = CertificateUtility.GenerateSelfSignedCertificate();
+      using var clientCert = CertificateUtility.GenerateSelfSignedCertificate();
+
+      var serverSslOptions = new SslServerAuthenticationOptions
+      {
+         ServerCertificate = serverCert
+      };
+
+      var clientSslOptionsWithCert = new SslClientAuthenticationOptions
+      {
+         TargetHost = "localhost",
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true,
+         ClientCertificates = new X509Certificate2Collection(clientCert)
+      };
+
+      var optionsWithClientCert = new TcpTransportOptions
+      {
+         UseSsl = true,
+         SslServerOptions = serverSslOptions,
+         SslClientOptions = clientSslOptionsWithCert,
+         ClientCertificateRequired = true,
+         ClientCertificateValidationCallback = (sender, cert, chain, errors) =>
+         {
+            return cert != null;
+         }
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), optionsWithClientCert);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      // Test 1: Client provides certificate -> Connects and exchanges data successfully
+      var clientWithCert = new TcpNetworkClient(optionsWithClientCert);
+      var connectResult = await clientWithCert.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      var clientStream = (await clientSession.OpenStreamAsync()).Success!;
+      var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
+      
+      var payload = "Secure Client Cert Message"u8.ToArray();
+      await clientStream.Transport.Output.WriteAsync(payload);
+      await clientStream.Transport.Output.FlushAsync();
+      
+      var readResult = await serverStream.Transport.Input.ReadAsync();
+      await Assert.That(readResult.Buffer.ToArray()).IsEquivalentTo(payload);
+      serverStream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+
+      // Test 2: Client does NOT provide certificate -> Connection handshake fails
+      var clientSslOptionsNoCert = new SslClientAuthenticationOptions
+      {
+         TargetHost = "localhost",
+         RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+      };
+
+      var optionsNoClientCert = new TcpTransportOptions
+      {
+         UseSsl = true,
+         SslServerOptions = new SslServerAuthenticationOptions { ServerCertificate = serverCert },
+         SslClientOptions = clientSslOptionsNoCert,
+         ClientCertificateRequired = true,
+         ClientCertificateValidationCallback = (sender, cert, chain, errors) =>
+         {
+            Console.WriteLine($"[DEBUG] NoCert Callback: cert is {(cert == null ? "null" : cert.Subject)}, errors: {errors}");
+            return cert != null;
+         }
+      };
+
+      var clientNoCert = new TcpNetworkClient(optionsNoClientCert);
+      var connectResult2 = await clientNoCert.ConnectAsync(listener.LocalAddress);
+      
+      // On the client, ConnectAsync may succeed initially due to TLS 1.3 pipelined handshakes,
+      // but the server's handshake task will fail and write a failed result to the session channel.
+      var acceptResult2 = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult2.Failed).IsTrue();
+
+      // Clean up the client session if it was established on the client side
+      if (!connectResult2.Failed)
+      {
+         await connectResult2.Success!.DisposeAsync();
+      }
+
       await listener.UnbindAsync();
    }
 }

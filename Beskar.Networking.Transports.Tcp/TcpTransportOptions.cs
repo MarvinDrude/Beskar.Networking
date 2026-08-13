@@ -1,5 +1,6 @@
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using Beskar.Networking.Transports.Common.Options;
 
 namespace Beskar.Networking.Transports.Tcp;
@@ -122,6 +123,24 @@ public class TcpTransportOptions
    /// Set null to use the OS default.
    /// </summary>
    public int? KeepAliveRetryCount { get; set; }
+
+   /// <summary>
+   /// Whether a client certificate is required for SSL/TLS connections.
+   /// If configured, overrides SslServerOptions.ClientCertificateRequired.
+   /// </summary>
+   public bool? ClientCertificateRequired { get; set; }
+
+   /// <summary>
+   /// A custom callback to validate client certificates.
+   /// If configured, overrides SslServerOptions.RemoteCertificateValidationCallback.
+   /// </summary>
+   public RemoteCertificateValidationCallback? ClientCertificateValidationCallback { get; set; }
+
+   /// <summary>
+   /// The certificate revocation mode for client certificate validation.
+   /// If configured, overrides SslServerOptions.CertificateRevocationMode.
+   /// </summary>
+   public X509RevocationMode? ClientCertificateRevocationMode { get; set; }
 
    /// <summary>
    /// Configures standard TCP socket options on the specified socket.
