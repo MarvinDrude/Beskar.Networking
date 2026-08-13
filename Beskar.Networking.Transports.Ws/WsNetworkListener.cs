@@ -175,7 +175,8 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   }
 
                   var tcpPipe = tcpStreamResult.Success.Transport;
-                  var acceptKey = await WsHandshake.ServerHandshakeAsync(tcpPipe, _options, handshakeTimeoutCts.Token);
+                  var (acceptKey, requestHeaders, requestCookies)
+                     = await WsHandshake.ServerHandshakeAsync(tcpPipe, _options, handshakeTimeoutCts.Token);
 
                   if (acceptKey == null)
                   {
@@ -185,9 +186,18 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   }
 
                   var session = wsSession;
-                  var wsPipe = new WsDuplexPipe(tcpPipe, tcpSession, maskOutgoing: false, _options, () => session);
+                  var wsPipe = new WsDuplexPipe(tcpPipe, tcpSession, maskOutgoing: false, _options,
+                     () => session);
 
                   wsSession = new WsNetworkSession(tcpSession, wsPipe);
+                  if (requestHeaders is not null)
+                  {
+                     wsSession.Properties.Set("HttpRequestHeaders", requestHeaders);
+                  }
+                  if (requestCookies is not null)
+                  {
+                     wsSession.Properties.Set("HttpRequestCookies", requestCookies);
+                  }
 
                   TraceLogger.LogServerInfo("WS Listener: WebSocket server handshake successfully completed for client {0}. Enqueuing session {1}", tcpSession.RemoteAddress, wsSession.Id);
                   Interlocked.Increment(ref _sessionsAccepted);

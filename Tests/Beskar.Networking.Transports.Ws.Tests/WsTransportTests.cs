@@ -1270,5 +1270,108 @@ public class WsTransportTests
       var closedDelta = Volatile.Read(ref recordedConnectionsClosed) - initialClosed;
       await Assert.That(closedDelta).IsGreaterThanOrEqualTo(2);
    }
+
+   [Test]
+   public async Task WebSocketHandshake_CustomHeadersAndCookies_SentAndValidatedSuccessfully()
+   {
+      var serverOptions = new WsTransportOptions
+      {
+         Path = "/custom",
+         GatherHeaders = true,
+         GatherCookies = true
+      };
+
+      var clientOptions = new WsTransportOptions
+      {
+         Path = "/custom",
+         Headers = new Dictionary<string, string>
+         {
+            { "X-Custom-Auth", "SuperSecretToken" },
+            { "X-Requested-By", "ClientApp" }
+         },
+         Cookies = new Dictionary<string, string>
+         {
+            { "SessionId", "xyz987" },
+            { "UserRole", "Admin" }
+         }
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), serverOptions);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(clientOptions);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var serverSession = acceptResult.Success!;
+      var clientSession = connectResult.Success!;
+
+      // Verify server session parsed and stored headers and cookies
+      await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestHeaders", out var headers)).IsTrue();
+      await Assert.That(headers).IsNotNull();
+      await Assert.That(headers!.ContainsKey("X-Custom-Auth")).IsTrue();
+      await Assert.That(headers["X-Custom-Auth"]).IsEqualTo("SuperSecretToken");
+      await Assert.That(headers.ContainsKey("X-Requested-By")).IsTrue();
+      await Assert.That(headers["X-Requested-By"]).IsEqualTo("ClientApp");
+
+      await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestCookies", out var cookies)).IsTrue();
+      await Assert.That(cookies).IsNotNull();
+      await Assert.That(cookies!.ContainsKey("SessionId")).IsTrue();
+      await Assert.That(cookies["SessionId"]).IsEqualTo("xyz987");
+      await Assert.That(cookies.ContainsKey("UserRole")).IsTrue();
+      await Assert.That(cookies["UserRole"]).IsEqualTo("Admin");
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WebSocketHandshake_DefaultOptions_DoesNotGatherHeadersOrCookies()
+   {
+      var serverOptions = new WsTransportOptions
+      {
+         Path = "/default"
+      };
+
+      var clientOptions = new WsTransportOptions
+      {
+         Path = "/default",
+         Headers = new Dictionary<string, string>
+         {
+            { "X-Custom-Auth", "SuperSecretToken" }
+         },
+         Cookies = new Dictionary<string, string>
+         {
+            { "SessionId", "xyz987" }
+         }
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), serverOptions);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new WsNetworkClient(clientOptions);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var serverSession = acceptResult.Success!;
+      var clientSession = connectResult.Success!;
+
+      // Verify server session properties do not contain the keys
+      await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestHeaders", out _)).IsFalse();
+      await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestCookies", out _)).IsFalse();
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
 }
 

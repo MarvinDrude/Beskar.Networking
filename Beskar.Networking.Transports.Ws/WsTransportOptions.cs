@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Generic;
 using Beskar.Networking.Transports.Tcp;
 using Beskar.Networking.Transports.Ws.Enums;
 
@@ -59,6 +60,26 @@ public sealed class WsTransportOptions
    /// The Origin header to send during the client-side handshake.
    /// </summary>
    public string? Origin { get; set; }
+
+   /// <summary>
+   /// Custom HTTP headers to send during the client-side handshake upgrade request.
+   /// </summary>
+   public Dictionary<string, string>? Headers { get; set; }
+
+   /// <summary>
+   /// Custom cookies to send during the client-side handshake upgrade request.
+   /// </summary>
+   public Dictionary<string, string>? Cookies { get; set; }
+
+   /// <summary>
+   /// Whether the server should gather HTTP headers from the handshake request.
+   /// </summary>
+   public bool GatherHeaders { get; set; } = false;
+
+   /// <summary>
+   /// Whether the server should gather cookies from the handshake request.
+   /// </summary>
+   public bool GatherCookies { get; set; } = false;
 
    /// <summary>
    /// High-level frame-isolated message callback handler.
