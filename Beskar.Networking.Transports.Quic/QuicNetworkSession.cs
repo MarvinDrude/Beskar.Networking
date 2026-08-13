@@ -9,6 +9,7 @@ using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Extensions;
 
 namespace Beskar.Networking.Transports.Quic;
 
@@ -315,17 +316,7 @@ public sealed class QuicNetworkSession : INetworkSession
          // Ignored
       }
 
-      foreach (var stream in _activeStreams.Values)
-      {
-         try
-         {
-            await stream.DisposeAsync();
-         }
-         catch
-         {
-            // Ignored
-         }
-      }
+      await _activeStreams.Values.DisposeAllAsync();
       _activeStreams.Clear();
 
       try
