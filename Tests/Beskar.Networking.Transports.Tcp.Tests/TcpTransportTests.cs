@@ -963,5 +963,71 @@ public class TcpTransportTests
       await serverSession2.DisposeAsync();
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task TcpClientServer_KeepAliveOptionsConfigured_SucceedsAndAppliesToSockets()
+   {
+      var options = new TcpTransportOptions
+      {
+         KeepAlive = true,
+         KeepAliveTime = 3,
+         KeepAliveInterval = 1,
+         KeepAliveRetryCount = 2
+      };
+
+      // Test helper configuration directly
+      using (var testSocket = new Socket(SocketType.Stream, ProtocolType.Tcp))
+      {
+         options.ConfigureSocket(testSocket);
+         
+         var keepAliveOption = testSocket.GetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive);
+         await Assert.That(keepAliveOption).IsNotNull();
+         await Assert.That((int)keepAliveOption!).IsNotEqualTo(0);
+         
+         var keepAliveTime = testSocket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime);
+         await Assert.That(keepAliveTime).IsNotNull();
+         await Assert.That((int)keepAliveTime!).IsEqualTo(3);
+         
+         var keepAliveInterval = testSocket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval);
+         await Assert.That(keepAliveInterval).IsNotNull();
+         await Assert.That((int)keepAliveInterval!).IsEqualTo(1);
+         
+         var keepAliveRetryCount = testSocket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount);
+         await Assert.That(keepAliveRetryCount).IsNotNull();
+         await Assert.That((int)keepAliveRetryCount!).IsEqualTo(2);
+      }
+
+      // End-to-end data exchange test using keep-alive options
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var client = new TcpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      var clientStream = (await clientSession.OpenStreamAsync()).Success!;
+      var serverStream = (await serverSession.AcceptStreamAsync()).Success!;
+
+      var payload = "Keep-alive message"u8.ToArray();
+      await clientStream.Transport.Output.WriteAsync(payload);
+      await clientStream.Transport.Output.FlushAsync();
+
+      var readResult = await serverStream.Transport.Input.ReadAsync();
+      var readBytes = readResult.Buffer.ToArray();
+      serverStream.Transport.Input.AdvanceTo(readResult.Buffer.End);
+
+      await Assert.That(readBytes).IsEquivalentTo(payload);
+
+      await clientSession.DisposeAsync();
+      await serverSession.DisposeAsync();
+      await listener.UnbindAsync();
+   }
 }
 

@@ -52,22 +52,7 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
          TraceLogger.LogClientInfo("TCP ConnectAsync: Initiating socket connection to {0}", endPoint);
          socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
 
-         if (_options.NoDelay)
-         {
-            socket.NoDelay = true;
-         }
-         if (_options.SendBufferSize.HasValue)
-         {
-            socket.SendBufferSize = _options.SendBufferSize.Value;
-         }
-         if (_options.ReceiveBufferSize.HasValue)
-         {
-            socket.ReceiveBufferSize = _options.ReceiveBufferSize.Value;
-         }
-         if (_options.LingerState is not null)
-         {
-            socket.LingerState = _options.LingerState;
-         }
+         _options.ConfigureSocket(socket);
 
          await socket.ConnectAsync(endPoint, ct);
          TraceLogger.LogClientInfo("TCP ConnectAsync: Socket successfully connected to {0} (Local: {1})", socket.RemoteEndPoint, socket.LocalEndPoint);

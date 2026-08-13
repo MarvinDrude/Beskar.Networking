@@ -183,22 +183,7 @@ public sealed class TcpNetworkListener(
 
             try
             {
-               if (_options.NoDelay)
-               {
-                  clientSocket.NoDelay = true;
-               }
-               if (_options.SendBufferSize.HasValue)
-               {
-                  clientSocket.SendBufferSize = _options.SendBufferSize.Value;
-               }
-               if (_options.ReceiveBufferSize.HasValue)
-               {
-                  clientSocket.ReceiveBufferSize = _options.ReceiveBufferSize.Value;
-               }
-               if (_options.LingerState is not null)
-               {
-                  clientSocket.LingerState = _options.LingerState;
-               }
+               _options.ConfigureSocket(clientSocket);
 
                var localEndPoint = clientSocket.LocalEndPoint;
                if (localEndPoint is null)
