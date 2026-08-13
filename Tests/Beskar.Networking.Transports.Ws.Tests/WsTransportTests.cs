@@ -10,6 +10,7 @@ using Beskar.Networking.Transports.Tcp;
 
 namespace Beskar.Networking.Transports.Ws.Tests;
 
+[NotInParallel]
 public class WsTransportTests
 {
    [Test]
@@ -1400,6 +1401,56 @@ public class WsTransportTests
       await Assert.ThrowsAsync<ObjectDisposedException>(async () => await serverSession.OpenStreamAsync());
 
       await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WsClientServer_FailedWsHandshake_IncrementsWsFailuresMetrics()
+   {
+      long wsFailures = 0;
+      using var meterListener = new MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == TransportMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.transport.ws.handshake.failures")
+         {
+            Interlocked.Add(ref wsFailures, measurement);
+         }
+      });
+      meterListener.Start();
+
+      var options = new WsTransportOptions();
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      // Connect to WS listener using a standard TCP client and send a non-GET HTTP request to trigger server handshake failure
+      var tcpOptions = new TcpTransportOptions();
+      var tcpClient = new TcpNetworkClient(tcpOptions);
+      var connectResult = await tcpClient.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var tcpSession = connectResult.Success!;
+      var tcpStream = (await tcpSession.OpenStreamAsync()).Success!;
+
+      // Send a POST request to trigger the server handshake failure
+      var invalidRequest = "POST / HTTP/1.1\r\nHost: localhost\r\n\r\n"u8.ToArray();
+      await tcpStream.Transport.Output.WriteAsync(invalidRequest);
+      await tcpStream.Transport.Output.FlushAsync();
+
+      // Wait briefly for server-side to reject the handshake and record the telemetry
+      await Task.Delay(200);
+
+      var currentFailures = Volatile.Read(ref wsFailures);
+      await Assert.That(currentFailures).IsGreaterThanOrEqualTo(1);
+
+      await tcpSession.DisposeAsync();
+      await tcpClient.DisposeAsync();
+      await listener.DisposeAsync();
    }
 }
 

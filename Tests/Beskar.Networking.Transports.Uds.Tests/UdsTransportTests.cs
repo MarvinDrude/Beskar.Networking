@@ -10,6 +10,7 @@ using Beskar.Networking.Transports.Uds.Extensions;
 
 namespace Beskar.Networking.Transports.Uds.Tests;
 
+[NotInParallel]
 public class UdsTransportTests
 {
    private static string GetTempSocketPath()

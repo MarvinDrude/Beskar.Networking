@@ -9,6 +9,7 @@ using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Quic.Tests;
 
+[NotInParallel]
 public class QuicTransportTests
 {
 

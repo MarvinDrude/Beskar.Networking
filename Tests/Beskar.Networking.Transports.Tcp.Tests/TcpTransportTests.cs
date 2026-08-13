@@ -1157,5 +1157,63 @@ public class TcpTransportTests
 
       await listener.UnbindAsync();
    }
+
+   [Test]
+   public async Task TcpClientServer_FailedTlsHandshake_IncrementsTlsFailuresMetrics()
+   {
+      long tlsFailures = 0;
+      using var meterListener = new MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == TransportMetrics.MeterName)
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.transport.tls.handshake.failures")
+         {
+            Interlocked.Add(ref tlsFailures, measurement);
+         }
+      });
+      meterListener.Start();
+
+      using var certificate = CertificateUtility.GenerateSelfSignedCertificate();
+      var options = new TcpTransportOptions
+      {
+         UseSsl = true,
+         SslServerOptions = new SslServerAuthenticationOptions
+         {
+            ServerCertificate = certificate,
+            ClientCertificateRequired = false
+         },
+         SslClientOptions = new SslClientAuthenticationOptions
+         {
+            TargetHost = "localhost",
+            // Explicitly fail validation callback to cause TLS handshake failure
+            RemoteCertificateValidationCallback = (sender, cert, chain, errors) => false
+         }
+      };
+
+      var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var client = new TcpNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      
+      // Connection should fail because TLS handshake fails
+      await Assert.That(connectResult.Failed).IsTrue();
+
+      // Wait briefly for server-side to handle the handshake exception
+      await Task.Delay(200);
+
+      // Verify that TLS handshake failures were recorded
+      var currentFailures = Volatile.Read(ref tlsFailures);
+      await Assert.That(currentFailures).IsGreaterThanOrEqualTo(1);
+
+      await client.DisposeAsync();
+      await listener.DisposeAsync();
+   }
 }
 

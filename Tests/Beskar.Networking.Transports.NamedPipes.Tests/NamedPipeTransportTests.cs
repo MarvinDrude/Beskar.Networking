@@ -8,6 +8,7 @@ using Beskar.Networking.Transports.NamedPipes.Extensions;
 
 namespace Beskar.Networking.Transports.NamedPipes.Tests;
 
+[NotInParallel]
 public class  NamedPipeTransportTests
 {
    private static string GetTempPipeName()
