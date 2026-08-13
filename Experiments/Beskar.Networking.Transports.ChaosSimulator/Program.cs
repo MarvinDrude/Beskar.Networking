@@ -664,6 +664,14 @@ public static class Program
             var poolBlocksReturned = TelemetryCounters.GetValueOrDefault("beskar.transport.memorypool.blocks.returned", 0);
             var poolBlocksCreated = TelemetryCounters.GetValueOrDefault("beskar.transport.memorypool.blocks.created", 0);
 
+            var transportListenersActive = TelemetryGauges.GetValueOrDefault("beskar.transport.listeners.active", 0);
+            var transportConnectionsFailed = TelemetryCounters.GetValueOrDefault("beskar.transport.connections.failed", 0);
+            var transportTlsDuration = TelemetryGauges.GetValueOrDefault("beskar.transport.tls.handshake.duration", 0);
+            var transportTlsFailures = TelemetryCounters.GetValueOrDefault("beskar.transport.tls.handshake.failures", 0);
+            var transportWsDuration = TelemetryGauges.GetValueOrDefault("beskar.transport.ws.handshake.duration", 0);
+            var transportWsFailures = TelemetryCounters.GetValueOrDefault("beskar.transport.ws.handshake.failures", 0);
+            var transportUdpPacketsDropped = TelemetryCounters.GetValueOrDefault("beskar.transport.udp.packets.dropped", 0);
+
             ConsoleRender.CreateTable()
                .SetBorderColor(ConsoleColor.Magenta)
                .AddColumn("OpenTelemetry Meter", Alignment.Left, ConsoleColor.Magenta)
@@ -675,6 +683,11 @@ public static class Program
                .AddRow("Beskar.Networking.Transport", "beskar.transport.bytes.sent/received", "Counter By", $"Sent: {transportBytesSent:N0} B | Recv: {transportBytesRecv:N0} B")
                .AddRow("Beskar.Networking.Transport", "beskar.transport.memorypool.blocks.active", "UpDownCounter {block}", poolBlocksActive.ToString())
                .AddRow("Beskar.Networking.Transport", "beskar.transport.memorypool.blocks.rented/returned/created", "Counter {block}", $"Rented: {poolBlocksRented} | Returned: {poolBlocksReturned} | Created: {poolBlocksCreated}")
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.listeners.active", "UpDownCounter {listener}", transportListenersActive.ToString())
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.connections.failed", "Counter {connection}", transportConnectionsFailed.ToString())
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.tls.handshake.duration/failures", "Histogram/Counter", $"Duration: {transportTlsDuration} ms | Failures: {transportTlsFailures}")
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.ws.handshake.duration/failures", "Histogram/Counter", $"Duration: {transportWsDuration} ms | Failures: {transportWsFailures}")
+               .AddRow("Beskar.Networking.Transport", "beskar.transport.udp.packets.dropped", "Counter {packet}", transportUdpPacketsDropped.ToString())
                .Render();
          }
       }

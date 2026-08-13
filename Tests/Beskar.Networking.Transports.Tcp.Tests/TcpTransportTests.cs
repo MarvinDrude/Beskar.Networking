@@ -10,6 +10,7 @@ using Beskar.Networking.Transports.Quic;
 
 namespace Beskar.Networking.Transports.Tcp.Tests;
 
+[NotInParallel]
 public class TcpTransportTests
 {
 
