@@ -79,18 +79,48 @@ public static class WsHandshake
          return (null, null, null);
       }
 
-      var lines = headersText.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
-      if (lines.Length == 0 || !lines[0].StartsWith("GET ", StringComparison.OrdinalIgnoreCase))
+      var remaining = headersText.AsSpan();
+
+      // Parse the first line (GET /path HTTP/1.1)
+      var firstLineEnd = remaining.IndexOf("\r\n".AsSpan());
+      ReadOnlySpan<char> firstLine;
+      if (firstLineEnd == -1)
+      {
+         firstLine = remaining;
+         remaining = default;
+      }
+      else
+      {
+         firstLine = remaining[..firstLineEnd];
+         remaining = remaining[(firstLineEnd + 2)..];
+      }
+
+      if (!firstLine.StartsWith("GET ".AsSpan(), StringComparison.OrdinalIgnoreCase))
       {
          TraceLogger.LogServerError("WS Handshake: Server handshake failed: only GET requests are allowed.");
          await SendErrorResponseAsync(writer, "400 Bad Request", "Only GET requests are allowed.");
          return (null, null, null);
       }
 
-      var path = lines[0].Split(' ')[1];
-      if (path != options.Path)
+      var firstSpace = firstLine.IndexOf(' ');
+      if (firstSpace == -1)
       {
-         TraceLogger.LogServerError("WS Handshake: Server handshake failed: specified path {0} does not match expected path {1}", path, options.Path);
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: invalid GET request format.");
+         return (null, null, null);
+      }
+
+      var afterGet = firstLine[(firstSpace + 1)..];
+      var secondSpace = afterGet.IndexOf(' ');
+      if (secondSpace == -1)
+      {
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: invalid GET request format.");
+         return (null, null, null);
+      }
+
+      var pathSpan = afterGet[..secondSpace];
+      if (!pathSpan.Equals(options.Path.AsSpan(), StringComparison.Ordinal))
+      {
+         TraceLogger.LogServerError("WS Handshake: Server handshake failed: specified path does not match expected path.");
          await SendErrorResponseAsync(writer, "404 Not Found", "Specified path is not found.");
          return (null, null, null);
       }
@@ -103,50 +133,89 @@ public static class WsHandshake
       Dictionary<string, string>? requestHeaders = null;
       Dictionary<string, string>? requestCookies = null;
 
-      for (var i = 1; i < lines.Length; i++)
+      while (!remaining.IsEmpty)
       {
-         var line = lines[i];
+         var lineEnd = remaining.IndexOf("\r\n".AsSpan());
+         ReadOnlySpan<char> line;
+         if (lineEnd == -1)
+         {
+            line = remaining;
+            remaining = default;
+         }
+         else
+         {
+            line = remaining[..lineEnd];
+            remaining = remaining[(lineEnd + 2)..];
+         }
+
+         if (line.IsEmpty) continue;
+
          var colonIdx = line.IndexOf(':');
          if (colonIdx == -1) continue;
 
-         var headerName = line[..colonIdx].Trim().ToLowerInvariant();
-         var headerValue = line[(colonIdx + 1)..].Trim();
+         var headerNameSpan = line[..colonIdx].Trim();
+         var headerValueSpan = line[(colonIdx + 1)..].Trim();
 
          if (options.GatherHeaders)
          {
             requestHeaders ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            requestHeaders[line[..colonIdx].Trim()] = headerValue;
+            var lookup = requestHeaders.GetAlternateLookup<ReadOnlySpan<char>>();
+            lookup[headerNameSpan] = headerValueSpan.ToString();
          }
 
-         if (headerName == "upgrade" && headerValue.Equals("websocket", StringComparison.OrdinalIgnoreCase))
+         if (headerNameSpan.Equals("upgrade".AsSpan(), StringComparison.OrdinalIgnoreCase))
          {
-            isUpgrade = true;
+            if (headerValueSpan.Equals("websocket".AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+               isUpgrade = true;
+            }
          }
-         else if (headerName == "connection" && headerValue.Contains("upgrade", StringComparison.OrdinalIgnoreCase))
+         else if (headerNameSpan.Equals("connection".AsSpan(), StringComparison.OrdinalIgnoreCase))
          {
-            isConnectionUpgrade = true;
+            if (headerValueSpan.Contains("upgrade".AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+               isConnectionUpgrade = true;
+            }
          }
-         else if (headerName == "sec-websocket-key")
+         else if (headerNameSpan.Equals("sec-websocket-key".AsSpan(), StringComparison.OrdinalIgnoreCase))
          {
-            clientKey = headerValue;
+            clientKey = headerValueSpan.ToString();
          }
-         else if (headerName == "origin")
+         else if (headerNameSpan.Equals("origin".AsSpan(), StringComparison.OrdinalIgnoreCase))
          {
-            origin = headerValue;
+            origin = headerValueSpan.ToString();
          }
-         else if (headerName == "cookie" && options.GatherCookies)
+         else if (headerNameSpan.Equals("cookie".AsSpan(), StringComparison.OrdinalIgnoreCase) && options.GatherCookies)
          {
             requestCookies ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var cookiePairs = headerValue.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            var lookup = requestCookies.GetAlternateLookup<ReadOnlySpan<char>>();
 
-            foreach (var pair in cookiePairs)
+            var cookieRemaining = headerValueSpan;
+            while (!cookieRemaining.IsEmpty)
             {
-               var eqIdx = pair.IndexOf('=');
+               var semiIdx = cookieRemaining.IndexOf(';');
+               ReadOnlySpan<char> cookiePair;
+
+               if (semiIdx == -1)
+               {
+                  cookiePair = cookieRemaining;
+                  cookieRemaining = default;
+               }
+               else
+               {
+                  cookiePair = cookieRemaining[..semiIdx];
+                  cookieRemaining = cookieRemaining[(semiIdx + 1)..];
+               }
+
+               cookiePair = cookiePair.Trim();
+               if (cookiePair.IsEmpty) continue;
+
+               var eqIdx = cookiePair.IndexOf('=');
                if (eqIdx != -1)
                {
-                  var name = pair[..eqIdx].Trim();
-                  var value = pair[(eqIdx + 1)..].Trim();
-                  requestCookies[name] = value;
+                  var nameSpan = cookiePair[..eqIdx].Trim();
+                  var valueSpan = cookiePair[(eqIdx + 1)..].Trim();
+                  lookup[nameSpan] = valueSpan.ToString();
                }
             }
          }
