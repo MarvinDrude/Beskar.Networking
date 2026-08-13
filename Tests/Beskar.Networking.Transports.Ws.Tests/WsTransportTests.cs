@@ -1369,8 +1369,36 @@ public class WsTransportTests
       await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestHeaders", out _)).IsFalse();
       await Assert.That(serverSession.Properties.TryGet<Dictionary<string, string>>("HttpRequestCookies", out _)).IsFalse();
 
+      await listener.UnbindAsync();
+   }
+
+   [Test]
+   public async Task WebSocketSession_ThrowsObjectDisposedException_AfterDisposed()
+   {
+      var options = new WsTransportOptions { Path = "/disposed" };
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      await listener.BindAsync();
+
+      var client = new WsNetworkClient(options);
+      var connectResult = await client.ConnectAsync(listener.LocalAddress);
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var acceptResult = await listener.AcceptSessionAsync();
+      await Assert.That(acceptResult.Failed).IsFalse();
+
+      var clientSession = connectResult.Success!;
+      var serverSession = acceptResult.Success!;
+
+      // Dispose the sessions
       await clientSession.DisposeAsync();
       await serverSession.DisposeAsync();
+
+      // Subsequent AcceptStreamAsync/OpenStreamAsync calls should throw ObjectDisposedException
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await clientSession.AcceptStreamAsync());
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await clientSession.OpenStreamAsync());
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await serverSession.AcceptStreamAsync());
+      await Assert.ThrowsAsync<ObjectDisposedException>(async () => await serverSession.OpenStreamAsync());
+
       await listener.UnbindAsync();
    }
 }

@@ -95,6 +95,11 @@ public sealed class TcpNetworkSession : INetworkSession
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(TcpNetworkSession));
+      }
+
       if (_stream is null)
       {
          TraceLogger.LogServerInfo("TCP Session {0}: Instantiating bidirectional TCP stream wrapper", Id);
@@ -109,6 +114,11 @@ public sealed class TcpNetworkSession : INetworkSession
       NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(TcpNetworkSession));
+      }
+
       if (_stream is null)
       {
          TraceLogger.LogClientInfo("TCP Session {0}: Opening bidirectional TCP stream connection", Id);

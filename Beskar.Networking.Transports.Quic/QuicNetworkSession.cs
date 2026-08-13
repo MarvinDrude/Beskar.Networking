@@ -126,6 +126,11 @@ public sealed class QuicNetworkSession : INetworkSession
 
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(QuicNetworkSession));
+      }
+
       QuicStream? quicStream = null;
       StreamConnection? connection = null;
       var success = false;
@@ -194,6 +199,11 @@ public sealed class QuicNetworkSession : INetworkSession
       NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional,
       CancellationToken ct = default)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         throw new ObjectDisposedException(nameof(QuicNetworkSession));
+      }
+
       QuicStream? quicStream = null;
       StreamConnection? connection = null;
       var success = false;
