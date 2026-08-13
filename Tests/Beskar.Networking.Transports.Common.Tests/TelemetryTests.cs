@@ -189,4 +189,81 @@ public class TelemetryTests
       await Assert.That(recordedConnectedClients).IsEqualTo(1);
       await Assert.That(recordedSubscriptions).IsEqualTo(2);
    }
+
+   [Test]
+   public async Task TransportMetrics_RecordsNewDiagnosticInstrumentsCorrectly()
+   {
+      long recordedListenersActiveDelta = 0;
+      long recordedConnectionsFailed = 0;
+      long recordedTlsHandshakeFailures = 0;
+      long recordedWsHandshakeFailures = 0;
+      long recordedUdpPacketsDropped = 0;
+      double recordedTlsDuration = 0;
+      double recordedWsDuration = 0;
+
+      using var listener = new MeterListener();
+      listener.InstrumentPublished = (instrument, meterListener) =>
+      {
+         if (instrument.Meter.Name == TransportMetrics.MeterName)
+         {
+            meterListener.EnableMeasurementEvents(instrument);
+         }
+      };
+      listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.transport.listeners.active")
+         {
+            Interlocked.Add(ref recordedListenersActiveDelta, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.connections.failed")
+         {
+            Interlocked.Add(ref recordedConnectionsFailed, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.tls.handshake.failures")
+         {
+            Interlocked.Add(ref recordedTlsHandshakeFailures, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.ws.handshake.failures")
+         {
+            Interlocked.Add(ref recordedWsHandshakeFailures, measurement);
+         }
+         else if (instrument.Name == "beskar.transport.udp.packets.dropped")
+         {
+            Interlocked.Add(ref recordedUdpPacketsDropped, measurement);
+         }
+      });
+      listener.SetMeasurementEventCallback<double>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.transport.tls.handshake.duration")
+         {
+            recordedTlsDuration = measurement;
+         }
+         else if (instrument.Name == "beskar.transport.ws.handshake.duration")
+         {
+            recordedWsDuration = measurement;
+         }
+      });
+      listener.Start();
+
+      // Act
+      TransportMetrics.RecordListenerStarted(TransportKind.Tcp);
+      TransportMetrics.RecordListenerStopped(TransportKind.Tcp);
+      TransportMetrics.RecordConnectionFailed(TransportKind.Tcp, "Refused");
+      TransportMetrics.RecordTlsHandshakeDuration(120.5);
+      TransportMetrics.RecordTlsHandshakeFailure("UntrustedCertificate");
+      TransportMetrics.RecordWsHandshakeDuration(45.2);
+      TransportMetrics.RecordWsHandshakeFailure("ForbiddenOrigin");
+      TransportMetrics.RecordUdpPacketDropped();
+
+      listener.RecordObservableInstruments();
+
+      // Assert
+      await Assert.That(recordedListenersActiveDelta).IsEqualTo(0); // +1 and then -1
+      await Assert.That(recordedConnectionsFailed).IsEqualTo(1);
+      await Assert.That(recordedTlsHandshakeFailures).IsEqualTo(1);
+      await Assert.That(recordedWsHandshakeFailures).IsEqualTo(1);
+      await Assert.That(recordedUdpPacketsDropped).IsEqualTo(1);
+      await Assert.That(recordedTlsDuration).IsEqualTo(120.5);
+      await Assert.That(recordedWsDuration).IsEqualTo(45.2);
+   }
 }

@@ -8,6 +8,8 @@ using Beskar.Networking.Transports.Tcp;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using System.Diagnostics;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Ws;
 
@@ -50,6 +52,7 @@ public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
       var connectResult = await _tcpClient.ConnectAsync(endPoint, ct);
       if (connectResult.Failed)
       {
+         TransportMetrics.RecordConnectionFailed(TransportKind.WebSocket, "TcpConnectionFailed");
          TraceLogger.LogClientError("WS ConnectAsync: Failed to establish TCP connection to {0}: {1}", endPoint, connectResult.Error.Message);
          return connectResult.Error;
       }
@@ -69,7 +72,28 @@ public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
          }
 
          var tcpPipe = tcpStreamResult.Success.Transport;
-         var handshakeSuccess = await WsHandshake.ClientHandshakeAsync(tcpPipe, endPoint, _options, ct);
+
+         var start = Stopwatch.GetTimestamp();
+         var handshakeSuccess = false;
+         try
+         {
+            handshakeSuccess = await WsHandshake.ClientHandshakeAsync(tcpPipe, endPoint, _options, ct);
+            if (handshakeSuccess)
+            {
+               TransportMetrics.RecordWsHandshakeDuration(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            }
+            else
+            {
+               TransportMetrics.RecordWsHandshakeFailure("HandshakeVerificationFailed");
+               TransportMetrics.RecordConnectionFailed(TransportKind.WebSocket, "HandshakeVerificationFailed");
+            }
+         }
+         catch (Exception ex)
+         {
+            TransportMetrics.RecordWsHandshakeFailure(ex.GetType().Name);
+            TransportMetrics.RecordConnectionFailed(TransportKind.WebSocket, ex.GetType().Name);
+            throw;
+         }
 
          if (!handshakeSuccess)
          {
@@ -95,6 +119,7 @@ public sealed class WsNetworkClient(WsTransportOptions options) : INetworkClient
       }
       catch (Exception ex)
       {
+         TransportMetrics.RecordConnectionFailed(TransportKind.WebSocket, ex.GetType().Name);
          TraceLogger.LogClientError("WS ConnectAsync: Unexpected error establishing WebSocket connection to {0}: {1}", endPoint, ex.Message);
          if (wsPipe is not null)
          {

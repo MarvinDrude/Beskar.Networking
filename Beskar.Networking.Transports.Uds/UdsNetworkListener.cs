@@ -8,6 +8,7 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Uds;
 
@@ -103,6 +104,7 @@ public sealed class UdsNetworkListener(
          _ = AcceptLoopAsync(socket, _acceptCts.Token);
          TraceLogger.LogServerInfo("UDS Listener: Successfully bound and listening on {0}", socketPath);
          Interlocked.Increment(ref _binds);
+         TransportMetrics.RecordListenerStarted(TransportKind.UnixDomainSocket);
 
          return new ValueTask<VoidResult<NetworkCodeError>>(true);
       }
@@ -165,6 +167,7 @@ public sealed class UdsNetworkListener(
 
          TraceLogger.LogServerInfo("UDS Listener: Successfully unbound");
          Interlocked.Increment(ref _unbinds);
+         TransportMetrics.RecordListenerStopped(TransportKind.UnixDomainSocket);
 
          return true;
       }

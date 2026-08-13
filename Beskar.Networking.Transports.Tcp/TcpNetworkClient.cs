@@ -9,6 +9,8 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using System.Diagnostics;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Tcp;
 
@@ -74,7 +76,17 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
             using var handshakeTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             handshakeTimeoutCts.CancelAfter(_options.SslHandshakeTimeout);
 
-            await sslStream.AuthenticateAsClientAsync(sslOptions, handshakeTimeoutCts.Token);
+            var start = Stopwatch.GetTimestamp();
+            try
+            {
+               await sslStream.AuthenticateAsClientAsync(sslOptions, handshakeTimeoutCts.Token);
+               TransportMetrics.RecordTlsHandshakeDuration(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            }
+            catch (Exception ex)
+            {
+               TransportMetrics.RecordTlsHandshakeFailure(ex.Message);
+               throw;
+            }
             stream = sslStream;
             TraceLogger.LogClientInfo("TCP ConnectAsync: SSL client successfully authenticated for {0}", endPoint);
          }
@@ -104,6 +116,7 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
       }
       catch (SocketException ex)
       {
+         TransportMetrics.RecordConnectionFailed(TransportKind.Tcp, ex.SocketErrorCode.ToString());
          if (connection is not null)
          {
             await _ioQueueRegistry.ReturnAsync(connection);
@@ -122,6 +135,7 @@ public sealed class TcpNetworkClient(TcpTransportOptions options)
       }
       catch (Exception ex)
       {
+         TransportMetrics.RecordConnectionFailed(TransportKind.Tcp, ex.GetType().Name);
          if (connection is not null)
          {
             await _ioQueueRegistry.ReturnAsync(connection);

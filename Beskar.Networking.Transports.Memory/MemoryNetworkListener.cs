@@ -6,6 +6,7 @@ using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Memory;
 
@@ -63,6 +64,7 @@ public sealed class MemoryNetworkListener(
 
       _isBound = true;
       Interlocked.Increment(ref _binds);
+      TransportMetrics.RecordListenerStarted(TransportKind.Memory);
       TraceLogger.LogServerInfo("Memory Listener: Successfully bound and listening on {0}", LocalAddress);
 
       return new ValueTask<VoidResult<NetworkCodeError>>(true);
@@ -77,6 +79,7 @@ public sealed class MemoryNetworkListener(
 
       TraceLogger.LogServerInfo("Memory Listener: Unbinding and stopping listener on {0}", LocalAddress);
       _isBound = false;
+      TransportMetrics.RecordListenerStopped(TransportKind.Memory);
       MemoryTransportRegistry.TryUnregister(_configuredLocalAddress.Address, this);
 
       var channel = _sessionChannel;

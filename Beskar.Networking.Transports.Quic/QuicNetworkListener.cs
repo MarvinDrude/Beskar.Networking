@@ -9,6 +9,7 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Telemetry;
 
 namespace Beskar.Networking.Transports.Quic;
 
@@ -115,7 +116,9 @@ public sealed class QuicNetworkListener(
 
          _ = AcceptLoopAsync(_listener, _acceptCts.Token);
          TraceLogger.LogServerInfo("QUIC Listener: Successfully bound and listening on {0}", LocalAddress);
+
          Interlocked.Increment(ref _binds);
+         TransportMetrics.RecordListenerStarted(TransportKind.Quic);
          return true;
       }
       catch (QuicException ex)
@@ -148,6 +151,7 @@ public sealed class QuicNetworkListener(
          if (listener is not null)
          {
             await listener.DisposeAsync();
+            TransportMetrics.RecordListenerStopped(TransportKind.Quic);
          }
 
          _sessionChannel.Writer.TryComplete();
@@ -219,6 +223,8 @@ public sealed class QuicNetworkListener(
             {
                break;
             }
+
+            TransportMetrics.RecordConnectionFailed(TransportKind.Quic, ex.QuicError.ToString());
             TraceLogger.LogServerError("QUIC Listener: QuicException accepting connection (Code: {0}): {1}", (int)ex.QuicError, ex.Message);
             WriteToSessionChannel(new NetworkCodeError((int)ex.QuicError, $"Listener acceptance error: {ex.Message}"));
 
@@ -230,6 +236,8 @@ public sealed class QuicNetworkListener(
             {
                break;
             }
+
+            TransportMetrics.RecordConnectionFailed(TransportKind.Quic, ex.GetType().Name);
             TraceLogger.LogServerError("QUIC Listener: Unexpected error accepting connection: {0}", ex.Message);
             WriteToSessionChannel(new NetworkCodeError(-1, $"Listener acceptance error: {ex.Message}"));
 

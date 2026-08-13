@@ -162,6 +162,7 @@ public sealed class UdpNetworkSession : INetworkSession
 
       if (Volatile.Read(ref _isWriterPaused) == 1)
       {
+         TransportMetrics.RecordUdpPacketDropped();
          // Drop packet since the session pipe is full
          return ValueTask.CompletedTask;
       }
