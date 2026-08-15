@@ -35,6 +35,7 @@
 ![Issues](https://img.shields.io/github/issues/MarvinDrude/Beskar.Networking)
 ![Repo Size](https://img.shields.io/github/repo-size/MarvinDrude/Beskar.Networking.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://raw.githubusercontent.com/MarvinDrude/Beskar.Networking/master/LICENSE.md)
+[![HTTP Arena](https://img.shields.io/endpoint?url=https://www.http-arena.com/badge/beskar-websocket/ws.json)](https://www.http-arena.com/#scope=ws&type=emerging,experimental,flagship)
 
 ## About
 
