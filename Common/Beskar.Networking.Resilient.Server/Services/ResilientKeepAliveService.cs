@@ -1,4 +1,5 @@
 using Beskar.Networking.Protocol;
+using Beskar.Networking.Protocol.Payloads;
 using Beskar.Networking.Resilient.Common.Enums;
 using Beskar.Networking.Resilient.Common.Telemetry;
 using Beskar.Utilities.Tracing;
@@ -107,7 +108,11 @@ public sealed class ResilientKeepAliveService<TFrame>(ResilientServer<TFrame> se
                      {
                         try
                         {
-                           await client.DisconnectAsync();
+                           await client.DisconnectAsync(new DisconnectPacketPayload
+                           {
+                              ReasonCode = 0x8D,
+                              ReasonString = "KeepAlive timeout"
+                           });
                         }
                         catch
                         {

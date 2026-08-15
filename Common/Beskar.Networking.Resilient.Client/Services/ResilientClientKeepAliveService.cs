@@ -64,30 +64,37 @@ public sealed class ResilientClientKeepAliveService<TFrame>(ResilientClient<TFra
       if (!options.Enabled || options.KeepAliveInterval <= TimeSpan.Zero)
          return;
 
-      using var timer = new PeriodicTimer(options.KeepAliveInterval);
-
       try
       {
-         while (!ct.IsCancellationRequested && await timer.WaitForNextTickAsync(ct))
+         while (!ct.IsCancellationRequested)
          {
-            if (!_client.IsConnected) continue;
+            if (!_client.IsConnected)
+            {
+               await Task.Delay(200, ct);
+               continue;
+            }
 
             var now = DateTimeOffset.UtcNow;
-            var idleTime = now - _client.LastActivityAt;
+            var diff = now - _client.LastActivityAt;
 
-            if (idleTime >= options.KeepAliveInterval)
+            if (diff < options.KeepAliveInterval)
             {
-               try
-               {
-                  Volatile.Write(ref _client.LastPingSentTicks, DateTimeOffset.UtcNow.Ticks);
-                  var pingFrame = TFrame.CreateFrame(ResilientFrameKind.Ping);
-                  await _client.SendAsync(pingFrame, ct);
-               }
-               catch (Exception ex) when (ex is not OperationCanceledException)
-               {
-                  // protection against keep-alive send exceptions
-               }
+               await Task.Delay(200, ct);
+               continue;
             }
+
+            try
+            {
+               Volatile.Write(ref _client.LastPingSentTicks, DateTimeOffset.UtcNow.Ticks);
+               var pingFrame = TFrame.CreateFrame(ResilientFrameKind.Ping);
+               await _client.SendAsync(pingFrame, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+               // protection against keep-alive send exceptions
+            }
+
+            await Task.Delay(200, ct);
          }
       }
       catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
