@@ -281,13 +281,10 @@ public sealed class RaftNetworkTransport : IRaftTransport
                var seqReader = new SequenceReader<byte>(buffer);
                if (RaftProtocolCodec.TryReadFrame(ref seqReader, out _, out responsePayload))
                {
-                  reader.AdvanceTo(seqReader.Position, buffer.End);
                   matched = true;
                }
-               else
-               {
-                  reader.AdvanceTo(buffer.Start, buffer.End);
-               }
+
+               reader.AdvanceTo(seqReader.Position, buffer.End);
 
                if (matched)
                {

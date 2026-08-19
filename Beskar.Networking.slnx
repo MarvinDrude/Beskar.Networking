@@ -119,6 +119,7 @@
     <Project Path="Experiments/Beskar.Networking.Connections/Beskar.Networking.Connections.csproj" />
     <Project Path="Experiments/Beskar.Networking.Experiments/Beskar.Networking.Experiments.csproj" />
     <Project Path="Experiments/Beskar.Mqtt.ChaosSimulator/Beskar.Mqtt.ChaosSimulator.csproj" />
+    <Project Path="Experiments/Beskar.Raft.ChaosSimulator/Beskar.Raft.ChaosSimulator.csproj" />
     <Project Path="Experiments/Beskar.Mqtt.AutoReconnectStressTest/Beskar.Mqtt.AutoReconnectStressTest.csproj" />
     <Project Path="Experiments/Beskar.Networking.Transports.ChaosSimulator/Beskar.Networking.Transports.ChaosSimulator.csproj" />
     <Project Path="Experiments/Beskar.Networking.Performance/Beskar.Networking.Performance.csproj" />

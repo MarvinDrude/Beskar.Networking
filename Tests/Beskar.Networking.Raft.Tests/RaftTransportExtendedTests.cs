@@ -87,4 +87,63 @@ public class RaftTransportExtendedTests
       await transport1.DisposeAsync();
       await transport2.DisposeAsync();
    }
+
+   [Test]
+   public async Task RaftNetworkTransport_CorruptedFramingData_RecoversAndIgnoresGarbage()
+   {
+      var memoryOptions = new MemoryTransportOptions();
+      var ep = new MemoryEndPoint($"corrupt-ep-{Guid.NewGuid():N}");
+
+      var listener = new MemoryNetworkListener(ep, memoryOptions);
+      var transport = new RaftNetworkTransport(listener, []);
+
+      // Return valid response when valid RPC arrives
+      await transport.StartAsync(req => ValueTask.FromResult(
+         RaftRpcResponse.FromRequestVote(new RequestVoteResponse { Term = 42, VoteGranted = true })));
+
+      // Directly connect a client and send corrupt bytes followed by a valid RequestVote packet
+      var client = new MemoryNetworkClient(memoryOptions);
+      var connResult = await client.ConnectAsync(ep);
+      await Assert.That(connResult.Success).IsNotNull();
+
+      var session = connResult.Success!;
+      var streamResult = await session.OpenStreamAsync(Abstractions.Enums.NetworkStreamDirection.Bidirectional);
+      await Assert.That(streamResult.Success).IsNotNull();
+
+      var stream = streamResult.Success!;
+      var output = stream.Transport.Output;
+
+      // 1. Write garbage framing bytes (invalid magic numbers)
+      var span = output.GetSpan(8);
+      "DEADBEEF"u8.CopyTo(span);
+      output.Advance(8);
+      await output.FlushAsync();
+
+      // 2. Write valid RequestVote frame
+      Protocol.Codec.RaftProtocolCodec.WriteRequestVote(output, new RequestVoteRequest
+      {
+         Term = 42,
+         CandidateId = "test-candidate",
+         LastLogIndex = 1,
+         LastLogTerm = 1
+      });
+      await output.FlushAsync();
+
+      // 3. Read response frame
+      var input = stream.Transport.Input;
+      var readResult = await input.ReadAsync();
+      var seqReader = new System.Buffers.SequenceReader<byte>(readResult.Buffer);
+
+      var parsed = Protocol.Codec.RaftProtocolCodec.TryReadFrame(ref seqReader, out var msgType, out var payload);
+      await Assert.That(parsed).IsTrue();
+      await Assert.That(msgType).IsEqualTo(RaftMessageType.RequestVoteResponse);
+
+      var resp = payload as RequestVoteResponse;
+      await Assert.That(resp).IsNotNull();
+      await Assert.That(resp!.Term).IsEqualTo(42UL);
+
+      await stream.DisposeAsync();
+      await client.DisposeAsync();
+      await transport.DisposeAsync();
+   }
 }

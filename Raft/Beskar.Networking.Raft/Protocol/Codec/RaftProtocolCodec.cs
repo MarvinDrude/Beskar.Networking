@@ -29,63 +29,69 @@ public static class RaftProtocolCodec
       messageType = default;
       payload = null;
 
-      if (reader.Remaining < HeaderSize)
+      while (reader.Remaining >= HeaderSize)
       {
-         return false;
+         var headerReader = reader;
+         if (!headerReader.TryRead(out var m1) || m1 != MagicByte1 ||
+             !headerReader.TryRead(out var m2) || m2 != MagicByte2)
+         {
+            reader.Advance(1);
+            continue;
+         }
+
+         if (!headerReader.TryRead(out var version) || version != CurrentVersion)
+         {
+            reader.Advance(1);
+            continue;
+         }
+
+         if (!headerReader.TryRead(out var typeByte))
+         {
+            reader.Advance(1);
+            continue;
+         }
+
+         if (!headerReader.TryReadLittleEndian(out int payloadLength) || payloadLength < 0)
+         {
+            reader.Advance(1);
+            continue;
+         }
+
+         if (headerReader.Remaining < payloadLength)
+         {
+            // Incomplete payload, wait for more data
+            return false;
+         }
+
+         // We have the complete frame! Advance the main reader past header.
+         reader = headerReader;
+         var payloadSequence = reader.Sequence.Slice(reader.Position, payloadLength);
+         reader.Advance(payloadLength);
+
+         var payloadReader = new SequenceReader<byte>(payloadSequence);
+         messageType = (RaftMessageType)typeByte;
+
+         payload = messageType switch
+         {
+            RaftMessageType.RequestVote => ReadRequestVote(ref payloadReader),
+            RaftMessageType.RequestVoteResponse => ReadRequestVoteResponse(ref payloadReader),
+            RaftMessageType.AppendEntries => ReadAppendEntries(ref payloadReader),
+            RaftMessageType.AppendEntriesResponse => ReadAppendEntriesResponse(ref payloadReader),
+            RaftMessageType.InstallSnapshot => ReadInstallSnapshot(ref payloadReader),
+            RaftMessageType.InstallSnapshotResponse => ReadInstallSnapshotResponse(ref payloadReader),
+            _ => null
+         };
+
+         if (payload == null)
+         {
+            reader.Advance(1);
+            continue;
+         }
+
+         return true;
       }
 
-      var headerReader = reader;
-      if (!headerReader.TryRead(out var m1) || m1 != MagicByte1 ||
-          !headerReader.TryRead(out var m2) || m2 != MagicByte2)
-      {
-         // Skip invalid byte to search for framing boundary
-         reader.Advance(1);
-         return false;
-      }
-
-      if (!headerReader.TryRead(out var version) || version != CurrentVersion)
-      {
-         reader.Advance(1);
-         return false;
-      }
-
-      if (!headerReader.TryRead(out var typeByte))
-      {
-         return false;
-      }
-
-      if (!headerReader.TryReadLittleEndian(out int payloadLength) || payloadLength < 0)
-      {
-         reader.Advance(1);
-         return false;
-      }
-
-      if (headerReader.Remaining < payloadLength)
-      {
-         // Incomplete payload, wait for more data
-         return false;
-      }
-
-      // We have the complete frame! Advance the main reader past header.
-      reader = headerReader;
-      var payloadSequence = reader.Sequence.Slice(reader.Position, payloadLength);
-      reader.Advance(payloadLength);
-
-      var payloadReader = new SequenceReader<byte>(payloadSequence);
-      messageType = (RaftMessageType)typeByte;
-
-      payload = messageType switch
-      {
-         RaftMessageType.RequestVote => ReadRequestVote(ref payloadReader),
-         RaftMessageType.RequestVoteResponse => ReadRequestVoteResponse(ref payloadReader),
-         RaftMessageType.AppendEntries => ReadAppendEntries(ref payloadReader),
-         RaftMessageType.AppendEntriesResponse => ReadAppendEntriesResponse(ref payloadReader),
-         RaftMessageType.InstallSnapshot => ReadInstallSnapshot(ref payloadReader),
-         RaftMessageType.InstallSnapshotResponse => ReadInstallSnapshotResponse(ref payloadReader),
-         _ => null
-      };
-
-      return payload != null;
+      return false;
    }
 
    public static void WriteRequestVote(IBufferWriter<byte> writer, RequestVoteRequest request)

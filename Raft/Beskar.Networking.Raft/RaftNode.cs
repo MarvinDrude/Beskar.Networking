@@ -33,6 +33,7 @@ public sealed class RaftNode : IAsyncDisposable
 
    private int _role = (int)RaftRole.Stopped;
    private ulong _currentTerm;
+   private string? _votedFor;
    private string? _leaderId;
    private ulong _commitIndex;
    private ulong _lastApplied;
@@ -76,6 +77,7 @@ public sealed class RaftNode : IAsyncDisposable
       }
 
       _currentTerm = await Storage.GetCurrentTermAsync(ct);
+      _votedFor = await Storage.GetVotedForAsync(ct);
       _commitIndex = 0;
       _lastApplied = 0;
       _lastHeartbeatTicks = Environment.TickCount64;
@@ -258,6 +260,7 @@ public sealed class RaftNode : IAsyncDisposable
          previousRole = Role;
          _role = (int)RaftRole.Candidate;
          _currentTerm++;
+         _votedFor = Options.NodeId;
          electionTerm = _currentTerm;
          _leaderId = null;
          _lastHeartbeatTicks = Environment.TickCount64;
@@ -585,40 +588,50 @@ public sealed class RaftNode : IAsyncDisposable
 
    private async ValueTask<RequestVoteResponse> HandleRequestVoteAsync(RequestVoteRequest request)
    {
-      var currentTerm = CurrentTerm;
+      var lastLogIndex = await Storage.GetLastLogIndexAsync();
+      var lastLogTerm = await Storage.GetLastLogTermAsync();
 
-      if (request.Term > currentTerm)
+      var isUpToDate = request.LastLogTerm > lastLogTerm ||
+                       (request.LastLogTerm == lastLogTerm && request.LastLogIndex >= lastLogIndex);
+
+      ulong responseTerm;
+      var voteGranted = false;
+      string? updatedVotedFor;
+
+      lock (_stateLock)
       {
-         await StepDownAsync(request.Term, CancellationToken.None);
-         currentTerm = CurrentTerm;
-      }
-
-      if (request.Term < currentTerm)
-      {
-         return new RequestVoteResponse { Term = currentTerm, VoteGranted = false };
-      }
-
-      var votedFor = await Storage.GetVotedForAsync();
-      var canVote = string.IsNullOrEmpty(votedFor) || votedFor == request.CandidateId;
-
-      if (canVote)
-      {
-         var lastLogIndex = await Storage.GetLastLogIndexAsync();
-         var lastLogTerm = await Storage.GetLastLogTermAsync();
-
-         // Raft election safety: Candidate's log must be at least as up-to-date as receiver's log
-         var isUpToDate = request.LastLogTerm > lastLogTerm ||
-                          (request.LastLogTerm == lastLogTerm && request.LastLogIndex >= lastLogIndex);
-
-         if (isUpToDate)
+         if (request.Term > _currentTerm)
          {
-            await Storage.SetVotedForAsync(request.CandidateId);
-            Volatile.Write(ref _lastHeartbeatTicks, Environment.TickCount64);
-            return new RequestVoteResponse { Term = currentTerm, VoteGranted = true };
+            _role = (int)RaftRole.Follower;
+            _currentTerm = request.Term;
+            _votedFor = null;
+            _lastHeartbeatTicks = Environment.TickCount64;
+            _electionTimeoutMs = GetNextElectionTimeoutMs();
          }
+
+         responseTerm = _currentTerm;
+
+         if (request.Term == _currentTerm)
+         {
+            var canVote = string.IsNullOrEmpty(_votedFor) || _votedFor == request.CandidateId;
+            if (canVote && isUpToDate)
+            {
+               voteGranted = true;
+               _votedFor = request.CandidateId;
+               _lastHeartbeatTicks = Environment.TickCount64;
+            }
+         }
+
+         updatedVotedFor = _votedFor;
       }
 
-      return new RequestVoteResponse { Term = currentTerm, VoteGranted = false };
+      await Storage.SetTermAndVoteAsync(responseTerm, updatedVotedFor);
+
+      return new RequestVoteResponse
+      {
+         Term = responseTerm,
+         VoteGranted = voteGranted
+      };
    }
 
    private async ValueTask<AppendEntriesResponse> HandleAppendEntriesAsync(AppendEntriesRequest request)
