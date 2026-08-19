@@ -73,6 +73,11 @@
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.TopicAliases/Beskar.Mqtt.Example.TopicAliases.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.AcknowledgedPublish/Beskar.Mqtt.Example.AcknowledgedPublish.csproj" />
   </Folder>
+  <Folder Name="/Examples/Raft/">
+    <Project Path="Examples/Raft/Beskar.Raft.Example.QuickStart/Beskar.Raft.Example.QuickStart.csproj" />
+    <Project Path="Examples/Raft/Beskar.Raft.Example.KeyValueStore/Beskar.Raft.Example.KeyValueStore.csproj" />
+    <Project Path="Examples/Raft/Beskar.Raft.Example.TcpCluster/Beskar.Raft.Example.TcpCluster.csproj" />
+  </Folder>
   <Folder Name="/Examples/Resilient/">
     <Project Path="Examples/Resilient/Beskar.Resilient.Chat.Common/Beskar.Resilient.Chat.Common.csproj" />
     <Project Path="Examples/Resilient/Beskar.Resilient.Chat.Server/Beskar.Resilient.Chat.Server.csproj" />
@@ -140,6 +145,10 @@
     <Project Path="Tests/Beskar.Networking.Transports.Memory.Tests/Beskar.Networking.Transports.Memory.Tests.csproj" />
     <Project Path="Tests/Beskar.Mqtt.Integration.Tests/Beskar.Mqtt.Integration.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Protocol.Tests/Beskar.Networking.Protocol.Tests.csproj" />
+    <Project Path="Tests/Beskar.Networking.Raft.Tests/Beskar.Networking.Raft.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Raft/">
+    <Project Path="Raft/Beskar.Networking.Raft/Beskar.Networking.Raft.csproj" />
   </Folder>
   <Folder Name="/Utilities/">
     <Project Path="Utilities/Beskar.Utilities.Console/Beskar.Utilities.Console.csproj" />
