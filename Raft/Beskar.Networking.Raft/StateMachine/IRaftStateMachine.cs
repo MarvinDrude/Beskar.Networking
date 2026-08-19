@@ -12,17 +12,17 @@ public interface IRaftStateMachine
    /// <param name="logIndex">The index of the log entry being applied.</param>
    /// <param name="ct">Cancellation token.</param>
    /// <returns>The result of applying the command.</returns>
-   ValueTask<ReadOnlyMemory<byte>> ApplyAsync(ReadOnlyMemory<byte> command, ulong logIndex, CancellationToken ct = default);
+   public ValueTask<ReadOnlyMemory<byte>> ApplyAsync(ReadOnlyMemory<byte> command, ulong logIndex, CancellationToken ct = default);
 
    /// <summary>
    /// Takes a snapshot of the current state machine state.
    /// </summary>
-   ValueTask<ReadOnlyMemory<byte>> TakeSnapshotAsync(CancellationToken ct = default)
+   public ValueTask<ReadOnlyMemory<byte>> TakeSnapshotAsync(CancellationToken ct = default)
       => ValueTask.FromResult(ReadOnlyMemory<byte>.Empty);
 
    /// <summary>
    /// Restores the state machine state from a given snapshot.
    /// </summary>
-   ValueTask RestoreSnapshotAsync(ReadOnlyMemory<byte> snapshot, ulong lastIncludedIndex, ulong lastIncludedTerm, CancellationToken ct = default)
+   public ValueTask RestoreSnapshotAsync(ReadOnlyMemory<byte> snapshot, ulong lastIncludedIndex, ulong lastIncludedTerm, CancellationToken ct = default)
       => ValueTask.CompletedTask;
 }
