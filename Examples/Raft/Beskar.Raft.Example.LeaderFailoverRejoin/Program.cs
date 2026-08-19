@@ -115,7 +115,7 @@ await leader1.StopAsync();
 activeNodes.Remove(leader1Id);
 
 // ----------------------------------------------------
-// Step 3: Remaining 2 nodes elect a new leader
+// Step 3: Remaining 2 nodes detect timeout & elect new leader
 // ----------------------------------------------------
 Console.WriteLine("\n--- Step 3: Remaining 2 nodes detecting timeout & electing new leader ---");
 
@@ -142,8 +142,8 @@ await leader2.ProposeAsync(Encoding.UTF8.GetBytes("MSG_3_DURING_PARTITION"));
 
 await Task.Delay(150);
 
-Console.WriteLine($"Current applied logs on dead '{leader1Id}': [{string.Join(", ", stateMachines[leader1Id].AppliedLogs)}]");
-Console.WriteLine($"Current applied logs on active '{leader2Id}': [{string.Join(", ", stateMachines[leader2Id].AppliedLogs)}]");
+Console.WriteLine($"Current applied logs on dead '{leader1Id}': [{string.Join(", ", stateMachines[leader1Id].GetAppliedLogsFormatted())}]");
+Console.WriteLine($"Current applied logs on active '{leader2Id}': [{string.Join(", ", stateMachines[leader2Id].GetAppliedLogsFormatted())}]");
 
 // ----------------------------------------------------
 // Step 5: Revive crashed node and observe reinstallation
@@ -179,7 +179,7 @@ await Task.Delay(200);
 Console.WriteLine("\n--- Final Verification of Replicated Logs Across Cluster ---");
 foreach (var (id, sm) in stateMachines)
 {
-   Console.WriteLine($"Node '{id}' Logs: [{string.Join(", ", sm.AppliedLogs)}]");
+   Console.WriteLine($"Node '{id}' Logs: [{string.Join(", ", sm.GetAppliedLogsFormatted())}]");
 }
 
 foreach (var node in activeNodes.Values)
@@ -192,16 +192,17 @@ Console.WriteLine("\nDone!");
 internal sealed class FailoverDemoStateMachine(string nodeId) : IRaftStateMachine
 {
    private readonly string _nodeId = nodeId;
-   public readonly List<string> AppliedLogs = [];
-   private readonly Lock _lock = new();
+   public readonly ConcurrentDictionary<ulong, string> AppliedLogs = new();
+
+   public IEnumerable<string> GetAppliedLogsFormatted()
+   {
+      return AppliedLogs.OrderBy(kv => kv.Key).Select(kv => kv.Value);
+   }
 
    public ValueTask<ReadOnlyMemory<byte>> ApplyAsync(ReadOnlyMemory<byte> command, ulong logIndex, CancellationToken ct = default)
    {
       var str = Encoding.UTF8.GetString(command.Span);
-      lock (_lock)
-      {
-         AppliedLogs.Add($"#{logIndex}:{str}");
-      }
+      AppliedLogs[logIndex] = $"#{logIndex}:{str}";
       return ValueTask.FromResult<ReadOnlyMemory<byte>>(Encoding.UTF8.GetBytes($"ACK:{str}"));
    }
 }

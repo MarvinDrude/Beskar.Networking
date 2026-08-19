@@ -49,6 +49,7 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 - **Transport Independence**: Run MQTT or Resilient protocols seamlessly over TCP, WebSockets, QUIC, UDP, Unix Domain Sockets (UDS), Named Pipes, or In-Memory.
 - **Native OpenTelemetry & Metrics**: Built-in `System.Diagnostics.Metrics` meters across all transports, resilient protocol, and MQTT broker/client.
 - **Full MQTT v3.1.1 & v5.0 Support**: High-performance broker and client with retained message persistence, offline crash-safe queuing, and user properties.
+- **Distributed Raft Consensus**: Complete, low-allocation Raft consensus engine with quorum log replication, leader elections, and persistent WAL storage over any transport.
 - **No external runtime dependencies** besides .NET and Beskar.
 
 ---
@@ -61,6 +62,7 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 | **Beskar.Mqtt.Client** | Lightweight and efficient MQTT client supporting v3.1.1 and v5.0 over any transport. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Mqtt.Client.svg)](https://www.nuget.org/packages/Beskar.Mqtt.Client/) |
 | **Beskar.Networking.Resilient.Server** | High-performance, event-driven resilient server wrapper supporting keep-alives, handshakes, and custom framing over any transport. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Resilient.Server.svg)](https://www.nuget.org/packages/Beskar.Networking.Resilient.Server/) |
 | **Beskar.Networking.Resilient.Client** | High-performance resilient client wrapper supporting automatic reconnection, keep-alives, handshakes, and custom framing. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Resilient.Client.svg)](https://www.nuget.org/packages/Beskar.Networking.Resilient.Client/) |
+| **Beskar.Networking.Raft** | High-performance, low-allocation Raft consensus engine with quorum replication, elections, and WAL storage over any transport. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Raft.svg)](https://www.nuget.org/packages/Beskar.Networking.Raft/) |
 | **Beskar.Networking.Transports.Tcp** | High-performance, native TCP transport implementation supporting TLS. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Tcp.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Tcp/) |
 | **Beskar.Networking.Transports.Ws** | WebSocket (WS/WSS) transport adapter wrapping custom framed duplex pipelines. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Ws.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Ws/) |
 | **Beskar.Networking.Transports.Quic** | Multiplexed and secure QUIC transport implementation built on native .NET libraries. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Quic.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Quic/) |
@@ -207,6 +209,41 @@ await client.DisposeAsync();
 await server.DisposeAsync();
 ```
 
+### Distributed Raft Consensus (Leader Election & Log Replication)
+> **What it's worth:** Production-grade distributed consensus across multi-node clusters over **any** Beskar transport.
+> Features automatic leader elections with randomized jitter timers, quorum log replication, crash-safe WAL persistence (`FileRaftLogStorage`),
+> and automatic reinstallation of lagging or recovered follower nodes. Ideal for distributed databases, distributed key-value stores, and high-availability leader coordination.
+
+```csharp
+var options = new RaftNodeOptions
+{
+   NodeId = "node-1",
+   Peers = ["node-2", "node-3"],
+   ElectionTimeoutMin = TimeSpan.FromMilliseconds(150),
+   ElectionTimeoutMax = TimeSpan.FromMilliseconds(300),
+   HeartbeatInterval = TimeSpan.FromMilliseconds(50)
+};
+
+var storage = new FileRaftLogStorage("./cluster-data/node-1");
+var stateMachine = new MyStateMachine();
+var tcpOptions = new TcpTransportOptions();
+var listener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 11050), tcpOptions);
+var transport = new RaftNetworkTransport(listener, [
+   new RaftPeerEndpoint("node-2", new IPEndPoint(IPAddress.Loopback, 11051), () => new TcpNetworkClient(tcpOptions)),
+   new RaftPeerEndpoint("node-3", new IPEndPoint(IPAddress.Loopback, 11052), () => new TcpNetworkClient(tcpOptions)),
+]);
+
+await using var node = new RaftNode(options, storage, stateMachine, transport);
+await node.StartAsync();
+
+// Propose state mutation to the cluster leader
+if (node.Role == RaftRole.Leader)
+{
+   var result = await node.ProposeAsync(Encoding.UTF8.GetBytes("SET cluster_state active"));
+   Console.WriteLine($"Quorum commit response: {Encoding.UTF8.GetString(result.Span)}");
+}
+```
+
 ---
 
 ## API Overview
@@ -235,12 +272,13 @@ For more details, see the [Basics Documentation](https://github.com/MarvinDrude/
 
 ### High-Level Managed APIs
 
-For protocols like MQTT, or connection-resilient networking, `Beskar.Networking` provides fully managed implementations:
+For protocols like MQTT, Raft consensus, or connection-resilient networking, `Beskar.Networking` provides fully managed implementations:
 * **Fully Managed Broker & Client (MQTT)**: Pre-built wrappers that manage the connection, session, and stream states automatically.
 * **Resilient Client & Server**: Connection-resilient managed wrappers (`ResilientClient<TFrame>` and `ResilientServer<TFrame>`) that handle transient disconnect supervision, automatic pings/pongs (keep-alive), protocol control handshakes, custom challenge-response authentication, and pluggable framing protocol generation.
 * **Event-Driven**: Fully event-driven design with convenient events to react to incoming messages, client connections, and status updates, eliminating the need to write custom accept loops or pipeline plumbing.
+* **Distributed Raft Consensus Engine**: Full consensus engine (`RaftNode`) supporting leader election, quorum log commits, file-backed crash-safe WAL (`FileRaftLogStorage`), in-memory storage, and transport independence.
 
-For more details, see the [Resilient Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Resilient/Overview.md) and [Mqtt Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Mqtt/PubSub.md).
+For more details, see the [Resilient Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Resilient/Overview.md) and [Mqtt Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Mqtt/PubSub.md) and [Raft Documentation](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Raft/Overview.md).
 
 ---
 
@@ -299,6 +337,12 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
     - [**Client**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.Chat.Client): Interactive chat client using `ResilientClient<BeskarPacket>` that reconnects and re-authenticates/joins automatically when connection is lost.
   - [**Simple Ping-Pong**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.PingPong): Demonstrates basic ping-pong message exchange using `ResilientServer` and `ResilientClient` with default framing over TCP port 9001.
   - [**Authentication Challenge-Response**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.Authentication): Highlights pre-handshake HMAC-SHA256 signature challenge-response authentication, showing both success and server-denial test cases on TCP port 9002.
+- [**Raft Consensus Examples**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft): A set of projects demonstrating distributed state machine consensus:
+  - [**QuickStart (Embedded / Single-Node)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.QuickStart): Demonstrates configuring `RaftNode`, implementing `IRaftStateMachine`, listening to lifecycle events (`OnRoleChanged`, `OnLeaderChanged`, `OnEntryCommitted`), and submitting proposals.
+  - [**Distributed Key-Value Store**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.KeyValueStore): Demonstrates a 3-node cluster maintaining a strongly consistent replicated Key-Value store with `PUT` and `DEL` mutations over in-memory transport.
+  - [**Multi-Node TCP Cluster**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.TcpCluster): Shows a 3-node cluster communicating over real TCP sockets on distinct loopback ports (`11051`, `11052`, `11053`) with `TcpNetworkListener` and `TcpNetworkClient`.
+  - [**Persistent Storage & Recovery**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.PersistentStorage): Demonstrates crash-safe disk persistence using `FileRaftLogStorage` with `metadata.bin` and `raft.log`, shutting down the node, restarting, and recovering the full log and term.
+  - [**Leader Failover & Reinstallation**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.LeaderFailoverRejoin): Highlights a leader crash, automatic quorum election of a new leader, log commitments during partitions, revival of the crashed node, and automatic catch-up reinstallation.
 - [**Telemetry & OpenTelemetry Console**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Telemetry/Beskar.Example.Telemetry): Demonstrates how to subscribe to all native telemetry meters using `MeterListener` or OpenTelemetry exporters, showing real-time event streaming and a live metrics summary dashboard as operations occur.
 
 ---
@@ -308,6 +352,10 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
 You can find detailed documentation for `Beskar.Networking` [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation).
 
 - [**Basics & Architecture**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Basics): Overview of core interfaces (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`).
+- [**Raft Consensus Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Raft):
+  - [Raft Consensus Overview](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/Overview.md)
+  - [Storage & Persistence Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/StorageAndPersistence.md)
+  - [State Machine & Proposals Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/StateMachineAndProposals.md)
 - [**Dedicated Transport Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Transports):
   - [TCP Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Tcp.md)
   - [WebSocket Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Ws.md)

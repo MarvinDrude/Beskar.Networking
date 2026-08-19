@@ -45,6 +45,11 @@
     <File Path="Documentation/Mqtt/UserProperties.md" />
     <File Path="Documentation/Mqtt/TopicAliases.md" />
   </Folder>
+  <Folder Name="/Documentation/Raft/">
+    <File Path="Documentation/Raft/Overview.md" />
+    <File Path="Documentation/Raft/StorageAndPersistence.md" />
+    <File Path="Documentation/Raft/StateMachineAndProposals.md" />
+  </Folder>
   <Folder Name="/Documentation/Resilient/">
     <File Path="Documentation/Resilient/Authentication.md" />
     <File Path="Documentation/Resilient/CustomFraming.md" />
