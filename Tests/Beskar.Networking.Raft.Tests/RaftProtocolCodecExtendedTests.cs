@@ -184,4 +184,66 @@ public class RaftProtocolCodecExtendedTests
       await Assert.That(decoded.Term).IsEqualTo(88UL);
       await Assert.That(decoded.Success).IsEqualTo(successFlag);
    }
+
+   [Test]
+   public async Task TryReadFrame_CorruptedPayload_AllowsReadingSubsequentValidFrame()
+   {
+      var writer = new ArrayBufferWriter<byte>();
+
+      // Frame 1: Valid header with unknown message type (0xEE) and payload
+      writer.GetSpan(12)[0] = 0xBE;
+      writer.GetSpan(12)[1] = 0x52;
+      writer.GetSpan(12)[2] = 0x01; // Version
+      writer.GetSpan(12)[3] = 0xEE; // Unknown type
+      System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(writer.GetSpan(12).Slice(4, 4), 4);
+      "JUNK"u8.CopyTo(writer.GetSpan(12).Slice(8, 4));
+      writer.Advance(12);
+
+      // Frame 2: Valid RequestVoteResponse
+      var validResponse = new RequestVoteResponse { Term = 77, VoteGranted = true };
+      RaftProtocolCodec.WriteRequestVoteResponse(writer, validResponse);
+
+      var sequence = new ReadOnlySequence<byte>(writer.WrittenMemory);
+      var reader = new SequenceReader<byte>(sequence);
+
+      // Attempt to read frames
+      var foundValid = false;
+      while (RaftProtocolCodec.TryReadFrame(ref reader, out var type, out var payload))
+      {
+         if (type == RaftMessageType.RequestVoteResponse && payload is RequestVoteResponse rvr && rvr.Term == 77)
+         {
+            foundValid = true;
+            break;
+         }
+      }
+
+      await Assert.That(foundValid).IsTrue();
+   }
+
+   [Test]
+   public async Task Codec_LargeCandidateIdOver32KB_RoundtripsAccurately()
+   {
+      var largeCandidateId = new string('c', 40000); // 40,000 bytes > 32767 (short.MaxValue)
+      var request = new RequestVoteRequest
+      {
+         Term = 5,
+         CandidateId = largeCandidateId,
+         LastLogIndex = 100,
+         LastLogTerm = 4
+      };
+
+      var buffer = new ArrayBufferWriter<byte>();
+      RaftProtocolCodec.WriteRequestVote(buffer, request);
+
+      var sequence = new ReadOnlySequence<byte>(buffer.WrittenMemory);
+      var reader = new SequenceReader<byte>(sequence);
+
+      var success = RaftProtocolCodec.TryReadFrame(ref reader, out var type, out var payload);
+
+      await Assert.That(success).IsTrue();
+      await Assert.That(type).IsEqualTo(RaftMessageType.RequestVote);
+      var decoded = (RequestVoteRequest)payload!;
+      await Assert.That(decoded.CandidateId.Length).IsEqualTo(40000);
+      await Assert.That(decoded.CandidateId).IsEqualTo(largeCandidateId);
+   }
 }

@@ -224,6 +224,101 @@ public class RaftReplicationTests
             .Throws<TaskCanceledException>();
       }
    }
+
+   [Test]
+   public async Task LeaderStepDown_PendingProposalsFaultImmediately()
+   {
+      var (node, _, clientTransport) = CreateNodeAndSender("leader-1", ["peer-1", "peer-2"]);
+      await using var _ = clientTransport;
+      await using var __ = node;
+
+      await node.StartAsync();
+      await Task.Delay(150);
+
+      if (node.Role == RaftRole.Leader)
+      {
+         var proposalTask = node.ProposeAsync("cmd-to-fail"u8.ToArray());
+
+         // Send higher term AppendEntries from another leader to force step-down
+         var higherTermReq = new AppendEntriesRequest
+         {
+            Term = 50,
+            LeaderId = "peer-1",
+            PrevLogIndex = 0,
+            PrevLogTerm = 0,
+            LeaderCommitIndex = 0,
+            Entries = []
+         };
+         var resp = await clientTransport.AppendEntriesAsync("leader-1", higherTermReq);
+         await Assert.That(resp!.Success).IsTrue();
+         await Assert.That(node.Role).IsEqualTo(RaftRole.Follower);
+
+         // Proposal task must fault immediately with InvalidOperationException
+         await Assert.That(async () => await proposalTask)
+            .Throws<InvalidOperationException>();
+      }
+   }
+
+   [Test]
+   public async Task AppendEntries_ReplicatedMatchIndexAccuratelyReflectsRequestEntries()
+   {
+      var storage = new InMemoryRaftLogStorage();
+      // Pre-populate follower log with 10 old entries
+      var oldEntries = new List<RaftLogEntry>();
+      for (ulong i = 1; i <= 10; i++)
+         oldEntries.Add(new RaftLogEntry(1, i, Encoding.UTF8.GetBytes($"OLD_{i}")));
+      await storage.AppendEntriesAsync(oldEntries);
+
+      var (node, _, clientTransport) = CreateNodeAndSender("follower-1", ["leader-1"], storage);
+      await using var _ = clientTransport;
+      await using var __ = node;
+
+      await node.StartAsync();
+
+      // Leader in term 2 sends entries 1..3
+      var request = new AppendEntriesRequest
+      {
+         Term = 2,
+         LeaderId = "leader-1",
+         PrevLogIndex = 0,
+         PrevLogTerm = 0,
+         LeaderCommitIndex = 3,
+         Entries = [
+            new RaftLogEntry(2, 1, "NEW_1"u8.ToArray()),
+            new RaftLogEntry(2, 2, "NEW_2"u8.ToArray()),
+            new RaftLogEntry(2, 3, "NEW_3"u8.ToArray())
+         ]
+      };
+
+      var response = await clientTransport.AppendEntriesAsync("follower-1", request);
+
+      await Assert.That(response!.Success).IsTrue();
+      // Response MatchIndex must be 3 (the end of leader's replicated batch), NOT 10 (follower's old trailing uncommitted index)!
+      await Assert.That(response.MatchIndex).IsEqualTo(3UL);
+   }
+
+   [Test]
+   public async Task AdvanceCommitIndexAsync_ConcurrentCalls_ApplyDeterministically()
+   {
+      var (node, storage, clientTransport) = CreateNodeAndSender("node-1", []);
+      await using var _ = clientTransport;
+      await using var __ = node;
+
+      await node.StartAsync();
+      await Task.Delay(150);
+
+      var tasks = Enumerable.Range(1, 30).Select(i => Task.Run(async () =>
+      {
+         var res = await node.ProposeAsync(Encoding.UTF8.GetBytes($"SET concurrent_{i}={i}"));
+         await Assert.That(Encoding.UTF8.GetString(res.Span)).IsEqualTo("OK");
+      })).ToList();
+
+      await Task.WhenAll(tasks);
+
+      await Assert.That(node.CommitIndex).IsEqualTo(30UL);
+      await Assert.That(node.LastApplied).IsEqualTo(30UL);
+      await Assert.That(await storage.GetLastLogIndexAsync()).IsEqualTo(30UL);
+   }
 }
 
 internal sealed class KeyValueTestStateMachine : IRaftStateMachine

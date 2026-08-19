@@ -43,6 +43,7 @@ public sealed class RaftNode : IAsyncDisposable
 
    private readonly Lock _stateLock = new();
    private readonly SemaphoreSlim _proposalLock = new(1, 1);
+   private readonly SemaphoreSlim _applyLock = new(1, 1);
    private readonly ConcurrentDictionary<string, RaftPeerTracker> _peerTrackers = new();
    private readonly ConcurrentDictionary<ulong, TaskCompletionSource<ReadOnlyMemory<byte>>> _pendingProposals = new();
 
@@ -378,11 +379,22 @@ public sealed class RaftNode : IAsyncDisposable
          previousRole = Role;
          _role = (int)RaftRole.Follower;
          _currentTerm = newTerm;
+         _votedFor = null;
+         _leaderId = null;
          _lastHeartbeatTicks = Environment.TickCount64;
          _electionTimeoutMs = GetNextElectionTimeoutMs();
       }
 
       await Storage.SetTermAndVoteAsync(newTerm, null, cancellationToken);
+
+      if (previousRole == RaftRole.Leader)
+      {
+         foreach (var kvp in _pendingProposals)
+         {
+            kvp.Value.TrySetException(new InvalidOperationException("Node stepped down from leader before proposal was committed."));
+         }
+         _pendingProposals.Clear();
+      }
 
       if (previousRole != RaftRole.Follower && Events.OnRoleChanged.Count > 0)
       {
@@ -413,50 +425,62 @@ public sealed class RaftNode : IAsyncDisposable
          if (prevLogIndex > 0)
          {
             var prevEntry = await Storage.GetEntryAsync(prevLogIndex, cancellationToken);
-            if (prevEntry == null)
+            if (prevEntry.HasValue)
             {
-               // log entries before tracker.NextIndex have been snapshot-compacted by leader
-               // ... i think we send InstallSnapshot RPC to bring follower up to date
-               try
+               prevLogTerm = prevEntry.Value.Term;
+            }
+            else
+            {
+               var compactedIndex = await Storage.GetCompactedUntilIndexAsync(cancellationToken);
+               var compactedTerm = await Storage.GetCompactedUntilTermAsync(cancellationToken);
+
+               if (prevLogIndex == compactedIndex)
                {
-                  var snapshotData = await StateMachine.TakeSnapshotAsync(cancellationToken);
-                  var lastIncludedIndex = await Storage.GetLastLogIndexAsync(cancellationToken);
-                  var lastIncludedTerm = await Storage.GetLastLogTermAsync(cancellationToken);
-
-                  var snapshotReq = new InstallSnapshotRequest
+                  prevLogTerm = compactedTerm;
+               }
+               else if (prevLogIndex < compactedIndex)
+               {
+                  // log entries before tracker.NextIndex have been snapshot-compacted by leader
+                  try
                   {
-                     Term = currentTerm,
-                     LeaderId = Options.NodeId,
-                     LastIncludedIndex = lastIncludedIndex,
-                     LastIncludedTerm = lastIncludedTerm,
-                     Data = snapshotData
-                  };
+                     var snapshotData = await StateMachine.TakeSnapshotAsync(cancellationToken);
+                     var lastApplied = Volatile.Read(ref _lastApplied);
+                     var lastAppliedEntry = await Storage.GetEntryAsync(lastApplied, cancellationToken);
+                     var lastAppliedTerm = lastAppliedEntry?.Term ?? compactedTerm;
 
-                  var snapshotResp = await Transport.InstallSnapshotAsync(peerId, snapshotReq, cancellationToken);
-                  if (snapshotResp != null)
-                  {
-                     if (snapshotResp.Term > currentTerm)
+                     var snapshotReq = new InstallSnapshotRequest
                      {
-                        await StepDownAsync(snapshotResp.Term, cancellationToken);
-                        return;
-                     }
+                        Term = currentTerm,
+                        LeaderId = Options.NodeId,
+                        LastIncludedIndex = lastApplied,
+                        LastIncludedTerm = lastAppliedTerm,
+                        Data = snapshotData
+                     };
 
-                     if (snapshotResp.Success)
+                     var snapshotResp = await Transport.InstallSnapshotAsync(peerId, snapshotReq, cancellationToken);
+                     if (snapshotResp != null)
                      {
-                        tracker.MatchIndex = Math.Max(tracker.MatchIndex, lastIncludedIndex);
-                        tracker.NextIndex = tracker.MatchIndex + 1;
-                        await CheckAndUpdateCommitIndexAsync(cancellationToken);
+                        if (snapshotResp.Term > currentTerm)
+                        {
+                           await StepDownAsync(snapshotResp.Term, cancellationToken);
+                           return;
+                        }
+
+                        if (snapshotResp.Success)
+                        {
+                           tracker.MatchIndex = Math.Max(tracker.MatchIndex, lastApplied);
+                           tracker.NextIndex = tracker.MatchIndex + 1;
+                           await CheckAndUpdateCommitIndexAsync(cancellationToken);
+                        }
                      }
                   }
+                  catch
+                  {
+                     // Peer unreachable
+                  }
+                  return;
                }
-               catch
-               {
-                  // Peer unreachable
-               }
-               return;
             }
-
-            prevLogTerm = prevEntry.Value.Term;
          }
 
          var entries = await Storage.GetEntriesAsync(tracker.NextIndex, Options.MaxAppendEntriesBatchSize, cancellationToken);
@@ -555,27 +579,35 @@ public sealed class RaftNode : IAsyncDisposable
          _commitIndex = newCommitIndex;
       }
 
-      while (Volatile.Read(ref _lastApplied) < Volatile.Read(ref _commitIndex))
+      await _applyLock.WaitAsync(cancellationToken);
+      try
       {
-         var applyIndex = Volatile.Read(ref _lastApplied) + 1;
-         var entry = await Storage.GetEntryAsync(applyIndex, cancellationToken);
-         if (entry == null)
+         while (Volatile.Read(ref _lastApplied) < Volatile.Read(ref _commitIndex))
          {
-            break;
-         }
+            var applyIndex = Volatile.Read(ref _lastApplied) + 1;
+            var entry = await Storage.GetEntryAsync(applyIndex, cancellationToken);
+            if (entry == null)
+            {
+               break;
+            }
 
-         var applyResult = await StateMachine.ApplyAsync(entry.Value.Data, applyIndex, cancellationToken);
-         Volatile.Write(ref _lastApplied, applyIndex);
+            var applyResult = await StateMachine.ApplyAsync(entry.Value.Data, applyIndex, cancellationToken);
+            Volatile.Write(ref _lastApplied, applyIndex);
 
-         if (_pendingProposals.TryRemove(applyIndex, out var tcs))
-         {
-            tcs.TrySetResult(applyResult);
-         }
+            if (_pendingProposals.TryRemove(applyIndex, out var tcs))
+            {
+               tcs.TrySetResult(applyResult);
+            }
 
-         if (Events.OnEntryCommitted.Count > 0)
-         {
-            await Events.OnEntryCommitted.ExecuteAsync(new RaftEntryCommittedContext(Options.NodeId, entry.Value, applyResult), cancellationToken: cancellationToken);
+            if (Events.OnEntryCommitted.Count > 0)
+            {
+               await Events.OnEntryCommitted.ExecuteAsync(new RaftEntryCommittedContext(Options.NodeId, entry.Value, applyResult), cancellationToken: cancellationToken);
+            }
          }
+      }
+      finally
+      {
+         _applyLock.Release();
       }
    }
 
@@ -592,6 +624,13 @@ public sealed class RaftNode : IAsyncDisposable
 
    private async ValueTask<RequestVoteResponse> HandleRequestVoteAsync(RequestVoteRequest request)
    {
+      var currentTerm = CurrentTerm;
+      if (request.Term > currentTerm)
+      {
+         await StepDownAsync(request.Term, CancellationToken.None);
+         currentTerm = CurrentTerm;
+      }
+
       var lastLogIndex = await Storage.GetLastLogIndexAsync();
       var lastLogTerm = await Storage.GetLastLogTermAsync();
 
@@ -600,19 +639,10 @@ public sealed class RaftNode : IAsyncDisposable
 
       ulong responseTerm;
       var voteGranted = false;
-      string? updatedVotedFor;
+      string? updatedVotedFor = null;
 
       lock (_stateLock)
       {
-         if (request.Term > _currentTerm)
-         {
-            _role = (int)RaftRole.Follower;
-            _currentTerm = request.Term;
-            _votedFor = null;
-            _lastHeartbeatTicks = Environment.TickCount64;
-            _electionTimeoutMs = GetNextElectionTimeoutMs();
-         }
-
          responseTerm = _currentTerm;
 
          if (request.Term == _currentTerm)
@@ -623,13 +653,15 @@ public sealed class RaftNode : IAsyncDisposable
                voteGranted = true;
                _votedFor = request.CandidateId;
                _lastHeartbeatTicks = Environment.TickCount64;
+               updatedVotedFor = _votedFor;
             }
          }
-
-         updatedVotedFor = _votedFor;
       }
 
-      await Storage.SetTermAndVoteAsync(responseTerm, updatedVotedFor);
+      if (voteGranted && updatedVotedFor != null)
+      {
+         await Storage.SetVotedForAsync(updatedVotedFor);
+      }
 
       return new RequestVoteResponse
       {
@@ -661,27 +693,48 @@ public sealed class RaftNode : IAsyncDisposable
          await StepDownAsync(request.Term, CancellationToken.None);
       }
 
-      if (_leaderId != request.LeaderId)
+      var leaderChanged = false;
+      lock (_stateLock)
       {
-         _leaderId = request.LeaderId;
-         if (Events.OnLeaderChanged.Count > 0)
+         if (_leaderId != request.LeaderId)
          {
-            await Events.OnLeaderChanged.ExecuteAsync(new RaftLeaderChangedContext(Options.NodeId, request.LeaderId, currentTerm), cancellationToken: CancellationToken.None);
+            _leaderId = request.LeaderId;
+            leaderChanged = true;
          }
       }
 
-      // Check log consistency at PrevLogIndex
+      if (leaderChanged && Events.OnLeaderChanged.Count > 0)
+      {
+         await Events.OnLeaderChanged.ExecuteAsync(new RaftLeaderChangedContext(Options.NodeId, request.LeaderId, currentTerm), cancellationToken: CancellationToken.None);
+      }
+
+      // check log consistency at PrevLogIndex
       if (request.PrevLogIndex > 0)
       {
          var prevEntry = await Storage.GetEntryAsync(request.PrevLogIndex);
-         if (prevEntry == null || prevEntry.Value.Term != request.PrevLogTerm)
+         var hasMatchingPrevEntry = false;
+         if (prevEntry.HasValue)
+         {
+            hasMatchingPrevEntry = prevEntry.Value.Term == request.PrevLogTerm;
+         }
+         else
+         {
+            var compactedIndex = await Storage.GetCompactedUntilIndexAsync();
+            var compactedTerm = await Storage.GetCompactedUntilTermAsync();
+            if (request.PrevLogIndex == compactedIndex && request.PrevLogTerm == compactedTerm)
+            {
+               hasMatchingPrevEntry = true;
+            }
+         }
+
+         if (!hasMatchingPrevEntry)
          {
             var lastIdx = await Storage.GetLastLogIndexAsync();
             return new AppendEntriesResponse { Term = currentTerm, Success = false, MatchIndex = lastIdx };
          }
       }
 
-      // Append entries and resolve conflicts
+      // append entries and resolve conflicts
       if (request.Entries.Count > 0)
       {
          for (var i = 0; i < request.Entries.Count; i++)
@@ -713,11 +766,15 @@ public sealed class RaftNode : IAsyncDisposable
          await AdvanceCommitIndexAsync(newCommit, CancellationToken.None);
       }
 
+      var replicatedMatchIndex = request.Entries.Count > 0
+         ? request.Entries[^1].Index
+         : request.PrevLogIndex;
+
       return new AppendEntriesResponse
       {
          Term = currentTerm,
          Success = true,
-         MatchIndex = lastLogIndexAfterAppend
+         MatchIndex = replicatedMatchIndex
       };
    }
 
@@ -737,6 +794,26 @@ public sealed class RaftNode : IAsyncDisposable
       }
 
       Volatile.Write(ref _lastHeartbeatTicks, Environment.TickCount64);
+
+      if (Role == RaftRole.Candidate)
+      {
+         await StepDownAsync(request.Term, CancellationToken.None);
+      }
+
+      var leaderChanged = false;
+      lock (_stateLock)
+      {
+         if (_leaderId != request.LeaderId)
+         {
+            _leaderId = request.LeaderId;
+            leaderChanged = true;
+         }
+      }
+
+      if (leaderChanged && Events.OnLeaderChanged.Count > 0)
+      {
+         await Events.OnLeaderChanged.ExecuteAsync(new RaftLeaderChangedContext(Options.NodeId, request.LeaderId, currentTerm), cancellationToken: CancellationToken.None);
+      }
 
       await StateMachine.RestoreSnapshotAsync(request.Data, request.LastIncludedIndex, request.LastIncludedTerm);
       await Storage.CompactPrefixAsync(request.LastIncludedIndex, request.LastIncludedTerm);
@@ -760,6 +837,8 @@ public sealed class RaftNode : IAsyncDisposable
    public async ValueTask DisposeAsync()
    {
       await StopAsync();
+      _proposalLock.Dispose();
+      _applyLock.Dispose();
       await Storage.DisposeAsync();
       await Transport.DisposeAsync();
    }

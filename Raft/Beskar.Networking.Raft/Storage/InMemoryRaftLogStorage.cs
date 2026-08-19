@@ -151,6 +151,11 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
          for (var i = 0; i < entries.Count; i++)
          {
             var entry = entries[i];
+            if (entry.Index <= _compactedUntilIndex)
+            {
+               continue;
+            }
+
             if (_entries.Count > 0)
             {
                var firstIndex = _entries[0].Index;
@@ -244,6 +249,22 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
          }
 
          return ValueTask.CompletedTask;
+      }
+   }
+
+   public ValueTask<ulong> GetCompactedUntilIndexAsync(CancellationToken ct = default)
+   {
+      lock (_lock)
+      {
+         return ValueTask.FromResult(_compactedUntilIndex);
+      }
+   }
+
+   public ValueTask<ulong> GetCompactedUntilTermAsync(CancellationToken ct = default)
+   {
+      lock (_lock)
+      {
+         return ValueTask.FromResult(_compactedUntilTerm);
       }
    }
 

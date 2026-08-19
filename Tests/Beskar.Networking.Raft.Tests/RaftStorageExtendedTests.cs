@@ -264,4 +264,79 @@ public class RaftStorageExtendedTests
          if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
       }
    }
+
+   [Test]
+   public async Task Storage_AppendEntries_IndexLessThanCompactedIndex_SkippedCleanly()
+   {
+      // 1. InMemory storage test
+      await using (var memStorage = new InMemoryRaftLogStorage())
+      {
+         await memStorage.AppendEntriesAsync([
+            new RaftLogEntry(1, 1, "E1"u8.ToArray()),
+            new RaftLogEntry(1, 2, "E2"u8.ToArray()),
+            new RaftLogEntry(1, 3, "E3"u8.ToArray())
+         ]);
+         await memStorage.CompactPrefixAsync(2, 1);
+
+         // Append old entry 1 and 2 again
+         await memStorage.AppendEntriesAsync([
+            new RaftLogEntry(1, 1, "E1_OLD"u8.ToArray()),
+            new RaftLogEntry(1, 2, "E2_OLD"u8.ToArray()),
+            new RaftLogEntry(1, 4, "E4"u8.ToArray())
+         ]);
+
+         await Assert.That(await memStorage.GetLastLogIndexAsync()).IsEqualTo(4UL);
+         var entry3 = await memStorage.GetEntryAsync(3);
+         await Assert.That(entry3.HasValue).IsTrue();
+         await Assert.That(Encoding.UTF8.GetString(entry3!.Value.Data.Span)).IsEqualTo("E3");
+         var entry4 = await memStorage.GetEntryAsync(4);
+         await Assert.That(entry4.HasValue).IsTrue();
+         await Assert.That(Encoding.UTF8.GetString(entry4!.Value.Data.Span)).IsEqualTo("E4");
+      }
+
+      // 2. File storage test
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_skip_compacted_{Guid.NewGuid():N}");
+      try
+      {
+         await using (var fileStorage = new FileRaftLogStorage(testDir))
+         {
+            await fileStorage.AppendEntriesAsync([
+               new RaftLogEntry(1, 1, "E1"u8.ToArray()),
+               new RaftLogEntry(1, 2, "E2"u8.ToArray()),
+               new RaftLogEntry(1, 3, "E3"u8.ToArray())
+            ]);
+            await fileStorage.CompactPrefixAsync(2, 1);
+
+            await fileStorage.AppendEntriesAsync([
+               new RaftLogEntry(1, 1, "E1_OLD"u8.ToArray()),
+               new RaftLogEntry(1, 2, "E2_OLD"u8.ToArray()),
+               new RaftLogEntry(1, 4, "E4"u8.ToArray())
+            ]);
+
+            await Assert.That(await fileStorage.GetLastLogIndexAsync()).IsEqualTo(4UL);
+            var entry3 = await fileStorage.GetEntryAsync(3);
+            await Assert.That(entry3.HasValue).IsTrue();
+            await Assert.That(Encoding.UTF8.GetString(entry3!.Value.Data.Span)).IsEqualTo("E3");
+            var entry4 = await fileStorage.GetEntryAsync(4);
+            await Assert.That(entry4.HasValue).IsTrue();
+            await Assert.That(Encoding.UTF8.GetString(entry4!.Value.Data.Span)).IsEqualTo("E4");
+         }
+
+         // Verify reload
+         await using (var reloaded = new FileRaftLogStorage(testDir))
+         {
+            await Assert.That(await reloaded.GetLastLogIndexAsync()).IsEqualTo(4UL);
+            var entry3 = await reloaded.GetEntryAsync(3);
+            await Assert.That(entry3.HasValue).IsTrue();
+            await Assert.That(Encoding.UTF8.GetString(entry3!.Value.Data.Span)).IsEqualTo("E3");
+            var entry4 = await reloaded.GetEntryAsync(4);
+            await Assert.That(entry4.HasValue).IsTrue();
+            await Assert.That(Encoding.UTF8.GetString(entry4!.Value.Data.Span)).IsEqualTo("E4");
+         }
+      }
+      finally
+      {
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
+      }
+   }
 }

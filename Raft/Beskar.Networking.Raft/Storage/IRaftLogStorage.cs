@@ -66,4 +66,14 @@ public interface IRaftLogStorage : IAsyncDisposable
    /// Compacts and discards all historical log entries up to and including <paramref name="untilIndex"/>.
    /// </summary>
    public ValueTask CompactPrefixAsync(ulong untilIndex, ulong untilTerm = 0, CancellationToken ct = default);
+
+   /// <summary>
+   /// Gets the index up to which historical log entries have been compacted into a snapshot.
+   /// </summary>
+   public ValueTask<ulong> GetCompactedUntilIndexAsync(CancellationToken ct = default) => ValueTask.FromResult(0UL);
+
+   /// <summary>
+   /// Gets the term of the highest log entry compacted into a snapshot.
+   /// </summary>
+   public ValueTask<ulong> GetCompactedUntilTermAsync(CancellationToken ct = default) => ValueTask.FromResult(0UL);
 }

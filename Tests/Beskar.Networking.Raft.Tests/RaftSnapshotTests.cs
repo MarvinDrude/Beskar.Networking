@@ -242,6 +242,83 @@ public class RaftSnapshotTests
       await Assert.That(smFollower.Store.ContainsKey("key1")).IsTrue();
       await Assert.That(smFollower.Store["key1"]).IsEqualTo("val1");
    }
+
+   [Test]
+   public async Task Replication_AppendEntriesImmediatelyFollowingCompactedBoundary_DoesNotLoopSnapshots()
+   {
+      var memoryOptions = new MemoryTransportOptions();
+      var epLeader = new MemoryEndPoint($"leader-ep-{Guid.NewGuid():N}");
+      var epFollower = new MemoryEndPoint($"follower-ep-{Guid.NewGuid():N}");
+
+      var listenerLeader = new MemoryNetworkListener(epLeader, memoryOptions);
+      var listenerFollower = new MemoryNetworkListener(epFollower, memoryOptions);
+
+      var peersForLeader = new List<RaftPeerEndpoint>
+      {
+         new("follower-1", epFollower, () => new MemoryNetworkClient(memoryOptions))
+      };
+
+      var peersForFollower = new List<RaftPeerEndpoint>
+      {
+         new("leader-1", epLeader, () => new MemoryNetworkClient(memoryOptions))
+      };
+
+      var transportLeader = new RaftNetworkTransport(listenerLeader, peersForLeader);
+      var transportFollower = new RaftNetworkTransport(listenerFollower, peersForFollower);
+
+      var storageLeader = new InMemoryRaftLogStorage();
+      var storageFollower = new InMemoryRaftLogStorage();
+
+      var smLeader = new SnapshotStateMachine();
+      var smFollower = new SnapshotStateMachine();
+
+      var optionsLeader = new RaftNodeOptions
+      {
+         NodeId = "leader-1",
+         Peers = ["follower-1"],
+         ElectionTimeoutMin = TimeSpan.FromMilliseconds(50),
+         ElectionTimeoutMax = TimeSpan.FromMilliseconds(100),
+         HeartbeatInterval = TimeSpan.FromMilliseconds(20)
+      };
+
+      var optionsFollower = new RaftNodeOptions
+      {
+         NodeId = "follower-1",
+         Peers = ["leader-1"],
+         ElectionTimeoutMin = TimeSpan.FromMilliseconds(200),
+         ElectionTimeoutMax = TimeSpan.FromMilliseconds(400),
+         HeartbeatInterval = TimeSpan.FromMilliseconds(20)
+      };
+
+      await using var leader = new RaftNode(optionsLeader, storageLeader, smLeader, transportLeader);
+      await using var follower = new RaftNode(optionsFollower, storageFollower, smFollower, transportFollower);
+
+      await leader.StartAsync();
+      await follower.StartAsync();
+
+      await Task.Delay(150);
+
+      // 1. Propose entry 1 and 2
+      await leader.ProposeAsync("SET key1=val1"u8.ToArray());
+      await leader.ProposeAsync("SET key2=val2"u8.ToArray());
+
+      await Task.Delay(100);
+
+      // 2. Both leader and follower compact entries up to index 2 (term 1)
+      await storageLeader.CompactPrefixAsync(2, leader.CurrentTerm);
+      await storageFollower.CompactPrefixAsync(2, follower.CurrentTerm);
+
+      // 3. Leader proposes entry 3. PrevLogIndex is 2 (compacted boundary).
+      // Leader and follower must successfully append entry 3 via standard AppendEntries without infinite snapshotting!
+      await leader.ProposeAsync("SET key3=val3"u8.ToArray());
+
+      await Task.Delay(150);
+
+      await Assert.That(smFollower.Store.ContainsKey("key3")).IsTrue();
+      await Assert.That(smFollower.Store["key3"]).IsEqualTo("val3");
+      await Assert.That(follower.CommitIndex).IsEqualTo(3UL);
+      await Assert.That(follower.LastApplied).IsEqualTo(3UL);
+   }
 }
 
 internal sealed class SnapshotStateMachine : IRaftStateMachine

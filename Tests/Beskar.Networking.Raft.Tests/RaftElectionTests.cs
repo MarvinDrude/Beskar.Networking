@@ -242,6 +242,77 @@ public class RaftElectionTests
       await Assert.That(node.Role).IsEqualTo(RaftRole.Follower);
       await Assert.That(node.LeaderId).IsEqualTo("leader-1");
    }
+
+   [Test]
+   public async Task StepDown_ClearsVotedFor_AllowsVotingInNewTerm()
+   {
+      var storage = new InMemoryRaftLogStorage();
+      await storage.SetTermAndVoteAsync(1, "candidate-old");
+
+      var (node, _, clientTransport) = CreateNodeAndSender("follower-1", ["candidate-old", "candidate-new"], storage);
+      await using var _ = clientTransport;
+      await using var __ = node;
+
+      await node.StartAsync();
+
+      // Send higher term heartbeat or vote request to cause step down to term 2
+      var stepDownRequest = new AppendEntriesRequest
+      {
+         Term = 2,
+         LeaderId = "candidate-new",
+         PrevLogIndex = 0,
+         PrevLogTerm = 0,
+         LeaderCommitIndex = 0,
+         Entries = []
+      };
+      var appendResp = await clientTransport.AppendEntriesAsync("follower-1", stepDownRequest);
+      await Assert.That(appendResp!.Success).IsTrue();
+      await Assert.That(node.CurrentTerm).IsEqualTo(2UL);
+
+      // Now candidate-new requests vote in term 2. follower-1 must have reset _votedFor in memory and grant vote!
+      var voteReq = new RequestVoteRequest
+      {
+         Term = 2,
+         CandidateId = "candidate-new",
+         LastLogIndex = 0,
+         LastLogTerm = 0
+      };
+      var voteResp = await clientTransport.RequestVoteAsync("follower-1", voteReq);
+      await Assert.That(voteResp!.VoteGranted).IsTrue();
+   }
+
+   [Test]
+   public async Task HandleRequestVote_HigherTerm_FiresRoleChangedEvent()
+   {
+      var (node, _, clientTransport) = CreateNodeAndSender("candidate-1", ["peer-1"]);
+      await using var _ = clientTransport;
+      await using var __ = node;
+
+      var roleTransitions = new List<(RaftRole OldRole, RaftRole NewRole, ulong Term)>();
+      node.Events.OnRoleChanged.Add((ctx, _) =>
+      {
+         roleTransitions.Add((ctx.OldRole, ctx.NewRole, ctx.Term));
+         return ValueTask.CompletedTask;
+      });
+
+      await node.StartAsync();
+      await Task.Delay(150); // Candidate starts election
+
+      // Peer responds with RequestVote with term 100
+      var voteReq = new RequestVoteRequest
+      {
+         Term = 100,
+         CandidateId = "peer-1",
+         LastLogIndex = 5,
+         LastLogTerm = 100
+      };
+      var resp = await clientTransport.RequestVoteAsync("candidate-1", voteReq);
+      await Assert.That(resp!.VoteGranted).IsTrue();
+      await Assert.That(node.Role).IsEqualTo(RaftRole.Follower);
+      await Assert.That(node.CurrentTerm).IsEqualTo(100UL);
+
+      await Assert.That(roleTransitions.Any(t => t.NewRole == RaftRole.Follower && t.Term == 100UL)).IsTrue();
+   }
 }
 
 internal sealed class TestRaftStateMachine : IRaftStateMachine

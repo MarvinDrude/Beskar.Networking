@@ -63,11 +63,8 @@ public static class RaftProtocolCodec
             return false;
          }
 
-         // We have the complete frame! Advance the main reader past header.
-         reader = headerReader;
-         var payloadSequence = reader.Sequence.Slice(reader.Position, payloadLength);
-         reader.Advance(payloadLength);
-
+         // We have the complete frame candidate. Try to decode the payload.
+         var payloadSequence = headerReader.Sequence.Slice(headerReader.Position, payloadLength);
          var payloadReader = new SequenceReader<byte>(payloadSequence);
          messageType = (RaftMessageType)typeByte;
 
@@ -88,6 +85,8 @@ public static class RaftProtocolCodec
             continue;
          }
 
+         headerReader.Advance(payloadLength);
+         reader = headerReader;
          return true;
       }
 
@@ -239,7 +238,6 @@ public static class RaftProtocolCodec
    {
       if (!reader.TryReadLittleEndian(out long termRaw) ||
           !reader.TryReadLittleEndian(out short candidateIdLengthRaw) ||
-          candidateIdLengthRaw < 0 ||
           reader.Remaining < (ushort)candidateIdLengthRaw + 16)
       {
          return null;
@@ -286,7 +284,6 @@ public static class RaftProtocolCodec
    {
       if (!reader.TryReadLittleEndian(out long termRaw) ||
           !reader.TryReadLittleEndian(out short leaderIdLengthRaw) ||
-          leaderIdLengthRaw < 0 ||
           reader.Remaining < (ushort)leaderIdLengthRaw + 28)
       {
          return null;
@@ -363,7 +360,6 @@ public static class RaftProtocolCodec
    {
       if (!reader.TryReadLittleEndian(out long termRaw) ||
           !reader.TryReadLittleEndian(out short leaderIdLengthRaw) ||
-          leaderIdLengthRaw < 0 ||
           reader.Remaining < (ushort)leaderIdLengthRaw + 20)
       {
          return null;
