@@ -202,15 +202,19 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
       }
    }
 
-   public ValueTask CompactPrefixAsync(ulong untilIndex, CancellationToken ct = default)
+   public ValueTask CompactPrefixAsync(ulong untilIndex, ulong untilTerm = 0, CancellationToken ct = default)
    {
       lock (_lock)
       {
          if (_entries.Count == 0 || untilIndex == 0)
          {
-            if (untilIndex > _compactedUntilIndex)
+            if (untilIndex >= _compactedUntilIndex)
             {
                _compactedUntilIndex = untilIndex;
+               if (untilTerm > 0)
+               {
+                  _compactedUntilTerm = untilTerm;
+               }
             }
             return ValueTask.CompletedTask;
          }
@@ -218,13 +222,17 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
          var firstIndex = _entries[0].Index;
          if (untilIndex < firstIndex)
          {
+            if (untilIndex == _compactedUntilIndex && untilTerm > 0)
+            {
+               _compactedUntilTerm = untilTerm;
+            }
             return ValueTask.CompletedTask;
          }
 
          var removeCount = (int)(untilIndex - firstIndex + 1);
          var targetEntry = _entries[Math.Min(removeCount - 1, _entries.Count - 1)];
          _compactedUntilIndex = untilIndex;
-         _compactedUntilTerm = targetEntry.Term;
+         _compactedUntilTerm = untilTerm > 0 ? untilTerm : targetEntry.Term;
 
          if (removeCount >= _entries.Count)
          {

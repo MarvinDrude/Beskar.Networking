@@ -261,7 +261,7 @@ public static class Program
                   if (lastApplied > 5)
                   {
                      var compactIndex = lastApplied - 2;
-                     await targetHandle.Storage.CompactPrefixAsync(compactIndex, ct);
+                     await targetHandle.Storage.CompactPrefixAsync(compactIndex, targetHandle.Node.CurrentTerm, ct);
                      Interlocked.Increment(ref SnapshotsTaken);
                   }
                }

@@ -73,7 +73,7 @@ try
 
    // 2. Compact prefix log entries 1..7 (historical entries now saved in snapshot)
    Console.WriteLine($"Compacting prefix log entries #1 through #{snapshotIndex}...");
-   await storage.CompactPrefixAsync(snapshotIndex);
+   await storage.CompactPrefixAsync(snapshotIndex, snapshotTerm);
 
    var lastIndexAfter = await storage.GetLastLogIndexAsync();
    Console.WriteLine($"\n[Log State After Prefix Compaction] Last Log Index in Storage: {lastIndexAfter}");

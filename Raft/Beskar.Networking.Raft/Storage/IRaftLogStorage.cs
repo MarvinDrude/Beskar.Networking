@@ -65,5 +65,5 @@ public interface IRaftLogStorage : IAsyncDisposable
    /// <summary>
    /// Compacts and discards all historical log entries up to and including <paramref name="untilIndex"/>.
    /// </summary>
-   public ValueTask CompactPrefixAsync(ulong untilIndex, CancellationToken ct = default);
+   public ValueTask CompactPrefixAsync(ulong untilIndex, ulong untilTerm = 0, CancellationToken ct = default);
 }

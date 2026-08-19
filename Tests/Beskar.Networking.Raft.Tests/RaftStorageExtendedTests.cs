@@ -234,4 +234,34 @@ public class RaftStorageExtendedTests
          if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
       }
    }
+
+   [Test]
+   public async Task EmptyStorage_CompactPrefixWithUntilTerm_PreservesLastLogIndexAndTerm()
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_empty_compact_test_{Guid.NewGuid():N}");
+      try
+      {
+         await using (var fileStorage = new FileRaftLogStorage(testDir))
+         {
+            await fileStorage.CompactPrefixAsync(100, 15);
+            await Assert.That(await fileStorage.GetLastLogIndexAsync()).IsEqualTo(100UL);
+            await Assert.That(await fileStorage.GetLastLogTermAsync()).IsEqualTo(15UL);
+         }
+
+         await using (var reloaded = new FileRaftLogStorage(testDir))
+         {
+            await Assert.That(await reloaded.GetLastLogIndexAsync()).IsEqualTo(100UL);
+            await Assert.That(await reloaded.GetLastLogTermAsync()).IsEqualTo(15UL);
+         }
+
+         await using var memStorage = new InMemoryRaftLogStorage();
+         await memStorage.CompactPrefixAsync(100, 15);
+         await Assert.That(await memStorage.GetLastLogIndexAsync()).IsEqualTo(100UL);
+         await Assert.That(await memStorage.GetLastLogTermAsync()).IsEqualTo(15UL);
+      }
+      finally
+      {
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
+      }
+   }
 }
