@@ -11,9 +11,11 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
 {
    private readonly string _metadataPath;
    private readonly string _logPath;
+
    private readonly Lock _lock = new();
-   private readonly List<RaftLogEntry> _entries = new();
-   private readonly List<long> _entryOffsets = new();
+
+   private readonly List<RaftLogEntry> _entries = [];
+   private readonly List<long> _entryOffsets = [];
    private FileStream? _logFileStream;
 
    private ulong _currentTerm;
@@ -179,6 +181,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
             {
                var firstIndex = _entries[0].Index;
                var existingListIndex = (int)(entry.Index - firstIndex);
+
                if (existingListIndex >= 0 && existingListIndex < _entries.Count)
                {
                   // Truncate from this index before overwriting
@@ -227,6 +230,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       {
          _entries.Clear();
          _entryOffsets.Clear();
+
          _logFileStream.SetLength(0);
          _logFileStream.Flush(flushToDisk: true);
          return;
@@ -236,8 +240,10 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       if (startListIndex < _entries.Count)
       {
          var cutOffset = _entryOffsets[startListIndex];
+
          _entries.RemoveRange(startListIndex, _entries.Count - startListIndex);
          _entryOffsets.RemoveRange(startListIndex, _entryOffsets.Count - startListIndex);
+
          _logFileStream.SetLength(cutOffset);
          _logFileStream.Flush(flushToDisk: true);
       }

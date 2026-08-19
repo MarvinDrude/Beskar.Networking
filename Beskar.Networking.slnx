@@ -49,6 +49,7 @@
     <File Path="Documentation/Raft/Overview.md" />
     <File Path="Documentation/Raft/StorageAndPersistence.md" />
     <File Path="Documentation/Raft/StateMachineAndProposals.md" />
+    <File Path="Documentation/Raft/SnapshotAndCompaction.md" />
   </Folder>
   <Folder Name="/Documentation/Resilient/">
     <File Path="Documentation/Resilient/Authentication.md" />
@@ -84,6 +85,7 @@
     <Project Path="Examples/Raft/Beskar.Raft.Example.TcpCluster/Beskar.Raft.Example.TcpCluster.csproj" />
     <Project Path="Examples/Raft/Beskar.Raft.Example.PersistentStorage/Beskar.Raft.Example.PersistentStorage.csproj" />
     <Project Path="Examples/Raft/Beskar.Raft.Example.LeaderFailoverRejoin/Beskar.Raft.Example.LeaderFailoverRejoin.csproj" />
+    <Project Path="Examples/Raft/Beskar.Raft.Example.SnapshotCompaction/Beskar.Raft.Example.SnapshotCompaction.csproj" />
   </Folder>
   <Folder Name="/Examples/Resilient/">
     <Project Path="Examples/Resilient/Beskar.Resilient.Chat.Common/Beskar.Resilient.Chat.Common.csproj" />

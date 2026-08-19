@@ -343,6 +343,7 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
   - [**Multi-Node TCP Cluster**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.TcpCluster): Shows a 3-node cluster communicating over real TCP sockets on distinct loopback ports (`11051`, `11052`, `11053`) with `TcpNetworkListener` and `TcpNetworkClient`.
   - [**Persistent Storage & Recovery**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.PersistentStorage): Demonstrates crash-safe disk persistence using `FileRaftLogStorage` with `metadata.bin` and `raft.log`, shutting down the node, restarting, and recovering the full log and term.
   - [**Leader Failover & Reinstallation**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.LeaderFailoverRejoin): Highlights a leader crash, automatic quorum election of a new leader, log commitments during partitions, revival of the crashed node, and automatic catch-up reinstallation.
+  - [**Log Compaction & Snapshotting**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.SnapshotCompaction): Demonstrates state machine snapshotting (`TakeSnapshotAsync`/`RestoreSnapshotAsync`), log truncation, and restoring key-value state directly from snapshot blobs.
 - [**Telemetry & OpenTelemetry Console**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Telemetry/Beskar.Example.Telemetry): Demonstrates how to subscribe to all native telemetry meters using `MeterListener` or OpenTelemetry exporters, showing real-time event streaming and a live metrics summary dashboard as operations occur.
 
 ---
@@ -356,6 +357,7 @@ You can find detailed documentation for `Beskar.Networking` [here](https://githu
   - [Raft Consensus Overview](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/Overview.md)
   - [Storage & Persistence Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/StorageAndPersistence.md)
   - [State Machine & Proposals Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/StateMachineAndProposals.md)
+  - [Snapshotting & Log Compaction Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/SnapshotAndCompaction.md)
 - [**Dedicated Transport Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Transports):
   - [TCP Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Tcp.md)
   - [WebSocket Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Ws.md)
