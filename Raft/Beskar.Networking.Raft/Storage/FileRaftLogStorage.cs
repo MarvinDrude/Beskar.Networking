@@ -136,19 +136,19 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       {
          if (fromIndex == 0 || _entries.Count == 0 || maxCount <= 0)
          {
-            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>(Array.Empty<RaftLogEntry>());
+            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>([]);
          }
 
          var firstIndex = _entries[0].Index;
          if (fromIndex < firstIndex)
          {
-            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>(Array.Empty<RaftLogEntry>());
+            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>([]);
          }
 
          var startListIndex = (int)(fromIndex - firstIndex);
          if (startListIndex >= _entries.Count)
          {
-            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>(Array.Empty<RaftLogEntry>());
+            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>([]);
          }
 
          var count = Math.Min(maxCount, _entries.Count - startListIndex);
