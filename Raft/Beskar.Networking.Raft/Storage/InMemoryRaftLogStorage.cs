@@ -159,6 +159,11 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
             if (_entries.Count > 0)
             {
                var firstIndex = _entries[0].Index;
+               if (entry.Index < firstIndex)
+               {
+                  continue;
+               }
+
                var existingListIndex = (int)(entry.Index - firstIndex);
                if (existingListIndex >= 0 && existingListIndex < _entries.Count)
                {
