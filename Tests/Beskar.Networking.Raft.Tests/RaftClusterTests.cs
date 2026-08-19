@@ -12,19 +12,6 @@ namespace Beskar.Networking.Raft.Tests;
 [NotInParallel]
 public class RaftClusterTests
 {
-   private sealed class TestStateMachine : IRaftStateMachine
-   {
-      public readonly ConcurrentDictionary<ulong, string> AppliedCommands = new();
-
-      public ValueTask<ReadOnlyMemory<byte>> ApplyAsync(ReadOnlyMemory<byte> command, ulong logIndex, CancellationToken ct = default)
-      {
-         var str = Encoding.UTF8.GetString(command.Span);
-         AppliedCommands[logIndex] = str;
-         var response = Encoding.UTF8.GetBytes($"ACK:{str}");
-         return ValueTask.FromResult<ReadOnlyMemory<byte>>(response);
-      }
-   }
-
    [Test]
    public async Task SingleNode_LeaderElectionAndProposal_Success()
    {
@@ -109,10 +96,7 @@ public class RaftClusterTests
       }
 
       // Start all nodes
-      for (var i = 0; i < nodes.Count; i++)
-      {
-         await nodes[i].StartAsync();
-      }
+      for (var i = 0; i < nodes.Count; i++) await nodes[i].StartAsync();
 
       // Wait for leader election
       RaftNode? leader = null;
@@ -120,10 +104,7 @@ public class RaftClusterTests
       while (Environment.TickCount64 < deadline)
       {
          leader = nodes.FirstOrDefault(n => n.Role == RaftRole.Leader);
-         if (leader != null)
-         {
-            break;
-         }
+         if (leader != null) break;
          await Task.Delay(50);
       }
 
@@ -139,10 +120,8 @@ public class RaftClusterTests
 
       // Wait for log replication across all nodes
       var wait1Deadline = Environment.TickCount64 + 2000;
-      while (Environment.TickCount64 < wait1Deadline && stateMachines.Values.Any(sm => !sm.AppliedCommands.ContainsKey(1)))
-      {
-         await Task.Delay(25);
-      }
+      while (Environment.TickCount64 < wait1Deadline &&
+             stateMachines.Values.Any(sm => !sm.AppliedCommands.ContainsKey(1))) await Task.Delay(25);
 
       foreach (var sm in stateMachines.Values)
       {
@@ -157,10 +136,8 @@ public class RaftClusterTests
       await Assert.That(Encoding.UTF8.GetString(result2.Span)).IsEqualTo("ACK:SET beta 200");
 
       var wait2Deadline = Environment.TickCount64 + 2000;
-      while (Environment.TickCount64 < wait2Deadline && stateMachines.Values.Any(sm => !sm.AppliedCommands.ContainsKey(2)))
-      {
-         await Task.Delay(25);
-      }
+      while (Environment.TickCount64 < wait2Deadline &&
+             stateMachines.Values.Any(sm => !sm.AppliedCommands.ContainsKey(2))) await Task.Delay(25);
 
       foreach (var sm in stateMachines.Values)
       {
@@ -169,10 +146,7 @@ public class RaftClusterTests
       }
 
       // Clean up
-      for (var i = 0; i < nodes.Count; i++)
-      {
-         await nodes[i].DisposeAsync();
-      }
+      for (var i = 0; i < nodes.Count; i++) await nodes[i].DisposeAsync();
    }
 
    [Test]
@@ -218,10 +192,7 @@ public class RaftClusterTests
          nodes.Add(node);
       }
 
-      for (var i = 0; i < nodes.Count; i++)
-      {
-         await nodes[i].StartAsync();
-      }
+      for (var i = 0; i < nodes.Count; i++) await nodes[i].StartAsync();
 
       // Wait for initial leader
       RaftNode? leader = null;
@@ -254,9 +225,20 @@ public class RaftClusterTests
       await Assert.That(newLeader.Options.NodeId).IsNotEqualTo(oldLeaderId);
 
       // Clean up
-      for (var i = 0; i < nodes.Count; i++)
+      for (var i = 0; i < nodes.Count; i++) await nodes[i].DisposeAsync();
+   }
+
+   private sealed class TestStateMachine : IRaftStateMachine
+   {
+      public readonly ConcurrentDictionary<ulong, string> AppliedCommands = new();
+
+      public ValueTask<ReadOnlyMemory<byte>> ApplyAsync(ReadOnlyMemory<byte> command, ulong logIndex,
+         CancellationToken ct = default)
       {
-         await nodes[i].DisposeAsync();
+         var str = Encoding.UTF8.GetString(command.Span);
+         AppliedCommands[logIndex] = str;
+         var response = Encoding.UTF8.GetBytes($"ACK:{str}");
+         return ValueTask.FromResult<ReadOnlyMemory<byte>>(response);
       }
    }
 }

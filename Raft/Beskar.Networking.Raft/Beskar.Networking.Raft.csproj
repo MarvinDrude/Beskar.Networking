@@ -13,4 +13,8 @@
       <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
    </ItemGroup>
 
+   <ItemGroup>
+      <InternalsVisibleTo Include="Beskar.Networking.Raft.Tests" />
+   </ItemGroup>
+
 </Project>

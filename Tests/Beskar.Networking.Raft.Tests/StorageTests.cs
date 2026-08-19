@@ -98,10 +98,7 @@ public class StorageTests
       }
       finally
       {
-         if (Directory.Exists(testDir))
-         {
-            Directory.Delete(testDir, recursive: true);
-         }
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
       }
    }
 
@@ -140,10 +137,7 @@ public class StorageTests
       }
       finally
       {
-         if (Directory.Exists(testDir))
-         {
-            Directory.Delete(testDir, recursive: true);
-         }
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
       }
    }
 }
