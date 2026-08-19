@@ -52,4 +52,56 @@ public class StorageTests
       await Assert.That(await storage.GetLastLogIndexAsync()).IsEqualTo(2UL);
       await Assert.That(await storage.GetEntryAsync(3)).IsNull();
    }
+
+   [Test]
+   public async Task FileStorage_PersistAndReload_OperatesAccurately()
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+      try
+      {
+         await using (var storage = new FileRaftLogStorage(testDir))
+         {
+            await storage.SetTermAndVoteAsync(12, "candidate-x");
+            var entry1 = new RaftLogEntry(12, 1, Encoding.UTF8.GetBytes("PERSISTED_COMMAND_1"));
+            var entry2 = new RaftLogEntry(12, 2, Encoding.UTF8.GetBytes("PERSISTED_COMMAND_2"));
+            await storage.AppendEntriesAsync(new[] { entry1, entry2 });
+         }
+
+         await using (var storage = new FileRaftLogStorage(testDir))
+         {
+            await Assert.That(await storage.GetCurrentTermAsync()).IsEqualTo(12UL);
+            await Assert.That(await storage.GetVotedForAsync()).IsEqualTo("candidate-x");
+            await Assert.That(await storage.GetLastLogIndexAsync()).IsEqualTo(2UL);
+            await Assert.That(await storage.GetLastLogTermAsync()).IsEqualTo(12UL);
+
+            var entry1 = await storage.GetEntryAsync(1);
+            await Assert.That(entry1.HasValue).IsTrue();
+            await Assert.That(Encoding.UTF8.GetString(entry1!.Value.Data.Span)).IsEqualTo("PERSISTED_COMMAND_1");
+
+            var entry2 = await storage.GetEntryAsync(2);
+            await Assert.That(entry2.HasValue).IsTrue();
+            await Assert.That(Encoding.UTF8.GetString(entry2!.Value.Data.Span)).IsEqualTo("PERSISTED_COMMAND_2");
+
+            var entry3 = new RaftLogEntry(12, 3, Encoding.UTF8.GetBytes("TO_BE_TRUNCATED"));
+            await storage.AppendEntriesAsync([entry3]);
+            await Assert.That(await storage.GetLastLogIndexAsync()).IsEqualTo(3UL);
+
+            await storage.TruncateLogAsync(3);
+            await Assert.That(await storage.GetLastLogIndexAsync()).IsEqualTo(2UL);
+         }
+
+         await using (var storage = new FileRaftLogStorage(testDir))
+         {
+            await Assert.That(await storage.GetLastLogIndexAsync()).IsEqualTo(2UL);
+            await Assert.That(await storage.GetEntryAsync(3)).IsNull();
+         }
+      }
+      finally
+      {
+         if (Directory.Exists(testDir))
+         {
+            Directory.Delete(testDir, recursive: true);
+         }
+      }
+   }
 }
