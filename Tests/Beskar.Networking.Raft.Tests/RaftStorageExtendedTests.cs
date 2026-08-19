@@ -339,4 +339,64 @@ public class RaftStorageExtendedTests
          if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
       }
    }
+
+   [Test]
+   public async Task CompactPrefix_SnapshotTermMismatch_DiscardsConflictingTailLogEntries()
+   {
+      // 1. InMemory storage
+      await using (var memStorage = new InMemoryRaftLogStorage())
+      {
+         await memStorage.AppendEntriesAsync([
+            new RaftLogEntry(1, 1, "E1"u8.ToArray()),
+            new RaftLogEntry(1, 2, "E2"u8.ToArray()),
+            new RaftLogEntry(1, 3, "E3"u8.ToArray()),
+            new RaftLogEntry(1, 4, "E4"u8.ToArray()),
+            new RaftLogEntry(1, 5, "E5"u8.ToArray())
+         ]);
+
+         // Compact until index 3 with term 2 (which conflicts with local term 1)
+         await memStorage.CompactPrefixAsync(3, 2);
+
+         // Entire log must be cleared, leaving no conflicting entries 4 or 5
+         await Assert.That(await memStorage.GetEntryAsync(4)).IsNull();
+         await Assert.That(await memStorage.GetEntryAsync(5)).IsNull();
+         await Assert.That(await memStorage.GetLastLogIndexAsync()).IsEqualTo(3UL);
+         await Assert.That(await memStorage.GetLastLogTermAsync()).IsEqualTo(2UL);
+      }
+
+      // 2. File storage
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_term_mismatch_{Guid.NewGuid():N}");
+      try
+      {
+         await using (var fileStorage = new FileRaftLogStorage(testDir))
+         {
+            await fileStorage.AppendEntriesAsync([
+               new RaftLogEntry(1, 1, "E1"u8.ToArray()),
+               new RaftLogEntry(1, 2, "E2"u8.ToArray()),
+               new RaftLogEntry(1, 3, "E3"u8.ToArray()),
+               new RaftLogEntry(1, 4, "E4"u8.ToArray()),
+               new RaftLogEntry(1, 5, "E5"u8.ToArray())
+            ]);
+
+            await fileStorage.CompactPrefixAsync(3, 2);
+
+            await Assert.That(await fileStorage.GetEntryAsync(4)).IsNull();
+            await Assert.That(await fileStorage.GetEntryAsync(5)).IsNull();
+            await Assert.That(await fileStorage.GetLastLogIndexAsync()).IsEqualTo(3UL);
+            await Assert.That(await fileStorage.GetLastLogTermAsync()).IsEqualTo(2UL);
+         }
+
+         await using (var reloaded = new FileRaftLogStorage(testDir))
+         {
+            await Assert.That(await reloaded.GetEntryAsync(4)).IsNull();
+            await Assert.That(await reloaded.GetEntryAsync(5)).IsNull();
+            await Assert.That(await reloaded.GetLastLogIndexAsync()).IsEqualTo(3UL);
+            await Assert.That(await reloaded.GetLastLogTermAsync()).IsEqualTo(2UL);
+         }
+      }
+      finally
+      {
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
+      }
+   }
 }

@@ -310,7 +310,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       _compactedUntilIndex = untilIndex;
       _compactedUntilTerm = untilTerm > 0 ? untilTerm : targetEntry.Term;
 
-      if (removeCount >= _entries.Count)
+      if (removeCount >= _entries.Count || (untilTerm > 0 && targetEntry.Term != untilTerm))
       {
          _entries.Clear();
          _entryOffsets.Clear();

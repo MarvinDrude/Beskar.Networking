@@ -79,8 +79,9 @@ public sealed class RaftNode : IAsyncDisposable
 
       _currentTerm = await Storage.GetCurrentTermAsync(ct);
       _votedFor = await Storage.GetVotedForAsync(ct);
-      _commitIndex = 0;
-      _lastApplied = 0;
+      var compactedIndex = await Storage.GetCompactedUntilIndexAsync(ct);
+      _commitIndex = compactedIndex;
+      _lastApplied = compactedIndex;
       _lastHeartbeatTicks = Environment.TickCount64;
 
       _nodeCts = new CancellationTokenSource();

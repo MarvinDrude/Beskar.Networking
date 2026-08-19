@@ -319,6 +319,22 @@ public class RaftSnapshotTests
       await Assert.That(follower.CommitIndex).IsEqualTo(3UL);
       await Assert.That(follower.LastApplied).IsEqualTo(3UL);
    }
+
+   [Test]
+   public async Task StartAsync_RestoresCommitIndexAndLastApplied_FromCompactedStorage()
+   {
+      var storage = new InMemoryRaftLogStorage();
+      await storage.CompactPrefixAsync(50, 3);
+
+      var (node, _, _, clientTransport) = CreateNodeAndSender("node-restart", [], storage);
+      await using var _ = clientTransport;
+      await using var __ = node;
+
+      await node.StartAsync();
+
+      await Assert.That(node.CommitIndex).IsEqualTo(50UL);
+      await Assert.That(node.LastApplied).IsEqualTo(50UL);
+   }
 }
 
 internal sealed class SnapshotStateMachine : IRaftStateMachine
