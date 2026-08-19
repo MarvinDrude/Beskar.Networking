@@ -61,4 +61,9 @@ public interface IRaftLogStorage : IAsyncDisposable
    /// Truncates all log entries starting from <paramref name="fromIndex"/> onwards (inclusive).
    /// </summary>
    ValueTask TruncateLogAsync(ulong fromIndex, CancellationToken ct = default);
+
+   /// <summary>
+   /// Compacts and discards all historical log entries up to and including <paramref name="untilIndex"/>.
+   /// </summary>
+   ValueTask CompactPrefixAsync(ulong untilIndex, CancellationToken ct = default);
 }

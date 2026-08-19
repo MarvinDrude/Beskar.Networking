@@ -668,7 +668,7 @@ public sealed class RaftNode : IAsyncDisposable
       Volatile.Write(ref _lastHeartbeatTicks, Environment.TickCount64);
 
       await StateMachine.RestoreSnapshotAsync(request.Data, request.LastIncludedIndex, request.LastIncludedTerm);
-      await Storage.TruncateLogAsync(request.LastIncludedIndex + 1);
+      await Storage.CompactPrefixAsync(request.LastIncludedIndex);
 
       lock (_stateLock)
       {

@@ -104,4 +104,46 @@ public class StorageTests
          }
       }
    }
+
+   [Test]
+   public async Task FileStorage_CompactPrefixAsync_DiscardsHistoricalEntries()
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_compact_test_{Guid.NewGuid():N}");
+      try
+      {
+         await using (var storage = new FileRaftLogStorage(testDir))
+         {
+            var e1 = new RaftLogEntry(1, 1, Encoding.UTF8.GetBytes("E1"));
+            var e2 = new RaftLogEntry(1, 2, Encoding.UTF8.GetBytes("E2"));
+            var e3 = new RaftLogEntry(1, 3, Encoding.UTF8.GetBytes("E3"));
+            await storage.AppendEntriesAsync([e1, e2, e3]);
+
+            await storage.CompactPrefixAsync(2);
+
+            await Assert.That(await storage.GetEntryAsync(1)).IsNull();
+            await Assert.That(await storage.GetEntryAsync(2)).IsNull();
+
+            var e3Fetched = await storage.GetEntryAsync(3);
+            await Assert.That(e3Fetched.HasValue).IsTrue();
+            await Assert.That(Encoding.UTF8.GetString(e3Fetched!.Value.Data.Span)).IsEqualTo("E3");
+         }
+
+         // Verify reloaded storage persists compacted prefix state
+         await using (var storage = new FileRaftLogStorage(testDir))
+         {
+            await Assert.That(await storage.GetEntryAsync(1)).IsNull();
+            await Assert.That(await storage.GetEntryAsync(2)).IsNull();
+            var e3Fetched = await storage.GetEntryAsync(3);
+            await Assert.That(e3Fetched.HasValue).IsTrue();
+            await Assert.That(Encoding.UTF8.GetString(e3Fetched!.Value.Data.Span)).IsEqualTo("E3");
+         }
+      }
+      finally
+      {
+         if (Directory.Exists(testDir))
+         {
+            Directory.Delete(testDir, recursive: true);
+         }
+      }
+   }
 }

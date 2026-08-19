@@ -249,6 +249,75 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       }
    }
 
+   public ValueTask CompactPrefixAsync(ulong untilIndex, CancellationToken ct = default)
+   {
+      lock (_lock)
+      {
+         CompactPrefixInternal(untilIndex);
+         return ValueTask.CompletedTask;
+      }
+   }
+
+   private void CompactPrefixInternal(ulong untilIndex)
+   {
+      if (_entries.Count == 0 || untilIndex == 0 || _logFileStream == null)
+      {
+         return;
+      }
+
+      var firstIndex = _entries[0].Index;
+      if (untilIndex < firstIndex)
+      {
+         return;
+      }
+
+      var removeCount = (int)(untilIndex - firstIndex + 1);
+      if (removeCount >= _entries.Count)
+      {
+         _entries.Clear();
+         _entryOffsets.Clear();
+         _logFileStream.SetLength(0);
+         _logFileStream.Flush(flushToDisk: true);
+      }
+      else
+      {
+         _entries.RemoveRange(0, removeCount);
+         _entryOffsets.RemoveRange(0, removeCount);
+
+         RewriteLogFileInternal();
+      }
+   }
+
+   private void RewriteLogFileInternal()
+   {
+      if (_logFileStream == null) return;
+
+      _logFileStream.SetLength(0);
+      _logFileStream.Seek(0, SeekOrigin.Begin);
+      _entryOffsets.Clear();
+
+      Span<byte> header = stackalloc byte[20];
+      for (var i = 0; i < _entries.Count; i++)
+      {
+         var entry = _entries[i];
+         var offset = _logFileStream.Position;
+
+         BinaryPrimitives.WriteUInt64LittleEndian(header[..8], entry.Term);
+         BinaryPrimitives.WriteUInt64LittleEndian(header.Slice(8, 8), entry.Index);
+         BinaryPrimitives.WriteInt32LittleEndian(header.Slice(16, 4), entry.Data.Length);
+
+         _logFileStream.Write(header);
+         if (entry.Data.Length > 0)
+         {
+            _logFileStream.Write(entry.Data.Span);
+         }
+
+         _entryOffsets.Add(offset);
+      }
+
+      _logFileStream.Flush(flushToDisk: true);
+   }
+
    private void LoadMetadata()
    {
       if (!File.Exists(_metadataPath))

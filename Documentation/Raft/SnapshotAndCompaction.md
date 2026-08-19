@@ -45,12 +45,15 @@ public interface IRaftStateMachine
 }
 ```
 
-### `IRaftLogStorage` Truncation
+### `IRaftLogStorage` Compaction & Truncation
 
-Log storage implementations (`FileRaftLogStorage`, `InMemoryRaftLogStorage`) expose `TruncateLogAsync`:
+Log storage implementations ([`FileRaftLogStorage`](file:///c:/Users/marvi/RiderProjects/Beskar.Networking/Raft/Beskar.Networking.Raft/Storage/FileRaftLogStorage.cs), [`InMemoryRaftLogStorage`](file:///c:/Users/marvi/RiderProjects/Beskar.Networking/Raft/Beskar.Networking.Raft/Storage/InMemoryRaftLogStorage.cs)) expose two distinct log trimming methods:
 
 ```csharp
-// Truncates log entries from fromIndex onwards (inclusive)
+// 1. Prefix Compaction: Discards historical head entries 1..untilIndex after snapshotting
+ValueTask CompactPrefixAsync(ulong untilIndex, CancellationToken ct = default);
+
+// 2. Suffix Truncation: Discards uncommitted tail entries starting from fromIndex to resolve leader conflicts
 ValueTask TruncateLogAsync(ulong fromIndex, CancellationToken ct = default);
 ```
 

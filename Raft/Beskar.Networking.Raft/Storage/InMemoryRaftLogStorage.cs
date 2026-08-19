@@ -192,6 +192,35 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
       }
    }
 
+   public ValueTask CompactPrefixAsync(ulong untilIndex, CancellationToken ct = default)
+   {
+      lock (_lock)
+      {
+         if (_entries.Count == 0 || untilIndex == 0)
+         {
+            return ValueTask.CompletedTask;
+         }
+
+         var firstIndex = _entries[0].Index;
+         if (untilIndex < firstIndex)
+         {
+            return ValueTask.CompletedTask;
+         }
+
+         var removeCount = (int)(untilIndex - firstIndex + 1);
+         if (removeCount >= _entries.Count)
+         {
+            _entries.Clear();
+         }
+         else
+         {
+            _entries.RemoveRange(0, removeCount);
+         }
+
+         return ValueTask.CompletedTask;
+      }
+   }
+
    public ValueTask DisposeAsync()
    {
       lock (_lock)

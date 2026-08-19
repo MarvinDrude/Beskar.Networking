@@ -7,7 +7,7 @@ using Beskar.Networking.Raft.Storage;
 using Beskar.Networking.Raft.Transport;
 using Beskar.Networking.Transports.Memory;
 
-Console.WriteLine("=== Beskar Raft Snapshot & Log Compaction Example ===\n");
+Console.WriteLine("=== Beskar Raft Log Compaction & Snapshotting Example ===\n");
 
 var dataDir = Path.Combine(Path.GetTempPath(), $"raft_snapshot_demo_{Guid.NewGuid():N}");
 Console.WriteLine($"Storage directory: {dataDir}\n");
@@ -52,7 +52,7 @@ try
    }
 
    var lastIndexBefore = await storage.GetLastLogIndexAsync();
-   Console.WriteLine($"\n[Log State Before Snapshot] Last Log Index: {lastIndexBefore}");
+   Console.WriteLine($"\n[Log State Before Compaction] Last Log Index: {lastIndexBefore}");
    for (ulong i = 1; i <= lastIndexBefore; i++)
    {
       var entry = await storage.GetEntryAsync(i);
@@ -60,48 +60,56 @@ try
    }
 
    // ====================================================
-   // Phase 2: Create State Machine Snapshot
+   // Phase 2: Prefix Log Compaction & Snapshotting
    // ====================================================
-   Console.WriteLine("\n--- Phase 2: Creating State Machine Snapshot ---");
-   var snapshotIndex = lastIndexBefore;
+   Console.WriteLine("\n--- Phase 2: Performing Snapshot Prefix Compaction ---");
+   var snapshotIndex = 7UL; // Snapshot captures state up to Log Index #7
    var snapshotTerm = node.CurrentTerm;
 
-   // Take snapshot of current state machine state (captures key1..key10)
+   // 1. Take snapshot of state machine state at Index #7
    var snapshotData = await stateMachine.TakeSnapshotAsync();
    Console.WriteLine($"State Machine Snapshot taken at Index #{snapshotIndex}, Term {snapshotTerm}.");
    Console.WriteLine($"Snapshot Blob Size: {snapshotData.Length} bytes.");
 
-   // Demonstrating conflict log truncation (e.g. discarding uncommitted entries 8..10)
-   Console.WriteLine("\nTruncating uncommitted log entries 8..10 from log storage...");
-   await storage.TruncateLogAsync(8);
+   // 2. Compact prefix log entries 1..7 (historical entries now saved in snapshot)
+   Console.WriteLine($"Compacting prefix log entries #1 through #{snapshotIndex}...");
+   await storage.CompactPrefixAsync(snapshotIndex);
 
    var lastIndexAfter = await storage.GetLastLogIndexAsync();
-   Console.WriteLine($"\n[Log State After Log Truncation] Last Log Index in Storage: {lastIndexAfter}");
+   Console.WriteLine($"\n[Log State After Prefix Compaction] Last Log Index in Storage: {lastIndexAfter}");
    for (ulong i = 1; i <= 10; i++)
    {
       var entry = await storage.GetEntryAsync(i);
-      var status = entry.HasValue ? Encoding.UTF8.GetString(entry.Value.Data.Span) : "<truncated / missing from log>";
+      var status = entry.HasValue ? Encoding.UTF8.GetString(entry.Value.Data.Span) : "<compacted / discarded from disk>";
       Console.WriteLine($"  - Log #{i}: {status}");
    }
 
    // ====================================================
-   // Phase 3: Restoring a Fresh State Machine from Snapshot
+   // Phase 3: Restoring Fresh State Machine from Snapshot + Tail Replay
    // ====================================================
-   Console.WriteLine("\n--- Phase 3: Restoring State Machine directly from Snapshot Payload ---");
-   Console.WriteLine("Notice: Restoring from snapshot does NOT replay log storage!");
-   Console.WriteLine("It loads state directly from the snapshot blob (which was taken at Index #10).\n");
-
+   Console.WriteLine("\n--- Phase 3: Restoring State Machine from Snapshot + Tail Replay ---");
    var restoredStateMachine = new SnapshotCapableStateMachine();
-   await restoredStateMachine.RestoreSnapshotAsync(snapshotData, snapshotIndex, snapshotTerm);
 
-   Console.WriteLine("Restored State Machine Key-Value Pairs:");
+   // Step A: Load snapshot blob (restores key1..key7)
+   await restoredStateMachine.RestoreSnapshotAsync(snapshotData, snapshotIndex, snapshotTerm);
+   Console.WriteLine($"Restored base state from snapshot up to Index #{snapshotIndex}.");
+
+   // Step B: Replay remaining tail entries (8..10) from log storage
+   var tailEntries = await storage.GetEntriesAsync(snapshotIndex + 1, 100);
+   Console.WriteLine($"Replaying {tailEntries.Count} remaining tail log entries from storage...");
+   foreach (var tailEntry in tailEntries)
+   {
+      await restoredStateMachine.ApplyAsync(tailEntry.Data, tailEntry.Index);
+   }
+
+   Console.WriteLine("\nFinal Restored State Machine Key-Value Pairs:");
    foreach (var (key, value) in restoredStateMachine.Store)
    {
       Console.WriteLine($"  - {key} => {value}");
    }
 
    await node.StopAsync();
-   Console.WriteLine("\nSnapshot example completed successfully!");
+   Console.WriteLine("\nSnapshot compaction example completed successfully!");
 }
 finally
 {
