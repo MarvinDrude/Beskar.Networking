@@ -499,8 +499,12 @@ public sealed class RaftNode : IAsyncDisposable
             }
             else
             {
-               // Follower rejected due to log inconsistency, decrement nextIndex
-               if (tracker.NextIndex > 1)
+               // Follower rejected due to log inconsistency, fast-backtrack nextIndex to follower's matchIndex
+               if (response.MatchIndex > 0 && response.MatchIndex < tracker.NextIndex)
+               {
+                  tracker.NextIndex = response.MatchIndex + 1;
+               }
+               else if (tracker.NextIndex > 1)
                {
                   tracker.NextIndex--;
                }
