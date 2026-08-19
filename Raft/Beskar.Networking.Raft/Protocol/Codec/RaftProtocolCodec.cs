@@ -91,6 +91,11 @@ public static class RaftProtocolCodec
    public static void WriteRequestVote(IBufferWriter<byte> writer, RequestVoteRequest request)
    {
       var candidateIdBytes = Encoding.UTF8.GetBytes(request.CandidateId);
+      if (candidateIdBytes.Length > ushort.MaxValue)
+      {
+         throw new ArgumentOutOfRangeException(nameof(request.CandidateId), "CandidateId exceeds maximum allowed length of 65535 bytes.");
+      }
+
       var payloadLength = 8 + 2 + candidateIdBytes.Length + 8 + 8;
 
       WriteHeader(writer, RaftMessageType.RequestVote, payloadLength);
@@ -122,6 +127,11 @@ public static class RaftProtocolCodec
    public static void WriteAppendEntries(IBufferWriter<byte> writer, AppendEntriesRequest request)
    {
       var leaderIdBytes = Encoding.UTF8.GetBytes(request.LeaderId);
+      if (leaderIdBytes.Length > ushort.MaxValue)
+      {
+         throw new ArgumentOutOfRangeException(nameof(request.LeaderId), "LeaderId exceeds maximum allowed length of 65535 bytes.");
+      }
+
       var entriesLength = 0;
       var entries = request.Entries;
 
@@ -174,6 +184,11 @@ public static class RaftProtocolCodec
    public static void WriteInstallSnapshot(IBufferWriter<byte> writer, InstallSnapshotRequest request)
    {
       var leaderIdBytes = Encoding.UTF8.GetBytes(request.LeaderId);
+      if (leaderIdBytes.Length > ushort.MaxValue)
+      {
+         throw new ArgumentOutOfRangeException(nameof(request.LeaderId), "LeaderId exceeds maximum allowed length of 65535 bytes.");
+      }
+
       var payloadLength = 8 + 2 + leaderIdBytes.Length + 8 + 8 + 4 + request.Data.Length;
       WriteHeader(writer, RaftMessageType.InstallSnapshot, payloadLength);
 

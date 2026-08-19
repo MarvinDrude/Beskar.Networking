@@ -157,8 +157,15 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
                var existingListIndex = (int)(entry.Index - firstIndex);
                if (existingListIndex >= 0 && existingListIndex < _entries.Count)
                {
-                  _entries[existingListIndex] = entry;
-                  continue;
+                  if (_entries[existingListIndex].Term != entry.Term)
+                  {
+                     _entries.RemoveRange(existingListIndex, _entries.Count - existingListIndex);
+                  }
+                  else
+                  {
+                     _entries[existingListIndex] = entry;
+                     continue;
+                  }
                }
             }
 

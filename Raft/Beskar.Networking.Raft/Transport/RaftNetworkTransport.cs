@@ -151,7 +151,7 @@ public sealed class RaftNetworkTransport : IRaftTransport
             {
                await session.DisposeAsync();
             }
-         }, cancellationToken);
+         }, CancellationToken.None);
       }
    }
 

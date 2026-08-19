@@ -47,7 +47,7 @@ public interface IRaftStateMachine
 
 ### `IRaftLogStorage` Compaction & Truncation
 
-Log storage implementations ([`FileRaftLogStorage`](file:///c:/Users/marvi/RiderProjects/Beskar.Networking/Raft/Beskar.Networking.Raft/Storage/FileRaftLogStorage.cs), [`InMemoryRaftLogStorage`](file:///c:/Users/marvi/RiderProjects/Beskar.Networking/Raft/Beskar.Networking.Raft/Storage/InMemoryRaftLogStorage.cs)) expose two distinct log trimming methods:
+Log storage implementations ([`FileRaftLogStorage`](../../Raft/Beskar.Networking.Raft/Storage/FileRaftLogStorage.cs), [`InMemoryRaftLogStorage`](../../Raft/Beskar.Networking.Raft/Storage/InMemoryRaftLogStorage.cs)) expose two distinct log trimming methods:
 
 ```csharp
 // 1. Prefix Compaction: Discards historical head entries 1..untilIndex after snapshotting
