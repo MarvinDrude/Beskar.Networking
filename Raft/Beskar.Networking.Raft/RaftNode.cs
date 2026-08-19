@@ -41,6 +41,7 @@ public sealed class RaftNode : IAsyncDisposable
    private int _electionTimeoutMs;
 
    private readonly Lock _stateLock = new();
+   private readonly SemaphoreSlim _proposalLock = new(1, 1);
    private readonly ConcurrentDictionary<string, RaftPeerTracker> _peerTrackers = new();
    private readonly ConcurrentDictionary<ulong, TaskCompletionSource<ReadOnlyMemory<byte>>> _pendingProposals = new();
 
@@ -144,26 +145,36 @@ public sealed class RaftNode : IAsyncDisposable
          throw new InvalidOperationException($"Node is not leader. Current leader is '{LeaderId ?? "unknown"}'.");
       }
 
-      ulong currentTerm;
+      ulong newIndex;
+      TaskCompletionSource<ReadOnlyMemory<byte>> tcs;
 
-      lock (_stateLock)
+      await _proposalLock.WaitAsync(ct);
+      try
       {
-         if (Role != RaftRole.Leader)
+         ulong currentTerm;
+         lock (_stateLock)
          {
-            throw new InvalidOperationException($"Node is not leader. Current leader is '{LeaderId ?? "unknown"}'.");
+            if (Role != RaftRole.Leader)
+            {
+               throw new InvalidOperationException($"Node is not leader. Current leader is '{LeaderId ?? "unknown"}'.");
+            }
+
+            currentTerm = _currentTerm;
          }
 
-         currentTerm = _currentTerm;
+         var lastIndex = await Storage.GetLastLogIndexAsync(ct);
+         newIndex = lastIndex + 1;
+
+         var entry = new RaftLogEntry(currentTerm, newIndex, command);
+         await Storage.AppendEntriesAsync([entry], ct);
+
+         tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
+         _pendingProposals[newIndex] = tcs;
       }
-
-      var lastIndex = await Storage.GetLastLogIndexAsync(ct);
-      var newIndex = lastIndex + 1;
-
-      var entry = new RaftLogEntry(currentTerm, newIndex, command);
-      await Storage.AppendEntriesAsync([entry], ct);
-
-      var tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
-      _pendingProposals[newIndex] = tcs;
+      finally
+      {
+         _proposalLock.Release();
+      }
 
       // If single-node cluster, commit and apply immediately
       if (Options.Peers.Count == 0)
@@ -399,7 +410,50 @@ public sealed class RaftNode : IAsyncDisposable
          if (prevLogIndex > 0)
          {
             var prevEntry = await Storage.GetEntryAsync(prevLogIndex, cancellationToken);
-            prevLogTerm = prevEntry?.Term ?? 0;
+            if (prevEntry == null)
+            {
+               // log entries before tracker.NextIndex have been snapshot-compacted by leader
+               // ... i think we send InstallSnapshot RPC to bring follower up to date
+               try
+               {
+                  var snapshotData = await StateMachine.TakeSnapshotAsync(cancellationToken);
+                  var lastIncludedIndex = await Storage.GetLastLogIndexAsync(cancellationToken);
+                  var lastIncludedTerm = await Storage.GetLastLogTermAsync(cancellationToken);
+
+                  var snapshotReq = new InstallSnapshotRequest
+                  {
+                     Term = currentTerm,
+                     LeaderId = Options.NodeId,
+                     LastIncludedIndex = lastIncludedIndex,
+                     LastIncludedTerm = lastIncludedTerm,
+                     Data = snapshotData
+                  };
+
+                  var snapshotResp = await Transport.InstallSnapshotAsync(peerId, snapshotReq, cancellationToken);
+                  if (snapshotResp != null)
+                  {
+                     if (snapshotResp.Term > currentTerm)
+                     {
+                        await StepDownAsync(snapshotResp.Term, cancellationToken);
+                        return;
+                     }
+
+                     if (snapshotResp.Success)
+                     {
+                        tracker.MatchIndex = Math.Max(tracker.MatchIndex, lastIncludedIndex);
+                        tracker.NextIndex = tracker.MatchIndex + 1;
+                        await CheckAndUpdateCommitIndexAsync(cancellationToken);
+                     }
+                  }
+               }
+               catch
+               {
+                  // Peer unreachable
+               }
+               return;
+            }
+
+            prevLogTerm = prevEntry.Value.Term;
          }
 
          var entries = await Storage.GetEntriesAsync(tracker.NextIndex, Options.MaxAppendEntriesBatchSize, cancellationToken);

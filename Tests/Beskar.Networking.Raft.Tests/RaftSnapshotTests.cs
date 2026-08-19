@@ -170,6 +170,78 @@ public class RaftSnapshotTests
       await Assert.That(sm.Store.Count).IsEqualTo(2000);
       await Assert.That(sm.Store["bulk_key_1500"]).IsEqualTo(new string('x', 50));
    }
+
+   [Test]
+   public async Task Replication_LeaderCompactedEntries_FallbackToInstallSnapshot()
+   {
+      var memoryOptions = new MemoryTransportOptions();
+      var epLeader = new MemoryEndPoint($"leader-ep-{Guid.NewGuid():N}");
+      var epFollower = new MemoryEndPoint($"follower-ep-{Guid.NewGuid():N}");
+
+      var listenerLeader = new MemoryNetworkListener(epLeader, memoryOptions);
+      var listenerFollower = new MemoryNetworkListener(epFollower, memoryOptions);
+
+      var peersForLeader = new List<RaftPeerEndpoint>
+      {
+         new("follower-1", epFollower, () => new MemoryNetworkClient(memoryOptions))
+      };
+
+      var peersForFollower = new List<RaftPeerEndpoint>
+      {
+         new("leader-1", epLeader, () => new MemoryNetworkClient(memoryOptions))
+      };
+
+      var transportLeader = new RaftNetworkTransport(listenerLeader, peersForLeader);
+      var transportFollower = new RaftNetworkTransport(listenerFollower, peersForFollower);
+
+      var storageLeader = new InMemoryRaftLogStorage();
+      var storageFollower = new InMemoryRaftLogStorage();
+
+      var smLeader = new SnapshotStateMachine();
+      var smFollower = new SnapshotStateMachine();
+
+      var optionsLeader = new RaftNodeOptions
+      {
+         NodeId = "leader-1",
+         Peers = ["follower-1"],
+         ElectionTimeoutMin = TimeSpan.FromMilliseconds(50),
+         ElectionTimeoutMax = TimeSpan.FromMilliseconds(100),
+         HeartbeatInterval = TimeSpan.FromMilliseconds(20)
+      };
+
+      var optionsFollower = new RaftNodeOptions
+      {
+         NodeId = "follower-1",
+         Peers = ["leader-1"],
+         ElectionTimeoutMin = TimeSpan.FromMilliseconds(200),
+         ElectionTimeoutMax = TimeSpan.FromMilliseconds(400),
+         HeartbeatInterval = TimeSpan.FromMilliseconds(20)
+      };
+
+      await using var leader = new RaftNode(optionsLeader, storageLeader, smLeader, transportLeader);
+      await using var follower = new RaftNode(optionsFollower, storageFollower, smFollower, transportFollower);
+
+      await leader.StartAsync();
+      await follower.StartAsync();
+
+      await Task.Delay(150);
+
+      // Propose entries on leader while follower is active
+      await leader.ProposeAsync("SET key1=val1"u8.ToArray());
+
+      // Leader compacts log entries up to index 1
+      await storageLeader.CompactPrefixAsync(1);
+
+      // Now propose entry 2. Leader's log no longer has entry 1 (compacted).
+      // TriggerReplicationAsync should automatically detect missing prevEntry and send InstallSnapshot!
+      await leader.ProposeAsync("SET key2=val2"u8.ToArray());
+
+      await Task.Delay(150);
+
+      // Follower must have received InstallSnapshot and caught up to latest state
+      await Assert.That(smFollower.Store.ContainsKey("key1")).IsTrue();
+      await Assert.That(smFollower.Store["key1"]).IsEqualTo("val1");
+   }
 }
 
 internal sealed class SnapshotStateMachine : IRaftStateMachine
