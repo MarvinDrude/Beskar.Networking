@@ -20,6 +20,8 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
 
    private ulong _currentTerm;
    private string? _votedFor;
+   private ulong _compactedUntilIndex;
+   private ulong _compactedUntilTerm;
    private int _disposed;
 
    public FileRaftLogStorage(string storageDirectory)
@@ -85,7 +87,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       {
          if (_entries.Count == 0)
          {
-            return ValueTask.FromResult(0UL);
+            return ValueTask.FromResult(_compactedUntilIndex);
          }
 
          return ValueTask.FromResult(_entries[^1].Index);
@@ -98,7 +100,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       {
          if (_entries.Count == 0)
          {
-            return ValueTask.FromResult(0UL);
+            return ValueTask.FromResult(_compactedUntilTerm);
          }
 
          return ValueTask.FromResult(_entries[^1].Term);
@@ -260,8 +262,18 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
 
    private void CompactPrefixInternal(ulong untilIndex)
    {
-      if (_entries.Count == 0 || untilIndex == 0 || _logFileStream == null)
+      if (untilIndex == 0)
       {
+         return;
+      }
+
+      if (_entries.Count == 0 || _logFileStream == null)
+      {
+         if (untilIndex > _compactedUntilIndex)
+         {
+            _compactedUntilIndex = untilIndex;
+            WriteMetadata();
+         }
          return;
       }
 
@@ -272,6 +284,10 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       }
 
       var removeCount = (int)(untilIndex - firstIndex + 1);
+      var targetEntry = _entries[Math.Min(removeCount - 1, _entries.Count - 1)];
+      _compactedUntilIndex = untilIndex;
+      _compactedUntilTerm = targetEntry.Term;
+
       if (removeCount >= _entries.Count)
       {
          _entries.Clear();
@@ -286,6 +302,8 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
 
          RewriteLogFileInternal();
       }
+
+      WriteMetadata();
    }
 
    private void RewriteLogFileInternal()
@@ -324,6 +342,8 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       {
          _currentTerm = 0;
          _votedFor = null;
+         _compactedUntilIndex = 0;
+         _compactedUntilTerm = 0;
          return;
       }
 
@@ -334,43 +354,68 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       }
 
       _currentTerm = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0, 8));
-      var votedForLen = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(8, 2));
 
-      if (votedForLen > 0 && bytes.Length >= 10 + votedForLen)
+      if (bytes.Length >= 26)
       {
-         _votedFor = Encoding.UTF8.GetString(bytes, 10, votedForLen);
+         _compactedUntilIndex = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(8, 8));
+         _compactedUntilTerm = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(16, 8));
+         var votedForLen = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(24, 2));
+
+         if (votedForLen > 0 && bytes.Length >= 26 + votedForLen)
+         {
+            _votedFor = Encoding.UTF8.GetString(bytes, 26, votedForLen);
+         }
+         else
+         {
+            _votedFor = null;
+         }
       }
       else
       {
-         _votedFor = null;
+         _compactedUntilIndex = 0;
+         _compactedUntilTerm = 0;
+         var votedForLen = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(8, 2));
+
+         if (votedForLen > 0 && bytes.Length >= 10 + votedForLen)
+         {
+            _votedFor = Encoding.UTF8.GetString(bytes, 10, votedForLen);
+         }
+         else
+         {
+            _votedFor = null;
+         }
       }
    }
 
    private void WriteMetadata()
    {
-      Span<byte> header = stackalloc byte[10];
+      Span<byte> header = stackalloc byte[26];
       BinaryPrimitives.WriteUInt64LittleEndian(header[..8], _currentTerm);
+      BinaryPrimitives.WriteUInt64LittleEndian(header.Slice(8, 8), _compactedUntilIndex);
+      BinaryPrimitives.WriteUInt64LittleEndian(header.Slice(16, 8), _compactedUntilTerm);
 
       byte[]? votedForBytes = null;
       if (!string.IsNullOrEmpty(_votedFor))
       {
          votedForBytes = Encoding.UTF8.GetBytes(_votedFor);
-         BinaryPrimitives.WriteInt16LittleEndian(header.Slice(8, 2), (short)votedForBytes.Length);
+         BinaryPrimitives.WriteInt16LittleEndian(header.Slice(24, 2), (short)votedForBytes.Length);
       }
       else
       {
-         BinaryPrimitives.WriteInt16LittleEndian(header.Slice(8, 2), -1);
+         BinaryPrimitives.WriteInt16LittleEndian(header.Slice(24, 2), -1);
       }
 
-      var totalLen = 10 + (votedForBytes?.Length ?? 0);
+      var totalLen = 26 + (votedForBytes?.Length ?? 0);
       var buffer = new byte[totalLen];
       header.CopyTo(buffer);
       if (votedForBytes != null)
       {
-         votedForBytes.CopyTo(buffer, 10);
+         votedForBytes.CopyTo(buffer, 26);
       }
 
-      File.WriteAllBytes(_metadataPath, buffer);
+      var tempPath = $"{_metadataPath}.tmp";
+      File.WriteAllBytes(tempPath, buffer);
+      File.Move(tempPath, _metadataPath, overwrite: true);
    }
 
    private void OpenAndIndexLog()

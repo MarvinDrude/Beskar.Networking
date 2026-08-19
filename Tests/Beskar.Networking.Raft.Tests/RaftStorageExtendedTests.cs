@@ -161,4 +161,41 @@ public class RaftStorageExtendedTests
          if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
       }
    }
+
+   [Test]
+   public async Task CompactAllEntries_PreservesLastLogIndexAndTerm_ForElectionSafety()
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_compact_safety_{Guid.NewGuid():N}");
+      try
+      {
+         await using (var storage = new FileRaftLogStorage(testDir))
+         {
+            var entries = new List<RaftLogEntry>
+            {
+               new(1, 1, "data1"u8.ToArray()),
+               new(2, 2, "data2"u8.ToArray()),
+               new(5, 3, "data3"u8.ToArray())
+            };
+            await storage.AppendEntriesAsync(entries);
+
+            // Compact all entries 1..3
+            await storage.CompactPrefixAsync(3);
+
+            // Verified last log index must be 3 and term 5 even when log list is empty
+            await Assert.That(await storage.GetLastLogIndexAsync()).IsEqualTo(3UL);
+            await Assert.That(await storage.GetLastLogTermAsync()).IsEqualTo(5UL);
+         }
+
+         // Reload storage from disk to ensure persisted metadata retains last compacted index/term
+         await using (var reloaded = new FileRaftLogStorage(testDir))
+         {
+            await Assert.That(await reloaded.GetLastLogIndexAsync()).IsEqualTo(3UL);
+            await Assert.That(await reloaded.GetLastLogTermAsync()).IsEqualTo(5UL);
+         }
+      }
+      finally
+      {
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
+      }
+   }
 }

@@ -14,6 +14,9 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
    private ulong _currentTerm;
    private string? _votedFor;
 
+   private ulong _compactedUntilIndex;
+   private ulong _compactedUntilTerm;
+
    public ValueTask<ulong> GetCurrentTermAsync(CancellationToken ct = default)
    {
       lock (_lock)
@@ -64,7 +67,7 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
       {
          if (_entries.Count == 0)
          {
-            return ValueTask.FromResult(0UL);
+            return ValueTask.FromResult(_compactedUntilIndex);
          }
 
          return ValueTask.FromResult(_entries[^1].Index);
@@ -77,7 +80,7 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
       {
          if (_entries.Count == 0)
          {
-            return ValueTask.FromResult(0UL);
+            return ValueTask.FromResult(_compactedUntilTerm);
          }
 
          return ValueTask.FromResult(_entries[^1].Term);
@@ -198,6 +201,10 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
       {
          if (_entries.Count == 0 || untilIndex == 0)
          {
+            if (untilIndex > _compactedUntilIndex)
+            {
+               _compactedUntilIndex = untilIndex;
+            }
             return ValueTask.CompletedTask;
          }
 
@@ -208,6 +215,10 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
          }
 
          var removeCount = (int)(untilIndex - firstIndex + 1);
+         var targetEntry = _entries[Math.Min(removeCount - 1, _entries.Count - 1)];
+         _compactedUntilIndex = untilIndex;
+         _compactedUntilTerm = targetEntry.Term;
+
          if (removeCount >= _entries.Count)
          {
             _entries.Clear();
