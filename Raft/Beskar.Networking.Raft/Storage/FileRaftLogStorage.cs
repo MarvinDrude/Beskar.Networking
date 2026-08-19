@@ -186,8 +186,16 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
 
                if (existingListIndex >= 0 && existingListIndex < _entries.Count)
                {
-                  // Truncate from this index before overwriting
-                  TruncateInternal(entry.Index);
+                  if (_entries[existingListIndex].Term != entry.Term)
+                  {
+                     // term conflict: Truncate from this index before overwriting
+                     TruncateInternal(entry.Index);
+                  }
+                  else
+                  {
+                     // same term: entry is already present in log, skip to avoid deleting tail entries
+                     continue;
+                  }
                }
             }
 
