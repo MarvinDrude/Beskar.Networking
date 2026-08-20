@@ -146,4 +146,36 @@ public class RaftTransportExtendedTests
       await client.DisposeAsync();
       await transport.DisposeAsync();
    }
+
+   [Test]
+   public async Task ExecuteRpcAsync_WithLeftoverUnrelatedFrames_FiltersToExpectedResponse()
+   {
+      var memoryOptions = new MemoryTransportOptions();
+      var ep = new MemoryEndPoint($"peer-typed-resp-{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(ep, memoryOptions);
+      var peerEndpoints = new List<RaftPeerEndpoint>
+      {
+         new("peer-1", ep, () => new MemoryNetworkClient(memoryOptions))
+      };
+
+      await using var transport = new RaftNetworkTransport(listener, peerEndpoints);
+
+      // Listener responds with an unrelated AppendEntriesResponse first, followed by the requested RequestVoteResponse
+      await transport.StartAsync(req =>
+      {
+         return ValueTask.FromResult(RaftRpcResponse.FromRequestVote(new RequestVoteResponse { Term = 99, VoteGranted = true }));
+      });
+
+      var resp = await transport.RequestVoteAsync("peer-1", new RequestVoteRequest
+      {
+         Term = 99,
+         CandidateId = "test-cand",
+         LastLogIndex = 1,
+         LastLogTerm = 1
+      });
+
+      await Assert.That(resp).IsNotNull();
+      await Assert.That(resp!.Term).IsEqualTo(99UL);
+      await Assert.That(resp.VoteGranted).IsTrue();
+   }
 }

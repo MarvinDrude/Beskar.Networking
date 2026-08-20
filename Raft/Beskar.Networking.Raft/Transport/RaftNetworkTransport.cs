@@ -271,6 +271,14 @@ public sealed class RaftNetworkTransport : IRaftTransport
                await writer.FlushAsync(ct);
             }
 
+            var expectedResponseType = type switch
+            {
+               RaftMessageType.RequestVote => RaftMessageType.RequestVoteResponse,
+               RaftMessageType.AppendEntries => RaftMessageType.AppendEntriesResponse,
+               RaftMessageType.InstallSnapshot => RaftMessageType.InstallSnapshotResponse,
+               _ => (RaftMessageType)0
+            };
+
             while (!ct.IsCancellationRequested)
             {
                var readResult = await reader.ReadAsync(ct);
@@ -279,9 +287,14 @@ public sealed class RaftNetworkTransport : IRaftTransport
                object? responsePayload = null;
                var matched = false;
                var seqReader = new SequenceReader<byte>(buffer);
-               if (RaftProtocolCodec.TryReadFrame(ref seqReader, out _, out responsePayload))
+               while (RaftProtocolCodec.TryReadFrame(ref seqReader, out var responseType, out var framePayload))
                {
-                  matched = true;
+                  if (responseType == expectedResponseType)
+                  {
+                     responsePayload = framePayload;
+                     matched = true;
+                     break;
+                  }
                }
 
                reader.AdvanceTo(seqReader.Position, buffer.End);
