@@ -525,10 +525,22 @@ public sealed class RaftNode : IAsyncDisposable
             // log entries before tracker.NextIndex have been snapshot-compacted by leader
             try
             {
-               var snapshotData = await StateMachine.TakeSnapshotAsync(cancellationToken);
-               var lastApplied = Volatile.Read(ref _lastApplied);
-               var lastAppliedEntry = await Storage.GetEntryAsync(lastApplied, cancellationToken);
-               var lastAppliedTerm = lastAppliedEntry?.Term ?? compactedTerm;
+               ReadOnlyMemory<byte> snapshotData;
+               ulong lastApplied;
+               ulong lastAppliedTerm;
+
+               await _applyLock.WaitAsync(cancellationToken);
+               try
+               {
+                  snapshotData = await StateMachine.TakeSnapshotAsync(cancellationToken);
+                  lastApplied = Volatile.Read(ref _lastApplied);
+                  var lastAppliedEntry = await Storage.GetEntryAsync(lastApplied, cancellationToken);
+                  lastAppliedTerm = lastAppliedEntry?.Term ?? compactedTerm;
+               }
+               finally
+               {
+                  _applyLock.Release();
+               }
 
                var snapshotReq = new InstallSnapshotRequest
                {
