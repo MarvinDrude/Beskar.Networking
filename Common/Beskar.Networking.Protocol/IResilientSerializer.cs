@@ -11,17 +11,17 @@ public interface IResilientSerializer
    /// <summary>
    /// Serializes an object of type <typeparamref name="T"/> directly into an <see cref="IBufferWriter{Byte}"/>.
    /// </summary>
-   void Serialize<T>(T value, IBufferWriter<byte> writer);
+   public void Serialize<T>(T value, IBufferWriter<byte> writer);
 
    /// <summary>
    /// Deserializes an object of type <typeparamref name="T"/> from a read-only sequence of bytes.
    /// </summary>
-   T? Deserialize<T>(in ReadOnlySequence<byte> sequence);
+   public T? Deserialize<T>(in ReadOnlySequence<byte> sequence);
 
    /// <summary>
    /// Attempts to serialize an object of type <typeparamref name="T"/> into a destination span.
    /// </summary>
-   bool TrySerialize<T>(T value, Span<byte> destination, out int bytesWritten)
+   public bool TrySerialize<T>(T value, Span<byte> destination, out int bytesWritten)
    {
       using var writer = new PooledBufferWriter(destination.Length);
       Serialize(value, writer);
@@ -40,7 +40,7 @@ public interface IResilientSerializer
    /// <summary>
    /// Deserializes an object of type <typeparamref name="T"/> from a byte sequence reader.
    /// </summary>
-   T? Deserialize<T>(ref SequenceReader<byte> reader)
+   public T? Deserialize<T>(ref SequenceReader<byte> reader)
    {
       var seq = reader.UnreadSequence;
       var result = Deserialize<T>(in seq);

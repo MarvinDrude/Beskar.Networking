@@ -287,7 +287,7 @@ public sealed class MqttTrieSubscriptionRouter : IDisposable
 /// </summary>
 public interface ISubscriptionVisitor
 {
-   void Visit(in MqttSubscription subscription);
+   public void Visit(in MqttSubscription subscription);
 }
 
 /// <summary>

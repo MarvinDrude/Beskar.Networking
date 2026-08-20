@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <Title>Beskar.Networking.Raft</Title>
+      <Description>High-performance, low-allocation Raft consensus engine over any Beskar network transport.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <PackageReference Include="Beskar.Memory" />
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+      <ProjectReference Include="..\..\Beskar.Networking.Transports.Common\Beskar.Networking.Transports.Common.csproj" />
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
+   </ItemGroup>
+
+   <ItemGroup>
+      <InternalsVisibleTo Include="Beskar.Networking.Raft.Tests" />
+   </ItemGroup>
+
+</Project>
