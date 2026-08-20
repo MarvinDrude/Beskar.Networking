@@ -420,66 +420,67 @@ public sealed class RaftNode : IAsyncDisposable
             return;
          }
 
+         var compactedIndex = await Storage.GetCompactedUntilIndexAsync(cancellationToken);
+         var compactedTerm = await Storage.GetCompactedUntilTermAsync(cancellationToken);
+
+         if (compactedIndex > 0 && tracker.NextIndex <= compactedIndex)
+         {
+            // log entries before tracker.NextIndex have been snapshot-compacted by leader
+            try
+            {
+               var snapshotData = await StateMachine.TakeSnapshotAsync(cancellationToken);
+               var lastApplied = Volatile.Read(ref _lastApplied);
+               var lastAppliedEntry = await Storage.GetEntryAsync(lastApplied, cancellationToken);
+               var lastAppliedTerm = lastAppliedEntry?.Term ?? compactedTerm;
+
+               var snapshotReq = new InstallSnapshotRequest
+               {
+                  Term = currentTerm,
+                  LeaderId = Options.NodeId,
+                  LastIncludedIndex = lastApplied,
+                  LastIncludedTerm = lastAppliedTerm,
+                  Data = snapshotData
+               };
+
+               var snapshotResp = await Transport.InstallSnapshotAsync(peerId, snapshotReq, cancellationToken);
+               if (snapshotResp != null)
+               {
+                  if (snapshotResp.Term > currentTerm)
+                  {
+                     await StepDownAsync(snapshotResp.Term, cancellationToken);
+                     return;
+                  }
+
+                  if (snapshotResp.Success)
+                  {
+                     tracker.MatchIndex = Math.Max(tracker.MatchIndex, lastApplied);
+                     tracker.NextIndex = tracker.MatchIndex + 1;
+                     await CheckAndUpdateCommitIndexAsync(cancellationToken);
+                  }
+               }
+            }
+            catch
+            {
+               // Peer unreachable
+            }
+            return;
+         }
+
          var prevLogIndex = tracker.NextIndex > 0 ? tracker.NextIndex - 1 : 0;
          ulong prevLogTerm = 0;
 
          if (prevLogIndex > 0)
          {
-            var prevEntry = await Storage.GetEntryAsync(prevLogIndex, cancellationToken);
-            if (prevEntry.HasValue)
+            if (prevLogIndex == compactedIndex)
             {
-               prevLogTerm = prevEntry.Value.Term;
+               prevLogTerm = compactedTerm;
             }
             else
             {
-               var compactedIndex = await Storage.GetCompactedUntilIndexAsync(cancellationToken);
-               var compactedTerm = await Storage.GetCompactedUntilTermAsync(cancellationToken);
-
-               if (prevLogIndex == compactedIndex)
+               var prevEntry = await Storage.GetEntryAsync(prevLogIndex, cancellationToken);
+               if (prevEntry.HasValue)
                {
-                  prevLogTerm = compactedTerm;
-               }
-               else if (prevLogIndex < compactedIndex)
-               {
-                  // log entries before tracker.NextIndex have been snapshot-compacted by leader
-                  try
-                  {
-                     var snapshotData = await StateMachine.TakeSnapshotAsync(cancellationToken);
-                     var lastApplied = Volatile.Read(ref _lastApplied);
-                     var lastAppliedEntry = await Storage.GetEntryAsync(lastApplied, cancellationToken);
-                     var lastAppliedTerm = lastAppliedEntry?.Term ?? compactedTerm;
-
-                     var snapshotReq = new InstallSnapshotRequest
-                     {
-                        Term = currentTerm,
-                        LeaderId = Options.NodeId,
-                        LastIncludedIndex = lastApplied,
-                        LastIncludedTerm = lastAppliedTerm,
-                        Data = snapshotData
-                     };
-
-                     var snapshotResp = await Transport.InstallSnapshotAsync(peerId, snapshotReq, cancellationToken);
-                     if (snapshotResp != null)
-                     {
-                        if (snapshotResp.Term > currentTerm)
-                        {
-                           await StepDownAsync(snapshotResp.Term, cancellationToken);
-                           return;
-                        }
-
-                        if (snapshotResp.Success)
-                        {
-                           tracker.MatchIndex = Math.Max(tracker.MatchIndex, lastApplied);
-                           tracker.NextIndex = tracker.MatchIndex + 1;
-                           await CheckAndUpdateCommitIndexAsync(cancellationToken);
-                        }
-                     }
-                  }
-                  catch
-                  {
-                     // Peer unreachable
-                  }
-                  return;
+                  prevLogTerm = prevEntry.Value.Term;
                }
             }
          }
@@ -524,10 +525,9 @@ public sealed class RaftNode : IAsyncDisposable
             }
             else
             {
-               // Follower rejected due to log inconsistency, fast-backtrack nextIndex to follower's matchIndex
-               if (response.MatchIndex > 0 && response.MatchIndex < tracker.NextIndex)
+               if (response.MatchIndex < prevLogIndex)
                {
-                  tracker.NextIndex = response.MatchIndex + 1;
+                  tracker.NextIndex = Math.Max(1, response.MatchIndex + 1);
                }
                else if (tracker.NextIndex > 1)
                {
@@ -572,15 +572,15 @@ public sealed class RaftNode : IAsyncDisposable
    {
       lock (_stateLock)
       {
-         if (newCommitIndex <= _commitIndex)
+         if (newCommitIndex <= _commitIndex && _lastApplied >= _commitIndex)
          {
             return;
          }
 
-         _commitIndex = newCommitIndex;
+         _commitIndex = Math.Max(_commitIndex, newCommitIndex);
       }
 
-      await _applyLock.WaitAsync(cancellationToken);
+      await _applyLock.WaitAsync(CancellationToken.None);
       try
       {
          while (Volatile.Read(ref _lastApplied) < Volatile.Read(ref _commitIndex))
@@ -761,9 +761,10 @@ public sealed class RaftNode : IAsyncDisposable
 
       var lastLogIndexAfterAppend = await Storage.GetLastLogIndexAsync();
 
-      if (request.LeaderCommitIndex > CommitIndex)
+      if (request.LeaderCommitIndex > CommitIndex || Volatile.Read(ref _lastApplied) < CommitIndex)
       {
-         var newCommit = Math.Min(request.LeaderCommitIndex, lastLogIndexAfterAppend);
+         var targetCommit = Math.Max(request.LeaderCommitIndex, CommitIndex);
+         var newCommit = Math.Min(targetCommit, lastLogIndexAfterAppend);
          await AdvanceCommitIndexAsync(newCommit, CancellationToken.None);
       }
 
@@ -816,13 +817,21 @@ public sealed class RaftNode : IAsyncDisposable
          await Events.OnLeaderChanged.ExecuteAsync(new RaftLeaderChangedContext(Options.NodeId, request.LeaderId, currentTerm), cancellationToken: CancellationToken.None);
       }
 
-      await StateMachine.RestoreSnapshotAsync(request.Data, request.LastIncludedIndex, request.LastIncludedTerm);
-      await Storage.CompactPrefixAsync(request.LastIncludedIndex, request.LastIncludedTerm);
-
-      lock (_stateLock)
+      await _applyLock.WaitAsync(CancellationToken.None);
+      try
       {
-         _commitIndex = Math.Max(_commitIndex, request.LastIncludedIndex);
-         _lastApplied = Math.Max(_lastApplied, request.LastIncludedIndex);
+         await StateMachine.RestoreSnapshotAsync(request.Data, request.LastIncludedIndex, request.LastIncludedTerm);
+         await Storage.CompactPrefixAsync(request.LastIncludedIndex, request.LastIncludedTerm);
+
+         lock (_stateLock)
+         {
+            _commitIndex = Math.Max(_commitIndex, request.LastIncludedIndex);
+            _lastApplied = Math.Max(_lastApplied, request.LastIncludedIndex);
+         }
+      }
+      finally
+      {
+         _applyLock.Release();
       }
 
       return new InstallSnapshotResponse { Term = currentTerm, Success = true };
