@@ -34,4 +34,9 @@ public sealed class RaftNodeOptions
    /// Maximum number of log entries sent in a single AppendEntries batch. Default is 100.
    /// </summary>
    public int MaxAppendEntriesBatchSize { get; set; } = 100;
+
+   /// <summary>
+   /// Whether to run a non-disruptive Pre-Vote phase before incrementing term. Default is true.
+   /// </summary>
+   public bool EnablePreVote { get; set; } = true;
 }

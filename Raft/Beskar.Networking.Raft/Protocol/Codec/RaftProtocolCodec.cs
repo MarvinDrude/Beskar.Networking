@@ -101,7 +101,7 @@ public static class RaftProtocolCodec
          throw new ArgumentOutOfRangeException(nameof(request.CandidateId), "CandidateId exceeds maximum allowed length of 65535 bytes.");
       }
 
-      var payloadLength = 8 + 2 + candidateIdBytes.Length + 8 + 8;
+      var payloadLength = 8 + 2 + candidateIdBytes.Length + 8 + 8 + 1;
 
       WriteHeader(writer, RaftMessageType.RequestVote, payloadLength);
 
@@ -113,6 +113,7 @@ public static class RaftProtocolCodec
       var offset = 10 + candidateIdBytes.Length;
       BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(offset, 8), request.LastLogIndex);
       BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(offset + 8, 8), request.LastLogTerm);
+      span[offset + 16] = request.IsPreVote ? (byte)1 : (byte)0;
 
       writer.Advance(payloadLength);
    }
@@ -257,12 +258,19 @@ public static class RaftProtocolCodec
          return null;
       }
 
+      var isPreVote = false;
+      if (reader.TryRead(out var preVoteByte))
+      {
+         isPreVote = preVoteByte != 0;
+      }
+
       return new RequestVoteRequest
       {
          Term = (ulong)termRaw,
          CandidateId = Encoding.UTF8.GetString(candidateIdBytes),
          LastLogIndex = (ulong)lastLogIndexRaw,
-         LastLogTerm = (ulong)lastLogTermRaw
+         LastLogTerm = (ulong)lastLogTermRaw,
+         IsPreVote = isPreVote
       };
    }
 

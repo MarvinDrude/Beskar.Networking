@@ -25,7 +25,8 @@ public class RaftElectionTests
          Peers = peers.ToList(),
          ElectionTimeoutMin = TimeSpan.FromMilliseconds(50),
          ElectionTimeoutMax = TimeSpan.FromMilliseconds(100),
-         HeartbeatInterval = TimeSpan.FromMilliseconds(20)
+         HeartbeatInterval = TimeSpan.FromMilliseconds(20),
+         EnablePreVote = false
       };
 
       var s = storage ?? new InMemoryRaftLogStorage();

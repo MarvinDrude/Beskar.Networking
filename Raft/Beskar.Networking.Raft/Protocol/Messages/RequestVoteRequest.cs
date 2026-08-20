@@ -24,4 +24,9 @@ public sealed class RequestVoteRequest
    /// Term of candidate's last log entry.
    /// </summary>
    public ulong LastLogTerm { get; set; }
+
+   /// <summary>
+   /// Whether this request is a non-disruptive Pre-Vote check before term increment.
+   /// </summary>
+   public bool IsPreVote { get; set; }
 }
