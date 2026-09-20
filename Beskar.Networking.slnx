@@ -44,6 +44,7 @@
     <File Path="Documentation/Mqtt/TopicGenerator.md" />
     <File Path="Documentation/Mqtt/UserProperties.md" />
     <File Path="Documentation/Mqtt/TopicAliases.md" />
+    <File Path="Documentation/Mqtt/SubscriptionStreaming.md" />
   </Folder>
   <Folder Name="/Documentation/Raft/">
     <File Path="Documentation/Raft/Overview.md" />

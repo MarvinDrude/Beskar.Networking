@@ -355,6 +355,17 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
 You can find detailed documentation for `Beskar.Networking` [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation).
 
 - [**Basics & Architecture**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Basics): Overview of core interfaces (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`).
+- [**MQTT Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Mqtt):
+  - [Subscription Streaming & Managed Subscriptions](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/SubscriptionStreaming.md)
+  - [Publish and Subscribe Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/PubSub.md)
+  - [Auto-Reconnection & Client Events](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/Reconnection.md)
+  - [Disconnection Safety & Persistence](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/DisconnectionSafety.md)
+  - [Quality of Service (QoS) Levels](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/QosLevels.md)
+  - [Authentication Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/Authentication.md)
+  - [Last Will and Testament (LWT)](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/LastWill.md)
+  - [Topic Source Generator](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/TopicGenerator.md)
+  - [User Properties Metadata](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/UserProperties.md)
+  - [Topic Aliases Optimization](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/TopicAliases.md)
 - [**Raft Consensus Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Raft):
   - [Raft Consensus Overview](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/Overview.md)
   - [Storage & Persistence Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/StorageAndPersistence.md)
