@@ -35,7 +35,7 @@ await foreach (JobStatusUpdate update in client.SubscribeJsonStream<JobStatusUpd
 
 ### 2.1 Asynchronous Pull Streaming (`await foreach`)
 - **`SubscribeStream(topicFilter, [qos], [options], [ct])`**: Returns `IAsyncEnumerable<MqttPublishMessage>` yielding raw MQTT messages.
-- **`SubscribeStream<T>(topicFilter, decoder, [qos], [options], [ct])`**: Returns `IAsyncEnumerable<T>` using a custom decoder delegate (`Func<ReadOnlyMemory<byte>, T>`) or an [`IMqttPayloadDecoder<T>`](file:///c:/Users/marvi/RiderProjects/Beskar.Networking/Mqtt/Beskar.Mqtt.Common/Serialization/IMqttPayloadDecoder.cs) implementation.
+- **`SubscribeStream<T>(topicFilter, decoder, [qos], [options], [ct])`**: Returns `IAsyncEnumerable<T>` using a custom decoder delegate (`Func<ReadOnlyMemory<byte>, T>`) or an [`IMqttPayloadDecoder<T>`](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Mqtt/Beskar.Mqtt.Common/Serialization/IMqttPayloadDecoder.cs) implementation.
 - **`SubscribeJsonStream<T>(topicFilter, [jsonOptions], [qos], [options], [ct])`**: Returns `IAsyncEnumerable<T>` deserializing JSON payloads with optional `JsonSerializerOptions` or source-generated `JsonTypeInfo<T>`.
 
 ### 2.2 Topic-Scoped Callbacks
@@ -163,7 +163,7 @@ await foreach (JobProgressUpdate update in client.SubscribeJsonStream<JobProgres
 ```
 
 ### 5.3 Using Custom Binary Formats (MessagePack, Protobuf, MemoryPack)
-Implement [`IMqttPayloadDecoder<T>`](file:///c:/Users/marvi/RiderProjects/Beskar.Networking/Mqtt/Beskar.Mqtt.Common/Serialization/IMqttPayloadDecoder.cs):
+Implement [`IMqttPayloadDecoder<T>`](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Mqtt/Beskar.Mqtt.Common/Serialization/IMqttPayloadDecoder.cs):
 
 ```csharp
 using MessagePack;
@@ -193,7 +193,7 @@ If an incoming message has a corrupted or malformed payload, the decoder's excep
 
 ## 6. Backpressure & Channel Buffer Configuration
 
-Each stream subscription is powered by a `System.Threading.Channels.Channel<T>`. You can customize buffering and backpressure behavior using [`StreamSubscriptionOptions`](file:///c:/Users/marvi/RiderProjects/Beskar.Networking/Mqtt/Beskar.Mqtt.Common/Options/StreamSubscriptionOptions.cs):
+Each stream subscription is powered by a `System.Threading.Channels.Channel<T>`. You can customize buffering and backpressure behavior using [`StreamSubscriptionOptions`](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Mqtt/Beskar.Mqtt.Common/Options/StreamSubscriptionOptions.cs):
 
 ```csharp
 var options = new StreamSubscriptionOptions

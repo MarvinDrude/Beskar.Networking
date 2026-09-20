@@ -1189,4 +1189,87 @@ public class MqttStreamingTests
          await server.DisposeAsync();
       }
    }
+
+   [Test]
+   public async Task SubscribeStream_ConcurrentAddAndRemove_DoesNotOrphanActiveSinks()
+   {
+      var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      try
+      {
+         var localAddress = (IPEndPoint)server.Listeners[0].LocalAddress;
+         await using var publisher = MqttClientFactory.CreateTcp();
+         await using var subscriber = MqttClientFactory.CreateTcp();
+
+         var connectOptions = new ConnectOptionsBuilder(localAddress)
+            .WithProtocolVersion(MqttProtocolVersion.V50)
+            .WithCleanSession(true)
+            .WithTimeout(TimeSpan.FromSeconds(5))
+            .Build();
+
+         await Assert.That((await publisher.ConnectAsync(connectOptions)).Failed).IsFalse();
+         await Assert.That((await subscriber.ConnectAsync(connectOptions)).Failed).IsFalse();
+
+         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+         // Register persistent stream on calling thread
+         var persistentReceived = new List<string>();
+         var persistentStream = subscriber.SubscribeStream("race/test", b => Encoding.UTF8.GetString(b.Span), ct: cts.Token);
+
+         await Task.Delay(100);
+
+         var persistentTask = Task.Run(async () =>
+         {
+            await foreach (var item in persistentStream)
+            {
+               persistentReceived.Add(item);
+               if (persistentReceived.Count == 5)
+               {
+                  break;
+               }
+            }
+         });
+
+         // Concurrent task rapidly adding and removing temporary streams on the same topic
+         var churnTask = Task.Run(async () =>
+         {
+            for (var i = 0; i < 10; i++)
+            {
+               var tempStream = subscriber.SubscribeStream("race/test", b => Encoding.UTF8.GetString(b.Span), ct: cts.Token);
+               var enumerator = tempStream.GetAsyncEnumerator(cts.Token);
+               await enumerator.DisposeAsync();
+               await Task.Yield();
+            }
+         });
+
+         // Publish 5 messages while churn is happening
+         for (var i = 1; i <= 5; i++)
+         {
+            await publisher.PublishAsync(PublishOptions.Create()
+               .WithTopic("race/test")
+               .WithPayload($"DATA-{i}")
+               .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+               .Build());
+            await Task.Delay(60);
+         }
+
+         await churnTask;
+         await persistentTask;
+
+         await Assert.That(persistentReceived.Count).IsEqualTo(5);
+         await Assert.That(persistentReceived[0]).IsEqualTo("DATA-1");
+         await Assert.That(persistentReceived[4]).IsEqualTo("DATA-5");
+      }
+      finally
+      {
+         await server.StopAsync();
+         await server.DisposeAsync();
+      }
+   }
 }

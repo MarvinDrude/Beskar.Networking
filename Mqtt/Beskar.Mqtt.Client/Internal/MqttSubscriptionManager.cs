@@ -52,8 +52,7 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       });
 
       var sink = new RawChannelSubscriptionSink(channel.Writer, effectiveOptions.FullMode, qos, effectiveOptions.MaxPendingWaitWrites);
-      var entry = GetOrAddEntry(topicFilter);
-      var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
+      var (entry, isFirst, qosUpgraded) = AddSinkToTopic(topicFilter, sink, qos);
 
       if ((isFirst || qosUpgraded) && _client.IsConnected)
       {
@@ -83,8 +82,7 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       });
 
       var sink = new ChannelSubscriptionSink<T>(channel.Writer, decoder, effectiveOptions.FullMode, qos, effectiveOptions.MaxPendingWaitWrites);
-      var entry = GetOrAddEntry(topicFilter);
-      var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
+      var (entry, isFirst, qosUpgraded) = AddSinkToTopic(topicFilter, sink, qos);
 
       if ((isFirst || qosUpgraded) && _client.IsConnected)
       {
@@ -107,8 +105,7 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       ArgumentNullException.ThrowIfNull(decoder);
 
       var sink = new CallbackSubscriptionSink<T>(handler, decoder, qos);
-      var entry = GetOrAddEntry(topicFilter);
-      var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
+      var (entry, isFirst, qosUpgraded) = AddSinkToTopic(topicFilter, sink, qos);
 
       if ((isFirst || qosUpgraded) && _client.IsConnected)
       {
@@ -129,8 +126,7 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       ArgumentNullException.ThrowIfNull(handler);
 
       var sink = new RawCallbackSubscriptionSink(handler, qos);
-      var entry = GetOrAddEntry(topicFilter);
-      var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
+      var (entry, isFirst, qosUpgraded) = AddSinkToTopic(topicFilter, sink, qos);
 
       if ((isFirst || qosUpgraded) && _client.IsConnected)
       {
@@ -186,9 +182,25 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       }
    }
 
-   private TopicSubscriptionEntry GetOrAddEntry(string topicFilter)
+   private (TopicSubscriptionEntry Entry, bool IsFirst, bool QosUpgraded) AddSinkToTopic(
+      string topicFilter,
+      ISubscriptionSink sink,
+      QualityOfServiceType qos)
    {
-      return _subscriptions.GetOrAdd(topicFilter, static filter => new TopicSubscriptionEntry(filter));
+      while (true)
+      {
+         var entry = _subscriptions.GetOrAdd(topicFilter, static filter => new TopicSubscriptionEntry(filter));
+         lock (entry.SyncRoot)
+         {
+            if (entry.IsRemoved)
+            {
+               continue;
+            }
+
+            var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
+            return (entry, isFirst, qosUpgraded);
+         }
+      }
    }
 
    private async ValueTask TrySubscribeBrokerAsync(string topicFilter, QualityOfServiceType qos, CancellationToken ct)
@@ -218,16 +230,25 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          return;
       }
 
-      var becameEmpty = entry.RemoveSink(sink);
-      if (!becameEmpty)
+      var shouldUnsubscribeBroker = false;
+      lock (entry.SyncRoot)
       {
-         return;
+         if (entry.RemoveSink(sink))
+         {
+            entry.IsRemoved = true;
+            ((ICollection<KeyValuePair<string, TopicSubscriptionEntry>>)_subscriptions)
+               .Remove(new KeyValuePair<string, TopicSubscriptionEntry>(topicFilter, entry));
+            shouldUnsubscribeBroker = true;
+         }
       }
 
-      _subscriptions.TryRemove(topicFilter, out _);
-
-      if (_client.IsConnected)
+      if (shouldUnsubscribeBroker && _client.IsConnected)
       {
+         if (_subscriptions.ContainsKey(topicFilter))
+         {
+            return;
+         }
+
          try
          {
             var unsub = UnsubscribeOptions.Create()
@@ -336,6 +357,8 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
    {
       public string TopicFilter { get; } = topicFilter;
       public QualityOfServiceType MaxQos { get; private set; } = QualityOfServiceType.AtMostOnce;
+      public bool IsRemoved { get; set; }
+      public Lock SyncRoot => _lock;
 
       public bool HasActiveSinks
       {
