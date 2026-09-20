@@ -23,4 +23,11 @@ public sealed class StreamSubscriptionOptions
    /// Default is <see cref="BoundedChannelFullMode.Wait"/>.
    /// </summary>
    public BoundedChannelFullMode FullMode { get; init; } = BoundedChannelFullMode.Wait;
+
+   /// <summary>
+   /// The maximum number of pending asynchronous write tasks allowed when <see cref="FullMode"/> is <see cref="BoundedChannelFullMode.Wait"/>
+   /// before additional incoming messages are dropped to protect against thread pool and memory exhaustion.
+   /// Default is 128.
+   /// </summary>
+   public int MaxPendingWaitWrites { get; init; } = 128;
 }

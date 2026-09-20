@@ -51,7 +51,7 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          SingleWriter = false
       });
 
-      var sink = new RawChannelSubscriptionSink(channel.Writer, effectiveOptions.FullMode, qos);
+      var sink = new RawChannelSubscriptionSink(channel.Writer, effectiveOptions.FullMode, qos, effectiveOptions.MaxPendingWaitWrites);
       var entry = GetOrAddEntry(topicFilter);
       var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
 
@@ -82,7 +82,7 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          SingleWriter = false
       });
 
-      var sink = new ChannelSubscriptionSink<T>(channel.Writer, decoder, effectiveOptions.FullMode, qos);
+      var sink = new ChannelSubscriptionSink<T>(channel.Writer, decoder, effectiveOptions.FullMode, qos, effectiveOptions.MaxPendingWaitWrites);
       var entry = GetOrAddEntry(topicFilter);
       var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
 
@@ -428,9 +428,11 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
    private sealed class RawChannelSubscriptionSink(
       ChannelWriter<MqttPublishMessage> writer,
       BoundedChannelFullMode fullMode,
-      QualityOfServiceType qos) : ISubscriptionSink, IDisposable
+      QualityOfServiceType qos,
+      int maxPendingWaitWrites) : ISubscriptionSink, IDisposable
    {
       public QualityOfServiceType Qos { get; } = qos;
+      private int _pendingSlowWrites;
 
       public ValueTask DeliverAsync(MessageReceiveContext context, CancellationToken ct)
       {
@@ -441,7 +443,16 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
 
          if (fullMode is BoundedChannelFullMode.Wait)
          {
-            return WriteSlowAsync(context.Message, ct);
+            if (Interlocked.Increment(ref _pendingSlowWrites) <= maxPendingWaitWrites)
+            {
+               return WriteSlowAsync(context.Message, ct);
+            }
+
+            Interlocked.Decrement(ref _pendingSlowWrites);
+            TraceLogger.LogClientWarning(
+               "MqttSubscriptionManager: Stream channel for topic '{0}' is full and pending writes limit ({1}) was reached. Message dropped.",
+               context.Message.Topic, maxPendingWaitWrites);
+            return ValueTask.CompletedTask;
          }
 
          return ValueTask.CompletedTask;
@@ -455,6 +466,10 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          }
          catch (ChannelClosedException) { }
          catch (OperationCanceledException) { }
+         finally
+         {
+            Interlocked.Decrement(ref _pendingSlowWrites);
+         }
       }
 
       public void Dispose()
@@ -467,9 +482,11 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       ChannelWriter<T> writer,
       IMqttPayloadDecoder<T> decoder,
       BoundedChannelFullMode fullMode,
-      QualityOfServiceType qos) : ISubscriptionSink, IDisposable
+      QualityOfServiceType qos,
+      int maxPendingWaitWrites) : ISubscriptionSink, IDisposable
    {
       public QualityOfServiceType Qos { get; } = qos;
+      private int _pendingSlowWrites;
 
       public ValueTask DeliverAsync(MessageReceiveContext context, CancellationToken ct)
       {
@@ -491,7 +508,16 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
 
          if (fullMode is BoundedChannelFullMode.Wait)
          {
-            return WriteSlowAsync(decoded, ct);
+            if (Interlocked.Increment(ref _pendingSlowWrites) <= maxPendingWaitWrites)
+            {
+               return WriteSlowAsync(decoded, ct);
+            }
+
+            Interlocked.Decrement(ref _pendingSlowWrites);
+            TraceLogger.LogClientWarning(
+               "MqttSubscriptionManager: Stream channel for topic '{0}' is full and pending writes limit ({1}) was reached. Message dropped.",
+               context.Message.Topic, maxPendingWaitWrites);
+            return ValueTask.CompletedTask;
          }
 
          return ValueTask.CompletedTask;
@@ -505,6 +531,10 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          }
          catch (ChannelClosedException) { }
          catch (OperationCanceledException) { }
+         finally
+         {
+            Interlocked.Decrement(ref _pendingSlowWrites);
+         }
       }
 
       public void Dispose()

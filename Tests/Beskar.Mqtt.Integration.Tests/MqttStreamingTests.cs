@@ -1046,4 +1046,147 @@ public class MqttStreamingTests
          await server.DisposeAsync();
       }
    }
+
+   [Test]
+   public async Task SubscribeStream_CancellationWithBufferedItems_DoesNotDrainStaleItems()
+   {
+      var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      try
+      {
+         var localAddress = (IPEndPoint)server.Listeners[0].LocalAddress;
+         await using var publisher = MqttClientFactory.CreateTcp();
+         await using var subscriber = MqttClientFactory.CreateTcp();
+
+         var connectOptions = new ConnectOptionsBuilder(localAddress)
+            .WithProtocolVersion(MqttProtocolVersion.V50)
+            .WithCleanSession(true)
+            .WithTimeout(TimeSpan.FromSeconds(5))
+            .Build();
+
+         await Assert.That((await publisher.ConnectAsync(connectOptions)).Failed).IsFalse();
+         await Assert.That((await subscriber.ConnectAsync(connectOptions)).Failed).IsFalse();
+
+         using var cts = new CancellationTokenSource();
+
+         var stream = subscriber.SubscribeStream(
+            "cancel/buffered",
+            decoder: b => Encoding.UTF8.GetString(b.Span),
+            ct: cts.Token);
+
+         await Task.Delay(100);
+
+         // Publish 5 items into the stream channel before consumer starts reading
+         for (var i = 1; i <= 5; i++)
+         {
+            await publisher.PublishAsync(PublishOptions.Create()
+               .WithTopic("cancel/buffered")
+               .WithPayload($"ITEM-{i}")
+               .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+               .Build());
+         }
+
+         await Task.Delay(200);
+
+         // Cancel before consumption begins
+         cts.Cancel();
+
+         var received = new List<string>();
+         await foreach (var item in stream)
+         {
+            received.Add(item);
+         }
+
+         // Because stream token was cancelled, it must NOT drain the 5 buffered items
+         await Assert.That(received.Count).IsEqualTo(0);
+      }
+      finally
+      {
+         await server.StopAsync();
+         await server.DisposeAsync();
+      }
+   }
+
+   [Test]
+   public async Task SubscribeStream_WaitMode_BoundsPendingWritersWhenChannelFull()
+   {
+      var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      try
+      {
+         var localAddress = (IPEndPoint)server.Listeners[0].LocalAddress;
+         await using var publisher = MqttClientFactory.CreateTcp();
+         await using var subscriber = MqttClientFactory.CreateTcp();
+
+         var connectOptions = new ConnectOptionsBuilder(localAddress)
+            .WithProtocolVersion(MqttProtocolVersion.V50)
+            .WithCleanSession(true)
+            .WithTimeout(TimeSpan.FromSeconds(5))
+            .Build();
+
+         await Assert.That((await publisher.ConnectAsync(connectOptions)).Failed).IsFalse();
+         await Assert.That((await subscriber.ConnectAsync(connectOptions)).Failed).IsFalse();
+
+         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+         // Bounded capacity = 2, Wait mode, MaxPendingWaitWrites = 2
+         var options = new StreamSubscriptionOptions
+         {
+            BoundedCapacity = 2,
+            FullMode = BoundedChannelFullMode.Wait,
+            MaxPendingWaitWrites = 2
+         };
+
+         var stream = subscriber.SubscribeStream(
+            "wait/bounded",
+            decoder: b => Encoding.UTF8.GetString(b.Span),
+            options: options,
+            ct: cts.Token);
+
+         await Task.Delay(100);
+
+         // Send 10 messages without reading. Channel holds 2, 2 can wait, rest (6) are dropped
+         for (var i = 1; i <= 10; i++)
+         {
+            await publisher.PublishAsync(PublishOptions.Create()
+               .WithTopic("wait/bounded")
+               .WithPayload($"MSG-{i}")
+               .WithQualityOfService(QualityOfServiceType.AtMostOnce)
+               .Build());
+         }
+
+         await Task.Delay(200);
+
+         // Read available items from stream
+         var received = new List<string>();
+         await foreach (var item in stream)
+         {
+            received.Add(item);
+            if (received.Count >= 4)
+            {
+               break;
+            }
+         }
+
+         // Verify at most capacity (2) + max pending (2) = 4 items were delivered, preventing unbounded accumulation
+         await Assert.That(received.Count).IsEqualTo(4);
+      }
+      finally
+      {
+         await server.StopAsync();
+         await server.DisposeAsync();
+      }
+   }
 }

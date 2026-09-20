@@ -12,6 +12,7 @@ internal sealed class MqttMessageStream<T> : IAsyncEnumerable<T>, IAsyncDisposab
    private readonly Channel<T> _channel;
    private readonly Func<ValueTask> _onDispose;
 
+   private readonly CancellationToken _streamCt;
    private readonly CancellationTokenRegistration _ctr;
    private int _disposed;
 
@@ -22,10 +23,15 @@ internal sealed class MqttMessageStream<T> : IAsyncEnumerable<T>, IAsyncDisposab
    {
       _channel = channel ?? throw new ArgumentNullException(nameof(channel));
       _onDispose = onDispose ?? throw new ArgumentNullException(nameof(onDispose));
+      _streamCt = ct;
 
       if (ct.CanBeCanceled)
       {
-         _ctr = ct.Register(static s => ((ChannelWriter<T>)s!).TryComplete(), channel.Writer);
+         _ctr = ct.Register(static s =>
+         {
+            var stream = (MqttMessageStream<T>)s!;
+            _ = stream.DisposeAsync();
+         }, this);
       }
    }
 
@@ -38,32 +44,56 @@ internal sealed class MqttMessageStream<T> : IAsyncEnumerable<T>, IAsyncDisposab
    {
       if (Interlocked.Exchange(ref _disposed, 1) == 0)
       {
-         await _ctr.DisposeAsync();
+         _ctr.Dispose();
          _channel.Writer.TryComplete();
          await _onDispose().ConfigureAwait(false);
       }
    }
 
-   private sealed class Enumerator(MqttMessageStream<T> stream, CancellationToken cancellationToken)
-      : IAsyncEnumerator<T>
+   private sealed class Enumerator : IAsyncEnumerator<T>
    {
-      private readonly MqttMessageStream<T> _stream = stream;
-      private readonly CancellationToken _cancellationToken = cancellationToken;
+      private readonly MqttMessageStream<T> _stream;
+      private readonly CancellationTokenSource? _linkedCts;
+      private readonly CancellationToken _effectiveToken;
       private T? _current;
+
+      public Enumerator(MqttMessageStream<T> stream, CancellationToken cancellationToken)
+      {
+         _stream = stream;
+
+         if (cancellationToken.CanBeCanceled && stream._streamCt.CanBeCanceled)
+         {
+            _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, stream._streamCt);
+            _effectiveToken = _linkedCts.Token;
+         }
+         else if (cancellationToken.CanBeCanceled)
+         {
+            _effectiveToken = cancellationToken;
+         }
+         else
+         {
+            _effectiveToken = stream._streamCt;
+         }
+      }
 
       public T Current => _current!;
 
       public async ValueTask<bool> MoveNextAsync()
       {
-         if (_cancellationToken.IsCancellationRequested)
+         if (_effectiveToken.IsCancellationRequested)
          {
             return false;
          }
 
          try
          {
-            while (await _stream._channel.Reader.WaitToReadAsync(_cancellationToken).ConfigureAwait(false))
+            while (await _stream._channel.Reader.WaitToReadAsync(_effectiveToken).ConfigureAwait(false))
             {
+               if (_effectiveToken.IsCancellationRequested)
+               {
+                  return false;
+               }
+
                if (_stream._channel.Reader.TryRead(out var item))
                {
                   _current = item;
@@ -83,10 +113,12 @@ internal sealed class MqttMessageStream<T> : IAsyncEnumerable<T>, IAsyncDisposab
          return false;
       }
 
-      public ValueTask DisposeAsync()
+      public async ValueTask DisposeAsync()
       {
+         _linkedCts?.Dispose();
          _current = default;
-         return _stream.DisposeAsync();
+
+         await _stream.DisposeAsync().ConfigureAwait(false);
       }
    }
 }
