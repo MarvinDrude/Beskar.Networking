@@ -103,7 +103,8 @@ Suppose two different components in your application listen to the same topic fi
 - **Component 2** runs: `client.SubscribeStream("devices/+/status")`
 
 1. **On First Listener**: The client sends a single `SUBSCRIBE` packet for `"devices/+/status"` to the broker.
-2. **On Second Listener**: The client increments the reference count to `2`. No duplicate packet is sent to the broker. Both streams receive matching messages.
+2. **On Second Listener**: The client increments the reference count to `2`. Both streams receive matching messages.
+   - **Automatic QoS Upgrade**: If Listener 1 subscribed at `QoS 0` and Listener 2 requests `QoS 2`, `MqttSubscriptionManager` automatically upgrades the broker subscription to `QoS 2`.
 3. **When Component 1 finishes or breaks out of its loop**:
    - Component 1's stream is disposed.
    - The reference count drops from `2` to `1`.
@@ -111,6 +112,9 @@ Suppose two different components in your application listen to the same topic fi
 4. **When Component 2 also finishes**:
    - The reference count drops from `1` to `0`.
    - The manager removes the topic entry and immediately sends a single `UNSUBSCRIBE` packet to the broker.
+
+> [!TIP]
+> **Pre-Connection Subscriptions**: You can register streams and topic handlers even **before** calling `client.ConnectAsync(...)`. When the client connects, all registered topics are automatically subscribed at their required QoS levels in a single optimized `SUBSCRIBE` packet.
 
 #### Scenario B: What if user code calls low-level `client.UnsubscribeAsync(...)` directly?
 The low-level `client.UnsubscribeAsync(new UnsubscribeOptions { ... })` method sends an `UNSUBSCRIBE` packet directly to the broker over the raw control stream.

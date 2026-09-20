@@ -7,14 +7,27 @@ namespace Beskar.Mqtt.Client.Internal;
 /// that automatically unregisters its subscription and cleans up resources upon disposal.
 /// </summary>
 /// <typeparam name="T">The decoded message item type.</typeparam>
-internal sealed class MqttMessageStream<T>(
-   Channel<T> channel,
-   Func<ValueTask> onDispose)
-   : IAsyncEnumerable<T>, IAsyncDisposable
+internal sealed class MqttMessageStream<T> : IAsyncEnumerable<T>, IAsyncDisposable
 {
-   private readonly Channel<T> _channel = channel ?? throw new ArgumentNullException(nameof(channel));
-   private readonly Func<ValueTask> _onDispose = onDispose ?? throw new ArgumentNullException(nameof(onDispose));
+   private readonly Channel<T> _channel;
+   private readonly Func<ValueTask> _onDispose;
+
+   private readonly CancellationTokenRegistration _ctr;
    private int _disposed;
+
+   public MqttMessageStream(
+      Channel<T> channel,
+      Func<ValueTask> onDispose,
+      CancellationToken ct = default)
+   {
+      _channel = channel ?? throw new ArgumentNullException(nameof(channel));
+      _onDispose = onDispose ?? throw new ArgumentNullException(nameof(onDispose));
+
+      if (ct.CanBeCanceled)
+      {
+         _ctr = ct.Register(static s => ((ChannelWriter<T>)s!).TryComplete(), channel.Writer);
+      }
+   }
 
    public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default)
    {
@@ -25,6 +38,7 @@ internal sealed class MqttMessageStream<T>(
    {
       if (Interlocked.Exchange(ref _disposed, 1) == 0)
       {
+         await _ctr.DisposeAsync();
          _channel.Writer.TryComplete();
          await _onDispose().ConfigureAwait(false);
       }

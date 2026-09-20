@@ -51,16 +51,16 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          SingleWriter = false
       });
 
-      var sink = new RawChannelSubscriptionSink(channel.Writer, effectiveOptions.FullMode);
+      var sink = new RawChannelSubscriptionSink(channel.Writer, effectiveOptions.FullMode, qos);
       var entry = GetOrAddEntry(topicFilter);
-      var isFirst = entry.AddSink(sink, qos);
+      var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
 
-      if (isFirst && _client.IsConnected)
+      if ((isFirst || qosUpgraded) && _client.IsConnected)
       {
-         _ = TrySubscribeBrokerAsync(topicFilter, qos, ct);
+         _ = TrySubscribeBrokerAsync(topicFilter, entry.MaxQos, ct);
       }
 
-      return new MqttMessageStream<MqttPublishMessage>(channel, () => RemoveSinkAsync(topicFilter, sink));
+      return new MqttMessageStream<MqttPublishMessage>(channel, () => RemoveSinkAsync(topicFilter, sink), ct);
    }
 
    public IAsyncEnumerable<T> SubscribeStream<T>(
@@ -82,16 +82,16 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          SingleWriter = false
       });
 
-      var sink = new ChannelSubscriptionSink<T>(channel.Writer, decoder, effectiveOptions.FullMode);
+      var sink = new ChannelSubscriptionSink<T>(channel.Writer, decoder, effectiveOptions.FullMode, qos);
       var entry = GetOrAddEntry(topicFilter);
-      var isFirst = entry.AddSink(sink, qos);
+      var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
 
-      if (isFirst && _client.IsConnected)
+      if ((isFirst || qosUpgraded) && _client.IsConnected)
       {
-         _ = TrySubscribeBrokerAsync(topicFilter, qos, ct);
+         _ = TrySubscribeBrokerAsync(topicFilter, entry.MaxQos, ct);
       }
 
-      return new MqttMessageStream<T>(channel, () => RemoveSinkAsync(topicFilter, sink));
+      return new MqttMessageStream<T>(channel, () => RemoveSinkAsync(topicFilter, sink), ct);
    }
 
    public async Task<IAsyncDisposable> SubscribeTopicAsync<T>(
@@ -106,13 +106,13 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       ArgumentNullException.ThrowIfNull(handler);
       ArgumentNullException.ThrowIfNull(decoder);
 
-      var sink = new CallbackSubscriptionSink<T>(handler, decoder);
+      var sink = new CallbackSubscriptionSink<T>(handler, decoder, qos);
       var entry = GetOrAddEntry(topicFilter);
-      var isFirst = entry.AddSink(sink, qos);
+      var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
 
-      if (isFirst && _client.IsConnected)
+      if ((isFirst || qosUpgraded) && _client.IsConnected)
       {
-         await TrySubscribeBrokerAsync(topicFilter, qos, ct).ConfigureAwait(false);
+         await TrySubscribeBrokerAsync(topicFilter, entry.MaxQos, ct).ConfigureAwait(false);
       }
 
       return new SubscriptionDisposable(() => RemoveSinkAsync(topicFilter, sink));
@@ -128,13 +128,13 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       ArgumentException.ThrowIfNullOrWhiteSpace(topicFilter);
       ArgumentNullException.ThrowIfNull(handler);
 
-      var sink = new RawCallbackSubscriptionSink(handler);
+      var sink = new RawCallbackSubscriptionSink(handler, qos);
       var entry = GetOrAddEntry(topicFilter);
-      var isFirst = entry.AddSink(sink, qos);
+      var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
 
-      if (isFirst && _client.IsConnected)
+      if ((isFirst || qosUpgraded) && _client.IsConnected)
       {
-         await TrySubscribeBrokerAsync(topicFilter, qos, ct).ConfigureAwait(false);
+         await TrySubscribeBrokerAsync(topicFilter, entry.MaxQos, ct).ConfigureAwait(false);
       }
 
       return new SubscriptionDisposable(() => RemoveSinkAsync(topicFilter, sink));
@@ -351,17 +351,18 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       private readonly Lock _lock = new();
       private readonly List<ISubscriptionSink> _sinks = [];
 
-      public bool AddSink(ISubscriptionSink sink, QualityOfServiceType qos)
+      public (bool IsFirst, bool QosUpgraded) AddSink(ISubscriptionSink sink, QualityOfServiceType qos)
       {
          lock (_lock)
          {
             var isFirst = _sinks.Count == 0;
+            var qosUpgraded = !isFirst && qos > MaxQos;
             _sinks.Add(sink);
             if (qos > MaxQos)
             {
                MaxQos = qos;
             }
-            return isFirst;
+            return (isFirst, qosUpgraded);
          }
       }
 
@@ -370,7 +371,13 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          lock (_lock)
          {
             _sinks.Remove(sink);
-            return _sinks.Count == 0;
+            if (_sinks.Count == 0)
+            {
+               return true;
+            }
+
+            MaxQos = _sinks.Max(s => s.Qos);
+            return false;
          }
       }
 
@@ -414,13 +421,17 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
 
    private interface ISubscriptionSink
    {
+      QualityOfServiceType Qos { get; }
       ValueTask DeliverAsync(MessageReceiveContext context, CancellationToken ct);
    }
 
    private sealed class RawChannelSubscriptionSink(
       ChannelWriter<MqttPublishMessage> writer,
-      BoundedChannelFullMode fullMode) : ISubscriptionSink, IDisposable
+      BoundedChannelFullMode fullMode,
+      QualityOfServiceType qos) : ISubscriptionSink, IDisposable
    {
+      public QualityOfServiceType Qos { get; } = qos;
+
       public ValueTask DeliverAsync(MessageReceiveContext context, CancellationToken ct)
       {
          if (writer.TryWrite(context.Message))
@@ -455,8 +466,11 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
    private sealed class ChannelSubscriptionSink<T>(
       ChannelWriter<T> writer,
       IMqttPayloadDecoder<T> decoder,
-      BoundedChannelFullMode fullMode) : ISubscriptionSink, IDisposable
+      BoundedChannelFullMode fullMode,
+      QualityOfServiceType qos) : ISubscriptionSink, IDisposable
    {
+      public QualityOfServiceType Qos { get; } = qos;
+
       public ValueTask DeliverAsync(MessageReceiveContext context, CancellationToken ct)
       {
          T decoded;
@@ -501,8 +515,11 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
 
    private sealed class CallbackSubscriptionSink<T>(
       Func<T, MessageReceiveContext, CancellationToken, ValueTask> handler,
-      IMqttPayloadDecoder<T> decoder) : ISubscriptionSink
+      IMqttPayloadDecoder<T> decoder,
+      QualityOfServiceType qos) : ISubscriptionSink
    {
+      public QualityOfServiceType Qos { get; } = qos;
+
       public ValueTask DeliverAsync(MessageReceiveContext context, CancellationToken ct)
       {
          T decoded;
@@ -521,8 +538,11 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
    }
 
    private sealed class RawCallbackSubscriptionSink(
-      Func<MessageReceiveContext, CancellationToken, ValueTask> handler) : ISubscriptionSink
+      Func<MessageReceiveContext, CancellationToken, ValueTask> handler,
+      QualityOfServiceType qos) : ISubscriptionSink
    {
+      public QualityOfServiceType Qos { get; } = qos;
+
       public ValueTask DeliverAsync(MessageReceiveContext context, CancellationToken ct)
       {
          return handler(context, ct);
