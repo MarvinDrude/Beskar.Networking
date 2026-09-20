@@ -21,6 +21,7 @@ using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Utilities.Tracing;
+using Beskar.Mqtt.Client.Internal;
 
 namespace Beskar.Mqtt.Client;
 
@@ -50,6 +51,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private readonly IPacketHandler _packetHandler;
    private readonly SignalBroker _signalBroker = new();
    private readonly PacketIdentifierGenerator _identifierGenerator = new();
+   private readonly MqttSubscriptionManager _subscriptionManager;
 
    private int _disposedState; // 0 = active, 1 = disposed
    private volatile bool _firstConnect = true;
@@ -90,6 +92,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    {
       _networkClient = networkClient;
       _packetHandler = new ClientPacketHandler(this);
+      _subscriptionManager = new MqttSubscriptionManager(this);
 
       _gracefulDisconnect = false;
    }
@@ -635,6 +638,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       _signalBroker.Dispose();
       _clientTokenSource.Dispose();
 
+      await _subscriptionManager.DisposeAsync();
       await _networkClient.DisposeAsync();
    }
 }

@@ -7,6 +7,9 @@ using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Handlers.Contexts;
 using Beskar.Mqtt.Common.Models;
+using Beskar.Mqtt.Common.Serialization;
+using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Protocol.Results;
 
 namespace Beskar.Mqtt.Common.Interfaces;
@@ -123,4 +126,88 @@ public interface IMqttClient : IAsyncDisposable
    /// <returns>An <see cref="IDisposable"/> token that can be used to remove the handler.</returns>
    public IDisposable AddDisconnectedHandler(
       Func<ClientDisconnectedContext, CancellationToken, ValueTask> handler);
+
+   /// <summary>
+   /// Subscribes to a topic filter and returns an async stream of raw MQTT messages.
+   /// Automatically re-subscribes on reconnect.
+   /// Exiting the await foreach loop automatically cleans up resources and unsubscribes from the broker.
+   /// </summary>
+   public IAsyncEnumerable<MqttPublishMessage> SubscribeStream(
+      string topicFilter,
+      QualityOfServiceType qos = QualityOfServiceType.AtLeastOnce,
+      Options.StreamSubscriptionOptions? options = null,
+      CancellationToken ct = default);
+
+   /// <summary>
+   /// Subscribes to a topic filter and returns an async stream of typed items decoded using a per-subscription decoder delegate.
+   /// </summary>
+   public IAsyncEnumerable<T> SubscribeStream<T>(
+      string topicFilter,
+      Func<ReadOnlyMemory<byte>, T> decoder,
+      QualityOfServiceType qos = QualityOfServiceType.AtLeastOnce,
+      Options.StreamSubscriptionOptions? options = null,
+      CancellationToken ct = default);
+
+   /// <summary>
+   /// Subscribes to a topic filter and returns an async stream of typed items decoded using a per-subscription decoder.
+   /// </summary>
+   public IAsyncEnumerable<T> SubscribeStream<T>(
+      string topicFilter,
+      IMqttPayloadDecoder<T> decoder,
+      QualityOfServiceType qos = QualityOfServiceType.AtLeastOnce,
+      Options.StreamSubscriptionOptions? options = null,
+      CancellationToken ct = default);
+
+   /// <summary>
+   /// Registers a topic-scoped callback that receives decoded objects of type <typeparamref name="T"/>.
+   /// Automatically re-subscribes across reconnects and unsubscribes when the returned token is disposed.
+   /// </summary>
+   public Task<IAsyncDisposable> SubscribeTopicAsync<T>(
+      string topicFilter,
+      Func<T, MessageReceiveContext, CancellationToken, ValueTask> handler,
+      Func<ReadOnlyMemory<byte>, T> decoder,
+      QualityOfServiceType qos = QualityOfServiceType.AtLeastOnce,
+      CancellationToken ct = default);
+
+   /// <summary>
+   /// Registers a topic-scoped callback that receives decoded objects of type <typeparamref name="T"/>.
+   /// Automatically re-subscribes across reconnects and unsubscribes when the returned token is disposed.
+   /// </summary>
+   public Task<IAsyncDisposable> SubscribeTopicAsync<T>(
+      string topicFilter,
+      Func<T, MessageReceiveContext, CancellationToken, ValueTask> handler,
+      IMqttPayloadDecoder<T> decoder,
+      QualityOfServiceType qos = QualityOfServiceType.AtLeastOnce,
+      CancellationToken ct = default);
+
+   /// <summary>
+   /// Registers a topic-scoped callback that receives raw <see cref="MessageReceiveContext"/>.
+   /// Automatically re-subscribes across reconnects and unsubscribes when the returned token is disposed.
+   /// </summary>
+   public Task<IAsyncDisposable> SubscribeTopicAsync(
+      string topicFilter,
+      Func<MessageReceiveContext, CancellationToken, ValueTask> handler,
+      QualityOfServiceType qos = QualityOfServiceType.AtLeastOnce,
+      CancellationToken ct = default);
+
+   /// <summary>
+   /// Awaits the next message matching the topic filter and optional predicate,
+   /// decoded using a per-subscription decoder delegate.
+   /// </summary>
+   public Task<T> WaitForMessageAsync<T>(
+      string topicFilter,
+      Func<ReadOnlyMemory<byte>, T> decoder,
+      Func<T, bool>? predicate = null,
+      TimeSpan timeout = default,
+      CancellationToken ct = default);
+
+   /// <summary>
+   /// Awaits the next message matching the topic filter and optional predicate, decoded using a per-subscription decoder.
+   /// </summary>
+   public Task<T> WaitForMessageAsync<T>(
+      string topicFilter,
+      IMqttPayloadDecoder<T> decoder,
+      Func<T, bool>? predicate = null,
+      TimeSpan timeout = default,
+      CancellationToken ct = default);
 }
