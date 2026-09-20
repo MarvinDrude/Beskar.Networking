@@ -19,5 +19,6 @@
     <PackageVersion Include="Testcontainers" Version="4.14.0" />
     <PackageVersion Include="MQTTnet" Version="5.2.0.1603" />
     <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.17.0" />
+    <PackageVersion Include="MessagePack" Version="3.1.8" />
   </ItemGroup>
 </Project>

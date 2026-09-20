@@ -20,8 +20,10 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
 {
    private readonly MqttClient _client;
    private readonly ConcurrentDictionary<string, TopicSubscriptionEntry> _subscriptions = new();
+
    private readonly IDisposable _receiveHandlerToken;
    private readonly IDisposable _connectedHandlerToken;
+
    private int _disposed;
 
    public MqttSubscriptionManager(MqttClient client)

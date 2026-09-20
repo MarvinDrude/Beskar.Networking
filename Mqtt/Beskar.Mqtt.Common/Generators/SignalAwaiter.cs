@@ -42,7 +42,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       if (cancellationToken.CanBeCanceled)
       {
          _cancellationRegistration = cancellationToken.Register(
-            static state => ((SignalAwaiter<TResponseMessage>)state!).Fail(new TimeoutException()),
+            static (state, token) => ((SignalAwaiter<TResponseMessage>)state!).Cancel(token),
             this);
       }
 
@@ -77,11 +77,13 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       return false;
    }
 
-   public void Cancel()
+   public void Cancel() => Cancel(CancellationToken.None);
+
+   public void Cancel(CancellationToken token)
    {
       if (Interlocked.CompareExchange(ref _state, 2, 0) == 0)
       {
-         _core.SetException(new OperationCanceledException());
+         _core.SetException(new OperationCanceledException(token));
          _cancellationRegistration.Dispose();
       }
    }
