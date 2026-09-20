@@ -330,6 +330,8 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
   - [**User Properties (Metadata)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.UserProperties): Demonstrates how to send and receive custom metadata headers (like trace context spans) using MQTT v5.0 User Properties.
   - [**Topic Aliases (Bandwidth Optimization)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.TopicAliases): Illustrates how client and server negotiate and employ Topic Aliases to dramatically decrease packet sizes by substituting long topic paths with short integer codes.
   - [**Acknowledged Publish (Request-Response)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.AcknowledgedPublish): Demonstrates how a publishing client sends a request message with `ResponseTopic` and `CorrelationData` requiring the receiving subscriber to acknowledge receipt and processing with an application-level response.
+  - [**JSON Async Streaming (await foreach)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.JsonStreaming): Demonstrates modern pull-based message consumption using `IAsyncEnumerable<T>` (`await foreach`), automatic re-subscription across connection drops, typed JSON deserialization, and one-shot condition awaiting with `WaitForJsonMessageAsync`.
+  - [**MessagePack Custom Decoder Streaming**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Mqtt/Beskar.Mqtt.Example.MessagePackStreaming): Showcases high-throughput IoT binary telemetry streaming with a custom per-subscription `IMqttPayloadDecoder<T>` for MessagePack, multi-device wildcard filtering (`sensors/+/telemetry`), and one-shot alert interception.
 - [**Resilient Managed Examples**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient): A set of projects demonstrating the high-level connection-resilient server and client wrappers:
   - [**Resilient Chat Application**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient): A complete chat application using the resilient wrappers with default `BeskarPacket` framing and automated JSON serialization:
     - [**Common**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Resilient/Beskar.Resilient.Chat.Common): Contains shared message payloads and a JSON `ChatSerializer` implementing `IResilientSerializer`.
@@ -353,6 +355,17 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
 You can find detailed documentation for `Beskar.Networking` [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation).
 
 - [**Basics & Architecture**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Basics): Overview of core interfaces (`INetworkListener`, `INetworkClient`, `INetworkSession`, `INetworkStream`).
+- [**MQTT Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Mqtt):
+  - [Subscription Streaming & Managed Subscriptions](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/SubscriptionStreaming.md)
+  - [Publish and Subscribe Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/PubSub.md)
+  - [Auto-Reconnection & Client Events](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/Reconnection.md)
+  - [Disconnection Safety & Persistence](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/DisconnectionSafety.md)
+  - [Quality of Service (QoS) Levels](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/QosLevels.md)
+  - [Authentication Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/Authentication.md)
+  - [Last Will and Testament (LWT)](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/LastWill.md)
+  - [Topic Source Generator](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/TopicGenerator.md)
+  - [User Properties Metadata](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/UserProperties.md)
+  - [Topic Aliases Optimization](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Mqtt/TopicAliases.md)
 - [**Raft Consensus Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Raft):
   - [Raft Consensus Overview](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/Overview.md)
   - [Storage & Persistence Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Raft/StorageAndPersistence.md)

@@ -44,6 +44,7 @@
     <File Path="Documentation/Mqtt/TopicGenerator.md" />
     <File Path="Documentation/Mqtt/UserProperties.md" />
     <File Path="Documentation/Mqtt/TopicAliases.md" />
+    <File Path="Documentation/Mqtt/SubscriptionStreaming.md" />
   </Folder>
   <Folder Name="/Documentation/Raft/">
     <File Path="Documentation/Raft/Overview.md" />
@@ -78,6 +79,8 @@
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.UserProperties/Beskar.Mqtt.Example.UserProperties.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.TopicAliases/Beskar.Mqtt.Example.TopicAliases.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.AcknowledgedPublish/Beskar.Mqtt.Example.AcknowledgedPublish.csproj" />
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.JsonStreaming/Beskar.Mqtt.Example.JsonStreaming.csproj" />
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.MessagePackStreaming/Beskar.Mqtt.Example.MessagePackStreaming.csproj" />
   </Folder>
   <Folder Name="/Examples/Raft/">
     <Project Path="Examples/Raft/Beskar.Raft.Example.QuickStart/Beskar.Raft.Example.QuickStart.csproj" />
