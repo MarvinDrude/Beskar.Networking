@@ -1,6 +1,8 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Beskar.Memory.Owners;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -24,16 +26,18 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    private readonly bool _expectMask;
 
    private readonly Action<WsNetworkSession, ReadOnlySequence<byte>, WebSocketOpcode>? _onMessage;
+   private readonly Func<WsNetworkSession, ReadOnlySequence<byte>, WebSocketOpcode, ValueTask>? _onMessageAsync;
+
    private readonly Func<WsNetworkSession?>? _sessionProvider;
    private WsNetworkSession? _session;
 
-   private readonly Pipe _inputPipe;
-   private readonly Pipe _outputPipe;
+   private readonly Pipe? _inputPipe;
+   private readonly Pipe? _outputPipe;
 
    private readonly CancellationTokenSource _cts = new();
 
    private readonly Task _readTask;
-   private readonly Task _writeTask;
+   private readonly Task? _writeTask;
    private readonly AsyncLock _writeLock = new();
    private int _disposed;
    private byte _currentFrameOpcode;
@@ -42,8 +46,9 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    private readonly TimeSpan _keepAliveInterval;
    private readonly Task? _pingTask;
 
-   public PipeReader Input => _inputPipe.Reader;
-   public PipeWriter Output => _outputPipe.Writer;
+   private static readonly Pipe DummyPipe = new();
+   public PipeReader Input => _inputPipe?.Reader ?? DummyPipe.Reader;
+   public PipeWriter Output => _outputPipe?.Writer ?? DummyPipe.Writer;
 
    public WsDuplexPipe(IDuplexPipe tcpPipe, INetworkSession tcpSession, bool maskOutgoing, WsTransportOptions options,
       Func<WsNetworkSession?>? sessionProvider = null)
@@ -54,17 +59,23 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       _maxFrameSize = options.MaxFrameSize;
       _expectMask = !maskOutgoing;
       _onMessage = options.OnMessage;
+      _onMessageAsync = options.OnMessageAsync;
       _sessionProvider = sessionProvider;
       _keepAliveInterval = options.KeepAliveInterval;
 
-      var memoryPool = SharedTransportMemoryPool.GetNext();
-      var pipeOpts = new PipeOptions(
-         memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
-         pauseWriterThreshold: 65536, resumeWriterThreshold: 32768,
-         useSynchronizationContext: false);
+      if (_onMessage == null && _onMessageAsync == null)
+      {
+         var memoryPool = SharedTransportMemoryPool.GetNext();
+         var pipeOpts = new PipeOptions(
+            memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
+            pauseWriterThreshold: 65536, resumeWriterThreshold: 32768,
+            useSynchronizationContext: false);
 
-      _inputPipe = new Pipe(pipeOpts);
-      _outputPipe = new Pipe(pipeOpts);
+         _inputPipe = new Pipe(pipeOpts);
+         _outputPipe = new Pipe(pipeOpts);
+
+         _writeTask = Task.Run(WriteLoopAsync);
+      }
 
       _tcpSession.SessionClosedToken.Register(() =>
       {
@@ -79,7 +90,6 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       });
 
       _readTask = Task.Run(ReadLoopAsync);
-      _writeTask = Task.Run(WriteLoopAsync);
       _pingTask = _keepAliveInterval > TimeSpan.Zero ? Task.Run(PingLoopAsync) : null;
    }
 
@@ -92,7 +102,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    {
       using (await _writeLock.LockAsync(cancellationToken))
       {
-         await WriteFrameAsync(_tcpPipe.Output, opcode, payload, _maskOutgoing, cancellationToken);
+         WriteFrame(_tcpPipe.Output, opcode, payload, _maskOutgoing);
          await _tcpPipe.Output.FlushAsync(cancellationToken);
       }
    }
@@ -100,7 +110,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    private async Task ReadLoopAsync()
    {
       var reader = _tcpPipe.Input;
-      var writer = _inputPipe.Writer;
+      var writer = _inputPipe?.Writer;
 
       try
       {
@@ -110,7 +120,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             var buffer = result.Buffer;
 
             while (TryParseFrame(ref buffer, out var opcode,
-                      out var payload, out var maskKey, out var isFin, _maxFrameSize, _expectMask))
+                      out var payload, out var maskKey, out var isMasked, out var isFin, _maxFrameSize, _expectMask))
             {
                if (opcode is (byte)WebSocketOpcode.Binary or (byte)WebSocketOpcode.Text)
                {
@@ -126,38 +136,25 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                      _currentFrameOpcode = opcode;
                   }
 
-                  var currentSession = _sessionProvider?.Invoke() ?? _session;
-                  if (_onMessage != null && currentSession != null)
+                  if (isMasked && !payload.IsEmpty)
                   {
-                     if (maskKey != null)
-                     {
-                        using var unmaskedOwner = SpanOwner<byte>.Allocate((int)payload.Length);
-                        var unmaskedSpan = unmaskedOwner.Span;
-                        int payloadIdx = 0;
-                        foreach (var segment in payload)
-                        {
-                           MaskOrUnmask(unmaskedSpan.Slice(payloadIdx, segment.Length), segment.Span, maskKey, ref payloadIdx);
-                           payloadIdx += segment.Length;
-                        }
-                        _onMessage(currentSession, new ReadOnlySequence<byte>(unmaskedSpan.ToArray()), (WebSocketOpcode)opcode);
-                     }
-                     else
-                     {
-                        _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
-                     }
+                     UnmaskInPlace(payload, maskKey);
                   }
-                  else
+
+                  var currentSession = _sessionProvider?.Invoke() ?? _session;
+                  if (_onMessageAsync != null && currentSession != null)
                   {
-                     if (maskKey != null)
+                     await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
+                  }
+                  else if (_onMessage != null && currentSession != null)
+                  {
+                     _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
+                  }
+                  else if (writer != null)
+                  {
+                     foreach (var segment in payload)
                      {
-                        UnmaskAndWrite(writer, payload, maskKey);
-                     }
-                     else
-                     {
-                        foreach (var segment in payload)
-                        {
-                           writer.Write(segment.Span);
-                        }
+                        writer.Write(segment.Span);
                      }
 
                      await writer.FlushAsync(_cts.Token);
@@ -176,40 +173,25 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                      _currentFrameOpcode = 0;
                   }
 
-                  var currentSession = _sessionProvider?.Invoke() ?? _session;
-                  if (_onMessage != null && currentSession != null)
+                  if (isMasked && !payload.IsEmpty)
                   {
-                     if (maskKey != null)
-                     {
-                        using var unmaskedOwner = SpanOwner<byte>.Allocate((int)payload.Length);
-                        var unmaskedSpan = unmaskedOwner.Span;
-                        var payloadIdx = 0;
-
-                        foreach (var segment in payload)
-                        {
-                           MaskOrUnmask(unmaskedSpan.Slice(payloadIdx, segment.Length), segment.Span, maskKey, ref payloadIdx);
-                           payloadIdx += segment.Length;
-                        }
-
-                        _onMessage(currentSession, new ReadOnlySequence<byte>([.. unmaskedSpan]), (WebSocketOpcode)opcode);
-                     }
-                     else
-                     {
-                        _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
-                     }
+                     UnmaskInPlace(payload, maskKey);
                   }
-                  else
+
+                  var currentSession = _sessionProvider?.Invoke() ?? _session;
+                  if (_onMessageAsync != null && currentSession != null)
                   {
-                     if (maskKey != null)
+                     await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
+                  }
+                  else if (_onMessage != null && currentSession != null)
+                  {
+                     _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
+                  }
+                  else if (writer != null)
+                  {
+                     foreach (var segment in payload)
                      {
-                        UnmaskAndWrite(writer, payload, maskKey);
-                     }
-                     else
-                     {
-                        foreach (var segment in payload)
-                        {
-                           writer.Write(segment.Span);
-                        }
+                        writer.Write(segment.Span);
                      }
 
                      await writer.FlushAsync(_cts.Token);
@@ -219,23 +201,12 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                {
                   using (await _writeLock.LockAsync(_cts.Token))
                   {
-                     if (maskKey != null && !payload.IsEmpty)
+                     if (isMasked && !payload.IsEmpty)
                      {
-                        using var unmaskedOwner = new SpanOwner<byte>((int)payload.Length, clearArray: false);
-
-                        var pIdx = 0;
-                        foreach (var seg in payload)
-                        {
-                           MaskOrUnmask(unmaskedOwner.Span.Slice(pIdx, seg.Length), seg.Span, maskKey, ref pIdx);
-                        }
-
-                        WriteFrame(_tcpPipe.Output, WebSocketOpcode.Pong, unmaskedOwner.Span, _maskOutgoing);
-                     }
-                     else
-                     {
-                        WriteFrame(_tcpPipe.Output, WebSocketOpcode.Pong, payload, _maskOutgoing);
+                        UnmaskInPlace(payload, maskKey);
                      }
 
+                     WriteFrame(_tcpPipe.Output, WebSocketOpcode.Pong, payload, _maskOutgoing);
                      await _tcpPipe.Output.FlushAsync(_cts.Token);
                   }
                }
@@ -249,26 +220,14 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                   {
                      using (await _writeLock.LockAsync(CancellationToken.None))
                      {
-                        if (maskKey != null && !payload.IsEmpty)
+                        if (isMasked && !payload.IsEmpty)
                         {
-                           using var unmaskedOwner = new SpanOwner<byte>((int)payload.Length, clearArray: false);
-
-                           var pIdx = 0;
-                           foreach (var seg in payload)
-                           {
-                              MaskOrUnmask(unmaskedOwner.Span.Slice(pIdx, seg.Length), seg.Span, maskKey, ref pIdx);
-                           }
-
-                           WriteFrame(_tcpPipe.Output, WebSocketOpcode.Close, unmaskedOwner.Span, _maskOutgoing);
-                        }
-                        else
-                        {
-                           WriteFrame(_tcpPipe.Output, WebSocketOpcode.Close, payload, _maskOutgoing);
+                           UnmaskInPlace(payload, maskKey);
                         }
 
+                        WriteFrame(_tcpPipe.Output, WebSocketOpcode.Close, payload, _maskOutgoing);
                         await _tcpPipe.Output.FlushAsync(CancellationToken.None);
                      }
-                     await Task.Delay(10);
                   }
                   catch
                   {
@@ -318,7 +277,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             /* Ignored */
          }
 
-         await writer.CompleteAsync();
+         if (writer != null)
+         {
+            await writer.CompleteAsync();
+         }
          await reader.CompleteAsync();
 
          try
@@ -334,6 +296,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
    private async Task WriteLoopAsync()
    {
+      if (_outputPipe == null) return;
       var reader = _outputPipe.Reader;
       var writer = _tcpPipe.Output;
 
@@ -401,14 +364,16 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       ref ReadOnlySequence<byte> buffer,
       out byte opcode,
       out ReadOnlySequence<byte> payload,
-      out byte[]? maskKey,
+      out uint maskKey,
+      out bool isMasked,
       out bool isFin,
       int maxFrameSize,
       bool expectMask)
    {
       opcode = 0;
       payload = default;
-      maskKey = null;
+      maskKey = 0;
+      isMasked = false;
       isFin = false;
 
       if (buffer.Length < 2) return false;
@@ -420,7 +385,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       isFin = (b1 & 0x80) != 0;
       opcode = (byte)(b1 & 0x0F);
 
-      var isMasked = (b2 & 0x80) != 0;
+      isMasked = (b2 & 0x80) != 0;
       var len = (long)(b2 & 0x7F);
 
       if (len == 126)
@@ -464,12 +429,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
       if (isMasked)
       {
-         maskKey = new byte[4];
-         for (var i = 0; i < 4; i++)
-         {
-            if (!reader.TryRead(out maskKey[i]))
-               return false;
-         }
+         if (!reader.TryReadBigEndian(out int maskVal))
+            return false;
+
+         maskKey = (uint)maskVal;
       }
 
       if (reader.Remaining < len)
@@ -479,6 +442,32 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       buffer = buffer.Slice(buffer.GetPosition(len, reader.Position));
 
       return true;
+   }
+
+   private static void UnmaskInPlace(ReadOnlySequence<byte> payload, uint maskKey)
+   {
+      Span<byte> maskSpan = stackalloc byte[4];
+      BinaryPrimitives.WriteUInt32BigEndian(maskSpan, maskKey);
+
+      var payloadIndex = 0;
+      if (payload.IsSingleSegment)
+      {
+         var mem = payload.First;
+         if (!mem.IsEmpty)
+         {
+            var span = MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(mem.Span), mem.Length);
+            MaskOrUnmask(span, span, maskSpan, ref payloadIndex);
+         }
+
+         return;
+      }
+
+      foreach (var segment in payload)
+      {
+         if (segment.IsEmpty) continue;
+         var span = MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(segment.Span), segment.Length);
+         MaskOrUnmask(span, span, maskSpan, ref payloadIndex);
+      }
    }
 
    private static void MaskOrUnmask(Span<byte> target, ReadOnlySpan<byte> source, ReadOnlySpan<byte> maskKey,
@@ -518,25 +507,6 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          for (var i = 0; i < len; i++)
          {
             target[i] = (byte)(source[i] ^ maskKey[payloadIndex++ % 4]);
-         }
-      }
-   }
-
-   private static void UnmaskAndWrite(PipeWriter writer, ReadOnlySequence<byte> payload, byte[] maskKey)
-   {
-      var payloadIndex = 0;
-
-      foreach (var segment in payload)
-      {
-         var remaining = segment.Span;
-         while (!remaining.IsEmpty)
-         {
-            var chunkSize = Math.Min(remaining.Length, 4096);
-            var targetSpan = writer.GetSpan(chunkSize);
-
-            MaskOrUnmask(targetSpan[..chunkSize], remaining[..chunkSize], maskKey, ref payloadIndex);
-            writer.Advance(chunkSize);
-            remaining = remaining[chunkSize..];
          }
       }
    }
@@ -787,17 +757,27 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
       try
       {
-         await _writeTask;
+         if (_writeTask is not null)
+         {
+            await _writeTask;
+         }
       }
       catch
       {
          /* Ignored */
       }
 
-      await _inputPipe.Reader.CompleteAsync();
-      await _inputPipe.Writer.CompleteAsync();
-      await _outputPipe.Reader.CompleteAsync();
-      await _outputPipe.Writer.CompleteAsync();
+      if (_inputPipe is not null)
+      {
+         await _inputPipe.Reader.CompleteAsync();
+         await _inputPipe.Writer.CompleteAsync();
+      }
+
+      if (_outputPipe is not null)
+      {
+         await _outputPipe.Reader.CompleteAsync();
+         await _outputPipe.Writer.CompleteAsync();
+      }
 
       _cts.Dispose();
    }

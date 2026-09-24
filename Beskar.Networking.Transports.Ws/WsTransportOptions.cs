@@ -86,4 +86,10 @@ public sealed class WsTransportOptions
    /// Invoked per discrete WebSocket frame received from the client.
    /// </summary>
    public Action<WsNetworkSession, ReadOnlySequence<byte>, WebSocketOpcode>? OnMessage { get; set; }
+
+   /// <summary>
+   /// Asynchronous high-level frame-isolated message callback handler.
+   /// Invoked per discrete WebSocket frame received from the client and awaited.
+   /// </summary>
+   public Func<WsNetworkSession, ReadOnlySequence<byte>, WebSocketOpcode, ValueTask>? OnMessageAsync { get; set; }
 }

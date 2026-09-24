@@ -385,7 +385,7 @@ Or you can find examples directly [here](https://github.com/MarvinDrude/Beskar.N
 
 ## Performance Benchmarks
 
-<a href="https://www.http-arena.com/#scope=ws&type=experimental,flagship">
+<a href="https://www.http-arena.com/#scope=ws&type=emerging,experimental,flagship&tuned=0">
   <img src="https://cdn.jsdelivr.net/gh/MDA2AV/httparena-badge/wordmark.svg" alt="Benchmarked by HttpArena" height="44">
 </a>
 
