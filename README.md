@@ -30,7 +30,7 @@
 ---
 <br/>
 
-![.NET 10 / 11](https://img.shields.io/badge/.NET-10.0-blueviolet)
+![.NET 11](https://img.shields.io/badge/.NET-11.0-blueviolet)
 ![Code Poetry](https://img.shields.io/badge/code-is_poetry-orange)
 ![Issues](https://img.shields.io/github/issues/MarvinDrude/Beskar.Networking)
 ![Repo Size](https://img.shields.io/github/repo-size/MarvinDrude/Beskar.Networking.svg)
