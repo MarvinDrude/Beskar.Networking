@@ -17,11 +17,37 @@ namespace Beskar.Networking.Transports.Ws;
 /// </summary>
 public static class WsHandshake
 {
-   private const string MagicGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
    private static readonly byte[] EndOfHeadersSequence = "\r\n\r\n"u8.ToArray();
 
    private const string HttpVersionPrefix = "HTTP/1.1 ";
    private const string ErrorResponseHeaders = "\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
+
+   /// <summary>
+   /// Computes the Sec-WebSocket-Accept key response for a given client key directly into the destination span.
+   /// </summary>
+   public static void ComputeAcceptKey(ReadOnlySpan<byte> secWebSocketKey, Span<byte> destination)
+   {
+      ArgumentOutOfRangeException.ThrowIfLessThan(destination.Length, 28);
+      ArgumentOutOfRangeException.ThrowIfGreaterThan(secWebSocketKey.Length, 128);
+
+      if (secWebSocketKey.IsEmpty)
+      {
+         throw new ArgumentException("Key cannot be empty.", nameof(secWebSocketKey));
+      }
+
+      Span<byte> combined = stackalloc byte[secWebSocketKey.Length + 36];
+      secWebSocketKey.CopyTo(combined);
+      "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"u8.CopyTo(combined[secWebSocketKey.Length..]);
+
+      Span<byte> hash = stackalloc byte[20];
+      SHA1.HashData(combined, hash);
+
+      var status = System.Buffers.Text.Base64.EncodeToUtf8(hash, destination, out _, out var bytesWritten);
+      if (status != OperationStatus.Done || bytesWritten != 28)
+      {
+         throw new InvalidOperationException("Failed to encode accept key to Base64.");
+      }
+   }
 
    /// <summary>
    /// Computes the Sec-WebSocket-Accept key response for a given client key.
@@ -34,17 +60,13 @@ public static class WsHandshake
          throw new ArgumentException("Key cannot be longer than 128 characters.", nameof(secWebSocketKey));
       }
 
-      Span<char> combined = stackalloc char[secWebSocketKey.Length + 36];
-      secWebSocketKey.AsSpan().CopyTo(combined);
-      MagicGuid.AsSpan().CopyTo(combined[secWebSocketKey.Length..]);
+      Span<byte> keyBytes = stackalloc byte[secWebSocketKey.Length];
+      Encoding.ASCII.GetBytes(secWebSocketKey, keyBytes);
 
-      Span<byte> bytes = stackalloc byte[combined.Length];
-      Encoding.ASCII.GetBytes(combined, bytes);
+      Span<byte> acceptKeyBytes = stackalloc byte[28];
+      ComputeAcceptKey(keyBytes, acceptKeyBytes);
 
-      Span<byte> hash = stackalloc byte[20];
-      SHA1.HashData(bytes, hash);
-
-      return Convert.ToBase64String(hash);
+      return Encoding.ASCII.GetString(acceptKeyBytes);
    }
 
    /// <summary>
@@ -59,242 +81,259 @@ public static class WsHandshake
       var reader = tcpPipe.Input;
       var writer = tcpPipe.Output;
 
-      using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-      timeoutCts.CancelAfter(options.HandshakeTimeout);
-
-      string? headersText;
-      try
+      while (true)
       {
-         headersText = await ReadHttpHeadersAsync(reader, options.MaxHeaderSize, timeoutCts.Token);
-      }
-      catch (OperationCanceledException)
-      {
-         TraceLogger.LogServerError("WS Handshake: Failed to read HTTP headers. Handshake timed out.");
-         return (null, null, null);
-      }
+         var readResult = await reader.ReadAsync(ct);
+         var buffer = readResult.Buffer;
 
-      if (headersText == null)
-      {
-         TraceLogger.LogServerError("WS Handshake: Failed to read HTTP headers from client or headers exceeded limits.");
-         return (null, null, null);
-      }
-
-      var remaining = headersText.AsSpan();
-
-      // Parse the first line (GET /path HTTP/1.1)
-      var firstLineEnd = remaining.IndexOf("\r\n".AsSpan());
-      ReadOnlySpan<char> firstLine;
-      if (firstLineEnd == -1)
-      {
-         firstLine = remaining;
-         remaining = default;
-      }
-      else
-      {
-         firstLine = remaining[..firstLineEnd];
-         remaining = remaining[(firstLineEnd + 2)..];
-      }
-
-      if (!firstLine.StartsWith("GET ".AsSpan(), StringComparison.OrdinalIgnoreCase))
-      {
-         TraceLogger.LogServerError("WS Handshake: Server handshake failed: only GET requests are allowed.");
-         await SendErrorResponseAsync(writer, "400 Bad Request", "Only GET requests are allowed.");
-         return (null, null, null);
-      }
-
-      var firstSpace = firstLine.IndexOf(' ');
-      if (firstSpace == -1)
-      {
-         TraceLogger.LogServerError("WS Handshake: Server handshake failed: invalid GET request format.");
-         return (null, null, null);
-      }
-
-      var afterGet = firstLine[(firstSpace + 1)..];
-      var secondSpace = afterGet.IndexOf(' ');
-      if (secondSpace == -1)
-      {
-         TraceLogger.LogServerError("WS Handshake: Server handshake failed: invalid GET request format.");
-         return (null, null, null);
-      }
-
-      var pathSpan = afterGet[..secondSpace];
-      if (!pathSpan.Equals(options.Path.AsSpan(), StringComparison.Ordinal))
-      {
-         TraceLogger.LogServerError("WS Handshake: Server handshake failed: specified path does not match expected path.");
-         await SendErrorResponseAsync(writer, "404 Not Found", "Specified path is not found.");
-         return (null, null, null);
-      }
-
-      string? clientKey = null;
-      var isUpgrade = false;
-      var isConnectionUpgrade = false;
-      string? origin = null;
-
-      Dictionary<string, string>? requestHeaders = null;
-      Dictionary<string, string>? requestCookies = null;
-
-      while (!remaining.IsEmpty)
-      {
-         var lineEnd = remaining.IndexOf("\r\n".AsSpan());
-         ReadOnlySpan<char> line;
-         if (lineEnd == -1)
+         var position = FindSequence(buffer, EndOfHeadersSequence);
+         if (position.HasValue)
          {
-            line = remaining;
-            remaining = default;
-         }
-         else
-         {
-            line = remaining[..lineEnd];
-            remaining = remaining[(lineEnd + 2)..];
-         }
-
-         if (line.IsEmpty) continue;
-
-         var colonIdx = line.IndexOf(':');
-         if (colonIdx == -1) continue;
-
-         var headerNameSpan = line[..colonIdx].Trim();
-         var headerValueSpan = line[(colonIdx + 1)..].Trim();
-
-         if (options.GatherHeaders)
-         {
-            requestHeaders ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var lookup = requestHeaders.GetAlternateLookup<ReadOnlySpan<char>>();
-            lookup[headerNameSpan] = headerValueSpan.ToString();
-         }
-
-         if (headerNameSpan.Equals("upgrade".AsSpan(), StringComparison.OrdinalIgnoreCase))
-         {
-            if (headerValueSpan.Equals("websocket".AsSpan(), StringComparison.OrdinalIgnoreCase))
+            var headerSequence = buffer.Slice(0, position.Value);
+            if (headerSequence.Length > options.MaxHeaderSize)
             {
-               isUpgrade = true;
+               TraceLogger.LogServerError("WS Handshake: HTTP headers exceeded the maximum allowed size of {0} bytes.", options.MaxHeaderSize);
+               reader.AdvanceTo(buffer.End);
+               return (null, null, null);
             }
-         }
-         else if (headerNameSpan.Equals("connection".AsSpan(), StringComparison.OrdinalIgnoreCase))
-         {
-            if (headerValueSpan.Contains("upgrade".AsSpan(), StringComparison.OrdinalIgnoreCase))
+
+            byte[]? rented = null;
+            ReadOnlySpan<byte> headerSpan;
+
+            if (headerSequence.IsSingleSegment)
             {
-               isConnectionUpgrade = true;
+               headerSpan = headerSequence.FirstSpan;
             }
-         }
-         else if (headerNameSpan.Equals("sec-websocket-key".AsSpan(), StringComparison.OrdinalIgnoreCase))
-         {
-            clientKey = headerValueSpan.ToString();
-         }
-         else if (headerNameSpan.Equals("origin".AsSpan(), StringComparison.OrdinalIgnoreCase))
-         {
-            origin = headerValueSpan.ToString();
-         }
-         else if (headerNameSpan.Equals("cookie".AsSpan(), StringComparison.OrdinalIgnoreCase) && options.GatherCookies)
-         {
-            requestCookies ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var lookup = requestCookies.GetAlternateLookup<ReadOnlySpan<char>>();
-
-            var cookieRemaining = headerValueSpan;
-            while (!cookieRemaining.IsEmpty)
+            else
             {
-               var semiIdx = cookieRemaining.IndexOf(';');
-               ReadOnlySpan<char> cookiePair;
+               rented = ArrayPool<byte>.Shared.Rent((int)headerSequence.Length);
+               headerSequence.CopyTo(rented);
+               headerSpan = rented.AsSpan(0, (int)headerSequence.Length);
+            }
 
-               if (semiIdx == -1)
+            try
+            {
+               var remaining = headerSpan;
+
+               // Parse the first line (GET /path HTTP/1.1)
+               var firstLineEnd = remaining.IndexOf("\r\n"u8);
+               ReadOnlySpan<byte> firstLine;
+               if (firstLineEnd == -1)
                {
-                  cookiePair = cookieRemaining;
-                  cookieRemaining = default;
+                  firstLine = remaining;
+                  remaining = default;
                }
                else
                {
-                  cookiePair = cookieRemaining[..semiIdx];
-                  cookieRemaining = cookieRemaining[(semiIdx + 1)..];
+                  firstLine = remaining[..firstLineEnd];
+                  remaining = remaining[(firstLineEnd + 2)..];
                }
 
-               cookiePair = cookiePair.Trim();
-               if (cookiePair.IsEmpty) continue;
-
-               var eqIdx = cookiePair.IndexOf('=');
-               if (eqIdx != -1)
+               if (!firstLine.StartsWith("GET "u8) && !firstLine.StartsWith("get "u8))
                {
-                  var nameSpan = cookiePair[..eqIdx].Trim();
-                  var valueSpan = cookiePair[(eqIdx + 1)..].Trim();
-                  lookup[nameSpan] = valueSpan.ToString();
+                  TraceLogger.LogServerError("WS Handshake: Server handshake failed: only GET requests are allowed.");
+                  reader.AdvanceTo(buffer.GetPosition(4, position.Value));
+                  await SendErrorResponseAsync(writer, "400 Bad Request", "Only GET requests are allowed.");
+                  return (null, null, null);
+               }
+
+               var firstSpace = firstLine.IndexOf((byte)' ');
+               if (firstSpace == -1)
+               {
+                  TraceLogger.LogServerError("WS Handshake: Server handshake failed: invalid GET request format.");
+                  reader.AdvanceTo(buffer.GetPosition(4, position.Value));
+                  return (null, null, null);
+               }
+
+               var afterGet = firstLine[(firstSpace + 1)..];
+               var secondSpace = afterGet.IndexOf((byte)' ');
+               if (secondSpace == -1)
+               {
+                  TraceLogger.LogServerError("WS Handshake: Server handshake failed: invalid GET request format.");
+                  reader.AdvanceTo(buffer.GetPosition(4, position.Value));
+                  return (null, null, null);
+               }
+
+               var pathSpan = afterGet[..secondSpace];
+               if (!Ascii.Equals(pathSpan, options.Path.AsSpan()))
+               {
+                  TraceLogger.LogServerError("WS Handshake: Server handshake failed: specified path does not match expected path.");
+                  reader.AdvanceTo(buffer.GetPosition(4, position.Value));
+                  await SendErrorResponseAsync(writer, "404 Not Found", "Specified path is not found.");
+                  return (null, null, null);
+               }
+
+               ReadOnlySpan<byte> clientKey = default;
+               var isUpgrade = false;
+               var isConnectionUpgrade = false;
+               ReadOnlySpan<byte> origin = default;
+
+               Dictionary<string, string>? requestHeaders = null;
+               Dictionary<string, string>? requestCookies = null;
+
+               while (!remaining.IsEmpty)
+               {
+                  var lineEnd = remaining.IndexOf("\r\n"u8);
+                  ReadOnlySpan<byte> line;
+                  if (lineEnd == -1)
+                  {
+                     line = remaining;
+                     remaining = default;
+                  }
+                  else
+                  {
+                     line = remaining[..lineEnd];
+                     remaining = remaining[(lineEnd + 2)..];
+                  }
+
+                  if (line.IsEmpty) continue;
+
+                  var colonIdx = line.IndexOf((byte)':');
+                  if (colonIdx == -1) continue;
+
+                  var headerNameSpan = line[..colonIdx].Trim(" \t"u8);
+                  var headerValueSpan = line[(colonIdx + 1)..].Trim(" \t"u8);
+
+                  if (options.GatherHeaders)
+                  {
+                     requestHeaders ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                     requestHeaders[Encoding.ASCII.GetString(headerNameSpan)] = Encoding.UTF8.GetString(headerValueSpan);
+                  }
+
+                  if (Ascii.EqualsIgnoreCase(headerNameSpan, "upgrade"u8))
+                  {
+                     if (Ascii.EqualsIgnoreCase(headerValueSpan, "websocket"u8))
+                     {
+                        isUpgrade = true;
+                     }
+                  }
+                  else if (Ascii.EqualsIgnoreCase(headerNameSpan, "connection"u8))
+                  {
+                     if (ContainsUpgrade(headerValueSpan))
+                     {
+                        isConnectionUpgrade = true;
+                     }
+                  }
+                  else if (Ascii.EqualsIgnoreCase(headerNameSpan, "sec-websocket-key"u8))
+                  {
+                     clientKey = headerValueSpan;
+                  }
+                  else if (Ascii.EqualsIgnoreCase(headerNameSpan, "origin"u8))
+                  {
+                     origin = headerValueSpan;
+                  }
+                  else if (Ascii.EqualsIgnoreCase(headerNameSpan, "cookie"u8) && options.GatherCookies)
+                  {
+                     requestCookies ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                     var cookieRemaining = headerValueSpan;
+                     while (!cookieRemaining.IsEmpty)
+                     {
+                        var semiIdx = cookieRemaining.IndexOf((byte)';');
+                        ReadOnlySpan<byte> cookiePair;
+
+                        if (semiIdx == -1)
+                        {
+                           cookiePair = cookieRemaining;
+                           cookieRemaining = default;
+                        }
+                        else
+                        {
+                           cookiePair = cookieRemaining[..semiIdx];
+                           cookieRemaining = cookieRemaining[(semiIdx + 1)..];
+                        }
+
+                        cookiePair = cookiePair.Trim(" \t"u8);
+                        if (cookiePair.IsEmpty) continue;
+
+                        var eqIdx = cookiePair.IndexOf((byte)'=');
+                        if (eqIdx != -1)
+                        {
+                           var nameSpan = cookiePair[..eqIdx].Trim(" \t"u8);
+                           var valueSpan = cookiePair[(eqIdx + 1)..].Trim(" \t"u8);
+                           requestCookies[Encoding.ASCII.GetString(nameSpan)] = Encoding.UTF8.GetString(valueSpan);
+                        }
+                     }
+                  }
+               }
+
+               if (options.AllowedOrigins is not null && options.AllowedOrigins.Length > 0)
+               {
+                  if (origin.IsEmpty)
+                  {
+                     TraceLogger.LogServerError("WS Handshake: Server handshake failed: Origin header is missing but AllowedOrigins is configured.");
+                     reader.AdvanceTo(buffer.GetPosition(4, position.Value));
+                     await SendErrorResponseAsync(writer, "400 Bad Request", "Origin header is required.");
+                     return (null, requestHeaders, requestCookies);
+                  }
+
+                  var matched = false;
+                  foreach (var allowed in options.AllowedOrigins)
+                  {
+                     if (Ascii.EqualsIgnoreCase(origin, allowed.AsSpan()))
+                     {
+                        matched = true;
+                        break;
+                     }
+                  }
+
+                  if (!matched)
+                  {
+                     TraceLogger.LogServerError("WS Handshake: Server handshake failed: origin '{0}' is not allowed.", Encoding.UTF8.GetString(origin));
+                     reader.AdvanceTo(buffer.GetPosition(4, position.Value));
+                     await SendErrorResponseAsync(writer, "403 Forbidden", "Origin is not allowed.");
+                     return (null, requestHeaders, requestCookies);
+                  }
+               }
+
+               if (!isUpgrade || !isConnectionUpgrade || clientKey.IsEmpty || clientKey.Length > 128)
+               {
+                  TraceLogger.LogServerError("WS Handshake: Server handshake failed: missing, invalid, or too long WebSocket upgrade headers.");
+                  reader.AdvanceTo(buffer.GetPosition(4, position.Value));
+                  await SendErrorResponseAsync(writer, "400 Bad Request", "Invalid WebSocket upgrade headers.");
+                  return (null, requestHeaders, requestCookies);
+               }
+
+               // Advance past headers
+               reader.AdvanceTo(buffer.GetPosition(4, position.Value));
+
+               // Complete handshake
+               var acceptKey = WriteHandshakeResponse(writer, clientKey, options);
+
+               if (rented != null)
+               {
+                  ArrayPool<byte>.Shared.Return(rented);
+                  rented = null;
+               }
+
+               await writer.FlushAsync(ct);
+
+               TraceLogger.LogServerInfo("WS Handshake: Server WebSocket upgrade handshake successful (Accept Key: {0})", acceptKey);
+               return (acceptKey, requestHeaders, requestCookies);
+            }
+            finally
+            {
+               if (rented != null)
+               {
+                  ArrayPool<byte>.Shared.Return(rented);
                }
             }
          }
-      }
 
-      if (options.AllowedOrigins is not null && options.AllowedOrigins.Length > 0)
-      {
-         if (string.IsNullOrEmpty(origin))
+         if (buffer.Length > options.MaxHeaderSize)
          {
-            TraceLogger.LogServerError("WS Handshake: Server handshake failed: Origin header is missing but AllowedOrigins is configured.");
-            await SendErrorResponseAsync(writer, "400 Bad Request", "Origin header is required.");
-            return (null, requestHeaders, requestCookies);
+            TraceLogger.LogServerError("WS Handshake: HTTP headers exceeded the maximum allowed size of {0} bytes without reaching end of headers.", options.MaxHeaderSize);
+            reader.AdvanceTo(buffer.End);
+            return (null, null, null);
          }
 
-         var matched = false;
-         foreach (var allowed in options.AllowedOrigins)
-         {
-            if (string.Equals(origin, allowed, StringComparison.OrdinalIgnoreCase))
-            {
-               matched = true;
-               break;
-            }
-         }
+         reader.AdvanceTo(buffer.Start, buffer.End);
 
-         if (!matched)
+         if (readResult.IsCompleted || readResult.IsCanceled)
          {
-            TraceLogger.LogServerError("WS Handshake: Server handshake failed: origin '{0}' is not allowed.", origin);
-            await SendErrorResponseAsync(writer, "403 Forbidden", "Origin is not allowed.");
-            return (null, requestHeaders, requestCookies);
+            return (null, null, null);
          }
       }
-
-      if (!isUpgrade || !isConnectionUpgrade || string.IsNullOrEmpty(clientKey) || clientKey.Length > 128)
-      {
-         TraceLogger.LogServerError("WS Handshake: Server handshake failed: missing, invalid, or too long WebSocket upgrade headers.");
-         await SendErrorResponseAsync(writer, "400 Bad Request", "Invalid WebSocket upgrade headers.");
-         return (null, requestHeaders, requestCookies);
-      }
-
-      // Complete handshake
-      var acceptKey = ComputeAcceptKey(clientKey);
-      {
-         var response = new TextWriterIndentSlim(stackalloc char[512], stackalloc char[1]);
-         try
-         {
-            response.Write("HTTP/1.1 101 Switching Protocols\r\n");
-            response.Write("Upgrade: websocket\r\n");
-            response.Write("Connection: Upgrade\r\n");
-            response.Write("Sec-WebSocket-Accept: ");
-            response.Write(acceptKey);
-            response.Write("\r\n");
-
-            if (!string.IsNullOrEmpty(options.Subprotocol))
-            {
-               response.Write("Sec-WebSocket-Protocol: ");
-               response.Write(options.Subprotocol);
-               response.Write("\r\n");
-            }
-
-            response.Write("\r\n");
-
-            var writtenSpan = response.WrittenSpan;
-            var maxByteCount = Encoding.ASCII.GetByteCount(writtenSpan);
-
-            var byteSpan = writer.GetSpan(maxByteCount);
-            var bytesWritten = Encoding.ASCII.GetBytes(writtenSpan, byteSpan);
-
-            writer.Advance(bytesWritten);
-         }
-         finally
-         {
-            response.Dispose();
-         }
-      }
-
-      await writer.FlushAsync(ct);
-
-      TraceLogger.LogServerInfo("WS Handshake: Server WebSocket upgrade handshake successful (Accept Key: {0})", acceptKey);
-      return (acceptKey, requestHeaders, requestCookies);
    }
 
    /// <summary>
@@ -542,5 +581,56 @@ public static class WsHandshake
       }
 
       await writer.FlushAsync();
+   }
+
+   private static bool ContainsUpgrade(ReadOnlySpan<byte> span)
+   {
+      if (Ascii.EqualsIgnoreCase(span, "upgrade"u8))
+         return true;
+
+      var needle = "upgrade"u8;
+
+      if (span.Length < needle.Length)
+         return false;
+
+      for (var i = 0; i <= span.Length - needle.Length; i++)
+      {
+         if (Ascii.EqualsIgnoreCase(span.Slice(i, needle.Length), needle))
+         {
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   private static string WriteHandshakeResponse(PipeWriter writer, ReadOnlySpan<byte> clientKey, WsTransportOptions options)
+   {
+      Span<byte> acceptKeyBytes = stackalloc byte[28];
+      ComputeAcceptKey(clientKey, acceptKeyBytes);
+
+      var span = writer.GetSpan(256);
+      var written = 0;
+      var prefix = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "u8;
+      prefix.CopyTo(span);
+      written += prefix.Length;
+
+      acceptKeyBytes.CopyTo(span[written..]);
+      written += acceptKeyBytes.Length;
+
+      if (!string.IsNullOrEmpty(options.Subprotocol))
+      {
+         var subPrefix = "\r\nSec-WebSocket-Protocol: "u8;
+         subPrefix.CopyTo(span[written..]);
+         written += subPrefix.Length;
+         written += Encoding.UTF8.GetBytes(options.Subprotocol, span[written..]);
+      }
+
+      var suffix = "\r\n\r\n"u8;
+      suffix.CopyTo(span[written..]);
+      written += suffix.Length;
+
+      writer.Advance(written);
+      return TraceLogger.IsEnabled ? Encoding.ASCII.GetString(acceptKeyBytes) : string.Empty;
    }
 }

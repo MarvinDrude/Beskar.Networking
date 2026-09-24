@@ -50,7 +50,7 @@ public sealed class TcpNetworkListener(
    private int _disposedState; // 0 = active, 1 = disposed
 
    private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
-      Channel.CreateBounded<Result<INetworkSession, NetworkCodeError>>(new BoundedChannelOptions(1024)
+      Channel.CreateBounded<Result<INetworkSession, NetworkCodeError>>(new BoundedChannelOptions(65536)
       {
          SingleWriter = false,
          SingleReader = true,
