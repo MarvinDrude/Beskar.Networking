@@ -27,7 +27,9 @@ public static class WsHandshake
    /// </summary>
    public static void ComputeAcceptKey(ReadOnlySpan<byte> secWebSocketKey, Span<byte> destination)
    {
+      ArgumentOutOfRangeException.ThrowIfLessThan(destination.Length, 28);
       ArgumentOutOfRangeException.ThrowIfGreaterThan(secWebSocketKey.Length, 128);
+
       if (secWebSocketKey.IsEmpty)
       {
          throw new ArgumentException("Key cannot be empty.", nameof(secWebSocketKey));
@@ -40,7 +42,11 @@ public static class WsHandshake
       Span<byte> hash = stackalloc byte[20];
       SHA1.HashData(combined, hash);
 
-      System.Buffers.Text.Base64.EncodeToUtf8(hash, destination, out _, out _);
+      var status = System.Buffers.Text.Base64.EncodeToUtf8(hash, destination, out _, out var bytesWritten);
+      if (status != OperationStatus.Done || bytesWritten != 28)
+      {
+         throw new InvalidOperationException("Failed to encode accept key to Base64.");
+      }
    }
 
    /// <summary>
@@ -185,8 +191,8 @@ public static class WsHandshake
                   var colonIdx = line.IndexOf((byte)':');
                   if (colonIdx == -1) continue;
 
-                  var headerNameSpan = line[..colonIdx].Trim((byte)' ');
-                  var headerValueSpan = line[(colonIdx + 1)..].Trim((byte)' ');
+                  var headerNameSpan = line[..colonIdx].Trim(" \t"u8);
+                  var headerValueSpan = line[(colonIdx + 1)..].Trim(" \t"u8);
 
                   if (options.GatherHeaders)
                   {
@@ -237,14 +243,14 @@ public static class WsHandshake
                            cookieRemaining = cookieRemaining[(semiIdx + 1)..];
                         }
 
-                        cookiePair = cookiePair.Trim((byte)' ');
+                        cookiePair = cookiePair.Trim(" \t"u8);
                         if (cookiePair.IsEmpty) continue;
 
                         var eqIdx = cookiePair.IndexOf((byte)'=');
                         if (eqIdx != -1)
                         {
-                           var nameSpan = cookiePair[..eqIdx].Trim((byte)' ');
-                           var valueSpan = cookiePair[(eqIdx + 1)..].Trim((byte)' ');
+                           var nameSpan = cookiePair[..eqIdx].Trim(" \t"u8);
+                           var valueSpan = cookiePair[(eqIdx + 1)..].Trim(" \t"u8);
                            requestCookies[Encoding.ASCII.GetString(nameSpan)] = Encoding.UTF8.GetString(valueSpan);
                         }
                      }

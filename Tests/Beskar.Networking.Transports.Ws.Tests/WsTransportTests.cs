@@ -115,6 +115,45 @@ public class WsTransportTests
    }
 
    [Test]
+   public async Task ComputeAcceptKey_WithDestinationTooSmall_ThrowsArgumentOutOfRangeException()
+   {
+      var keyArray = "dGhlIHNhbXBsZSBub25jZQ=="u8.ToArray();
+      var tooSmallSpan = new byte[27];
+      await Assert.That(() => WsHandshake.ComputeAcceptKey(keyArray, tooSmallSpan)).Throws<ArgumentOutOfRangeException>();
+   }
+
+   [Test]
+   public async Task WsHandshake_WithHorizontalTabsInHeaders_SuccessfullyNegotiatesHandshake()
+   {
+      var options = new WsTransportOptions
+      {
+         Path = "/chat"
+      };
+
+      var listener = new WsNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), options);
+      var bindResult = await listener.BindAsync();
+      await Assert.That(bindResult.Failed).IsFalse();
+
+      var actualPort = ((IPEndPoint)listener.LocalAddress).Port;
+      using var tcpClient = new TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, actualPort);
+      await using var stream = tcpClient.GetStream();
+
+      var clientKey = "dGhlIHNhbXBsZSBub25jZQ==";
+      var request = $"GET /chat HTTP/1.1\r\nHost:\tlocalhost\r\nUpgrade:\twebsocket\r\nConnection:\tUpgrade\r\nSec-WebSocket-Key:\t{clientKey}\r\nSec-WebSocket-Version:\t13\r\n\r\n";
+      await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(request));
+      await stream.FlushAsync();
+
+      var buffer = new byte[1024];
+      var read = await stream.ReadAsync(buffer);
+      var responseText = System.Text.Encoding.ASCII.GetString(buffer, 0, read);
+      await Assert.That(responseText).Contains("101 Switching Protocols");
+      await Assert.That(responseText).Contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+
+      await listener.UnbindAsync();
+   }
+
+   [Test]
    public async Task WsHandshake_WithTooLongSecWebSocketKey_AbortsConnection()
    {
       var options = new WsTransportOptions

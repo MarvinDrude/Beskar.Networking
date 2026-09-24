@@ -123,7 +123,16 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          }
       }
 
-      return AwaitLockAndSendAsync(lockTask, payload, opcode, cancellationToken);
+      if (payload.IsEmpty)
+      {
+         return AwaitLockAndSendEmptyAsync(lockTask, opcode, cancellationToken);
+      }
+
+      var payloadLength = checked((int)payload.Length);
+      var rented = ArrayPool<byte>.Shared.Rent(payloadLength);
+      payload.CopyTo(rented);
+
+      return AwaitLockAndSendRentedAsync(lockTask, rented, payloadLength, opcode, cancellationToken);
    }
 
    private static async ValueTask AwaitFlushAndReleaseAsync(ValueTask<FlushResult> flushTask, LockReleaser releaser)
@@ -138,17 +147,39 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       }
    }
 
-   private async ValueTask AwaitLockAndSendAsync(ValueTask<LockReleaser> lockTask, ReadOnlySequence<byte> payload, WebSocketOpcode opcode, CancellationToken cancellationToken)
+   private async ValueTask AwaitLockAndSendEmptyAsync(ValueTask<LockReleaser> lockTask, WebSocketOpcode opcode, CancellationToken cancellationToken)
    {
       var releaser = await lockTask.ConfigureAwait(false);
       try
       {
-         WriteFrame(_tcpPipe.Output, opcode, payload, _maskOutgoing);
+         WriteFrame(_tcpPipe.Output, opcode, ReadOnlySpan<byte>.Empty, _maskOutgoing);
          await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
       }
       finally
       {
          releaser.Dispose();
+      }
+   }
+
+   private async ValueTask AwaitLockAndSendRentedAsync(ValueTask<LockReleaser> lockTask, byte[] rented, int length,
+      WebSocketOpcode opcode, CancellationToken cancellationToken)
+   {
+      try
+      {
+         var releaser = await lockTask.ConfigureAwait(false);
+         try
+         {
+            WriteFrame(_tcpPipe.Output, opcode, rented.AsSpan(0, length), _maskOutgoing);
+            await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
+         }
+         finally
+         {
+            releaser.Dispose();
+         }
+      }
+      finally
+      {
+         ArrayPool<byte>.Shared.Return(rented);
       }
    }
 

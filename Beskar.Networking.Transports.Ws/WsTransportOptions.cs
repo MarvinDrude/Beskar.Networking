@@ -84,12 +84,22 @@ public sealed class WsTransportOptions
    /// <summary>
    /// High-level frame-isolated message callback handler.
    /// Invoked per discrete WebSocket frame received from the client.
+   /// <para>
+   /// NOTE: The <see cref="ReadOnlySequence{T}"/> payload aliases memory borrowed from the underlying transport reader.
+   /// The payload is only valid for the duration of this synchronous callback. If processing asynchronously or retaining
+   /// the payload past the return of this callback, create an owned copy (e.g. via .ToArray() or copying to a rented buffer).
+   /// </para>
    /// </summary>
    public Action<WsNetworkSession, ReadOnlySequence<byte>, WebSocketOpcode>? OnMessage { get; set; }
 
    /// <summary>
    /// Asynchronous high-level frame-isolated message callback handler.
    /// Invoked per discrete WebSocket frame received from the client and awaited.
+   /// <para>
+   /// NOTE: The <see cref="ReadOnlySequence{T}"/> payload aliases memory borrowed from the underlying transport reader.
+   /// The payload is valid until the returned <see cref="ValueTask"/> completes. If processing in background tasks or retaining
+   /// the payload past the completion of the returned task, create an owned copy.
+   /// </para>
    /// </summary>
    public Func<WsNetworkSession, ReadOnlySequence<byte>, WebSocketOpcode, ValueTask>? OnMessageAsync { get; set; }
 }
