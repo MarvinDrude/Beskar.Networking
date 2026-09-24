@@ -1,4 +1,4 @@
-﻿using System.Net.Security;
+using System.Net.Security;
 using Beskar.Networking.Transports.Common.Settings;
 
 namespace Beskar.Networking.Transports.Common.Options;
@@ -17,9 +17,9 @@ public abstract class BaseTransportOptions<TQueueSelf>
    public SslClientAuthenticationOptions? SslClientOptions { get; set; }
 
    /// <summary>
-   /// The number of IO queues for the transport.
+   /// The number of IO queues for the transport. Defaults to <see cref="Environment.ProcessorCount"/>.
    /// </summary>
-   public int IoQueueCount { get; set; } = Math.Min(Environment.ProcessorCount, 12);
+   public int IoQueueCount { get; set; } = Environment.ProcessorCount;
 
    /// <summary>
    /// The maximum size of the read buffer.

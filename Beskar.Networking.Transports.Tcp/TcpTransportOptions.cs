@@ -58,14 +58,14 @@ public class TcpTransportOptions
    public bool NoDelay { get; set; } = true;
 
    /// <summary>
-   /// The socket send buffer size in bytes. Set null to use OS default. Defaults to 512 KB.
+   /// The socket send buffer size in bytes. Set null to use OS default. Defaults to null (OS default auto-tuning).
    /// </summary>
-   public int? SendBufferSize { get; set; } = 512 * 1024;
+   public int? SendBufferSize { get; set; }
 
    /// <summary>
-   /// The socket receive buffer size in bytes. Set null to use OS default. Defaults to 512 KB.
+   /// The socket receive buffer size in bytes. Set null to use OS default. Defaults to null (OS default auto-tuning).
    /// </summary>
-   public int? ReceiveBufferSize { get; set; } = 512 * 1024;
+   public int? ReceiveBufferSize { get; set; }
 
    /// <summary>
    /// The delay in milliseconds to wait before retrying to accept a new connection
@@ -74,20 +74,20 @@ public class TcpTransportOptions
    public int AcceptExceptionDelay { get; set; } = 10;
 
    /// <summary>
-   /// The maximum number of concurrent client handshakes allowed. Defaults to 512.
+   /// The maximum number of concurrent client handshakes allowed. Defaults to 65536.
    /// </summary>
-   public int MaxConcurrentHandshakes { get; set; } = 512;
+   public int MaxConcurrentHandshakes { get; set; } = 65536;
 
    /// <summary>
-   /// The maximum number of pending connections that can be queued in the listener's session channel. Defaults to 1024.
+   /// The maximum number of pending connections that can be queued in the listener's session channel. Defaults to 65536.
    /// </summary>
-   public int MaxPendingConnections { get; set; } = 1024;
+   public int MaxPendingConnections { get; set; } = 65536;
 
    /// <summary>
    /// The maximum length of the pending connections queue for the listener socket.
-   /// Defaults to 1024.
+   /// Defaults to 8192.
    /// </summary>
-   public int Backlog { get; set; } = 1024;
+   public int Backlog { get; set; } = 8192;
 
    /// <summary>
    /// Controls the socket behavior upon closure if unsent data exists in the socket send buffer.

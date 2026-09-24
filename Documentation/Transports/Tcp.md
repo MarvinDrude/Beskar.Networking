@@ -41,11 +41,11 @@ var result = await client.ConnectAsync(endPoint);
 - **Impact**: Disables TCP Nagle's algorithm (`TCP_NODELAY`), sending packets immediately without waiting to coalesce small writes. Crucial for real-time messaging, games, and financial streaming.
 
 ### Socket Kernel Buffers (`SendBufferSize` & `ReceiveBufferSize`)
-- **Default**: `512 KB` (`524,288` bytes)
-- **Tuning**: Set `null` to let the Operating System dynamically manage TCP window scaling (`SO_SNDBUF` / `SO_RCVBUF`). For high-bandwidth 10GbE+ networks, increase buffers to 2MB - 8MB.
+- **Default**: `null` (OS default with dynamic TCP window auto-tuning)
+- **Tuning**: Left as `null` by default so the Operating System dynamically scales socket buffers according to the Bandwidth-Delay Product (BDP) without locking unneeded kernel slab memory. For specialized high-bandwidth 10GbE+ links, explicit buffers can be set (e.g. 2MB - 8MB).
 
 ### Pipeline Memory & IO Queues (`IoQueueCount`)
-- **Server Applications**: Default `IoQueueCount` uses `Math.Min(Environment.ProcessorCount, 12)` non-blocking queue workers to distribute IO load evenly across CPU cores.
+- **Server Applications**: Default `IoQueueCount` uses `Environment.ProcessorCount` non-blocking queue workers to distribute IO load evenly across all available CPU cores.
 - **Client Applications**: Always set `options.SocketOptions.IoQueueCount = 1` and `options.StreamOptions.IoQueueCount = 1` on client applications to prevent allocating unused thread queues and pinned memory pools.
 
 ---
@@ -53,14 +53,14 @@ var result = await client.ConnectAsync(endPoint);
 ## 3. Platform & Kernel Differences (Windows vs Linux)
 
 ### Linux Performance Tuning
-- **Backlog**: The `Backlog` parameter controls the `listen()` socket queue depth. Ensure the Linux kernel `net.core.somaxconn` setting is adjusted accordingly:
+- **Backlog**: The `Backlog` parameter controls the `listen()` socket queue depth (default `8192`). Ensure the Linux kernel `net.core.somaxconn` setting is adjusted accordingly:
   ```bash
-  sysctl -w net.core.somaxconn=4096
+  sysctl -w net.core.somaxconn=8192
   ```
-- **Socket Buffer Caps**: Ensure `net.core.rmem_max` and `net.core.wmem_max` allow 512 KB+ socket allocations.
+- **Socket Buffer Caps**: Ensure `net.core.rmem_max` and `net.core.wmem_max` allow auto-tuning expansions as needed.
 
 ### Windows (IOCP)
-- Uses I/O Completion Ports (IOCP) for asynchronous completion notifications. Ensure `MaxConcurrentHandshakes` (default `512`) matches high-volume connection spikes.
+- Uses I/O Completion Ports (IOCP) for asynchronous completion notifications. Ensure `MaxConcurrentHandshakes` (default `65536`) matches high-volume connection spikes.
 
 ---
 

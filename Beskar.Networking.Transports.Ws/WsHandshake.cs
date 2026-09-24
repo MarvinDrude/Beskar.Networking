@@ -625,6 +625,6 @@ public static class WsHandshake
       written += suffix.Length;
 
       writer.Advance(written);
-      return Encoding.ASCII.GetString(acceptKeyBytes);
+      return TraceLogger.IsEnabled ? Encoding.ASCII.GetString(acceptKeyBytes) : string.Empty;
    }
 }

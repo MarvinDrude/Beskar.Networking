@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Beskar.Networking.Transports.Ws;
 
 namespace Beskar.Ws.Benchmark;
@@ -14,7 +14,6 @@ internal static class Program
             KeepAliveInterval = TimeSpan.Zero,
             OnMessageAsync = (session, payload, opcode) => session.SendFrameAsync(payload, opcode)
         };
-        options.TcpOptions.SocketOptions.IoQueueCount = Environment.ProcessorCount;
 
         var endPoint = new IPEndPoint(IPAddress.Any, port);
         var listener = new WsNetworkListener(endPoint, options);
