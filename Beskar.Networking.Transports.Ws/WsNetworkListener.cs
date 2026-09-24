@@ -46,7 +46,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
       {
          SingleWriter = false,
          SingleReader = true,
-         FullMode = BoundedChannelFullMode.DropOldest
+         FullMode = BoundedChannelFullMode.Wait
       });
 
    public async ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default)
@@ -182,7 +182,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   }
 
                   var tcpPipe = tcpStreamResult.Success.Transport;
-                  
+
                   var start = Stopwatch.GetTimestamp();
                   string? acceptKey;
                   Dictionary<string, string>? requestHeaders;
@@ -191,7 +191,7 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
                   {
                      (acceptKey, requestHeaders, requestCookies)
                         = await WsHandshake.ServerHandshakeAsync(tcpPipe, _options, handshakeTimeoutCts.Token);
-                     
+
                      if (acceptKey != null)
                      {
                         TransportMetrics.RecordWsHandshakeDuration(Stopwatch.GetElapsedTime(start).TotalMilliseconds);

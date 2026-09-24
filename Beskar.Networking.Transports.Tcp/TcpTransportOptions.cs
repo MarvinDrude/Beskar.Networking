@@ -74,9 +74,9 @@ public class TcpTransportOptions
    public int AcceptExceptionDelay { get; set; } = 10;
 
    /// <summary>
-   /// The maximum number of concurrent client handshakes allowed. Defaults to 65536.
+   /// The maximum number of concurrent client handshakes allowed. Defaults to 512.
    /// </summary>
-   public int MaxConcurrentHandshakes { get; set; } = 65536;
+   public int MaxConcurrentHandshakes { get; set; } = 512;
 
    /// <summary>
    /// The maximum number of pending connections that can be queued in the listener's session channel. Defaults to 65536.
