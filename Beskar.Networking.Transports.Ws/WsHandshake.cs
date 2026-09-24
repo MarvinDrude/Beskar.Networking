@@ -293,32 +293,7 @@ public static class WsHandshake
                reader.AdvanceTo(buffer.GetPosition(4, position.Value));
 
                // Complete handshake
-               Span<byte> acceptKeyBytes = stackalloc byte[28];
-               ComputeAcceptKey(clientKey, acceptKeyBytes);
-
-               var span = writer.GetSpan(256);
-               var written = 0;
-               var prefix = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "u8;
-               prefix.CopyTo(span);
-               written += prefix.Length;
-
-               acceptKeyBytes.CopyTo(span[written..]);
-               written += acceptKeyBytes.Length;
-
-               if (!string.IsNullOrEmpty(options.Subprotocol))
-               {
-                  var subPrefix = "\r\nSec-WebSocket-Protocol: "u8;
-                  subPrefix.CopyTo(span[written..]);
-                  written += subPrefix.Length;
-                  written += Encoding.UTF8.GetBytes(options.Subprotocol, span[written..]);
-               }
-
-               var suffix = "\r\n\r\n"u8;
-               suffix.CopyTo(span[written..]);
-               written += suffix.Length;
-
-               var acceptKey = Encoding.ASCII.GetString(acceptKeyBytes);
-               writer.Advance(written);
+               var acceptKey = WriteHandshakeResponse(writer, clientKey, options);
 
                if (rented != null)
                {
@@ -622,5 +597,35 @@ public static class WsHandshake
       }
 
       return false;
+   }
+
+   private static string WriteHandshakeResponse(PipeWriter writer, ReadOnlySpan<byte> clientKey, WsTransportOptions options)
+   {
+      Span<byte> acceptKeyBytes = stackalloc byte[28];
+      ComputeAcceptKey(clientKey, acceptKeyBytes);
+
+      var span = writer.GetSpan(256);
+      var written = 0;
+      var prefix = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "u8;
+      prefix.CopyTo(span);
+      written += prefix.Length;
+
+      acceptKeyBytes.CopyTo(span[written..]);
+      written += acceptKeyBytes.Length;
+
+      if (!string.IsNullOrEmpty(options.Subprotocol))
+      {
+         var subPrefix = "\r\nSec-WebSocket-Protocol: "u8;
+         subPrefix.CopyTo(span[written..]);
+         written += subPrefix.Length;
+         written += Encoding.UTF8.GetBytes(options.Subprotocol, span[written..]);
+      }
+
+      var suffix = "\r\n\r\n"u8;
+      suffix.CopyTo(span[written..]);
+      written += suffix.Length;
+
+      writer.Advance(written);
+      return Encoding.ASCII.GetString(acceptKeyBytes);
    }
 }
