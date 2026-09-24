@@ -17,7 +17,6 @@ namespace Beskar.Networking.Transports.Ws;
 /// </summary>
 public static class WsHandshake
 {
-   private const string MagicGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
    private static readonly byte[] EndOfHeadersSequence = "\r\n\r\n"u8.ToArray();
 
    private const string HttpVersionPrefix = "HTTP/1.1 ";

@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using Beskar.Networking.Transports.Ws;
 
 namespace Beskar.Ws.Benchmark;
@@ -27,6 +27,9 @@ internal static class Program
         }
 
         Console.WriteLine($"Beskar WebSocket server listening on port {port} (Path: /ws)...");
-        await Task.Delay(-1);
+        while (true)
+        {
+           await listener.AcceptSessionAsync();
+        }
     }
 }
