@@ -41,8 +41,8 @@ var result = await client.ConnectAsync(endPoint);
 - **Impact**: Disables TCP Nagle's algorithm (`TCP_NODELAY`), sending packets immediately without waiting to coalesce small writes. Crucial for real-time messaging, games, and financial streaming.
 
 ### Socket Kernel Buffers (`SendBufferSize` & `ReceiveBufferSize`)
-- **Default**: `null` (OS default with dynamic TCP window auto-tuning)
-- **Tuning**: Left as `null` by default so the Operating System dynamically scales socket buffers according to the Bandwidth-Delay Product (BDP) without locking unneeded kernel slab memory. For specialized high-bandwidth 10GbE+ links, explicit buffers can be set (e.g. 2MB - 8MB).
+- **Default**: `512 KB` (`524,288` bytes)
+- **Tuning**: Set `null` to let the Operating System dynamically manage TCP window scaling (`SO_SNDBUF` / `SO_RCVBUF`). For high-bandwidth 10GbE+ networks, increase buffers to 2MB - 8MB.
 
 ### Pipeline Memory & IO Queues (`IoQueueCount`)
 - **Server Applications**: Default `IoQueueCount` uses `Environment.ProcessorCount` non-blocking queue workers to distribute IO load evenly across all available CPU cores.

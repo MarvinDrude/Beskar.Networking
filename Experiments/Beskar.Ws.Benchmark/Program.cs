@@ -55,12 +55,26 @@ public static class Program
          };
       }
 
+      var clientOptions = new WsTransportOptions
+      {
+         TcpOptions =
+         {
+            UseSsl = options.TcpOptions.UseSsl,
+            SslClientOptions = options.TcpOptions.SslClientOptions,
+            SendBufferSize = options.TcpOptions.SendBufferSize,
+            ReceiveBufferSize = options.TcpOptions.ReceiveBufferSize,
+            NoDelay = options.TcpOptions.NoDelay
+         }
+      };
+      clientOptions.TcpOptions.SocketOptions.IoQueueCount = 1;
+      clientOptions.TcpOptions.StreamOptions.IoQueueCount = 1;
+
       try
       {
          var listener = new WsNetworkListener(endPoint, options);
          await GenericThroughputBenchmarkRunner.RunAsync(
             listener,
-            () => new WsNetworkClient(options),
+            () => new WsNetworkClient(clientOptions),
             config,
             useSsl ? "WS (SSL/TLS)" : "WS"
          );

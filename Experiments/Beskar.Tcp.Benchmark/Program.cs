@@ -55,12 +55,23 @@ public static class Program
          };
       }
 
+      var clientOptions = new TcpTransportOptions
+      {
+         UseSsl = options.UseSsl,
+         SslClientOptions = options.SslClientOptions,
+         SendBufferSize = options.SendBufferSize,
+         ReceiveBufferSize = options.ReceiveBufferSize,
+         NoDelay = options.NoDelay
+      };
+      clientOptions.SocketOptions.IoQueueCount = 1;
+      clientOptions.StreamOptions.IoQueueCount = 1;
+
       try
       {
          var listener = new TcpNetworkListener(endPoint, options);
          await GenericThroughputBenchmarkRunner.RunAsync(
             listener,
-            () => new TcpNetworkClient(options),
+            () => new TcpNetworkClient(clientOptions),
             config,
             useSsl ? "TCP (SSL/TLS)" : "TCP"
          );

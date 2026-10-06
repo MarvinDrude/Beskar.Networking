@@ -283,8 +283,7 @@ public static class GenericThroughputBenchmarkRunner
 
                while (!token.IsCancellationRequested)
                {
-                  await output.WriteAsync(payload, token);
-                  var flushResult = await output.FlushAsync(token);
+                  var flushResult = await output.WriteAsync(payload, token);
                   if (flushResult.IsCompleted || flushResult.IsCanceled) break;
 
                   Interlocked.Add(ref totalSentBytes, payload.Length);
