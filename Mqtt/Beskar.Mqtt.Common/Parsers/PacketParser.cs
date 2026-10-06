@@ -82,15 +82,12 @@ public ref struct PacketParser(
       // innserConsumed is always set in sync path
       bytesConsumed += innerConsumed;
 
-      return dispatchTask.IsCompletedSuccessfully
-         ? ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(dispatchTask.Result)
-         : Awaited(dispatchTask);
+      return Awaited(dispatchTask);
 
       static async ValueTask<Result<PacketDispatchResult, StringError>> Awaited(
          ValueTask<PacketDispatchResult> task)
       {
-         var result = await task;
-         return result;
+         return await task;
       }
    }
 

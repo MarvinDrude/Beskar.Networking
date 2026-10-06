@@ -98,89 +98,11 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       _session = session;
    }
 
-   public ValueTask SendFrameDirectAsync(ReadOnlySequence<byte> payload, WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
+   public async ValueTask SendFrameDirectAsync(ReadOnlySequence<byte> payload, WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
    {
-      var lockTask = _writeLock.LockAsync(cancellationToken);
-      if (lockTask.IsCompletedSuccessfully)
-      {
-         var releaser = lockTask.Result;
-         try
-         {
-            WriteFrame(_tcpPipe.Output, opcode, payload, _maskOutgoing);
-            var flushTask = _tcpPipe.Output.FlushAsync(cancellationToken);
-            if (flushTask.IsCompletedSuccessfully)
-            {
-               releaser.Dispose();
-               return default;
-            }
-
-            return AwaitFlushAndReleaseAsync(flushTask, releaser);
-         }
-         catch
-         {
-            releaser.Dispose();
-            throw;
-         }
-      }
-
-      if (payload.IsEmpty)
-      {
-         return AwaitLockAndSendEmptyAsync(lockTask, opcode, cancellationToken);
-      }
-
-      var payloadLength = checked((int)payload.Length);
-      var rented = ArrayPool<byte>.Shared.Rent(payloadLength);
-      payload.CopyTo(rented);
-
-      return AwaitLockAndSendRentedAsync(lockTask, rented, payloadLength, opcode, cancellationToken);
-   }
-
-   private static async ValueTask AwaitFlushAndReleaseAsync(ValueTask<FlushResult> flushTask, LockReleaser releaser)
-   {
-      try
-      {
-         await flushTask.ConfigureAwait(false);
-      }
-      finally
-      {
-         releaser.Dispose();
-      }
-   }
-
-   private async ValueTask AwaitLockAndSendEmptyAsync(ValueTask<LockReleaser> lockTask, WebSocketOpcode opcode, CancellationToken cancellationToken)
-   {
-      var releaser = await lockTask.ConfigureAwait(false);
-      try
-      {
-         WriteFrame(_tcpPipe.Output, opcode, ReadOnlySpan<byte>.Empty, _maskOutgoing);
-         await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
-      }
-      finally
-      {
-         releaser.Dispose();
-      }
-   }
-
-   private async ValueTask AwaitLockAndSendRentedAsync(ValueTask<LockReleaser> lockTask, byte[] rented, int length,
-      WebSocketOpcode opcode, CancellationToken cancellationToken)
-   {
-      try
-      {
-         var releaser = await lockTask.ConfigureAwait(false);
-         try
-         {
-            WriteFrame(_tcpPipe.Output, opcode, rented.AsSpan(0, length), _maskOutgoing);
-            await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
-         }
-         finally
-         {
-            releaser.Dispose();
-         }
-      }
-      finally
-      {
-         ArrayPool<byte>.Shared.Return(rented);
-      }
+      using var releaser = await _writeLock.LockAsync(cancellationToken).ConfigureAwait(false);
+      await WriteFrameAsync(_tcpPipe.Output, opcode, payload, _maskOutgoing, cancellationToken);
+      await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
    }
 
 
@@ -221,11 +143,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                   var currentSession = _sessionProvider?.Invoke() ?? _session;
                   if (_onMessageAsync != null && currentSession != null)
                   {
-                     var task = _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
-                     if (!task.IsCompletedSuccessfully)
-                     {
-                        await task;
-                     }
+                     await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
                   }
                   else if (_onMessage != null && currentSession != null)
                   {
@@ -262,11 +180,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                   var currentSession = _sessionProvider?.Invoke() ?? _session;
                   if (_onMessageAsync != null && currentSession != null)
                   {
-                     var task = _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
-                     if (!task.IsCompletedSuccessfully)
-                     {
-                        await task;
-                     }
+                     await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
                   }
                   else if (_onMessage != null && currentSession != null)
                   {

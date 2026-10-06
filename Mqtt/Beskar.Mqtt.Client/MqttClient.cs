@@ -311,8 +311,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
       if (_connectOptions.CredentialsProvider is { } credProvider)
       {
-         var credsTask = credProvider.GetCredentialsAsync(_connectOptions, combined.Token);
-         var creds = credsTask.IsCompletedSuccessfully ? credsTask.Result : await credsTask;
+         var creds = await credProvider.GetCredentialsAsync(_connectOptions, combined.Token);
 
          _connectOptions.UsernameUtf8Bytes = Encoding.UTF8.GetBytes(creds.UserName);
          _connectOptions.PasswordBytes = creds.Password;
