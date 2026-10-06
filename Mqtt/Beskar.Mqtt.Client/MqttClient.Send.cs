@@ -272,8 +272,6 @@ public sealed partial class MqttClient
             await writer.FlushAsync(ct).ConfigureAwait(false);
             ResetKeepAliveTimestamp();
          }
-
-         return await AwaitAck(signalAwaiter, ct).ConfigureAwait(false);
       }
       catch (Exception error)
       {
@@ -281,6 +279,8 @@ public sealed partial class MqttClient
          signalAwaiter.Fail(error);
          return await AwaitAck(signalAwaiter, ct).ConfigureAwait(false);
       }
+
+      return await AwaitAck(signalAwaiter, ct).ConfigureAwait(false);
    }
 
    private async Task<TResponse> SendAndAck<TOptions, TResponse>(TOptions options, INetworkStream stream, CancellationToken ct = default)
@@ -316,8 +316,6 @@ public sealed partial class MqttClient
             await writer.FlushAsync(ct).ConfigureAwait(false);
             ResetKeepAliveTimestamp();
          }
-
-         return await AwaitAck(signalAwaiter, ct).ConfigureAwait(false);
       }
       catch (Exception error)
       {
@@ -325,6 +323,8 @@ public sealed partial class MqttClient
          signalAwaiter.Fail(error);
          return await AwaitAck(signalAwaiter, ct).ConfigureAwait(false);
       }
+
+      return await AwaitAck(signalAwaiter, ct).ConfigureAwait(false);
    }
 
    private static async Task<TResponse> AwaitAck<TResponse>(SignalAwaiter<TResponse> signalAwaiter, CancellationToken ct)
