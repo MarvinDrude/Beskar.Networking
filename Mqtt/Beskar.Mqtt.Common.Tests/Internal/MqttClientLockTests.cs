@@ -9,6 +9,7 @@ using Beskar.Mqtt.Client;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -65,6 +66,53 @@ public class MqttClientLockTests
 
          await Assert.That(completedTask != lock2Task).IsTrue();
       }
+   }
+
+   [Test]
+   public async Task PublishAsync_WhenCancelledDuringAwaitAck_SubsequentPublishSucceedsWithRecycledAwaiter()
+   {
+      var mockNetworkClient = new MockNetworkClient();
+      var client = new MqttClient(mockNetworkClient);
+
+      var stateField = typeof(MqttClient).GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance);
+      stateField?.SetValue(client, 3); // MqttClientConnectionState.Connected = 3
+
+      var versionField = typeof(MqttClient).GetField("_protocolVersion", BindingFlags.NonPublic | BindingFlags.Instance);
+      versionField?.SetValue(client, MqttProtocolVersion.V50);
+
+      var connectOptions = new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, 1883)
+      };
+      var optionsField = typeof(MqttClient).GetField("_connectOptions", BindingFlags.NonPublic | BindingFlags.Instance);
+      optionsField?.SetValue(client, connectOptions);
+
+      using var cts = new CancellationTokenSource();
+      var stream = new CustomMockNetworkStream(cts);
+      var streamField = typeof(MqttClient).GetField("_controlStream", BindingFlags.NonPublic | BindingFlags.Instance);
+      streamField?.SetValue(client, stream);
+
+      var pubOptions = new PublishOptionsBuilder()
+         .WithTopic("test/topic")
+         .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+         .WithPayload("payload")
+         .Build();
+
+      // Trigger publish - this will cancel cts during FlushAsync, causing AwaitAck to throw OperationCanceledException
+      var publishResult = await client.PublishAsync(pubOptions, cts.Token).WaitAsync(TimeSpan.FromSeconds(2));
+      await Assert.That(publishResult.Failed).IsTrue();
+
+      // Now issue a second publish with CancellationToken.None.
+      // It should reuse the recycled awaiter and not be corrupted by request 1's cancellation.
+      var pubTask2 = client.PublishAsync(pubOptions, CancellationToken.None);
+
+      await Task.Delay(50);
+
+      var dispatched = client.TryDispatch(new PubAckPacket { PacketIdentifier = 2, ReasonCode = PubAckReasonCode.Success }, 2);
+      await Assert.That(dispatched).IsTrue();
+
+      var publishResult2 = await pubTask2.WaitAsync(TimeSpan.FromSeconds(2));
+      await Assert.That(publishResult2.Failed).IsFalse();
    }
 
    private class MockNetworkClient : INetworkClient

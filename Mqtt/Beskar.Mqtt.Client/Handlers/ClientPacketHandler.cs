@@ -48,12 +48,7 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
          packet.ReasonCode);
 
       _client.UpdateDisconnectPacket(packet);
-      return Awaited(packet);
-
-      async ValueTask Awaited(DisconnectPacket packet)
-      {
-         await _client.HandleDisconnect(packet, ct);
-      }
+      return _client.HandleDisconnect(packet, ct);
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PingReqPacket packet, CancellationToken ct = default)

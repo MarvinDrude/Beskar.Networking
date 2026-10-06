@@ -122,30 +122,15 @@ public sealed class WsNetworkListener(EndPoint localAddress, WsTransportOptions 
       }
    }
 
-   public ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
+   public async ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
    {
       try
       {
-         return _sessionChannel.Reader.TryRead(out var result)
-            ? ValueTask.FromResult(result)
-            : Awaited();
+         return await _sessionChannel.Reader.ReadAsync(ct);
       }
       catch (ChannelClosedException)
       {
-         return ValueTask.FromResult<Result<INetworkSession, NetworkCodeError>>(
-            new NetworkCodeError(-1, "Listener is unbound and the session channel is closed."));
-      }
-
-      async ValueTask<Result<INetworkSession, NetworkCodeError>> Awaited()
-      {
-         try
-         {
-            return await _sessionChannel.Reader.ReadAsync(ct);
-         }
-         catch (ChannelClosedException)
-         {
-            return new NetworkCodeError(-1, "Listener is unbound and the session channel is closed.");
-         }
+         return new NetworkCodeError(-1, "Listener is unbound and the session channel is closed.");
       }
    }
 

@@ -58,14 +58,14 @@ public class TcpTransportOptions
    public bool NoDelay { get; set; } = true;
 
    /// <summary>
-   /// The socket send buffer size in bytes. Set null to use OS default. Defaults to null (OS default auto-tuning).
+   /// The socket send buffer size in bytes. Set null to use OS default. Defaults to 512 KB.
    /// </summary>
-   public int? SendBufferSize { get; set; }
+   public int? SendBufferSize { get; set; } = 512 * 1024;
 
    /// <summary>
-   /// The socket receive buffer size in bytes. Set null to use OS default. Defaults to null (OS default auto-tuning).
+   /// The socket receive buffer size in bytes. Set null to use OS default. Defaults to 512 KB.
    /// </summary>
-   public int? ReceiveBufferSize { get; set; }
+   public int? ReceiveBufferSize { get; set; } = 512 * 1024;
 
    /// <summary>
    /// The delay in milliseconds to wait before retrying to accept a new connection

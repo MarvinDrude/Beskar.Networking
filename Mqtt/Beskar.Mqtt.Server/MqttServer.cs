@@ -575,9 +575,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             {
                var sequenceReader = new SequenceReader<byte>(buffer);
                var parser = new PacketParser(streamContext.Stream, packetHandler, client.ProtocolVersion);
-               var valueTask = parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct);
-
-               var parseResult = await valueTask.ConfigureAwait(false);
+               var parseResult = await parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct).ConfigureAwait(false);
 
                if (parseResult.Failed || parseResult.Success is PacketDispatchResult.ProtocolError
                       or PacketDispatchResult.InvalidPacketType)

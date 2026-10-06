@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.IO.Pipelines;
+using System.Runtime.CompilerServices;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
@@ -45,17 +46,19 @@ public sealed class WsNetworkStream : INetworkStream
       }
    }
 
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public void IncrementBytesReceived(long bytes)
    {
       Interlocked.Add(ref _bytesReceived, bytes);
-      Volatile.Write(ref _lastReceivedTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      Volatile.Write(ref _lastReceivedTimestampTicks, DateTime.UtcNow.Ticks);
       TransportMetrics.RecordBytesReceived(bytes, Session.Transport);
    }
 
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public void IncrementBytesSent(long bytes)
    {
       Interlocked.Add(ref _bytesSent, bytes);
-      Volatile.Write(ref _lastSentTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      Volatile.Write(ref _lastSentTimestampTicks, DateTime.UtcNow.Ticks);
       TransportMetrics.RecordBytesSent(bytes, Session.Transport);
    }
 
@@ -67,7 +70,7 @@ public sealed class WsNetworkStream : INetworkStream
    public WsNetworkStream(INetworkSession session, IDuplexPipe transport)
    {
       _rawTransport = transport;
-      
+
       Session = session;
       Transport = new StatsTrackingDuplexPipe(transport, this);
       TransportMetrics.RecordStreamOpened(session.Transport);
@@ -92,14 +95,14 @@ public sealed class WsNetworkStream : INetworkStream
       return ValueTask.CompletedTask;
    }
 
-   public ValueTask SendFrameAsync(ReadOnlySequence<byte> payload, 
+   public ValueTask SendFrameAsync(ReadOnlySequence<byte> payload,
       WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
    {
       if (_rawTransport is WsDuplexPipe wsDuplexPipe)
       {
          return wsDuplexPipe.SendFrameDirectAsync(payload, opcode, cancellationToken);
       }
-      
+
       return SendFramePipeAsync(payload, cancellationToken);
    }
 
@@ -112,11 +115,11 @@ public sealed class WsNetworkStream : INetworkStream
          segment.Span.CopyTo(span);
          writer.Advance(segment.Length);
       }
-      
+
       await writer.FlushAsync(cancellationToken);
    }
 
-   public ValueTask SendFrameAsync(ReadOnlyMemory<byte> payload, 
+   public ValueTask SendFrameAsync(ReadOnlyMemory<byte> payload,
       WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
    {
       return SendFrameAsync(new ReadOnlySequence<byte>(payload), opcode, cancellationToken);

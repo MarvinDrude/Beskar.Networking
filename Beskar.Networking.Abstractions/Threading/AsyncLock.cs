@@ -8,18 +8,9 @@ public sealed class AsyncLock : IDisposable
    /// Acquires the lock. Returns a struct releaser that should be disposed.
    /// Allocation-free if the lock is immediately acquired.
    /// </summary>
-   public ValueTask<LockReleaser> LockAsync(CancellationToken cancellationToken = default)
+   public async ValueTask<LockReleaser> LockAsync(CancellationToken cancellationToken = default)
    {
-      var waitTask = _semaphore.WaitAsync(cancellationToken);
-
-      return waitTask.IsCompletedSuccessfully
-         ? new ValueTask<LockReleaser>(new LockReleaser(this))
-         : AwaitLockAsync(waitTask);
-   }
-
-   private async ValueTask<LockReleaser> AwaitLockAsync(Task waitTask)
-   {
-      await waitTask.ConfigureAwait(false);
+      await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
       return new LockReleaser(this);
    }
 

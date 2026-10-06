@@ -1,34 +1,114 @@
 using System.Net;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+using Beskar.Networking.Benchmarks.Common;
 using Beskar.Networking.Transports.Ws;
 
 namespace Beskar.Ws.Benchmark;
 
-internal static class Program
+public static class Program
 {
-    private static async Task Main(string[] args)
-    {
-        var port = args.Length > 0 && int.TryParse(args[0], out var p) ? p : 8080;
-        var options = new WsTransportOptions
-        {
-            Path = "/ws",
-            KeepAliveInterval = TimeSpan.Zero,
-            OnMessageAsync = (session, payload, opcode) => session.SendFrameAsync(payload, opcode)
-        };
+   public static async Task Main(string[] args)
+   {
+      // ==========================================
+      // DEFAULT BENCHMARK CONFIGURATION
+      // ==========================================
+      var clientCount = 20;
+      var payloadSize = 512;
+      var durationSeconds = 10;
+      var serverPort = 9001;
+      var useSsl = false;
+      // ==========================================
 
-        var endPoint = new IPEndPoint(IPAddress.Any, port);
-        var listener = new WsNetworkListener(endPoint, options);
+      Console.ForegroundColor = ConsoleColor.Cyan;
+      Console.WriteLine("==================================================================");
+      Console.WriteLine("                  BESKAR WS BENCHMARK CONFIGURATION              ");
+      Console.WriteLine("==================================================================");
+      Console.ResetColor();
 
-        var bindResult = await listener.BindAsync();
-        if (bindResult.Failed)
-        {
-            Console.WriteLine($"Failed to bind WebSocket listener: {bindResult.Error.Message}");
-            return;
-        }
+      clientCount = PromptInt("Number of clients", clientCount);
+      payloadSize = PromptInt("Payload size (bytes)", payloadSize);
+      durationSeconds = PromptInt("Test duration (seconds)", durationSeconds);
+      serverPort = PromptInt("Server port", serverPort);
+      useSsl = PromptBool("Use SSL/TLS", useSsl);
+      Console.WriteLine();
 
-        Console.WriteLine($"Beskar WebSocket server listening on port {port} (Path: /ws)...");
-        while (true)
-        {
-           await listener.AcceptSessionAsync();
-        }
-    }
+      var endPoint = new IPEndPoint(IPAddress.Loopback, serverPort);
+      var config = new BenchmarkConfig(clientCount, payloadSize, durationSeconds, endPoint);
+
+      var options = new WsTransportOptions();
+      X509Certificate2? certificate = null;
+
+      if (useSsl)
+      {
+         certificate = CertificateHelper.GenerateSelfSignedCertificate();
+         options.TcpOptions.UseSsl = true;
+         options.TcpOptions.SslServerOptions = new SslServerAuthenticationOptions
+         {
+            ServerCertificate = certificate,
+            ClientCertificateRequired = false
+         };
+         options.TcpOptions.SslClientOptions = new SslClientAuthenticationOptions
+         {
+            TargetHost = "localhost",
+            RemoteCertificateValidationCallback = (sender, cert, chain, errors) => true
+         };
+      }
+
+      var clientOptions = new WsTransportOptions
+      {
+         TcpOptions =
+         {
+            UseSsl = options.TcpOptions.UseSsl,
+            SslClientOptions = options.TcpOptions.SslClientOptions,
+            SendBufferSize = options.TcpOptions.SendBufferSize,
+            ReceiveBufferSize = options.TcpOptions.ReceiveBufferSize,
+            NoDelay = options.TcpOptions.NoDelay
+         }
+      };
+      clientOptions.TcpOptions.SocketOptions.IoQueueCount = 1;
+      clientOptions.TcpOptions.StreamOptions.IoQueueCount = 1;
+
+      try
+      {
+         var listener = new WsNetworkListener(endPoint, options);
+         await GenericThroughputBenchmarkRunner.RunAsync(
+            listener,
+            () => new WsNetworkClient(clientOptions),
+            config,
+            useSsl ? "WS (SSL/TLS)" : "WS"
+         );
+      }
+      finally
+      {
+         certificate?.Dispose();
+      }
+   }
+
+   private static int PromptInt(string prompt, int defaultValue)
+   {
+      Console.Write($"{prompt} [default: {defaultValue}]: ");
+      var input = Console.ReadLine();
+      if (string.IsNullOrWhiteSpace(input)) return defaultValue;
+
+      if (int.TryParse(input, out var value)) return value;
+
+      Console.ForegroundColor = ConsoleColor.Red;
+      Console.WriteLine($"Invalid input, using default value: {defaultValue}");
+      Console.ResetColor();
+      return defaultValue;
+   }
+
+   private static bool PromptBool(string prompt, bool defaultValue)
+   {
+      Console.Write($"{prompt} (y/n) [default: {(defaultValue ? "y" : "n")}]: ");
+      var input = Console.ReadLine();
+      if (string.IsNullOrWhiteSpace(input)) return defaultValue;
+
+      var normalized = input.Trim().ToLowerInvariant();
+      if (normalized == "y" || normalized == "yes" || normalized == "true" || normalized == "1") return true;
+      if (normalized == "n" || normalized == "no" || normalized == "false" || normalized == "0") return false;
+
+      return defaultValue;
+   }
 }

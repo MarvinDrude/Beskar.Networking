@@ -23,6 +23,38 @@ public class SignalBrokerTests
    }
 
    [Test]
+   public async Task DoubleAwait_WithPooling_CorruptsConcurrentAwaiter()
+   {
+      using var broker = new SignalBroker();
+      var awaiter1 = broker.AddAwaitable<PubAckResponse>(100);
+      using var cts = new CancellationTokenSource();
+      cts.Cancel();
+
+      try
+      {
+         using (awaiter1)
+         {
+            await awaiter1.WaitOneAsync(cts.Token);
+         }
+      }
+      catch (OperationCanceledException) { }
+
+      awaiter1.OnPruned();
+
+      var awaiter2 = broker.AddAwaitable<PubAckResponse>(200);
+
+      await Assert.That(ReferenceEquals(awaiter1, awaiter2)).IsTrue();
+
+      awaiter1.Fail(new InvalidOperationException("write failed on request 1"));
+
+      var waitTask2 = awaiter2.WaitOneAsync(CancellationToken.None).AsTask();
+
+      var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () => await waitTask2);
+      await Assert.That(ex).IsNotNull();
+      await Assert.That(ex!.Message).IsEqualTo("write failed on request 1");
+   }
+
+   [Test]
    public async Task MultipleConcurrentUniques_ShouldDispatchCorrectly()
    {
       // Arrange
@@ -396,7 +428,7 @@ public class SignalBrokerTests
        // Arrange
        var broker = new SignalBroker();
        var cts = new CancellationTokenSource();
- 
+
        var t1 = Task.Run(async () =>
        {
           try
@@ -412,7 +444,7 @@ public class SignalBrokerTests
              // Expected
           }
        });
- 
+
        var t2 = Task.Run(async () =>
        {
           try
@@ -428,13 +460,13 @@ public class SignalBrokerTests
              // Expected
           }
        });
- 
+
        // Give t1 and t2 a moment to start running
        await Task.Delay(50);
- 
+
        broker.Dispose();
        await cts.CancelAsync();
- 
+
        // Verify they complete without hanging
        await Task.WhenAll(t1, t2).WaitAsync(TimeSpan.FromSeconds(15));
     }
