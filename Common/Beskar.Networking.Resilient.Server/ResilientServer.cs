@@ -600,10 +600,7 @@ public sealed class ResilientServer<TFrame>
                      }
                      else if (client.IsHandshakeCompleted)
                      {
-                        if (!client.DrainingTask.IsCompleted)
-                        {
-                           await client.DrainingTask;
-                        }
+                        await client.DrainingTask;
 
                         var eventContext = new ResilientFrameReceivedContext<TFrame>
                         {
@@ -626,10 +623,7 @@ public sealed class ResilientServer<TFrame>
                            ResilientMetrics.RecordOfflineQueueDropped(1);
                            if (client.IsHandshakeCompleted)
                            {
-                              if (!client.DrainingTask.IsCompleted)
-                              {
-                                 await client.DrainingTask;
-                              }
+                              await client.DrainingTask;
 
                               var eventContext = new ResilientFrameReceivedContext<TFrame>
                               {

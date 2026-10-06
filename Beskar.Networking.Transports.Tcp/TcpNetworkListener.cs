@@ -151,9 +151,7 @@ public sealed class TcpNetworkListener(
 
       try
       {
-         return _sessionChannel.Reader.TryRead(out var result)
-            ? result
-            : await _sessionChannel.Reader.ReadAsync(ct);
+         return await _sessionChannel.Reader.ReadAsync(ct);
       }
       catch (ChannelClosedException)
       {
