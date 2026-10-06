@@ -10,6 +10,7 @@
       <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj"/>
       <ProjectReference Include="..\..\Beskar.Networking.Transports.Tcp\Beskar.Networking.Transports.Tcp.csproj"/>
       <ProjectReference Include="..\..\Beskar.Networking.Transports.Ws\Beskar.Networking.Transports.Ws.csproj"/>
+      <ProjectReference Include="..\Beskar.Networking.Benchmarks.Common\Beskar.Networking.Benchmarks.Common.csproj" />
    </ItemGroup>
 
 </Project>
