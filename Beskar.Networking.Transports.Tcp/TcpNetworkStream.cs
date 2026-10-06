@@ -1,4 +1,5 @@
 using System.IO.Pipelines;
+using System.Runtime.CompilerServices;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
@@ -43,17 +44,19 @@ public sealed class TcpNetworkStream : INetworkStream
       }
    }
 
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public void IncrementBytesReceived(long bytes)
    {
       Interlocked.Add(ref _bytesReceived, bytes);
-      Volatile.Write(ref _lastReceivedTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      Volatile.Write(ref _lastReceivedTimestampTicks, DateTime.UtcNow.Ticks);
       TransportMetrics.RecordBytesReceived(bytes, Session.Transport);
    }
 
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
    public void IncrementBytesSent(long bytes)
    {
       Interlocked.Add(ref _bytesSent, bytes);
-      Volatile.Write(ref _lastSentTimestampTicks, DateTimeOffset.UtcNow.UtcTicks);
+      Volatile.Write(ref _lastSentTimestampTicks, DateTime.UtcNow.Ticks);
       TransportMetrics.RecordBytesSent(bytes, Session.Transport);
    }
 

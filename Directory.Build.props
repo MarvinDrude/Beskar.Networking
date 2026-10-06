@@ -4,6 +4,8 @@
       <LangVersion>Preview</LangVersion>
       <ImplicitUsings>enable</ImplicitUsings>
       <Nullable>enable</Nullable>
+      <Features>$(Features);runtime-async=on</Features>
+      <EnablePreviewFeatures>true</EnablePreviewFeatures>
 
       <Version>11.0.0-rc.2</Version>
       <FileVersion>11.0.0</FileVersion>

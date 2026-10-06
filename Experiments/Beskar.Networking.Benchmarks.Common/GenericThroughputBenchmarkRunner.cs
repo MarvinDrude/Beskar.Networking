@@ -84,6 +84,9 @@ public static class GenericThroughputBenchmarkRunner
                            {
                               var input = stream.Transport.Input;
                               var leftoverBytes = 0;
+                              var localRecvBytes = 0L;
+                              var localRecvPackets = 0L;
+                              var recvBatchCount = 0;
 
                               while (!token.IsCancellationRequested)
                               {
@@ -93,15 +96,31 @@ public static class GenericThroughputBenchmarkRunner
                                  var buffer = readResult.Buffer;
                                  var length = buffer.Length;
 
-                                 Interlocked.Add(ref totalReceivedBytes, length);
+                                 localRecvBytes += length;
 
                                  var totalBytesToProcess = length + leftoverBytes;
                                  var packets = (int)(totalBytesToProcess / config.PayloadSize);
                                  leftoverBytes = (int)(totalBytesToProcess % config.PayloadSize);
 
-                                 if (packets > 0) Interlocked.Add(ref totalReceivedPackets, packets);
+                                 if (packets > 0) localRecvPackets += packets;
+
+                                 if (++recvBatchCount >= 128)
+                                 {
+                                    Interlocked.Add(ref totalReceivedBytes, localRecvBytes);
+                                    Interlocked.Add(ref totalReceivedPackets, localRecvPackets);
+
+                                    localRecvBytes = 0;
+                                    localRecvPackets = 0;
+                                    recvBatchCount = 0;
+                                 }
 
                                  input.AdvanceTo(buffer.End);
+                              }
+
+                              if (localRecvBytes > 0)
+                              {
+                                 Interlocked.Add(ref totalReceivedBytes, localRecvBytes);
+                                 Interlocked.Add(ref totalReceivedPackets, localRecvPackets);
                               }
                            }
                            catch
@@ -281,13 +300,32 @@ public static class GenericThroughputBenchmarkRunner
                var stream = streamResult.Success!;
                var output = stream.Transport.Output;
 
+               var localSentBytes = 0L;
+               var localSentPackets = 0L;
+               var batchCount = 0;
+
                while (!token.IsCancellationRequested)
                {
                   var flushResult = await output.WriteAsync(payload, token);
                   if (flushResult.IsCompleted || flushResult.IsCanceled) break;
 
-                  Interlocked.Add(ref totalSentBytes, payload.Length);
-                  Interlocked.Increment(ref totalSentPackets);
+                  localSentBytes += payload.Length;
+                  localSentPackets++;
+
+                  if (++batchCount >= 128)
+                  {
+                     Interlocked.Add(ref totalSentBytes, localSentBytes);
+                     Interlocked.Add(ref totalSentPackets, localSentPackets);
+                     localSentBytes = 0;
+                     localSentPackets = 0;
+                     batchCount = 0;
+                  }
+               }
+
+               if (localSentBytes > 0)
+               {
+                  Interlocked.Add(ref totalSentBytes, localSentBytes);
+                  Interlocked.Add(ref totalSentPackets, localSentPackets);
                }
             }
             catch (OperationCanceledException)
