@@ -101,7 +101,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    public async ValueTask SendFrameDirectAsync(ReadOnlySequence<byte> payload, WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
    {
       using var releaser = await _writeLock.LockAsync(cancellationToken).ConfigureAwait(false);
-      await WriteFrameAsync(_tcpPipe.Output, opcode, payload, _maskOutgoing, cancellationToken);
+      WriteFrame(_tcpPipe.Output, opcode, payload, _maskOutgoing);
       await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
    }
 
@@ -778,17 +778,6 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       }
    }
 
-   private static async Task WriteFrameAsync(
-      PipeWriter tcpWriter,
-      WebSocketOpcode opcode,
-      ReadOnlySequence<byte> payload,
-      bool mask,
-      CancellationToken ct)
-   {
-      WriteFrame(tcpWriter, opcode, payload, mask);
-      await tcpWriter.FlushAsync(ct);
-   }
-
    private async Task PingLoopAsync()
    {
       try
@@ -799,8 +788,8 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
              using (await _writeLock.LockAsync(_cts.Token))
              {
-                await WriteFrameAsync(_tcpPipe.Output, WebSocketOpcode.Ping, ReadOnlySequence<byte>.Empty, _maskOutgoing,
-                   _cts.Token);
+                WriteFrame(_tcpPipe.Output, WebSocketOpcode.Ping, ReadOnlySequence<byte>.Empty, _maskOutgoing);
+                await _tcpPipe.Output.FlushAsync(_cts.Token);
              }
          }
       }
