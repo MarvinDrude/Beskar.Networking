@@ -35,9 +35,8 @@ public sealed class WsTransportOptions
 
    /// <summary>
    /// The maximum allowed WebSocket frame payload size in bytes.
-   /// Defaults to 65,536 (64 KB).
    /// </summary>
-   public int MaxFrameSize { get; set; } = 64 * 1024;
+   public int MaxFrameSize { get; set; } = 4 * 1024 * 1024;
 
    /// <summary>
    /// The underlying TCP options used to establish socket connections, SSL, and connection pooling.
