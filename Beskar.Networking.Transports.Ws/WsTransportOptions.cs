@@ -29,15 +29,15 @@ public sealed class WsTransportOptions
 
    /// <summary>
    /// The maximum allowed HTTP header size in bytes.
-   /// Defaults to 8,192 (8 KB).
+   /// Defaults to 2,048 (2 KB).
    /// </summary>
-   public int MaxHeaderSize { get; set; } = 8192;
+   public int MaxHeaderSize { get; set; } = 2048;
 
    /// <summary>
    /// The maximum allowed WebSocket frame payload size in bytes.
-   /// Defaults to 4,194,304 (4 MB).
+   /// Defaults to 65,536 (64 KB).
    /// </summary>
-   public int MaxFrameSize { get; set; } = 4 * 1024 * 1024;
+   public int MaxFrameSize { get; set; } = 64 * 1024;
 
    /// <summary>
    /// The underlying TCP options used to establish socket connections, SSL, and connection pooling.
