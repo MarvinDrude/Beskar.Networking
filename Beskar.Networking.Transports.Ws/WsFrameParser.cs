@@ -939,14 +939,34 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
       if (_inputPipe is not null)
       {
+         try
+         {
+            await _inputPipe.Writer.CompleteAsync();
+            while (_inputPipe.Reader.TryRead(out var result))
+            {
+               _inputPipe.Reader.AdvanceTo(result.Buffer.End);
+               if (result.IsCompleted || result.Buffer.IsEmpty) break;
+            }
+         }
+         catch { /* Ignored */ }
+
          await _inputPipe.Reader.CompleteAsync();
-         await _inputPipe.Writer.CompleteAsync();
       }
 
       if (_outputPipe is not null)
       {
+         try
+         {
+            await _outputPipe.Writer.CompleteAsync();
+            while (_outputPipe.Reader.TryRead(out var result))
+            {
+               _outputPipe.Reader.AdvanceTo(result.Buffer.End);
+               if (result.IsCompleted || result.Buffer.IsEmpty) break;
+            }
+         }
+         catch { /* Ignored */ }
+
          await _outputPipe.Reader.CompleteAsync();
-         await _outputPipe.Writer.CompleteAsync();
       }
 
       _cts.Dispose();
