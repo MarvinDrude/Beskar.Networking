@@ -7,6 +7,8 @@ namespace Beskar.Networking.Transports.Common.Options;
 public sealed class SocketTransportOptions
    : BaseTransportOptions<SocketQueueSettings>
 {
+   public PipeScheduler PipeScheduler { get; set; } = PipeScheduler.Inline;
+
    public override SocketQueueSettings CreateQueueSettings()
    {
       var memoryPool = SharedTransportMemoryPool.GetNext();
@@ -22,11 +24,11 @@ public sealed class SocketTransportOptions
          PipeScheduler = scheduler,
 
          ReceiveOptions = new PipeOptions(
-            memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
+            memoryPool, scheduler, scheduler,
             maxReadBufferSize, maxReadBufferSize / 2,
             useSynchronizationContext: false),
          SendOptions = new PipeOptions(
-            memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
+            memoryPool, scheduler, scheduler,
             maxWriteBufferSize, maxWriteBufferSize / 2,
             useSynchronizationContext: false),
       };

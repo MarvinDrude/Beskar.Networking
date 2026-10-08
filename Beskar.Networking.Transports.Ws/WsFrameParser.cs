@@ -115,6 +115,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       }
       else
       {
+         _hasPendingFlush = false;
          await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
       }
    }
@@ -134,6 +135,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       }
       else
       {
+         _hasPendingFlush = false;
          await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
       }
    }
@@ -158,7 +160,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             var result = await reader.ReadAsync(_cts.Token);
             var buffer = result.Buffer;
 
-            Volatile.Write(ref _batchDepth, 1);
+            Volatile.Write(ref _batchDepth, 0);
             var hasPendingWriterFlush = false;
 
             try
@@ -166,6 +168,9 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                while (TryParseFrame(ref buffer, out var opcode,
                          out var payload, out var maskKey, out var isMasked, out var isFin, _maxFrameSize, _expectMask))
                {
+                  var isBatchInProgress = !buffer.IsEmpty;
+                  Volatile.Write(ref _batchDepth, isBatchInProgress ? 1 : 0);
+
                   if (opcode is (byte)WebSocketOpcode.Binary or (byte)WebSocketOpcode.Text)
                   {
                      _lastReceivedOpcode = opcode;
@@ -185,7 +190,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                         UnmaskInPlace(payload, maskKey);
                      }
 
-                     var currentSession = _sessionProvider?.Invoke() ?? _session;
+                     var currentSession = _session ?? _sessionProvider?.Invoke();
                      if (_onMessageAsync != null && currentSession != null)
                      {
                         await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
@@ -222,7 +227,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                         UnmaskInPlace(payload, maskKey);
                      }
 
-                     var currentSession = _sessionProvider?.Invoke() ?? _session;
+                     var currentSession = _session ?? _sessionProvider?.Invoke();
                      if (_onMessageAsync != null && currentSession != null)
                      {
                         await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);

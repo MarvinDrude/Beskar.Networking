@@ -10,7 +10,7 @@ namespace Beskar.Networking.Transports.Common.Sockets;
 public sealed class SocketReceiver(PipeOptions pipeOptions)
    : IPooledObject, IAsyncDisposable
 {
-   private static readonly int MinAllocBufferSize = NetworkPinnedBlockMemoryPool.BlockSize / 2;
+   private const int MinAllocBufferSize = 512;
 
    public Pipe Pipe { get; private set; } = new(pipeOptions);
 
@@ -63,7 +63,8 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
    {
       Stop();
 
-      if (_receiveTask is not null)
+      if (_receiveTask is not null
+          && Task.CurrentId != _receiveTask.Id)
       {
          try
          {
@@ -107,6 +108,12 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
       catch (OperationCanceledException)
       {
          // Expected
+      }
+      catch (SocketException ex) when (
+         ex.SocketErrorCode == SocketError.OperationAborted
+         || _cts.IsCancellationRequested)
+      {
+         // Expected on socket cancellation
       }
       catch (Exception ex)
       {
