@@ -39,6 +39,8 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
    private readonly Task _readTask;
    private readonly Task? _writeTask;
    private readonly AsyncLock _writeLock = new();
+   private bool _hasPendingFlush;
+   private int _batchDepth;
    private int _disposed;
    private byte _currentFrameOpcode;
    private volatile byte _lastReceivedOpcode = (byte)WebSocketOpcode.Binary;
@@ -98,10 +100,50 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
       _session = session;
    }
 
-   public async ValueTask SendFrameDirectAsync(ReadOnlySequence<byte> payload, WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
+   public async ValueTask SendFrameDirectAsync(
+      ReadOnlySequence<byte> payload,
+      WebSocketOpcode opcode = WebSocketOpcode.Binary,
+      bool flush = true,
+      CancellationToken cancellationToken = default)
    {
       using var releaser = await _writeLock.LockAsync(cancellationToken).ConfigureAwait(false);
       WriteFrame(_tcpPipe.Output, opcode, payload, _maskOutgoing);
+
+      if (!flush || Volatile.Read(ref _batchDepth) > 0)
+      {
+         _hasPendingFlush = true;
+      }
+      else
+      {
+         _hasPendingFlush = false;
+         await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
+      }
+   }
+
+   public async ValueTask SendFrameDirectAsync(
+      ReadOnlyMemory<byte> payload,
+      WebSocketOpcode opcode = WebSocketOpcode.Binary,
+      bool flush = true,
+      CancellationToken cancellationToken = default)
+   {
+      using var releaser = await _writeLock.LockAsync(cancellationToken).ConfigureAwait(false);
+      WriteFrame(_tcpPipe.Output, opcode, payload.Span, _maskOutgoing);
+
+      if (!flush || Volatile.Read(ref _batchDepth) > 0)
+      {
+         _hasPendingFlush = true;
+      }
+      else
+      {
+         _hasPendingFlush = false;
+         await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
+      }
+   }
+
+   public async ValueTask FlushAsync(CancellationToken cancellationToken = default)
+   {
+      using var releaser = await _writeLock.LockAsync(cancellationToken).ConfigureAwait(false);
+      _hasPendingFlush = false;
       await _tcpPipe.Output.FlushAsync(cancellationToken).ConfigureAwait(false);
    }
 
@@ -118,127 +160,163 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             var result = await reader.ReadAsync(_cts.Token);
             var buffer = result.Buffer;
 
-            while (TryParseFrame(ref buffer, out var opcode,
-                      out var payload, out var maskKey, out var isMasked, out var isFin, _maxFrameSize, _expectMask))
+            Volatile.Write(ref _batchDepth, 0);
+            var hasPendingWriterFlush = false;
+
+            try
             {
-               if (opcode is (byte)WebSocketOpcode.Binary or (byte)WebSocketOpcode.Text)
+               while (TryParseFrame(ref buffer, out var opcode,
+                         out var payload, out var maskKey, out var isMasked, out var isFin, _maxFrameSize, _expectMask))
                {
-                  _lastReceivedOpcode = opcode;
-                  if (_currentFrameOpcode != 0)
-                  {
-                     throw new InvalidDataException(
-                        $"Received a new message starting frame (opcode: {opcode}) while an existing fragmented message (opcode: {_currentFrameOpcode}) is still incomplete.");
-                  }
+                  var isBatchInProgress = !buffer.IsEmpty;
+                  Volatile.Write(ref _batchDepth, isBatchInProgress ? 1 : 0);
 
-                  if (!isFin)
+                  if (opcode is (byte)WebSocketOpcode.Binary or (byte)WebSocketOpcode.Text)
                   {
-                     _currentFrameOpcode = opcode;
-                  }
-
-                  if (isMasked && !payload.IsEmpty)
-                  {
-                     UnmaskInPlace(payload, maskKey);
-                  }
-
-                  var currentSession = _sessionProvider?.Invoke() ?? _session;
-                  if (_onMessageAsync != null && currentSession != null)
-                  {
-                     await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
-                  }
-                  else if (_onMessage != null && currentSession != null)
-                  {
-                     _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
-                  }
-                  else if (writer != null)
-                  {
-                     foreach (var segment in payload)
+                     _lastReceivedOpcode = opcode;
+                     if (_currentFrameOpcode != 0)
                      {
-                        writer.Write(segment.Span);
+                        throw new InvalidDataException(
+                           $"Received a new message starting frame (opcode: {opcode}) while an existing fragmented message (opcode: {_currentFrameOpcode}) is still incomplete.");
                      }
 
-                     await writer.FlushAsync(_cts.Token);
-                  }
-               }
-               else if (opcode == 0) // Continuation Frame
-               {
-                  if (_currentFrameOpcode == 0)
-                  {
-                     throw new InvalidDataException(
-                        "Received an unexpected WebSocket Continuation frame (opcode 0) when no fragmented message was active.");
-                  }
-
-                  if (isFin)
-                  {
-                     _currentFrameOpcode = 0;
-                  }
-
-                  if (isMasked && !payload.IsEmpty)
-                  {
-                     UnmaskInPlace(payload, maskKey);
-                  }
-
-                  var currentSession = _sessionProvider?.Invoke() ?? _session;
-                  if (_onMessageAsync != null && currentSession != null)
-                  {
-                     await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
-                  }
-                  else if (_onMessage != null && currentSession != null)
-                  {
-                     _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
-                  }
-                  else if (writer != null)
-                  {
-                     foreach (var segment in payload)
+                     if (!isFin)
                      {
-                        writer.Write(segment.Span);
+                        _currentFrameOpcode = opcode;
                      }
 
-                     await writer.FlushAsync(_cts.Token);
-                  }
-               }
-               else if (opcode == (byte)WebSocketOpcode.Ping)
-               {
-                  using (await _writeLock.LockAsync(_cts.Token))
-                  {
                      if (isMasked && !payload.IsEmpty)
                      {
                         UnmaskInPlace(payload, maskKey);
                      }
 
-                     WriteFrame(_tcpPipe.Output, WebSocketOpcode.Pong, payload, _maskOutgoing);
-                     await _tcpPipe.Output.FlushAsync(_cts.Token);
+                     var currentSession = _session ?? _sessionProvider?.Invoke();
+                     if (_onMessageAsync != null && currentSession != null)
+                     {
+                        await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
+                     }
+                     else if (_onMessage != null && currentSession != null)
+                     {
+                        _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
+                     }
+                     else if (writer != null)
+                     {
+                        foreach (var segment in payload)
+                        {
+                           writer.Write(segment.Span);
+                        }
+
+                        hasPendingWriterFlush = true;
+                     }
                   }
-               }
-               else if (opcode == (byte)WebSocketOpcode.Pong)
-               {
-                  // Pong frame received in response to client/server ping. No action needed.
-               }
-               else if (opcode == (byte)WebSocketOpcode.Close)
-               {
-                  try
+                  else if (opcode == 0) // Continuation Frame
                   {
-                     using (await _writeLock.LockAsync(CancellationToken.None))
+                     if (_currentFrameOpcode == 0)
+                     {
+                        throw new InvalidDataException(
+                           "Received an unexpected WebSocket Continuation frame (opcode 0) when no fragmented message was active.");
+                     }
+
+                     if (isFin)
+                     {
+                        _currentFrameOpcode = 0;
+                     }
+
+                     if (isMasked && !payload.IsEmpty)
+                     {
+                        UnmaskInPlace(payload, maskKey);
+                     }
+
+                     var currentSession = _session ?? _sessionProvider?.Invoke();
+                     if (_onMessageAsync != null && currentSession != null)
+                     {
+                        await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
+                     }
+                     else if (_onMessage != null && currentSession != null)
+                     {
+                        _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
+                     }
+                     else if (writer != null)
+                     {
+                        foreach (var segment in payload)
+                        {
+                           writer.Write(segment.Span);
+                        }
+
+                        hasPendingWriterFlush = true;
+                     }
+                  }
+                  else if (opcode == (byte)WebSocketOpcode.Ping)
+                  {
+                     using (await _writeLock.LockAsync(_cts.Token))
                      {
                         if (isMasked && !payload.IsEmpty)
                         {
                            UnmaskInPlace(payload, maskKey);
                         }
 
-                        WriteFrame(_tcpPipe.Output, WebSocketOpcode.Close, payload, _maskOutgoing);
-                        await _tcpPipe.Output.FlushAsync(CancellationToken.None);
+                        WriteFrame(_tcpPipe.Output, WebSocketOpcode.Pong, payload, _maskOutgoing);
+                        await _tcpPipe.Output.FlushAsync(_cts.Token);
+                     }
+                  }
+                  else if (opcode == (byte)WebSocketOpcode.Pong)
+                  {
+                     // Pong frame received in response to client/server ping. No action needed.
+                  }
+                  else if (opcode == (byte)WebSocketOpcode.Close)
+                  {
+                     try
+                     {
+                        using (await _writeLock.LockAsync(CancellationToken.None))
+                        {
+                           if (isMasked && !payload.IsEmpty)
+                           {
+                              UnmaskInPlace(payload, maskKey);
+                           }
+
+                           WriteFrame(_tcpPipe.Output, WebSocketOpcode.Close, payload, _maskOutgoing);
+                           await _tcpPipe.Output.FlushAsync(CancellationToken.None);
+                        }
+                     }
+                     catch
+                     {
+                        /* Ignored */
+                     }
+
+                     await _cts.CancelAsync();
+                     break;
+                  }
+                  else
+                  {
+                     throw new InvalidDataException($"Received invalid or unsupported WebSocket opcode: {opcode}");
+                  }
+               }
+            }
+            finally
+            {
+               if (Volatile.Read(ref _batchDepth) > 0 || Volatile.Read(ref _hasPendingFlush))
+               {
+                  try
+                  {
+                     using (await _writeLock.LockAsync(_cts.Token))
+                     {
+                        Volatile.Write(ref _batchDepth, 0);
+                        if (_hasPendingFlush)
+                        {
+                           _hasPendingFlush = false;
+                           await _tcpPipe.Output.FlushAsync(_cts.Token);
+                        }
                      }
                   }
                   catch
                   {
                      /* Ignored */
                   }
-
-                  await _cts.CancelAsync();
-                  break;
                }
-               else
+
+               if (hasPendingWriterFlush && writer != null)
                {
-                  throw new InvalidDataException($"Received invalid or unsupported WebSocket opcode: {opcode}");
+                  await writer.FlushAsync(_cts.Token);
                }
             }
 

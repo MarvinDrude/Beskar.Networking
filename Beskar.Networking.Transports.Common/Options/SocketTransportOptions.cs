@@ -22,11 +22,11 @@ public sealed class SocketTransportOptions
          PipeScheduler = scheduler,
 
          ReceiveOptions = new PipeOptions(
-            memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
+            memoryPool, scheduler, scheduler,
             maxReadBufferSize, maxReadBufferSize / 2,
             useSynchronizationContext: false),
          SendOptions = new PipeOptions(
-            memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
+            memoryPool, scheduler, scheduler,
             maxWriteBufferSize, maxWriteBufferSize / 2,
             useSynchronizationContext: false),
       };

@@ -83,15 +83,20 @@ public sealed class WsNetworkSession : INetworkSession
    }
 
    public ValueTask SendFrameAsync(ReadOnlySequence<byte> payload, 
-      WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken ct = default)
+      WebSocketOpcode opcode = WebSocketOpcode.Binary, bool flush = true, CancellationToken ct = default)
    {
-      return _stream.SendFrameAsync(payload, opcode, ct);
+      return _stream.SendFrameAsync(payload, opcode, flush, ct);
    }
 
    public ValueTask SendFrameAsync(ReadOnlyMemory<byte> payload, 
-      WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken ct = default)
+      WebSocketOpcode opcode = WebSocketOpcode.Binary, bool flush = true, CancellationToken ct = default)
    {
-      return _stream.SendFrameAsync(payload, opcode, ct);
+      return _stream.SendFrameAsync(payload, opcode, flush, ct);
+   }
+
+   public ValueTask FlushAsync(CancellationToken ct = default)
+   {
+      return _stream.FlushAsync(ct);
    }
 
    public ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)

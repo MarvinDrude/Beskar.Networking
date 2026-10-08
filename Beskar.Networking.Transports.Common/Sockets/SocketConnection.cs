@@ -17,7 +17,7 @@ public sealed class SocketConnection
    private bool _isAborted;
 
    public PipeReader Input => _receiver.Pipe.Reader;
-   public PipeWriter Output => _sender.Pipe.Writer;
+   public PipeWriter Output => _sender;
 
    public SocketConnection(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
    {
@@ -27,7 +27,7 @@ public sealed class SocketConnection
          writerScheduler: scheduler,
          useSynchronizationContext: false);
 
-      _sender = new SocketSender(pipeOptions);
+      _sender = new SocketSender(bufferPool);
       _receiver = new SocketReceiver(pipeOptions);
    }
 

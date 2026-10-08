@@ -96,17 +96,39 @@ public sealed class WsNetworkStream : INetworkStream
    }
 
    public ValueTask SendFrameAsync(ReadOnlySequence<byte> payload,
-      WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
+      WebSocketOpcode opcode = WebSocketOpcode.Binary, bool flush = true, CancellationToken cancellationToken = default)
    {
       if (_rawTransport is WsDuplexPipe wsDuplexPipe)
       {
-         return wsDuplexPipe.SendFrameDirectAsync(payload, opcode, cancellationToken);
+         return wsDuplexPipe.SendFrameDirectAsync(payload, opcode, flush, cancellationToken);
       }
 
-      return SendFramePipeAsync(payload, cancellationToken);
+      return SendFramePipeAsync(payload, flush, cancellationToken);
    }
 
-   private async ValueTask SendFramePipeAsync(ReadOnlySequence<byte> payload, CancellationToken cancellationToken)
+   public ValueTask SendFrameAsync(ReadOnlyMemory<byte> payload,
+      WebSocketOpcode opcode = WebSocketOpcode.Binary, bool flush = true, CancellationToken cancellationToken = default)
+   {
+      if (_rawTransport is WsDuplexPipe wsDuplexPipe)
+      {
+         return wsDuplexPipe.SendFrameDirectAsync(payload, opcode, flush, cancellationToken);
+      }
+
+      return SendFrameAsync(new ReadOnlySequence<byte>(payload), opcode, flush, cancellationToken);
+   }
+
+   public async ValueTask FlushAsync(CancellationToken cancellationToken = default)
+   {
+      if (_rawTransport is WsDuplexPipe wsDuplexPipe)
+      {
+         await wsDuplexPipe.FlushAsync(cancellationToken);
+         return;
+      }
+
+      await Transport.Output.FlushAsync(cancellationToken);
+   }
+
+   private async ValueTask SendFramePipeAsync(ReadOnlySequence<byte> payload, bool flush, CancellationToken cancellationToken)
    {
       var writer = Transport.Output;
       foreach (var segment in payload)
@@ -116,12 +138,9 @@ public sealed class WsNetworkStream : INetworkStream
          writer.Advance(segment.Length);
       }
 
-      await writer.FlushAsync(cancellationToken);
-   }
-
-   public ValueTask SendFrameAsync(ReadOnlyMemory<byte> payload,
-      WebSocketOpcode opcode = WebSocketOpcode.Binary, CancellationToken cancellationToken = default)
-   {
-      return SendFrameAsync(new ReadOnlySequence<byte>(payload), opcode, cancellationToken);
+      if (flush)
+      {
+         await writer.FlushAsync(cancellationToken);
+      }
    }
 }
