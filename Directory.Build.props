@@ -7,7 +7,7 @@
       <Features>$(Features);runtime-async=on</Features>
       <EnablePreviewFeatures>true</EnablePreviewFeatures>
 
-      <Version>11.0.0-rc.3.3</Version>
+      <Version>11.0.0-rc.3.4</Version>
       <FileVersion>11.0.0</FileVersion>
       <AssemblyVersion>11.0.0</AssemblyVersion>
    </PropertyGroup>

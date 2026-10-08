@@ -1,4 +1,6 @@
+using System.IO.Pipelines;
 using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Beskar.Networking.Transports.Tcp;
@@ -437,5 +439,31 @@ public class MemoryLeakAndPoolTests
 
       // After registry disposal, conn1 MUST be disposed!
       await Assert.That((bool)isDisposedField.GetValue(conn1)!).IsTrue();
+
+      var senderField = typeof(Beskar.Networking.Transports.Common.Sockets.SocketConnection).GetField("_sender", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+      var sender = senderField.GetValue(conn1)!;
+      var primaryBlockField = sender.GetType().GetField("_primaryBlock", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+      await Assert.That(primaryBlockField.GetValue(sender)).IsNull();
+   }
+
+   [Test]
+   public async Task SocketConnection_RepeatedCreationAndDisposal_DoesNotLeakBlocks()
+   {
+      var initialStats = SharedTransportMemoryPool.GetStats();
+
+      for (var i = 0; i < 20; i++)
+      {
+         var socket = new Socket(AddressFamily.InterNetwork,SocketType.Stream, ProtocolType.Tcp);
+         var conn = new Sockets.SocketConnection(
+            PipeScheduler.ThreadPool,
+            SharedTransportMemoryPool.GetNext());
+
+         conn.Initialize(socket);
+         await conn.DisposeAsync();
+      }
+
+      var finalStats = SharedTransportMemoryPool.GetStats();
+      // Total rented blocks right now should be back to initial rented count
+      await Assert.That(finalStats.Rented).IsEqualTo(initialStats.Rented);
    }
 }

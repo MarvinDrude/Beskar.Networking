@@ -348,6 +348,15 @@ public sealed partial class MqttServer : IAsyncDisposable
          {
             await ClientSessions.HandleClientDisconnectAsync(client);
          }
+
+         try
+         {
+            await session.DisposeAsync();
+         }
+         catch
+         {
+            /* ignored */
+         }
       }
    }
 

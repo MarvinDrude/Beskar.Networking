@@ -100,6 +100,9 @@ public sealed class SocketConnection
       }
 
       await StopAsync();
+
+      await _sender.DisposeAsync();
+      await _receiver.DisposeAsync();
    }
 
    public bool TryResetState()
