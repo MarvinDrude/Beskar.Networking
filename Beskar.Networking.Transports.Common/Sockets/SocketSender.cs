@@ -24,6 +24,9 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
    private bool _isCompleted;
    private bool _isCanceled;
 
+   private int _inFlightSends;
+   private TaskCompletionSource? _drainTcs;
+
    public SocketSender(MemoryPool<byte> bufferPool)
    {
       _bufferPool = bufferPool;
@@ -72,6 +75,9 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
       _isCompleted = false;
       _isCanceled = false;
 
+      _inFlightSends = 0;
+      _drainTcs = null;
+
       EnsurePrimaryBlock();
    }
 
@@ -86,10 +92,29 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
       _isCompleted = true;
    }
 
-   public ValueTask StopAsync()
+   public async ValueTask StopAsync()
    {
       Stop();
-      return ValueTask.CompletedTask;
+
+      if (Volatile.Read(ref _inFlightSends) > 0)
+      {
+         var tcs = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+         _drainTcs = tcs;
+         if (Volatile.Read(ref _inFlightSends) > 0)
+         {
+            try
+            {
+               using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+               await tcs.Task.WaitAsync(cts.Token);
+            }
+            catch
+            {
+               _connection?.Abort();
+            }
+         }
+      }
    }
 
    public override bool CanGetUnflushedBytes => true;
@@ -196,13 +221,14 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
          return new FlushResult(isCanceled: false, isCompleted: true);
       }
 
+      Interlocked.Increment(ref _inFlightSends);
       try
       {
          if (_extraSegments == null || _extraSegments.Count == 0)
          {
             if (_bytesWritten > 0)
             {
-               var toSend = _currentBuffer.Slice(0, _bytesWritten);
+               var toSend = _currentBuffer[.._bytesWritten];
                _bytesWritten = 0;
                await SendMemoryDirectAsync(socket, toSend, cancellationToken);
             }
@@ -211,7 +237,7 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
          {
             if (_bytesWritten > 0)
             {
-               _extraSegments.Add(_currentBuffer.Slice(0, _bytesWritten));
+               _extraSegments.Add(_currentBuffer[.._bytesWritten]);
                _bytesWritten = 0;
             }
 
@@ -236,14 +262,22 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
             }
          }
       }
-      catch (OperationCanceledException)
+      catch (OperationCanceledException ex)
       {
-         return new FlushResult(isCanceled: true, isCompleted: _isCompleted);
+         _connection?.Abort(ex);
+         return new FlushResult(isCanceled: true, isCompleted: true);
       }
       catch (Exception ex)
       {
          _connection?.Abort(ex);
          throw;
+      }
+      finally
+      {
+         if (Interlocked.Decrement(ref _inFlightSends) == 0)
+         {
+            _drainTcs?.TrySetResult();
+         }
       }
 
       return new FlushResult(isCanceled: false, isCompleted: _isCompleted);
@@ -266,12 +300,18 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
 
    public bool TryResetState()
    {
+      if (Volatile.Read(ref _inFlightSends) > 0)
+      {
+         return false;
+      }
+
       _bytesWritten = 0;
 
       _isCompleted = false;
       _isCanceled = false;
       _stopped = false;
 
+      _drainTcs = null;
       _connection = null;
       _socket = null;
 
@@ -300,9 +340,9 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
       return true;
    }
 
-   public ValueTask DisposeAsync()
+   public async ValueTask DisposeAsync()
    {
-      Stop();
+      await StopAsync();
 
       _primaryBlock?.Dispose();
       _primaryBlock = null;
@@ -315,7 +355,5 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
          }
          _extraBlocks.Clear();
       }
-
-      return ValueTask.CompletedTask;
    }
 }

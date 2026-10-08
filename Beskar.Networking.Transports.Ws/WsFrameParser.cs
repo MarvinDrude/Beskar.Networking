@@ -294,17 +294,17 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             }
             finally
             {
-               Volatile.Write(ref _batchDepth, 0);
-               if (_hasPendingFlush)
+               if (Volatile.Read(ref _batchDepth) > 0 || Volatile.Read(ref _hasPendingFlush))
                {
                   try
                   {
-                     using (await _writeLock.LockAsync(_cts.Token).ConfigureAwait(false))
+                     using (await _writeLock.LockAsync(_cts.Token))
                      {
+                        Volatile.Write(ref _batchDepth, 0);
                         if (_hasPendingFlush)
                         {
                            _hasPendingFlush = false;
-                           await _tcpPipe.Output.FlushAsync(_cts.Token).ConfigureAwait(false);
+                           await _tcpPipe.Output.FlushAsync(_cts.Token);
                         }
                      }
                   }
