@@ -58,9 +58,10 @@ public class TcpLargePayloadTests
       Random.Shared.NextBytes(clientPayload);
 
       var clientSpan = clientStream.Transport.Output.GetSpan(clientPayloadSize);
-      await Assert.That(clientSpan.Length).IsGreaterThanOrEqualTo(clientPayloadSize);
+      var clientSpanLen = clientSpan.Length;
       clientPayload.CopyTo(clientSpan);
       clientStream.Transport.Output.Advance(clientPayloadSize);
+      await Assert.That(clientSpanLen).IsGreaterThanOrEqualTo(clientPayloadSize);
       await clientStream.Transport.Output.FlushAsync();
 
       // Server reads exact 8KB
@@ -74,9 +75,10 @@ public class TcpLargePayloadTests
       Random.Shared.NextBytes(serverPayload);
 
       var serverSpan = serverStream.Transport.Output.GetSpan(serverPayloadSize);
-      await Assert.That(serverSpan.Length).IsGreaterThanOrEqualTo(serverPayloadSize);
+      var serverSpanLen = serverSpan.Length;
       serverPayload.CopyTo(serverSpan);
       serverStream.Transport.Output.Advance(serverPayloadSize);
+      await Assert.That(serverSpanLen).IsGreaterThanOrEqualTo(serverPayloadSize);
       await serverStream.Transport.Output.FlushAsync();
 
       // Client reads exact 16KB
@@ -118,9 +120,10 @@ public class TcpLargePayloadTests
       var chunk2 = new byte[chunk2Size];
       Random.Shared.NextBytes(chunk2);
       var span2 = clientStream.Transport.Output.GetSpan(chunk2Size);
-      await Assert.That(span2.Length).IsGreaterThanOrEqualTo(chunk2Size);
+      var span2Len = span2.Length;
       chunk2.CopyTo(span2);
       clientStream.Transport.Output.Advance(chunk2Size);
+      await Assert.That(span2Len).IsGreaterThanOrEqualTo(chunk2Size);
 
       // Single flush for both chunks
       await clientStream.Transport.Output.FlushAsync();
@@ -160,9 +163,10 @@ public class TcpLargePayloadTests
       Random.Shared.NextBytes(payload);
 
       var span = clientStream.Transport.Output.GetSpan(payloadSize);
-      await Assert.That(span.Length).IsGreaterThanOrEqualTo(payloadSize);
+      var spanLen = span.Length;
       payload.CopyTo(span);
       clientStream.Transport.Output.Advance(payloadSize);
+      await Assert.That(spanLen).IsGreaterThanOrEqualTo(payloadSize);
       await clientStream.Transport.Output.FlushAsync();
 
       using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -214,9 +218,10 @@ public class TcpLargePayloadTests
       Random.Shared.NextBytes(payload);
 
       var span = clientStream.Transport.Output.GetSpan(payloadSize);
-      await Assert.That(span.Length).IsGreaterThanOrEqualTo(payloadSize);
+      var spanLen = span.Length;
       payload.CopyTo(span);
       clientStream.Transport.Output.Advance(payloadSize);
+      await Assert.That(spanLen).IsGreaterThanOrEqualTo(payloadSize);
       await clientStream.Transport.Output.FlushAsync();
 
       using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));

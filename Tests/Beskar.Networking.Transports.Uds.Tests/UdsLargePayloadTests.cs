@@ -63,9 +63,10 @@ public class UdsLargePayloadTests
       Random.Shared.NextBytes(clientPayload);
 
       var clientSpan = clientStream.Transport.Output.GetSpan(clientPayloadSize);
-      await Assert.That(clientSpan.Length).IsGreaterThanOrEqualTo(clientPayloadSize);
+      var clientSpanLen = clientSpan.Length;
       clientPayload.CopyTo(clientSpan);
       clientStream.Transport.Output.Advance(clientPayloadSize);
+      await Assert.That(clientSpanLen).IsGreaterThanOrEqualTo(clientPayloadSize);
       await clientStream.Transport.Output.FlushAsync();
 
       using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -78,9 +79,10 @@ public class UdsLargePayloadTests
       Random.Shared.NextBytes(serverPayload);
 
       var serverSpan = serverStream.Transport.Output.GetSpan(serverPayloadSize);
-      await Assert.That(serverSpan.Length).IsGreaterThanOrEqualTo(serverPayloadSize);
+      var serverSpanLen = serverSpan.Length;
       serverPayload.CopyTo(serverSpan);
       serverStream.Transport.Output.Advance(serverPayloadSize);
+      await Assert.That(serverSpanLen).IsGreaterThanOrEqualTo(serverPayloadSize);
       await serverStream.Transport.Output.FlushAsync();
 
       var clientReceived = await ReadExactAsync(clientStream.Transport.Input, serverPayloadSize, cts.Token);

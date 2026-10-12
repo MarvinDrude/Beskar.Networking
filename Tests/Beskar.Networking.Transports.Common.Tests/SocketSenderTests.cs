@@ -15,15 +15,15 @@ public class SocketSenderTests
       await using var sender = new SocketSender(SharedTransportMemoryPool.GetNext());
 
       var span8K = sender.GetSpan(8192);
-      await Assert.That(span8K.Length).IsGreaterThanOrEqualTo(8192);
-
+      var span8KLen = span8K.Length;
       sender.Advance(8192);
+      await Assert.That(span8KLen).IsGreaterThanOrEqualTo(8192);
       await Assert.That(sender.UnflushedBytes).IsEqualTo(8192);
 
       var span64K = sender.GetSpan(65536);
-      await Assert.That(span64K.Length).IsGreaterThanOrEqualTo(65536);
-
+      var span64KLen = span64K.Length;
       sender.Advance(65536);
+      await Assert.That(span64KLen).IsGreaterThanOrEqualTo(65536);
       await Assert.That(sender.UnflushedBytes).IsEqualTo(8192 + 65536);
    }
 
@@ -58,9 +58,10 @@ public class SocketSenderTests
       Random.Shared.NextBytes(payload);
 
       var span = sender.GetSpan(payloadSize);
-      await Assert.That(span.Length).IsGreaterThanOrEqualTo(payloadSize);
+      var spanLen = span.Length;
       payload.CopyTo(span);
       sender.Advance(payloadSize);
+      await Assert.That(spanLen).IsGreaterThanOrEqualTo(payloadSize);
 
       var flushResult = await sender.FlushAsync();
       await Assert.That(flushResult.IsCompleted).IsFalse();
@@ -111,14 +112,16 @@ public class SocketSenderTests
       sender.Advance(chunk1Size);
 
       var span2 = sender.GetSpan(chunk2Size);
-      await Assert.That(span2.Length).IsGreaterThanOrEqualTo(chunk2Size);
+      var span2Len = span2.Length;
       chunk2.CopyTo(span2);
       sender.Advance(chunk2Size);
+      await Assert.That(span2Len).IsGreaterThanOrEqualTo(chunk2Size);
 
       var span3 = sender.GetSpan(chunk3Size);
-      await Assert.That(span3.Length).IsGreaterThanOrEqualTo(chunk3Size);
+      var span3Len = span3.Length;
       chunk3.CopyTo(span3);
       sender.Advance(chunk3Size);
+      await Assert.That(span3Len).IsGreaterThanOrEqualTo(chunk3Size);
 
       await Assert.That(sender.UnflushedBytes).IsEqualTo(totalSize);
 
@@ -164,9 +167,10 @@ public class SocketSenderTests
       Random.Shared.NextBytes(payload);
 
       var span = sender.GetSpan(payloadSize);
-      await Assert.That(span.Length).IsGreaterThanOrEqualTo(payloadSize);
+      var spanLen = span.Length;
       payload.CopyTo(span);
       sender.Advance(payloadSize);
+      await Assert.That(spanLen).IsGreaterThanOrEqualTo(payloadSize);
 
       await sender.FlushAsync();
 
@@ -190,6 +194,7 @@ public class SocketSenderTests
 
       // Verify subsequent writes work after reset
       var subsequentSpan = sender.GetSpan(8192);
-      await Assert.That(subsequentSpan.Length).IsGreaterThanOrEqualTo(8192);
+      var subsequentSpanLen = subsequentSpan.Length;
+      await Assert.That(subsequentSpanLen).IsGreaterThanOrEqualTo(8192);
    }
 }
