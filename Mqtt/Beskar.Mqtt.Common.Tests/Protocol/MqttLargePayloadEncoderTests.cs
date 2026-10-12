@@ -12,6 +12,7 @@ using Beskar.Mqtt.Protocol.Parsing.Results;
 
 namespace Beskar.Mqtt.Common.Tests.Protocol;
 
+[NotInParallel]
 public class MqttLargePayloadEncoderTests
 {
    private sealed class TrackingPipeWriter(PipeWriter inner) : PipeWriter
@@ -35,10 +36,15 @@ public class MqttLargePayloadEncoderTests
       public override void Complete(Exception? exception = null) => inner.Complete(exception);
    }
 
+   private static Pipe CreatePipe() => new(new PipeOptions(
+      pauseWriterThreshold: 1024 * 1024,
+      resumeWriterThreshold: 512 * 1024,
+      useSynchronizationContext: false));
+
    [Test]
    public async Task Version5_WritePublishPacket_WithPayloadGreaterThan4Kb_UsesGetSpanAndParsesSuccessfully()
    {
-      var pipe = new Pipe();
+      var pipe = CreatePipe();
       var trackingWriter = new TrackingPipeWriter(pipe.Writer);
 
       const int payloadSize = 8192; // 8KB > 4KB
@@ -95,7 +101,7 @@ public class MqttLargePayloadEncoderTests
    [Test]
    public async Task Version5_WritePublishOptions_WithPayloadGreaterThan4Kb_UsesGetSpanAndParsesSuccessfully()
    {
-      var pipe = new Pipe();
+      var pipe = CreatePipe();
       var trackingWriter = new TrackingPipeWriter(pipe.Writer);
 
       const int payloadSize = 65536; // 64KB > 4KB
@@ -149,7 +155,7 @@ public class MqttLargePayloadEncoderTests
    [Test]
    public async Task Version3_WritePublishPacket_WithPayloadGreaterThan4Kb_UsesGetSpanAndParsesSuccessfully()
    {
-      var pipe = new Pipe();
+      var pipe = CreatePipe();
       var trackingWriter = new TrackingPipeWriter(pipe.Writer);
 
       const int payloadSize = 8192; // 8KB > 4KB
@@ -205,7 +211,7 @@ public class MqttLargePayloadEncoderTests
    [Test]
    public async Task Version3_WritePublishOptions_WithPayloadGreaterThan4Kb_UsesGetSpanAndParsesSuccessfully()
    {
-      var pipe = new Pipe();
+      var pipe = CreatePipe();
       var trackingWriter = new TrackingPipeWriter(pipe.Writer);
 
       const int payloadSize = 65536; // 64KB > 4KB
