@@ -265,6 +265,8 @@ public sealed class ResilientServer<TFrame>
          if (!Clients.TryAdd(client, Options.MaxConnections))
          {
             await client.DisposeAsync();
+            client = null;
+
             return;
          }
 
@@ -393,7 +395,11 @@ public sealed class ResilientServer<TFrame>
          if (client != null)
          {
             TraceLogger.LogServerInfo("ResilientServer: Client {0} ({1}) disconnected.", client.Id, session.RemoteAddress);
-            client.SetHandshakeResult(false);
+            if (!client.IsHandshakeCompleted)
+            {
+               client.SetHandshakeResult(false);
+            }
+
             Clients.TryRemove(client.Id, out _);
 
             if (Events.ClientDisconnected.Count > 0)
@@ -525,6 +531,12 @@ public sealed class ResilientServer<TFrame>
                   var sequenceReader = new SequenceReader<byte>(buffer);
                   if (!TFrame.TryRead(ref sequenceReader, out frame))
                   {
+                     if (sequenceReader.Consumed > 0)
+                     {
+                        await client.DisconnectAsync();
+                        return;
+                     }
+
                      // Incomplete frame in buffer, wait for more data from stream
                      break;
                   }

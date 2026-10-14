@@ -187,12 +187,21 @@ public sealed class RaftNode : IAsyncDisposable
          var lastIndex = await Storage.GetLastLogIndexAsync(ct);
          newIndex = lastIndex + 1;
 
-         var entry = new RaftLogEntry(currentTerm, newIndex, command);
-         await Storage.AppendEntriesAsync([entry], ct);
-
          tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
          _pendingProposalTerms[newIndex] = currentTerm;
          _pendingProposals[newIndex] = tcs;
+
+         try
+         {
+            var entry = new RaftLogEntry(currentTerm, newIndex, command);
+            await Storage.AppendEntriesAsync([entry], ct);
+         }
+         catch
+         {
+            _pendingProposalTerms.TryRemove(newIndex, out _);
+            _pendingProposals.TryRemove(newIndex, out _);
+            throw;
+         }
       }
       finally
       {
@@ -733,23 +742,18 @@ public sealed class RaftNode : IAsyncDisposable
                return;
             }
 
+            var votes = Interlocked.Increment(ref successfulQuorumVotes);
+            if (votes >= requiredQuorum && Role == RaftRole.Leader && CurrentTerm == currentTerm)
+            {
+               Volatile.Write(ref _lastQuorumHeartbeatTicks, Environment.TickCount64);
+            }
+
             if (response.Success)
             {
-               var votes = Interlocked.Increment(ref successfulQuorumVotes);
-               if (votes >= requiredQuorum && Role == RaftRole.Leader && CurrentTerm == currentTerm)
-               {
-                  Volatile.Write(ref _lastQuorumHeartbeatTicks, Environment.TickCount64);
-               }
-
                tracker.MatchIndex = Math.Max(tracker.MatchIndex, response.MatchIndex);
                tracker.NextIndex = tracker.MatchIndex + 1;
 
                await CheckAndUpdateCommitIndexAsync(cancellationToken);
-
-               if (votes >= requiredQuorum)
-               {
-                  quorumOrDoneTcs.TrySetResult();
-               }
             }
             else
             {
@@ -757,10 +761,15 @@ public sealed class RaftNode : IAsyncDisposable
                {
                   tracker.NextIndex = Math.Max(1, response.MatchIndex + 1);
                }
-               else if (tracker.NextIndex > 1)
+               else if (prevLogIndex > 0)
                {
-                  tracker.NextIndex--;
+                  tracker.NextIndex = Math.Min(tracker.NextIndex, prevLogIndex);
                }
+            }
+
+            if (votes >= requiredQuorum)
+            {
+               quorumOrDoneTcs.TrySetResult();
             }
          }
          catch

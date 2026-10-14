@@ -136,8 +136,13 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       var result = await ConnectInternalAsync(endPoint, ct);
       if (result.Failed)
       {
+         var wasExplicitlyCancelled =
+            Volatile.Read(ref _disposedState) == 1 ||
+            newCts.IsCancellationRequested ||
+            cancellationToken.IsCancellationRequested;
+
          State = ResilientClientState.Disconnected;
-         if (Options.Reconnecting.AutoReconnect)
+         if (Options.Reconnecting.AutoReconnect && !wasExplicitlyCancelled)
          {
             _ = TriggerAutoReconnectAsync(new Exception(result.Error.Detail));
          }
