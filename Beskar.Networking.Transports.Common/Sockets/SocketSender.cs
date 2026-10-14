@@ -73,7 +73,11 @@ public sealed class SocketSender(PipeOptions pipeOptions)
          _cts.Cancel();
       }
 
-      Pipe.Reader.Complete();
+      if (_sendTask is null || _sendTask.IsCompleted)
+      {
+         Pipe.Reader.Complete();
+      }
+
       Pipe.Writer.Complete();
    }
 

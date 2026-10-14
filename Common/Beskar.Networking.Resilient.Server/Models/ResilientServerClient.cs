@@ -124,10 +124,11 @@ public sealed class ResilientServerClient<TFrame>(
 
    internal void SetHandshakeResult(bool success)
    {
+      _isHandshakeCompleted = success;
+
       ControlPayloadChannel.Writer.TryComplete();
       PreHandshakeFrameChannel.Writer.TryComplete();
 
-      _isHandshakeCompleted = success;
       if (success && Volatile.Read(ref _disposedState) == 0)
       {
          if (Interlocked.Exchange(ref _isSessionActiveRecorded, 1) == 0)

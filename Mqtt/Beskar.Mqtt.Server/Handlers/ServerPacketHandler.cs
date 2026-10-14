@@ -79,7 +79,13 @@ public sealed partial class ServerPacketHandler
          packet.SessionExpiryInterval);
 
       _client.DisconnectOptions = DisconnectOptions.Create(in packet);
-      return new ValueTask(_server.ClientSessions.HandleClientDisconnectAsync(_client));
+      return Awaited();
+
+      async ValueTask Awaited()
+      {
+         await _server.ClientSessions.HandleClientDisconnectAsync(_client);
+         await _client.DisconnectAsync();
+      }
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PingReqPacket packet, CancellationToken ct = default)

@@ -16,7 +16,28 @@ public sealed class SocketConnection
    private bool _isDisposed;
    private bool _isAborted;
 
-   public event Action? ConnectionClosed;
+   private Action? _connectionClosedHandler;
+   private int _connectionClosed;
+
+   public event Action? ConnectionClosed
+   {
+      add
+      {
+         _connectionClosedHandler += value;
+         if (Volatile.Read(ref _connectionClosed) == 1)
+         {
+            try
+            {
+               value?.Invoke();
+            }
+            catch
+            {
+               // Ignored
+            }
+         }
+      }
+      remove => _connectionClosedHandler -= value;
+   }
 
    public PipeReader Input => _receiver.Pipe.Reader;
    public PipeWriter Output => _sender.Pipe.Writer;
@@ -52,6 +73,7 @@ public sealed class SocketConnection
    public void Initialize(Socket socket)
    {
       _socket = socket;
+      Volatile.Write(ref _connectionClosed, 0);
 
       _sender.Initialize(this, socket);
       _receiver.Initialize(this, socket);
@@ -65,9 +87,14 @@ public sealed class SocketConnection
 
    internal void NotifyConnectionClosed()
    {
+      if (Interlocked.Exchange(ref _connectionClosed, 1) == 1)
+      {
+         return;
+      }
+
       try
       {
-         ConnectionClosed?.Invoke();
+         _connectionClosedHandler?.Invoke();
       }
       catch
       {
@@ -144,7 +171,8 @@ public sealed class SocketConnection
          return false;
       }
 
-      ConnectionClosed = null;
+      _connectionClosedHandler = null;
+      Volatile.Write(ref _connectionClosed, 0);
       _socket = null;
 
       _isDisposed = false;

@@ -27,7 +27,28 @@ public sealed class StreamConnection(
 
    private readonly Lock _lock = new();
 
-   public event Action? ConnectionClosed;
+   private Action? _connectionClosedHandler;
+   private int _connectionClosed;
+
+   public event Action? ConnectionClosed
+   {
+      add
+      {
+         _connectionClosedHandler += value;
+         if (Volatile.Read(ref _connectionClosed) == 1)
+         {
+            try
+            {
+               value?.Invoke();
+            }
+            catch
+            {
+               // Ignored
+            }
+         }
+      }
+      remove => _connectionClosedHandler -= value;
+   }
 
    public PipeReader Input => _readPipe.Reader;
    public PipeWriter Output => _writePipe.Writer;
@@ -43,15 +64,21 @@ public sealed class StreamConnection(
          throw new ArgumentException("Stream must be readable or writable.", nameof(stream));
       }
 
+      Volatile.Write(ref _connectionClosed, 0);
       InnerStream = stream;
       AllowFlushOnStop = allowFlushOnStop;
    }
 
    internal void NotifyConnectionClosed()
    {
+      if (Interlocked.Exchange(ref _connectionClosed, 1) == 1)
+      {
+         return;
+      }
+
       try
       {
-         ConnectionClosed?.Invoke();
+         _connectionClosedHandler?.Invoke();
       }
       catch
       {
@@ -119,7 +146,7 @@ public sealed class StreamConnection(
       _writePipe.Writer.Complete();
    }
 
-   public async ValueTask StopAsync()
+   public async ValueTask DrainWritesAsync()
    {
       await _writePipe.Writer.CompleteAsync();
 
@@ -153,6 +180,13 @@ public sealed class StreamConnection(
             // Expected
          }
       }
+   }
+
+   public async ValueTask StopAsync()
+   {
+      await DrainWritesAsync();
+      var writeTask = _writeTask;
+      var stream = InnerStream;
 
       lock (_lock)
       {
@@ -257,7 +291,9 @@ public sealed class StreamConnection(
       _readPipe.Reset();
       _writePipe.Reset();
 
-      ConnectionClosed = null;
+      _connectionClosedHandler = null;
+      Volatile.Write(ref _connectionClosed, 0);
+
       InnerStream = null;
       AllowFlushOnStop = true;
       _stopped = false;

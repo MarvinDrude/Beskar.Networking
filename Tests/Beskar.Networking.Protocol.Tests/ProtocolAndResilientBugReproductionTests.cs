@@ -313,7 +313,7 @@ public class ProtocolAndResilientBugReproductionTests
          {
             AutoReconnect = true,
             RetryInterval = TimeSpan.FromMilliseconds(50),
-            MaxRetries = 1
+            MaxRetries = 3
          }
       };
 
@@ -332,6 +332,7 @@ public class ProtocolAndResilientBugReproductionTests
       await server.StopAsync();
       await server.DisposeAsync();
 
+      var stalledAcceptedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
       var stalledListener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
       await stalledListener.BindAsync(ct);
 
@@ -345,12 +346,16 @@ public class ProtocolAndResilientBugReproductionTests
                if (res.Failed) break;
                var sess = res.Success!;
                _ = await sess.AcceptStreamAsync(ct);
+               stalledAcceptedTcs.TrySetResult();
                // Never send ConnectAcknowledged!
             }
          }, ct);
 
-         // Wait for auto-reconnect to time out its 1 attempt using HandshakeTimeout (150ms) and fire OnDisconnected
-         var completed = await Task.WhenAny(reconnectExhaustedTcs.Task, Task.Delay(1500, ct));
+         var accepted = await Task.WhenAny(stalledAcceptedTcs.Task, Task.Delay(1500, ct));
+         await Assert.That(accepted == stalledAcceptedTcs.Task).IsTrue();
+
+         // Wait for auto-reconnect to time out its attempts using HandshakeTimeout (150ms) and fire OnDisconnected
+         var completed = await Task.WhenAny(reconnectExhaustedTcs.Task, Task.Delay(2500, ct));
          await Assert.That(completed == reconnectExhaustedTcs.Task).IsTrue();
          await Assert.That(client.State).IsEqualTo(ResilientClientState.Disconnected);
       }

@@ -21,14 +21,22 @@ public sealed partial class MqttClient
       _gracefulDisconnect = true;
       _disconnectReason = new MqttClientDisconnectReason(true, (int)options.ReasonCode);
 
-      var reconnectCts = Interlocked.Exchange(ref _reconnectCts, null);
+      CancellationTokenSource? reconnectCts;
+      Task? reconnectTask;
+
+      lock (_reconnectLock)
+      {
+         _gracefulDisconnect = true;
+         reconnectCts = Interlocked.Exchange(ref _reconnectCts, null);
+         reconnectTask = _reconnectTask;
+      }
+
       if (reconnectCts is not null)
       {
          try { await reconnectCts.CancelAsync(); } catch { /* ignored */ }
          reconnectCts.Dispose();
       }
 
-      var reconnectTask = _reconnectTask;
       if (reconnectTask is not null)
       {
          try { await reconnectTask; } catch { /* ignored */ }
@@ -38,7 +46,11 @@ public sealed partial class MqttClient
       if (validateResult.Failed)
       {
          CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Reconnecting);
-         _gracefulDisconnect = false;
+         if ((MqttClientConnectionState)_state != MqttClientConnectionState.Disconnecting)
+         {
+            _gracefulDisconnect = false;
+         }
+
          return;
       }
 
@@ -48,12 +60,17 @@ public sealed partial class MqttClient
 
       if (DisconnectingAlreadyInProcessOrDone())
       {
-         _gracefulDisconnect = false;
+         if ((MqttClientConnectionState)_state != MqttClientConnectionState.Disconnecting)
+         {
+            _gracefulDisconnect = false;
+         }
+
          return;
       }
 
       if (_controlStream is not { } stream)
       {
+         CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Disconnecting);
          _gracefulDisconnect = false;
          return;
       }

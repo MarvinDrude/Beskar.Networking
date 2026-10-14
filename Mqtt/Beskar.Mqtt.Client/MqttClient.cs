@@ -497,8 +497,16 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
       lock (_reconnectLock)
       {
+         if (_gracefulDisconnect || Volatile.Read(ref _disposedState) == 1)
+            return Task.CompletedTask;
+
          if (_isReconnecting)
             return _reconnectTask ?? Task.CompletedTask;
+
+         var newReconnectCts = new CancellationTokenSource();
+         var oldReconnectCts = Interlocked.Exchange(ref _reconnectCts, newReconnectCts);
+         oldReconnectCts?.Dispose();
+         var masterCt = newReconnectCts.Token;
 
          _isReconnecting = true;
          _reconnectTask = Task.Run(async () =>
@@ -506,7 +514,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             try
             {
                var autoReconnect = _connectOptions.AutoReconnect;
-               if (autoReconnect is not { IsEnabled: true } || Volatile.Read(ref _disposedState) == 1)
+               if (autoReconnect is not { IsEnabled: true } || Volatile.Read(ref _disposedState) == 1 || masterCt.IsCancellationRequested)
                {
                   return;
                }
@@ -515,11 +523,6 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                   cause?.Message ?? "Transport closed", _connectOptions.EndPoint);
 
                _state = (int)MqttClientConnectionState.Reconnecting;
-
-               var newReconnectCts = new CancellationTokenSource();
-               var oldReconnectCts = Interlocked.Exchange(ref _reconnectCts, newReconnectCts);
-               oldReconnectCts?.Dispose();
-               var masterCt = newReconnectCts.Token;
 
                var attempt = 0;
                var maxRetries = autoReconnect.MaxRetryAttempts;
