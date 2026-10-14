@@ -294,10 +294,11 @@ public sealed class ResilientServer<TFrame>
          });
 
          ConnectPacketPayload? connectPayload = null;
+         using var handshakeTimeoutCts = new CancellationTokenSource(Options.HandshakeTimeout);
+         using var handshakeCts = CancellationTokenSource.CreateLinkedTokenSource(combinedToken, handshakeTimeoutCts.Token);
+
          try
          {
-            using var handshakeTimeoutCts = new CancellationTokenSource(Options.HandshakeTimeout);
-            using var handshakeCts = CancellationTokenSource.CreateLinkedTokenSource(combinedToken, handshakeTimeoutCts.Token);
             connectPayload = await ReadConnectPayloadAsync(client, handshakeCts.Token);
          }
          catch
@@ -306,7 +307,7 @@ public sealed class ResilientServer<TFrame>
          }
 
          var handshakeSuccess = false;
-         if (connectPayload != null)
+         if (connectPayload != null && !handshakeCts.IsCancellationRequested)
          {
             client.ConnectPayload = connectPayload;
 
@@ -316,15 +317,22 @@ public sealed class ResilientServer<TFrame>
                {
                   Client = client,
                   ConnectPayload = connectPayload,
-                  CancellationToken = combinedToken
+                  CancellationToken = handshakeCts.Token
                };
 
-               await Events.OnConnect.ExecuteAsync(
-                  connectContext, HandlerExecutionStrategy.SequentialContinueOnError, combinedToken);
-
-               if (!connectContext.IsDenied)
+               try
                {
-                  handshakeSuccess = true;
+                  await Events.OnConnect.ExecuteAsync(
+                     connectContext, HandlerExecutionStrategy.SequentialContinueOnError, handshakeCts.Token);
+
+                  if (!connectContext.IsDenied && !handshakeCts.IsCancellationRequested)
+                  {
+                     handshakeSuccess = true;
+                  }
+               }
+               catch (OperationCanceledException)
+               {
+                  handshakeSuccess = false;
                }
             }
             else
@@ -614,7 +622,8 @@ public sealed class ResilientServer<TFrame>
                      }
                      else if (!client.HandshakeCompletedTask.IsCompleted)
                      {
-                        if (client.PreHandshakeFrameChannel.Writer.TryWrite((frame, streamContext.Stream)))
+                        var safeFrame = CloneFrameWithOwnedPayload(ref frame);
+                        if (client.PreHandshakeFrameChannel.Writer.TryWrite((safeFrame, streamContext.Stream)))
                         {
                            ResilientMetrics.RecordOfflineQueueSizeChange(1);
                         }
@@ -694,6 +703,31 @@ public sealed class ResilientServer<TFrame>
       {
          // background protection
       }
+   }
+
+   private static TFrame CloneFrameWithOwnedPayload(ref TFrame frame)
+   {
+      var payloadSeq = frame.GetPayloadSequence();
+      if (payloadSeq.IsEmpty)
+      {
+         return frame;
+      }
+
+      var encodedLen = frame.GetEncodedLength();
+      var copyBuf = new byte[encodedLen];
+
+      if (frame.TryWrite(copyBuf, out var written))
+      {
+         var copySeq = new ReadOnlySequence<byte>(copyBuf, 0, written);
+         var copyReader = new SequenceReader<byte>(copySeq);
+
+         if (TFrame.TryRead(ref copyReader, out var cloned))
+         {
+            return cloned;
+         }
+      }
+
+      return TFrame.CreateFrame(frame.GetFrameKind(), new ReadOnlySequence<byte>(payloadSeq.ToArray()));
    }
 
    public async ValueTask DisposeAsync()

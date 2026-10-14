@@ -124,6 +124,9 @@ public sealed class ResilientServerClient<TFrame>(
 
    internal void SetHandshakeResult(bool success)
    {
+      ControlPayloadChannel.Writer.TryComplete();
+      PreHandshakeFrameChannel.Writer.TryComplete();
+
       _isHandshakeCompleted = success;
       if (success && Volatile.Read(ref _disposedState) == 0)
       {
@@ -134,8 +137,6 @@ public sealed class ResilientServerClient<TFrame>(
       }
 
       _handshakeTcs.TrySetResult(success);
-      ControlPayloadChannel.Writer.TryComplete();
-      PreHandshakeFrameChannel.Writer.TryComplete();
    }
 
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;

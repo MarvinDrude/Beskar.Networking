@@ -65,6 +65,7 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
    private long _lastActivityTicks = DateTimeOffset.UtcNow.Ticks;
    private long _lastTouchMs = Environment.TickCount64;
    internal long LastPingSentTicks;
+   internal int AwaitingPong;
 
    private EndPoint? _remoteEndPoint;
    private INetworkStream? _controlStream;
@@ -251,6 +252,9 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
          TraceLogger.LogClientInfo("ResilientClient: Connected successfully to {0}. State is Connected.", endPoint);
 
          _disconnectedEventFired = 0;
+         Volatile.Write(ref LastPingSentTicks, 0);
+         Volatile.Write(ref AwaitingPong, 0);
+         Interlocked.Exchange(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
          TouchActivity();
 
          await _keepAliveService.StartAsync();
@@ -491,7 +495,10 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       frame.WriteTo(pipeWriter);
 
       await pipeWriter.FlushAsync(cancellationToken);
-      TouchActivity();
+      if (frame.GetFrameKind() is not ResilientFrameKind.Ping)
+      {
+         TouchActivity();
+      }
    }
 
    /// <summary>
@@ -692,7 +699,9 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                   consumedPos = sequenceReader.Position;
                }
 
+               Volatile.Write(ref AwaitingPong, 0);
                TouchActivity();
+
                buffer = buffer.Slice(consumedPos);
                consumed = consumedPos;
 
@@ -711,6 +720,8 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                      var rttMs = (DateTimeOffset.UtcNow.Ticks - lastPing) / (double)TimeSpan.TicksPerMillisecond;
                      ResilientMetrics.RecordPingRtt(rttMs, isClient: true);
                   }
+
+                  Interlocked.Exchange(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
                   TouchActivity();
                }
                else if (frameKind is ResilientFrameKind.ConnectAcknowledged)
@@ -794,6 +805,14 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
       {
          handshakeChannel?.Writer.TryComplete();
          await stream.DisposeAsync();
+      }
+   }
+
+   internal void HandleKeepAliveTimeout()
+   {
+      if (State is ResilientClientState.Connected)
+      {
+         _ = TriggerAutoReconnectAsync(new TimeoutException("Keep-alive ping timed out waiting for server Pong."));
       }
    }
 
@@ -888,8 +907,9 @@ public sealed class ResilientClient<TFrame> : IAsyncDisposable
                   var oldCts = Interlocked.Exchange(ref _connectionCts, newCts);
                   oldCts?.Dispose();
 
+                  using var handshakeTimeoutCts = new CancellationTokenSource(Options.HandshakeTimeout);
                   using var attemptCts =
-                     CancellationTokenSource.CreateLinkedTokenSource(newCts.Token, masterCt);
+                     CancellationTokenSource.CreateLinkedTokenSource(newCts.Token, masterCt, handshakeTimeoutCts.Token);
                   var attemptCt = attemptCts.Token;
 
                   var startMs = Environment.TickCount64;
