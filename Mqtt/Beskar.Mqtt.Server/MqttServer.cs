@@ -546,10 +546,9 @@ public sealed partial class MqttServer : IAsyncDisposable
             writer = propEncoder.Encoder.Writer;
          }
 
-         var written = writer.Position;
-         if (written > 0)
+         if (writer.Position > 0)
          {
-            return new ReadOnlySequence<byte>(propertiesBuffer.AsMemory(0, written));
+            return new ReadOnlySequence<byte>([.. writer.WrittenSpan]);
          }
       }
       finally
@@ -641,6 +640,42 @@ public sealed partial class MqttServer : IAsyncDisposable
       var topicBytes = Encoding.UTF8.GetBytes(topic);
       var topicSequence = new ReadOnlySequence<byte>(topicBytes);
 
+      var propertiesBytes = ReadOnlySequence<byte>.Empty;
+      if (userProperties.Count > 0)
+      {
+         Span<byte> propBuf = stackalloc byte[128];
+         var writer = new ByteWriter(propBuf);
+         try
+         {
+            var propEncoder = writer.AsPublishPropertyEncoder();
+            try
+            {
+               var enumerator = userProperties.GetDirectEnumerator();
+               while (enumerator.MoveNext())
+               {
+                  if (enumerator.Current.Identifier is not PropertyIdentifier.UserProperty)
+                     continue;
+
+                  var userProperty = enumerator.Current.AsUserProperty();
+                  propEncoder.WriteUserProperty(userProperty.KeyBytes, userProperty.ValueBytes);
+               }
+            }
+            finally
+            {
+               writer = propEncoder.Encoder.Writer;
+            }
+
+            if (writer.Position > 0)
+            {
+               propertiesBytes = new ReadOnlySequence<byte>([.. writer.WrittenSpan]);
+            }
+         }
+         finally
+         {
+            writer.Dispose();
+         }
+      }
+
       var packet = new PublishPacket
       {
          Dup = false,
@@ -658,7 +693,8 @@ public sealed partial class MqttServer : IAsyncDisposable
             : new ReadOnlySequence<byte>(Encoding.UTF8.GetBytes(responseTopic)),
          CorrelationDataBytes = correlationData == null
             ? ReadOnlySequence<byte>.Empty
-            : new ReadOnlySequence<byte>(correlationData)
+            : new ReadOnlySequence<byte>(correlationData),
+         PropertiesBytes = propertiesBytes
       };
 
       var msg = new MqttPublishMessage(packet);
@@ -799,11 +835,9 @@ public sealed partial class MqttServer : IAsyncDisposable
                writer = propEncoder.Encoder.Writer;
             }
 
-            var written = writer.Position;
-            if (written > 0)
+            if (writer.Position > 0)
             {
-               publishPacket.PropertiesBytes = new ReadOnlySequence<byte>(
-                  propertiesBuffer.AsMemory(0, written));
+               publishPacket.PropertiesBytes = new ReadOnlySequence<byte>([.. writer.WrittenSpan]);
             }
          }
          finally

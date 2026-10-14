@@ -47,6 +47,8 @@ internal sealed class MqttWillMessageState(
    private int _publishedOrCancelled;
    private CancellationTokenSource? _delayCts;
 
+   public bool IsDelayTimerStarted => _delayCts is not null;
+
    public void StartDelayTimer(MqttServer server, MqttClientSessions clientSessions)
    {
       if (WillDelayInterval == 0)

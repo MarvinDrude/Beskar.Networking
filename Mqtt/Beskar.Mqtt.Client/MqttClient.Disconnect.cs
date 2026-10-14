@@ -16,8 +16,31 @@ public sealed partial class MqttClient
 {
    public async Task DisconnectAsync(DisconnectOptions options, CancellationToken ct = default)
    {
+      if (ValidateDisposed().Failed) return;
+
+      _gracefulDisconnect = true;
+      _disconnectReason = new MqttClientDisconnectReason(true, (int)options.ReasonCode);
+
+      var reconnectCts = Interlocked.Exchange(ref _reconnectCts, null);
+      if (reconnectCts is not null)
+      {
+         try { await reconnectCts.CancelAsync(); } catch { /* ignored */ }
+         reconnectCts.Dispose();
+      }
+
+      var reconnectTask = _reconnectTask;
+      if (reconnectTask is not null)
+      {
+         try { await reconnectTask; } catch { /* ignored */ }
+      }
+
       var validateResult = ValidateClient();
-      if (validateResult.Failed) return;
+      if (validateResult.Failed)
+      {
+         CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Reconnecting);
+         _gracefulDisconnect = false;
+         return;
+      }
 
       var beforeConnected = IsConnected;
       TraceLogger.LogClientInfo("MqttClient.DisconnectAsync: Initiating disconnect (ReasonCode: {0}, SessionExpiryInterval: {1}).",
@@ -25,11 +48,13 @@ public sealed partial class MqttClient
 
       if (DisconnectingAlreadyInProcessOrDone())
       {
+         _gracefulDisconnect = false;
          return;
       }
 
       if (_controlStream is not { } stream)
       {
+         _gracefulDisconnect = false;
          return;
       }
 
@@ -38,22 +63,6 @@ public sealed partial class MqttClient
          if (!beforeConnected)
          {
             return;
-         }
-
-         _gracefulDisconnect = true;
-         _disconnectReason = new MqttClientDisconnectReason(true, (int)options.ReasonCode);
-
-         var reconnectCts = Interlocked.Exchange(ref _reconnectCts, null);
-         if (reconnectCts is not null)
-         {
-            try { await reconnectCts.CancelAsync(); } catch { /* ignored */ }
-            reconnectCts.Dispose();
-         }
-
-         var reconnectTask = _reconnectTask;
-         if (reconnectTask is not null)
-         {
-            try { await reconnectTask; } catch { /* ignored */ }
          }
 
          await Send(options, stream, 0, ct);

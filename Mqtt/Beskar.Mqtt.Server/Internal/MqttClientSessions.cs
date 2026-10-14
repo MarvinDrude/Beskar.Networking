@@ -79,6 +79,14 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
                session = existing;
                existing = null;
 
+               var defaultExpiry = serverClient.ProtocolVersion is MqttProtocolVersion.V31 or MqttProtocolVersion.V311
+                  ? (connectOptions.CleanSession ? 0u : uint.MaxValue)
+                  : 0u;
+
+               session.ExpiryInterval = _server.Options.SupportPersistentSessions
+                  ? (connectOptions.SessionExpiryInterval ?? defaultExpiry)
+                  : 0;
+
                session.DisconnectionTimestamp = null;
                session.IsConnected = true;
 
@@ -223,9 +231,13 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
 
    private MqttSession InitializeNewSession(MqttServerClient client, ConnectOptions connectOptions)
    {
+      var defaultExpiry = client.ProtocolVersion is MqttProtocolVersion.V31 or MqttProtocolVersion.V311
+         ? (connectOptions.CleanSession ? 0u : uint.MaxValue)
+         : 0u;
+
       return new MqttSession(_server, client)
       {
-         ExpiryInterval = _server.Options.SupportPersistentSessions ? (connectOptions.SessionExpiryInterval ?? 0) : 0,
+         ExpiryInterval = _server.Options.SupportPersistentSessions ? (connectOptions.SessionExpiryInterval ?? defaultExpiry) : 0,
          ClientReceiveMaximum = connectOptions.ReceiveMaximum ?? 65535,
       };
    }
