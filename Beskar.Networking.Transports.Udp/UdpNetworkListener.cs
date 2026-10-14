@@ -218,13 +218,15 @@ public sealed class UdpNetworkListener(
    private async Task ReceiveLoopAsync(Socket socket, CancellationToken token)
    {
       var buffer = new byte[65536];
-      EndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+      EndPoint remoteEp = socket.AddressFamily == AddressFamily.InterNetworkV6
+         ? new IPEndPoint(IPAddress.IPv6Any, 0)
+         : new IPEndPoint(IPAddress.Any, 0);
 
       while (!token.IsCancellationRequested)
       {
          try
          {
-            var result = await socket.ReceiveFromAsync(buffer, SocketFlags.None, remoteEP, token);
+            var result = await socket.ReceiveFromAsync(buffer, SocketFlags.None, remoteEp, token);
             if (result.ReceivedBytes == 0)
             {
                continue;
@@ -387,10 +389,11 @@ public sealed class UdpNetworkListener(
 
    private ValueTask RemoveSessionAsync(UdpNetworkSession session)
    {
-      _sessions.TryRemove(session.RemoteAddress, out _);
-      var lastEP = Volatile.Read(ref _lastRemoteEP);
+      ((ICollection<KeyValuePair<EndPoint, UdpNetworkSession>>)_sessions).Remove(
+         new KeyValuePair<EndPoint, UdpNetworkSession>(session.RemoteAddress, session));
 
-      if (session.RemoteAddress.Equals(lastEP))
+      var lastSession = Volatile.Read(ref _lastSession);
+      if (ReferenceEquals(lastSession, session))
       {
          Volatile.Write(ref _lastRemoteEP, null);
          Volatile.Write(ref _lastSession, null);
