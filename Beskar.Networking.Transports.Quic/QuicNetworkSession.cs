@@ -143,6 +143,7 @@ public sealed class QuicNetworkSession : INetworkSession
          quicStream = await _connection.AcceptInboundStreamAsync(linkedCts.Token);
 
          connection = _ioQueueRegistry.Create(quicStream);
+         connection.ConnectionClosed += OnStreamConnectionClosed;
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
          _activeStreams.TryAdd(newStream.StreamId, newStream);
@@ -186,6 +187,7 @@ public sealed class QuicNetworkSession : INetworkSession
          {
             if (connection is not null)
             {
+               connection.ConnectionClosed -= OnStreamConnectionClosed;
                await _ioQueueRegistry.ReturnAsync(connection);
             }
             else if (quicStream is not null)
@@ -219,6 +221,7 @@ public sealed class QuicNetworkSession : INetworkSession
 
          quicStream = await _connection.OpenOutboundStreamAsync(quicStreamType, linkedCts.Token);
          connection = _ioQueueRegistry.Create(quicStream);
+         connection.ConnectionClosed += OnStreamConnectionClosed;
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
          _activeStreams.TryAdd(newStream.StreamId, newStream);
@@ -254,6 +257,7 @@ public sealed class QuicNetworkSession : INetworkSession
          {
             if (connection is not null)
             {
+               connection.ConnectionClosed -= OnStreamConnectionClosed;
                await _ioQueueRegistry.ReturnAsync(connection);
             }
             else if (quicStream is not null)
@@ -264,11 +268,30 @@ public sealed class QuicNetworkSession : INetworkSession
       }
    }
 
+   private void OnStreamConnectionClosed()
+   {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         return;
+      }
+
+      try
+      {
+         _cts.Cancel();
+      }
+      catch
+      {
+         // Ignored
+      }
+   }
+
    /// <summary>
    /// Returns a retired stream connection adapter to the shared connection pool.
    /// </summary>
    public async ValueTask ReturnConnectionAsync(QuicNetworkStream stream, StreamConnection connection)
    {
+      connection.ConnectionClosed -= OnStreamConnectionClosed;
+
       var stats = stream.Stats;
       Interlocked.Add(ref _accumulatedBytesReceived, stats.BytesReceived);
       Interlocked.Add(ref _accumulatedBytesSent, stats.BytesSent);
