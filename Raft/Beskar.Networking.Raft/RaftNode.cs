@@ -993,7 +993,10 @@ public sealed class RaftNode : IAsyncDisposable
       }
 
       var localCompactedIndex = await Storage.GetCompactedUntilIndexAsync();
-      if (request.LastIncludedIndex <= localCompactedIndex || request.LastIncludedIndex < CommitIndex)
+      var localLastLogIndex = await Storage.GetLastLogIndexAsync();
+
+      if (request.LastIncludedIndex <= localCompactedIndex ||
+          (request.LastIncludedIndex < CommitIndex && request.LastIncludedIndex <= localLastLogIndex))
       {
          return new InstallSnapshotResponse { Term = currentTerm, Success = true };
       }
@@ -1002,9 +1005,11 @@ public sealed class RaftNode : IAsyncDisposable
       try
       {
          var currentCompacted = await Storage.GetCompactedUntilIndexAsync();
+         var currentLastLogIndex = await Storage.GetLastLogIndexAsync();
+
          if (request.LastIncludedIndex <= currentCompacted ||
-             request.LastIncludedIndex <= Volatile.Read(ref _lastApplied) ||
-             request.LastIncludedIndex < CommitIndex)
+             (request.LastIncludedIndex <= Volatile.Read(ref _lastApplied) && request.LastIncludedIndex <= currentLastLogIndex) ||
+             (request.LastIncludedIndex < CommitIndex && request.LastIncludedIndex <= currentLastLogIndex))
          {
             return new InstallSnapshotResponse { Term = currentTerm, Success = true };
          }
