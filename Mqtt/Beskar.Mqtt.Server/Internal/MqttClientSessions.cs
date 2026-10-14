@@ -68,10 +68,21 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
          existing = _sessions.Get(serverClient.ClientIdUtf8Bytes.Span, out previousSession);
          var cleanSession = connectOptions.CleanSession || !_server.Options.SupportPersistentSessions;
 
+         if (previousSession is not null)
+         {
+            previousSession.Client = null;
+            previousSession.IsConnected = false;
+            _server.SubscriptionRouter.UnsubscribeAll(previousSession);
+         }
+
          if (existing is not null)
          {
             if (cleanSession)
             {
+               existing.Client = null;
+               existing.IsConnected = false;
+
+               _server.SubscriptionRouter.UnsubscribeAll(existing);
                session = InitializeNewSession(serverClient, connectOptions);
             }
             else
@@ -166,6 +177,8 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
 
       if (takenOverClient is not null)
       {
+         var shouldFireDisconnect = takenOverClient.TryMarkDisconnectEventFired();
+
          try
          {
             await takenOverClient.DisconnectAsync(new DisconnectOptions()
@@ -178,7 +191,7 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
             TraceLogger.LogServerWarning("MqttClientSessions: Failed to send session taken over disconnect packet to old client. Error: {0}", ex.Message);
          }
 
-         if (_server.Events.OnDisconnect.Count > 0)
+         if (shouldFireDisconnect && _server.Events.OnDisconnect.Count > 0)
          {
             try
             {

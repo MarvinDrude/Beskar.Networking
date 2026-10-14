@@ -45,14 +45,29 @@ public readonly ref partial struct PacketVersion5Parser
                switch (enumerator.Current.Identifier)
                {
                   case PropertyIdentifier.SessionExpiryInterval:
+                     if ((foundFlags & 0b001) != 0)
+                     {
+                        return new StringError("Protocol Violation: Session Expiry Interval included more than once.");
+                     }
+
                      packet.SessionExpiryInterval = enumerator.Current.AsSessionExpiryInterval();
                      foundFlags |= 0b001;
                      break;
                   case PropertyIdentifier.ReasonString:
+                     if ((foundFlags & 0b010) != 0)
+                     {
+                        return new StringError("Protocol Violation: Reason String included more than once.");
+                     }
+
                      packet.ReasonUtf8Bytes = enumerator.Current.AsReasonString();
                      foundFlags |= 0b010;
                      break;
                   case PropertyIdentifier.ServerReference:
+                     if ((foundFlags & 0b100) != 0)
+                     {
+                        return new StringError("Protocol Violation: Server Reference included more than once.");
+                     }
+
                      packet.ServerReferenceUtf8Bytes = enumerator.Current.AsServerReference();
                      foundFlags |= 0b100;
                      break;
@@ -61,11 +76,11 @@ public readonly ref partial struct PacketVersion5Parser
                   default:
                      return new StringError($"Invalid property identifier. ({enumerator.Current.Identifier})");
                }
+            }
 
-               if (foundFlags == 0b111)
-               {
-                  break;
-               }
+            if (!enumerator.IsCompleted)
+            {
+               return new StringError("Protocol Violation: Malformed or invalid property in DISCONNECT packet.");
             }
          }
          else

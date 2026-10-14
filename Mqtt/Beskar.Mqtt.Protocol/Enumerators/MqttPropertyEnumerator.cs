@@ -14,6 +14,7 @@ public ref struct MqttPropertyEnumerator(ReadOnlySequence<byte> sequence)
    private int _length;
 
    public MqttProperty Current { get; private set; } = default;
+   public bool IsCompleted => _reader.End;
 
    public bool MoveNext()
    {

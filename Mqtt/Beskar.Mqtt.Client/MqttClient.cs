@@ -74,6 +74,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private ConnectOptions _connectOptions = new() { EndPoint = new IPEndPoint(0, 0) };
 
    private readonly Dictionary<ushort, byte[]> _topicAliases = new(16);
+   private readonly HashSet<ushort> _incomingQos2Packets = [];
    private readonly Lock _topicAliasesLock = new();
 
    private SemaphoreSlim? _inFlightSemaphore;
@@ -226,6 +227,10 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          lock (_topicAliasesLock)
          {
             _incomingInFlightCount = 0;
+            if (options.CleanSession || !connectResult.IsSessionPresent)
+            {
+               _incomingQos2Packets.Clear();
+            }
          }
 
          TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Successfully connected. Assigned KeepAlive: {0}s",
@@ -271,6 +276,22 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       lock (_topicAliasesLock)
       {
          _topicAliases[alias] = topic;
+      }
+   }
+
+   internal bool TryAddIncomingQos2Packet(ushort packetId)
+   {
+      lock (_topicAliasesLock)
+      {
+         return _incomingQos2Packets.Add(packetId);
+      }
+   }
+
+   internal bool RemoveIncomingQos2Packet(ushort packetId)
+   {
+      lock (_topicAliasesLock)
+      {
+         return _incomingQos2Packets.Remove(packetId);
       }
    }
 

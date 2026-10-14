@@ -317,7 +317,7 @@ public sealed partial class MqttServer : IAsyncDisposable
       {
          try
          {
-            if (Events.OnDisconnect.Count > 0 && client is not null)
+            if (client is not null && client.TryMarkDisconnectEventFired() && Events.OnDisconnect.Count > 0)
             {
                var disconnectOptions = client.DisconnectOptions;
                var grace = ClientDisconnectKind.Ungraceful;
