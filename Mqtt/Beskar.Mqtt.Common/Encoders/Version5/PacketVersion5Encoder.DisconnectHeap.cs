@@ -113,6 +113,11 @@ public readonly ref partial struct PacketVersion5Encoder
          len += 3 + Encoding.UTF8.GetByteCount(reasonString);
       }
 
+      if (options.ServerReference is { } serverReference)
+      {
+         len += 3 + Encoding.UTF8.GetByteCount(serverReference);
+      }
+
       len += options.UserProperties.ByteCount;
 
       return len;

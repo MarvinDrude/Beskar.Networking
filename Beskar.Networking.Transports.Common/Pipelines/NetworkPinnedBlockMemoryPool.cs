@@ -73,6 +73,7 @@ public sealed class NetworkPinnedBlockMemoryPool : MemoryPool<byte>
 
       if (_blocks.Reader.TryRead(out var block))
       {
+         block.MarkLeased();
          TransportMetrics.RecordMemoryPoolBlockRented();
          return block;
       }
@@ -141,6 +142,8 @@ public sealed class NetworkPinnedBlockMemoryPool : MemoryPool<byte>
 internal sealed class NetworkMemoryPoolBlock
    : IMemoryOwner<byte>
 {
+   private int _leased = 1;
+
    /// <summary>
    /// Represents a block of memory that is allocated and managed by a pinned memory pool.
    /// </summary>
@@ -156,6 +159,9 @@ internal sealed class NetworkMemoryPoolBlock
       var pinnedArray = GC.AllocateUninitializedArray<byte>(length, pinned: true);
       Memory = MemoryMarshal.CreateFromPinnedArray(pinnedArray, 0, pinnedArray.Length);
    }
+
+   internal void MarkLeased()
+      => Volatile.Write(ref _leased, 1);
 
    /// <summary>
    /// Gets the instance of the pinned memory pool that manages the current memory block.
@@ -178,6 +184,9 @@ internal sealed class NetworkMemoryPoolBlock
    /// </remarks>
    public void Dispose()
    {
-      Pool.Return(this);
+      if (Interlocked.Exchange(ref _leased, 0) == 1)
+      {
+         Pool.Return(this);
+      }
    }
 }

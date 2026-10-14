@@ -23,7 +23,20 @@ public readonly ref partial struct PacketVersion5Encoder
             writer.WriteByte((byte)packet.ReasonCode);
             if (remainingLength > 3)
             {
-               PacketEncoder.WriteProperties(ref writer, new ReadOnlySequence<byte>(packet.PropertiesBytes));
+               var propsDataLen = CalculatePropertiesDataLength(packet);
+               PacketEncoder.WriteVariableByteInteger(ref writer, (uint)propsDataLen);
+
+               if (!packet.ReasonStringUtf8Bytes.IsEmpty)
+               {
+                  writer.WriteByte((byte)PropertyIdentifier.ReasonString);
+                  writer.WriteBigEndian((ushort)packet.ReasonStringUtf8Bytes.Length);
+                  writer.WriteBytes(packet.ReasonStringUtf8Bytes.Span);
+               }
+
+               if (!packet.PropertiesBytes.IsEmpty)
+               {
+                  writer.WriteBytes(packet.PropertiesBytes.Span);
+               }
             }
          }
 
@@ -41,18 +54,29 @@ public readonly ref partial struct PacketVersion5Encoder
       return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
    }
 
+   private static int CalculatePropertiesDataLength(in PubAckPacket packet)
+   {
+      var len = packet.PropertiesBytes.Length;
+      if (!packet.ReasonStringUtf8Bytes.IsEmpty)
+      {
+         len += 3 + packet.ReasonStringUtf8Bytes.Length;
+      }
+      return len;
+   }
+
    private static int CalculateRemainingLength(in PubAckPacket packet)
    {
-      if (packet.ReasonCode == PubAckReasonCode.Success && packet.PropertiesBytes.IsEmpty)
+      var propsDataLen = CalculatePropertiesDataLength(packet);
+      if (packet.ReasonCode == PubAckReasonCode.Success && propsDataLen == 0)
       {
          return 2;
       }
 
-      if (packet.PropertiesBytes.IsEmpty)
+      if (propsDataLen == 0)
       {
          return 3;
       }
 
-      return 3 + CalculatePropertiesLength(new ReadOnlySequence<byte>(packet.PropertiesBytes));
+      return 3 + PacketEncoder.GetVariableByteIntegerLength(propsDataLen) + propsDataLen;
    }
 }
