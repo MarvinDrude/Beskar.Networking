@@ -146,7 +146,7 @@ public sealed class MemoryNetworkSession : INetworkSession
 
       try
       {
-         await _connection.Input.CompleteAsync();
+         _connection.Input.CancelPendingRead();
       }
       catch
       {
@@ -156,6 +156,15 @@ public sealed class MemoryNetworkSession : INetworkSession
       try
       {
          await _connection.Output.CompleteAsync();
+      }
+      catch
+      {
+         // Ignored
+      }
+
+      try
+      {
+         await _connection.Input.CompleteAsync();
       }
       catch
       {

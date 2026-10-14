@@ -123,7 +123,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
          }
 
          var listIndex = (int)(index - firstIndex);
-         if (listIndex < _entries.Count)
+         if (listIndex >= 0 && listIndex < _entries.Count && _entries[listIndex].Index == index)
          {
             return ValueTask.FromResult<RaftLogEntry?>(_entries[listIndex]);
          }
@@ -193,6 +193,10 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
                }
 
                var existingListIndex = (int)(entry.Index - firstIndex);
+               if (existingListIndex > _entries.Count)
+               {
+                  continue;
+               }
 
                if (existingListIndex >= 0 && existingListIndex < _entries.Count)
                {
