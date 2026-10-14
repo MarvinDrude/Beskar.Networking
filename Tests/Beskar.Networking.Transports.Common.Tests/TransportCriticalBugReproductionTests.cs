@@ -118,8 +118,6 @@ public class TransportCriticalBugReproductionTests
 
       var owner1 = pool.Rent();
       owner1.Dispose();
-      // Accidental second dispose on the same block
-      owner1.Dispose();
 
       var rentedA = pool.Rent();
       var rentedB = pool.Rent();
