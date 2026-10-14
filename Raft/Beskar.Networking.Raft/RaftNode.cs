@@ -47,6 +47,7 @@ public sealed class RaftNode : IAsyncDisposable
    private readonly SemaphoreSlim _applyLock = new(1, 1);
    private readonly ConcurrentDictionary<string, RaftPeerTracker> _peerTrackers = new();
    private readonly ConcurrentDictionary<ulong, TaskCompletionSource<ReadOnlyMemory<byte>>> _pendingProposals = new();
+   private readonly ConcurrentDictionary<ulong, ulong> _pendingProposalTerms = new();
 
    private CancellationTokenSource? _nodeCts;
    private Task? _timerLoopTask;
@@ -126,6 +127,7 @@ public sealed class RaftNode : IAsyncDisposable
          kvp.Value.TrySetCanceled(ct);
       }
       _pendingProposals.Clear();
+      _pendingProposalTerms.Clear();
 
       if (_timerLoopTask != null)
       {
@@ -177,6 +179,7 @@ public sealed class RaftNode : IAsyncDisposable
          await Storage.AppendEntriesAsync([entry], ct);
 
          tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
+         _pendingProposalTerms[newIndex] = currentTerm;
          _pendingProposals[newIndex] = tcs;
       }
       finally
@@ -196,6 +199,7 @@ public sealed class RaftNode : IAsyncDisposable
 
       await using var reg = ct.Register(() =>
       {
+         _pendingProposalTerms.TryRemove(newIndex, out _);
          if (_pendingProposals.TryRemove(newIndex, out var p))
          {
             p.TrySetCanceled(ct);
@@ -464,23 +468,41 @@ public sealed class RaftNode : IAsyncDisposable
    private async Task StepDownAsync(ulong newTerm, CancellationToken cancellationToken)
    {
       RaftRole previousRole;
+      ulong effectiveTerm;
+      var termIncreased = false;
+
       lock (_stateLock)
       {
-         if (_currentTerm >= newTerm && Role == RaftRole.Follower)
+         if (Role == RaftRole.Stopped || newTerm < _currentTerm)
+         {
+            return;
+         }
+
+         if (_currentTerm == newTerm && Role == RaftRole.Follower)
          {
             return;
          }
 
          previousRole = Role;
          _role = (int)RaftRole.Follower;
-         _currentTerm = newTerm;
-         _votedFor = null;
+
+         if (newTerm > _currentTerm)
+         {
+            _currentTerm = newTerm;
+            _votedFor = null;
+            termIncreased = true;
+         }
+
+         effectiveTerm = _currentTerm;
          _leaderId = null;
          _lastHeartbeatTicks = Environment.TickCount64;
          _electionTimeoutMs = GetNextElectionTimeoutMs();
       }
 
-      await Storage.SetTermAndVoteAsync(newTerm, null, cancellationToken);
+      if (termIncreased)
+      {
+         await Storage.SetTermAndVoteAsync(effectiveTerm, null, cancellationToken);
+      }
 
       if (previousRole == RaftRole.Leader)
       {
@@ -489,11 +511,12 @@ public sealed class RaftNode : IAsyncDisposable
             kvp.Value.TrySetException(new InvalidOperationException("Node stepped down from leader before proposal was committed."));
          }
          _pendingProposals.Clear();
+         _pendingProposalTerms.Clear();
       }
 
       if (previousRole != RaftRole.Follower && Events.OnRoleChanged.Count > 0)
       {
-         await Events.OnRoleChanged.ExecuteAsync(new RaftRoleChangedContext(Options.NodeId, previousRole, RaftRole.Follower, newTerm), cancellationToken: cancellationToken);
+         await Events.OnRoleChanged.ExecuteAsync(new RaftRoleChangedContext(Options.NodeId, previousRole, RaftRole.Follower, effectiveTerm), cancellationToken: cancellationToken);
       }
    }
 
@@ -713,7 +736,16 @@ public sealed class RaftNode : IAsyncDisposable
 
             if (_pendingProposals.TryRemove(applyIndex, out var tcs))
             {
-               tcs.TrySetResult(applyResult);
+               var hasRecordedTerm = _pendingProposalTerms.TryRemove(applyIndex, out var proposalTerm);
+               if ((hasRecordedTerm && entry.Value.Term == proposalTerm) ||
+                   (!hasRecordedTerm && Role == RaftRole.Leader && entry.Value.Term == CurrentTerm))
+               {
+                  tcs.TrySetResult(applyResult);
+               }
+               else
+               {
+                  tcs.TrySetException(new InvalidOperationException("Proposal was overwritten by a different term."));
+               }
             }
 
             if (Events.OnEntryCommitted.Count > 0)
@@ -903,17 +935,17 @@ public sealed class RaftNode : IAsyncDisposable
       }
 
       var lastLogIndexAfterAppend = await Storage.GetLastLogIndexAsync();
-
-      if (request.LeaderCommitIndex > CommitIndex || Volatile.Read(ref _lastApplied) < CommitIndex)
-      {
-         var targetCommit = Math.Max(request.LeaderCommitIndex, CommitIndex);
-         var newCommit = Math.Min(targetCommit, lastLogIndexAfterAppend);
-         await AdvanceCommitIndexAsync(newCommit, CancellationToken.None);
-      }
-
       var replicatedMatchIndex = request.Entries.Count > 0
          ? request.Entries[^1].Index
          : request.PrevLogIndex;
+
+      if (request.LeaderCommitIndex > CommitIndex || Volatile.Read(ref _lastApplied) < CommitIndex)
+      {
+         var leaderCommitBound = Math.Min(request.LeaderCommitIndex, Math.Min(replicatedMatchIndex, lastLogIndexAfterAppend));
+         var newCommit = Math.Max(CommitIndex, leaderCommitBound);
+
+         await AdvanceCommitIndexAsync(newCommit, CancellationToken.None);
+      }
 
       return new AppendEntriesResponse
       {
@@ -969,6 +1001,14 @@ public sealed class RaftNode : IAsyncDisposable
       await _applyLock.WaitAsync(CancellationToken.None);
       try
       {
+         var currentCompacted = await Storage.GetCompactedUntilIndexAsync();
+         if (request.LastIncludedIndex <= currentCompacted ||
+             request.LastIncludedIndex <= Volatile.Read(ref _lastApplied) ||
+             request.LastIncludedIndex < CommitIndex)
+         {
+            return new InstallSnapshotResponse { Term = currentTerm, Success = true };
+         }
+
          await StateMachine.RestoreSnapshotAsync(request.Data, request.LastIncludedIndex, request.LastIncludedTerm);
          await Storage.CompactPrefixAsync(request.LastIncludedIndex, request.LastIncludedTerm);
 

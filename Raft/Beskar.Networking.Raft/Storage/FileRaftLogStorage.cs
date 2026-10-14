@@ -459,6 +459,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
          var readHeaderBytes = _logFileStream.Read(header);
          if (readHeaderBytes < 20)
          {
+            _logFileStream.SetLength(offset);
             break;
          }
 
@@ -481,6 +482,12 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
 
          _entries.Add(new RaftLogEntry(term, index, data));
          _entryOffsets.Add(offset);
+      }
+
+      if (_logFileStream.Position < _logFileStream.Length)
+      {
+         _logFileStream.SetLength(_logFileStream.Position);
+         _logFileStream.Flush(flushToDisk: true);
       }
    }
 
