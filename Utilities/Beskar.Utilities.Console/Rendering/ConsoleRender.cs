@@ -19,6 +19,24 @@ public static partial class ConsoleRender
 
    public static void WriteMarkupLine(string markup) => RenderMarkup(markup, true);
 
+   private static bool TryResolveColor(string tagContent, out ConsoleColor color)
+   {
+      if (ColorAliases.TryGetValue(tagContent, out color))
+      {
+         return true;
+      }
+
+      if (!int.TryParse(tagContent, out _) &&
+          Enum.TryParse(tagContent, true, out color) &&
+          Enum.IsDefined(color))
+      {
+         return true;
+      }
+
+      color = default;
+      return false;
+   }
+
    /// <summary>
    /// Strips all valid markup tags from a string to compute plain text lengths for positioning.
    /// </summary>
@@ -28,7 +46,7 @@ public static partial class ConsoleRender
       return MyRegex().Replace(markup, m =>
       {
          var content = m.Groups[1].Value;
-         if (content == "/" || ColorAliases.ContainsKey(content) || Enum.TryParse<ConsoleColor>(content, true, out _))
+         if (content == "/" || TryResolveColor(content, out _))
          {
             return "";
          }
@@ -86,8 +104,7 @@ public static partial class ConsoleRender
             continue;
          }
 
-         if (ColorAliases.TryGetValue(tagContent, out var parsedColor) ||
-             Enum.TryParse(tagContent, true, out parsedColor))
+         if (TryResolveColor(tagContent, out var parsedColor))
          {
             if (isClosing)
             {
