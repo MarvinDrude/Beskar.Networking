@@ -20,6 +20,7 @@ using Beskar.Networking.Abstractions.Options;
 
 namespace Beskar.Mqtt.Common.Tests.Internal;
 
+[NotInParallel]
 public partial class MqttCriticalBugReproductionTests
 {
    [GeneratedMqttTopic("sensors/{id}/temperature")]
@@ -530,6 +531,58 @@ public partial class MqttCriticalBugReproductionTests
       await pubClient.DisposeAsync();
       await subClient.DisposeAsync();
       await server.StopAsync();
+   }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task MqttClient_DisconnectAsync_WhileConnectAsyncAwaitingConnAck_ShouldCancelInFlightConnectAndNotCompleteAsConnected(CancellationToken ct)
+   {
+      var connectInterceptedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var allowConnAckTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      server.Events.OnConnectIntercept.Add(async (_, token) =>
+      {
+         connectInterceptedTcs.TrySetResult();
+         await allowConnAckTcs.Task.WaitAsync(token);
+      });
+
+      await server.StartAsync();
+      var endPoint = (IPEndPoint)server.Listeners[0].LocalAddress!;
+
+      var client = (MqttClient)MqttClientFactory.CreateTcp();
+      var onConnectedFired = false;
+      client.AddConnectedHandler((_, _) =>
+      {
+         onConnectedFired = true;
+         return ValueTask.CompletedTask;
+      });
+
+      var connectTask = client.ConnectAsync(new ConnectOptionsBuilder(endPoint)
+         .WithProtocolVersion(MqttProtocolVersion.V50)
+         .WithCleanSession(true)
+         .Build(), ct);
+
+      // Wait until the server has received CONNECT and is holding CONNACK
+      await connectInterceptedTcs.Task.WaitAsync(TimeSpan.FromSeconds(2), ct);
+
+      // Call DisconnectAsync while ConnectAsync is in-flight awaiting CONNACK
+      await client.DisconnectAsync(new DisconnectOptions(), ct);
+      allowConnAckTcs.TrySetResult();
+
+      var connectResult = await connectTask.WaitAsync(TimeSpan.FromSeconds(2), ct);
+
+      await Assert.That(connectResult.Failed).IsTrue();
+      await Assert.That(client.IsConnected).IsFalse();
+      await Assert.That(onConnectedFired).IsFalse();
+
+      await client.DisposeAsync();
+      await server.StopAsync();
+      await server.DisposeAsync();
    }
 
    private sealed class CustomSignalBackoff(Func<TimeSpan> onDelay) : Beskar.Networking.Abstractions.Interfaces.Misc.IBackoffPolicy

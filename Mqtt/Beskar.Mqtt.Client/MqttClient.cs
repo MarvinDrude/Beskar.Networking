@@ -85,6 +85,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private CancellationTokenSource? _reconnectCts;
 
    private readonly AsyncLocal<bool> _inReconnectLoop = new();
+   private readonly AsyncLocal<bool> _inConnectingCallback = new();
 
    /// <summary>
    /// Initializes a new instance of the <see cref="MqttClient"/> class using the specified network client transport.
@@ -149,6 +150,9 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          _protocolVersion = options.ProtocolVersion;
          _topicAliases.Clear();
 
+         _clientTokenSource.Dispose();
+         _clientTokenSource = new CancellationTokenSource();
+
          if (Events.OnClientConnecting.Count > 0)
          {
             var ctx = new ClientConnectingContext()
@@ -156,11 +160,20 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                ConnectOptions = options
             };
 
-            await Events.OnClientConnecting.ExecuteAsync(
-               ctx, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+            _inConnectingCallback.Value = true;
+            try
+            {
+               await Events.OnClientConnecting.ExecuteAsync(
+                  ctx, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+            }
+            finally
+            {
+               _inConnectingCallback.Value = false;
+            }
          }
 
-         if (ct.IsCancellationRequested || (MqttClientConnectionState)_state != MqttClientConnectionState.Connecting)
+         if (ct.IsCancellationRequested || _clientTokenSource.IsCancellationRequested ||
+             (MqttClientConnectionState)_state != MqttClientConnectionState.Connecting)
          {
             CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Connecting);
             return new StringError("Connection cancelled during OnClientConnecting.");
@@ -172,9 +185,6 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             _identifierGenerator.Reset();
             _signalBroker.Reset();
          }
-
-         _clientTokenSource.Dispose();
-         _clientTokenSource = new CancellationTokenSource();
 
          _disconnectReason = null;
          _disconnectException = null;
@@ -194,11 +204,16 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             result = await ConnectInternalAsync(timed.Token);
          }
 
-         if (result.Failed)
+         if (result.Failed || _clientTokenSource.IsCancellationRequested ||
+             (MqttClientConnectionState)_state != MqttClientConnectionState.Connecting)
          {
-            TraceLogger.LogClientError("MqttClient.ConnectAsync: Connection attempt failed: {0}", result.Error.Detail);
+            TraceLogger.LogClientError("MqttClient.ConnectAsync: Connection attempt failed: {0}",
+               result.Failed ? result.Error.Detail : "Disconnected while connecting.");
+
             await DisconnectInternalAsync();
-            return result;
+            return result.Failed
+               ? result
+               : new StringError("Connection cancelled while connecting.");
          }
 
          var connectResult = result.Success;
@@ -215,7 +230,13 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
          TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Successfully connected. Assigned KeepAlive: {0}s",
             connectResult.ServerKeepAlive > 0 ? connectResult.ServerKeepAlive : _connectOptions.KeepAlivePeriod);
-         CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting);
+
+         if (CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting) !=
+             MqttClientConnectionState.Connecting)
+         {
+            await DisconnectInternalAsync();
+            return new StringError("Connection cancelled before transitioning to Connected.");
+         }
 
          await DispatchConnectedAsync(connectResult);
          return result;

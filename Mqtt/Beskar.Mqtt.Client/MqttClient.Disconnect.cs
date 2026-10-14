@@ -46,7 +46,20 @@ public sealed partial class MqttClient
       if (validateResult.Failed)
       {
          CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Reconnecting);
-         CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Connecting);
+
+         if ((MqttClientConnectionState)_state == MqttClientConnectionState.Connecting)
+         {
+            try { await _clientTokenSource.CancelAsync(); } catch { /* ignored */ }
+
+            if (_inConnectingCallback.Value)
+            {
+               CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Connecting);
+            }
+            else
+            {
+               await DisconnectInternalAsync();
+            }
+         }
 
          if ((MqttClientConnectionState)_state != MqttClientConnectionState.Disconnecting)
          {
