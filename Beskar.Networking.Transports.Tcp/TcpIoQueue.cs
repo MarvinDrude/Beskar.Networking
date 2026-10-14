@@ -52,7 +52,7 @@ public sealed class TcpIoQueue : IDisposable
       {
          TraceLogger.LogNeutralInfo("Creating tcp socket connection of socket {0}", socket.RemoteEndPoint);
          var connection = SocketConnectionPool.Get(() => new SocketConnection(
-            SocketSettings.ReceiveOptions, SocketSettings.MemoryPool));
+            SocketSettings.ReceiveOptions, SocketSettings.SendOptions));
 
          connection.Initialize(socket);
          connection.Start();

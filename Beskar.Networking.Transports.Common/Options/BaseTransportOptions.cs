@@ -24,7 +24,7 @@ public abstract class BaseTransportOptions<TQueueSelf>
    /// <summary>
    /// The maximum size of the read buffer.
    /// </summary>
-   public long? MaxReadBufferSize { get; set; } = 1024 * 1024;
+   public long? MaxReadBufferSize { get; set; } = 64 * 1024;
 
    /// <summary>
    /// The maximum size of the write buffer.

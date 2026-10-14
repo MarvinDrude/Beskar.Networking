@@ -19,7 +19,7 @@ public sealed class SocketConnection
    public event Action? ConnectionClosed;
 
    public PipeReader Input => _receiver.Pipe.Reader;
-   public PipeWriter Output => _sender;
+   public PipeWriter Output => _sender.Pipe.Writer;
 
    public SocketConnection(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
       : this(
@@ -33,8 +33,19 @@ public sealed class SocketConnection
    }
 
    public SocketConnection(PipeOptions receiveOptions, MemoryPool<byte> bufferPool)
+      : this(
+         receiveOptions,
+         new PipeOptions(
+            pool: bufferPool,
+            readerScheduler: receiveOptions.ReaderScheduler,
+            writerScheduler: receiveOptions.WriterScheduler,
+            useSynchronizationContext: false))
    {
-      _sender = new SocketSender(bufferPool);
+   }
+
+   public SocketConnection(PipeOptions receiveOptions, PipeOptions sendOptions)
+   {
+      _sender = new SocketSender(sendOptions);
       _receiver = new SocketReceiver(receiveOptions);
    }
 

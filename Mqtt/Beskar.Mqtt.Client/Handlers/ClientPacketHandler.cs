@@ -177,17 +177,30 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             resolvedPacket.QualityOfService);
 
          var converted = new MqttPublishMessage(resolvedPacket);
-         if (client.TryDispatchResponse(converted))
-         {
-            return;
-         }
-
          var context = new MessageReceiveContext()
          {
             Message = converted,
             PacketSender = client,
             Client = client
          };
+
+         if (client.TryDispatchResponse(converted))
+         {
+            var shouldDecrement = wasIncremented;
+            try
+            {
+               await context.AcknowledgeAsync(ct);
+               shouldDecrement = false;
+            }
+            finally
+            {
+               if (shouldDecrement)
+               {
+                  client.DecrementIncomingInFlight();
+               }
+            }
+            return;
+         }
 
          var handlerTask = client.Events.OnMessageReceive.ExecuteAsync(
             context, HandlerExecutionStrategy.SequentialContinueOnError, ct);

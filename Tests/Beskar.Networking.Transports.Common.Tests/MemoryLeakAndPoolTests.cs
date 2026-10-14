@@ -442,8 +442,8 @@ public class MemoryLeakAndPoolTests
 
       var senderField = typeof(Beskar.Networking.Transports.Common.Sockets.SocketConnection).GetField("_sender", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
       var sender = senderField.GetValue(conn1)!;
-      var primaryBlockField = sender.GetType().GetField("_primaryBlock", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-      await Assert.That(primaryBlockField.GetValue(sender)).IsNull();
+      var senderDisposedField = sender.GetType().GetField("_isDisposed", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+      await Assert.That((bool)senderDisposedField.GetValue(sender)!).IsTrue();
    }
 
    [Test]
