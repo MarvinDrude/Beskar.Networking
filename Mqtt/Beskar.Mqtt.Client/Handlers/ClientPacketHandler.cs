@@ -151,6 +151,19 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             }
          }
 
+         var isQos2 = resolvedPacket.QualityOfService == QualityOfServiceType.ExactlyOnce;
+         if (isQos2 && !client.TryAddIncomingQos2Packet(resolvedPacket.PacketIdentifier))
+         {
+            var duplicatePubRec = new PubRecPacket
+            {
+               PacketIdentifier = resolvedPacket.PacketIdentifier,
+               ReasonCode = PubRecReasonCode.Success
+            };
+
+            await client.SendAsync(in duplicatePubRec, ct);
+            return;
+         }
+
          var wasIncremented = false;
          if (client.ProtocolVersion is MqttProtocolVersion.V50 &&
              resolvedPacket.QualityOfService > QualityOfServiceType.AtMostOnce)
@@ -160,6 +173,11 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
 
             if (!client.TryIncrementIncomingInFlight(localReceiveMax, out var currentCount))
             {
+               if (isQos2)
+               {
+                  client.RemoveIncomingQos2Packet(resolvedPacket.PacketIdentifier);
+               }
+
                TraceLogger.LogClientError(
                   "ClientPacketHandler: Incoming in-flight QoS 1/2 publishes count {0} exceeds ReceiveMaximum {1}.",
                   currentCount, localReceiveMax);
@@ -177,11 +195,6 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             resolvedPacket.QualityOfService);
 
          var converted = new MqttPublishMessage(resolvedPacket);
-         if (client.TryDispatchResponse(converted))
-         {
-            return;
-         }
-
          var context = new MessageReceiveContext()
          {
             Message = converted,
@@ -189,12 +202,39 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             Client = client
          };
 
+         if (client.TryDispatchResponse(converted))
+         {
+            var shouldDecrement = wasIncremented;
+            try
+            {
+               await context.AcknowledgeAsync(ct);
+               shouldDecrement = false;
+            }
+            catch
+            {
+               if (isQos2)
+               {
+                  client.RemoveIncomingQos2Packet(resolvedPacket.PacketIdentifier);
+               }
+               throw;
+            }
+            finally
+            {
+               if (shouldDecrement)
+               {
+                  client.DecrementIncomingInFlight();
+               }
+            }
+            return;
+         }
+
          var handlerTask = client.Events.OnMessageReceive.ExecuteAsync(
             context, HandlerExecutionStrategy.SequentialContinueOnError, ct);
 
          if (handlerTask.IsCompleted)
          {
             var shouldDecrementInFinally = wasIncremented;
+            var shouldRemoveQos2InFinally = isQos2;
             try
             {
                handlerTask.GetAwaiter().GetResult();
@@ -204,7 +244,14 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
                   await context.AcknowledgeAsync(ct);
                }
 
-               shouldDecrementInFinally = false;
+               if (!context.HasFailed)
+               {
+                  shouldDecrementInFinally = false;
+                  if (context.ReasonCode < PubAckReasonCode.UnspecifiedError)
+                  {
+                     shouldRemoveQos2InFinally = false;
+                  }
+               }
             }
             catch (Exception ex)
             {
@@ -213,6 +260,11 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             }
             finally
             {
+               if (shouldRemoveQos2InFinally)
+               {
+                  client.RemoveIncomingQos2Packet(resolvedPacket.PacketIdentifier);
+               }
+
                if (shouldDecrementInFinally)
                {
                   client.DecrementIncomingInFlight();
@@ -224,6 +276,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
             _ = Task.Run(async () =>
             {
                var shouldDecrementInFinally = wasIncremented;
+               var shouldRemoveQos2InFinally = isQos2;
+
                try
                {
                   await handlerTask;
@@ -233,7 +287,14 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
                      await context.AcknowledgeAsync(ct);
                   }
 
-                  shouldDecrementInFinally = false;
+                  if (!context.HasFailed)
+                  {
+                     shouldDecrementInFinally = false;
+                     if (context.ReasonCode < PubAckReasonCode.UnspecifiedError)
+                     {
+                        shouldRemoveQos2InFinally = false;
+                     }
+                  }
                }
                catch (Exception ex)
                {
@@ -242,6 +303,11 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
                }
                finally
                {
+                  if (shouldRemoveQos2InFinally)
+                  {
+                     client.RemoveIncomingQos2Packet(resolvedPacket.PacketIdentifier);
+                  }
+
                   if (shouldDecrementInFinally)
                   {
                      client.DecrementIncomingInFlight();
@@ -265,6 +331,8 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
       TraceLogger.LogClientInfo(
          "ClientPacketHandler: Received PUBREL packet (PacketId: {0}, ReasonCode: {1}). Replying with PUBCOMP...",
          packet.PacketIdentifier, packet.ReasonCode);
+
+      _client.RemoveIncomingQos2Packet(packet.PacketIdentifier);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
 
       return Awaited(packet);

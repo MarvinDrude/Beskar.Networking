@@ -56,7 +56,7 @@ public sealed partial class MqttSession
 
        if (PendingWillMessage is not null)
        {
-          if (PendingWillMessage.WillDelayInterval == 0 || ExpiryInterval > 0)
+          if (PendingWillMessage.WillDelayInterval == 0 || ExpiryInterval > 0 || !PendingWillMessage.IsDelayTimerStarted)
           {
              PendingWillMessage.TryPublish(Server, Server.ClientSessions);
           }

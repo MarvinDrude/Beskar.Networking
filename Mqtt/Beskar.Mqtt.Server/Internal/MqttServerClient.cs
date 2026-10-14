@@ -87,6 +87,10 @@ public sealed class MqttServerClient
    private Task? _outgoingPublishTask;
 
    private bool _isDisconnecting;
+   private int _disconnectEventFired;
+
+   internal bool TryMarkDisconnectEventFired()
+      => Interlocked.CompareExchange(ref _disconnectEventFired, 1, 0) == 0;
 
    /// <summary>
    /// Initializes the client instance with the specified network stream context and server options.

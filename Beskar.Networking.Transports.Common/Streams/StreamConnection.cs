@@ -27,6 +27,29 @@ public sealed class StreamConnection(
 
    private readonly Lock _lock = new();
 
+   private Action? _connectionClosedHandler;
+   private int _connectionClosed;
+
+   public event Action? ConnectionClosed
+   {
+      add
+      {
+         _connectionClosedHandler += value;
+         if (Volatile.Read(ref _connectionClosed) == 1)
+         {
+            try
+            {
+               value?.Invoke();
+            }
+            catch
+            {
+               // Ignored
+            }
+         }
+      }
+      remove => _connectionClosedHandler -= value;
+   }
+
    public PipeReader Input => _readPipe.Reader;
    public PipeWriter Output => _writePipe.Writer;
 
@@ -41,8 +64,26 @@ public sealed class StreamConnection(
          throw new ArgumentException("Stream must be readable or writable.", nameof(stream));
       }
 
+      Volatile.Write(ref _connectionClosed, 0);
       InnerStream = stream;
       AllowFlushOnStop = allowFlushOnStop;
+   }
+
+   internal void NotifyConnectionClosed()
+   {
+      if (Interlocked.Exchange(ref _connectionClosed, 1) == 1)
+      {
+         return;
+      }
+
+      try
+      {
+         _connectionClosedHandler?.Invoke();
+      }
+      catch
+      {
+         // Ignored
+      }
    }
 
    public void Start()
@@ -105,16 +146,21 @@ public sealed class StreamConnection(
       _writePipe.Writer.Complete();
    }
 
-   public async ValueTask StopAsync()
+   public async ValueTask DrainWritesAsync()
    {
       await _writePipe.Writer.CompleteAsync();
 
-      lock (_lock)
+      var writeTask = _writeTask;
+      if (writeTask is not null)
       {
-         if (!_stopped)
+         try
          {
-            _stopped = true;
-            _cts.Cancel();
+            using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await writeTask.WaitAsync(drainCts.Token).ConfigureAwait(false);
+         }
+         catch
+         {
+            // Expected on timeout or error
          }
       }
 
@@ -133,16 +179,33 @@ public sealed class StreamConnection(
          {
             // Expected
          }
-         finally
+      }
+   }
+
+   public async ValueTask StopAsync()
+   {
+      await DrainWritesAsync();
+      var writeTask = _writeTask;
+      var stream = InnerStream;
+
+      lock (_lock)
+      {
+         if (!_stopped)
          {
-            try
-            {
-               await stream.DisposeAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-               // Expected
-            }
+            _stopped = true;
+            _cts.Cancel();
+         }
+      }
+
+      if (stream is not null)
+      {
+         try
+         {
+            await stream.DisposeAsync().ConfigureAwait(false);
+         }
+         catch
+         {
+            // Expected
          }
       }
 
@@ -161,7 +224,6 @@ public sealed class StreamConnection(
          }
       }
 
-      var writeTask = _writeTask;
       if (writeTask is not null)
       {
          try
@@ -189,7 +251,8 @@ public sealed class StreamConnection(
 
    public bool TryResetState()
    {
-      if ((_readTask is { IsCompleted: false })
+      if (_isDisposed
+          || (_readTask is { IsCompleted: false })
           || (_writeTask is { IsCompleted: false }))
       {
          return false;
@@ -228,6 +291,9 @@ public sealed class StreamConnection(
 
       _readPipe.Reset();
       _writePipe.Reset();
+
+      _connectionClosedHandler = null;
+      Volatile.Write(ref _connectionClosed, 0);
 
       InnerStream = null;
       AllowFlushOnStop = true;
@@ -314,7 +380,10 @@ public sealed class StreamConnection(
             var read = await stream.ReadAsync(memory, _cts.Token);
 
             if (read <= 0)
+            {
+               NotifyConnectionClosed();
                break;
+            }
 
             TraceLogger.LogNeutralInfo("StreamConnection: Read {0} bytes from stream", read);
 
@@ -328,6 +397,10 @@ public sealed class StreamConnection(
       catch (Exception er)
       {
          error = er;
+         if (!_cts.IsCancellationRequested)
+         {
+            NotifyConnectionClosed();
+         }
       }
 
       await writer.CompleteAsync(error);

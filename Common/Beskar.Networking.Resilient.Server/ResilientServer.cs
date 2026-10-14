@@ -130,11 +130,16 @@ public sealed class ResilientServer<TFrame>
       }
    }
 
-   public async Task<VoidResult<StringError>> StopAsync()
+   public Task<VoidResult<StringError>> StopAsync()
    {
       if (Volatile.Read(ref _disposedState) == 1)
-         return new StringError("Already disposed server.");
+         return Task.FromResult<VoidResult<StringError>>(new StringError("Already disposed server."));
 
+      return StopCoreAsync();
+   }
+
+   private async Task<VoidResult<StringError>> StopCoreAsync()
+   {
       if (Interlocked.CompareExchange(ref _state, (int)ResilientServerState.Stopping, (int)ResilientServerState.Running) != (int)ResilientServerState.Running)
          return new StringError("Server is not running.");
 
@@ -265,6 +270,8 @@ public sealed class ResilientServer<TFrame>
          if (!Clients.TryAdd(client, Options.MaxConnections))
          {
             await client.DisposeAsync();
+            client = null;
+
             return;
          }
 
@@ -294,10 +301,11 @@ public sealed class ResilientServer<TFrame>
          });
 
          ConnectPacketPayload? connectPayload = null;
+         using var handshakeTimeoutCts = new CancellationTokenSource(Options.HandshakeTimeout);
+         using var handshakeCts = CancellationTokenSource.CreateLinkedTokenSource(combinedToken, handshakeTimeoutCts.Token);
+
          try
          {
-            using var handshakeTimeoutCts = new CancellationTokenSource(Options.HandshakeTimeout);
-            using var handshakeCts = CancellationTokenSource.CreateLinkedTokenSource(combinedToken, handshakeTimeoutCts.Token);
             connectPayload = await ReadConnectPayloadAsync(client, handshakeCts.Token);
          }
          catch
@@ -306,7 +314,7 @@ public sealed class ResilientServer<TFrame>
          }
 
          var handshakeSuccess = false;
-         if (connectPayload != null)
+         if (connectPayload != null && !handshakeCts.IsCancellationRequested)
          {
             client.ConnectPayload = connectPayload;
 
@@ -316,15 +324,22 @@ public sealed class ResilientServer<TFrame>
                {
                   Client = client,
                   ConnectPayload = connectPayload,
-                  CancellationToken = combinedToken
+                  CancellationToken = handshakeCts.Token
                };
 
-               await Events.OnConnect.ExecuteAsync(
-                  connectContext, HandlerExecutionStrategy.SequentialContinueOnError, combinedToken);
-
-               if (!connectContext.IsDenied)
+               try
                {
-                  handshakeSuccess = true;
+                  await Events.OnConnect.ExecuteAsync(
+                     connectContext, HandlerExecutionStrategy.SequentialContinueOnError, handshakeCts.Token);
+
+                  if (!connectContext.IsDenied && !handshakeCts.IsCancellationRequested)
+                  {
+                     handshakeSuccess = true;
+                  }
+               }
+               catch (OperationCanceledException)
+               {
+                  handshakeSuccess = false;
                }
             }
             else
@@ -385,7 +400,11 @@ public sealed class ResilientServer<TFrame>
          if (client != null)
          {
             TraceLogger.LogServerInfo("ResilientServer: Client {0} ({1}) disconnected.", client.Id, session.RemoteAddress);
-            client.SetHandshakeResult(false);
+            if (!client.IsHandshakeCompleted)
+            {
+               client.SetHandshakeResult(false);
+            }
+
             Clients.TryRemove(client.Id, out _);
 
             if (Events.ClientDisconnected.Count > 0)
@@ -517,6 +536,12 @@ public sealed class ResilientServer<TFrame>
                   var sequenceReader = new SequenceReader<byte>(buffer);
                   if (!TFrame.TryRead(ref sequenceReader, out frame))
                   {
+                     if (sequenceReader.Consumed > 0)
+                     {
+                        await client.DisconnectAsync();
+                        return;
+                     }
+
                      // Incomplete frame in buffer, wait for more data from stream
                      break;
                   }
@@ -614,7 +639,8 @@ public sealed class ResilientServer<TFrame>
                      }
                      else if (!client.HandshakeCompletedTask.IsCompleted)
                      {
-                        if (client.PreHandshakeFrameChannel.Writer.TryWrite((frame, streamContext.Stream)))
+                        var safeFrame = CloneFrameWithOwnedPayload(ref frame);
+                        if (client.PreHandshakeFrameChannel.Writer.TryWrite((safeFrame, streamContext.Stream)))
                         {
                            ResilientMetrics.RecordOfflineQueueSizeChange(1);
                         }
@@ -696,11 +722,36 @@ public sealed class ResilientServer<TFrame>
       }
    }
 
+   private static TFrame CloneFrameWithOwnedPayload(ref TFrame frame)
+   {
+      var payloadSeq = frame.GetPayloadSequence();
+      if (payloadSeq.IsEmpty)
+      {
+         return frame;
+      }
+
+      var encodedLen = frame.GetEncodedLength();
+      var copyBuf = new byte[encodedLen];
+
+      if (frame.TryWrite(copyBuf, out var written))
+      {
+         var copySeq = new ReadOnlySequence<byte>(copyBuf, 0, written);
+         var copyReader = new SequenceReader<byte>(copySeq);
+
+         if (TFrame.TryRead(ref copyReader, out var cloned))
+         {
+            return cloned;
+         }
+      }
+
+      return TFrame.CreateFrame(frame.GetFrameKind(), new ReadOnlySequence<byte>(payloadSeq.ToArray()));
+   }
+
    public async ValueTask DisposeAsync()
    {
       if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
-      await StopAsync();
+      await StopCoreAsync();
 
       foreach (var listener in _listeners)
       {

@@ -158,6 +158,11 @@ public sealed class UdpNetworkSession : INetworkSession
 
    public ValueTask PushIncomingDataAsync(ReadOnlyMemory<byte> data)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         return ValueTask.CompletedTask;
+      }
+
       Volatile.Write(ref _lastActivityTicks, DateTimeOffset.UtcNow.Ticks);
 
       if (Volatile.Read(ref _isWriterPaused) == 1)
@@ -167,14 +172,21 @@ public sealed class UdpNetworkSession : INetworkSession
          return ValueTask.CompletedTask;
       }
 
-      var writer = _incomingPipe.Writer;
-      writer.Write(data.Span);
-
-      var flushTask = writer.FlushAsync(_cts.Token);
-      if (!flushTask.IsCompleted)
+      try
       {
-         Volatile.Write(ref _isWriterPaused, 1);
-         _ = ObserveFlushAsync(flushTask);
+         var writer = _incomingPipe.Writer;
+         writer.Write(data.Span);
+
+         var flushTask = writer.FlushAsync(_cts.Token);
+         if (!flushTask.IsCompleted)
+         {
+            Volatile.Write(ref _isWriterPaused, 1);
+            _ = ObserveFlushAsync(flushTask);
+         }
+      }
+      catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+      {
+         // Session was concurrently disposed
       }
 
       return ValueTask.CompletedTask;
@@ -438,6 +450,11 @@ public sealed class UdpNetworkSession : INetworkSession
          return;
       }
 
+      if (_onDisposeAsync is not null)
+      {
+         await _onDisposeAsync(this);
+      }
+
       TransportMetrics.RecordConnectionClosed(TransportKind.Udp);
 
       TraceLogger.LogNeutralInfo("UDP Session: Disposing active UDP session {0}", Id);
@@ -451,6 +468,8 @@ public sealed class UdpNetworkSession : INetworkSession
          // Ignored
       }
       _cts.Dispose();
+
+      await _stream.DisposeAsync();
 
       await _incomingPipe.Reader.CompleteAsync();
       await _incomingPipe.Writer.CompleteAsync();
@@ -488,11 +507,6 @@ public sealed class UdpNetworkSession : INetworkSession
          {
             // Ignored
          }
-      }
-
-      if (_onDisposeAsync is not null)
-      {
-         await _onDisposeAsync(this);
       }
    }
 

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Pipelines;
 using System.Net;
 using System.Net.Security;
@@ -47,6 +48,10 @@ public sealed class TcpNetworkListener(
    private CancellationTokenSource? _acceptCts;
    private SemaphoreSlim? _handshakeSemaphore;
 
+   private Task? _acceptLoopTask;
+   private readonly ConcurrentDictionary<long, Task> _activeHandshakes = new();
+   private long _handshakeId;
+
    private int _disposedState; // 0 = active, 1 = disposed
 
    private Channel<Result<INetworkSession, NetworkCodeError>> _sessionChannel =
@@ -80,7 +85,7 @@ public sealed class TcpNetworkListener(
          _acceptCts = new CancellationTokenSource();
          _handshakeSemaphore = new SemaphoreSlim(_options.MaxConcurrentHandshakes);
 
-         _ = AcceptLoopAsync(socket, _acceptCts.Token);
+         _acceptLoopTask = AcceptLoopAsync(socket, _acceptCts.Token);
          TraceLogger.LogServerInfo("TCP Listener: Successfully bound and listening on {0}", LocalAddress);
 
          Interlocked.Increment(ref _binds);
@@ -105,17 +110,43 @@ public sealed class TcpNetworkListener(
       try
       {
          TraceLogger.LogServerInfo("TCP Listener: Unbinding and stopping listener socket on {0}", LocalAddress);
-         if (_acceptCts is not null)
+         var acceptCts = Interlocked.Exchange(ref _acceptCts, null);
+         if (acceptCts is not null)
          {
-            await _acceptCts.CancelAsync();
-
-            _acceptCts.Dispose();
-            _acceptCts = null;
+            await acceptCts.CancelAsync();
          }
 
          var socket = Interlocked.Exchange(ref _listenerSocket, null);
          socket?.Close();
          socket?.Dispose();
+
+         var acceptLoopTask = Interlocked.Exchange(ref _acceptLoopTask, null);
+         if (acceptLoopTask is not null)
+         {
+            try
+            {
+               await acceptLoopTask;
+            }
+            catch
+            {
+               // Ignored
+            }
+         }
+
+         var pendingHandshakes = _activeHandshakes.Values.ToArray();
+         if (pendingHandshakes.Length > 0)
+         {
+            try
+            {
+               await Task.WhenAll(pendingHandshakes);
+            }
+            catch
+            {
+               // Ignored
+            }
+         }
+
+         acceptCts?.Dispose();
 
          var semaphore = Interlocked.Exchange(ref _handshakeSemaphore, null);
          semaphore?.Dispose();
@@ -212,18 +243,28 @@ public sealed class TcpNetworkListener(
                }
 
                TraceLogger.LogServerInfo("TCP Listener: Accepted connection from client {0}", remoteEndPoint);
-               _ = Task.Run(async () =>
+               var handshakeId = Interlocked.Increment(ref _handshakeId);
+               var handshakeTask = Task.Run(async () =>
                {
                   try
                   {
-                     // ReSharper disable once AccessToDisposedClosure - only runs if no exception happened
                      await HandshakeAndEnqueueAsync(clientSocket, localEndPoint, remoteEndPoint, token);
                   }
                   finally
                   {
+                     _activeHandshakes.TryRemove(handshakeId, out _);
                      semaphore.Release();
                   }
-               }, token);
+               }, CancellationToken.None);
+
+               if (!handshakeTask.IsCompleted)
+               {
+                  _activeHandshakes[handshakeId] = handshakeTask;
+                  if (handshakeTask.IsCompleted)
+                  {
+                     _activeHandshakes.TryRemove(handshakeId, out _);
+                  }
+               }
             }
             catch (Exception ex)
             {

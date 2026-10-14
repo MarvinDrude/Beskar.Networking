@@ -146,7 +146,7 @@ public sealed class MemoryNetworkSession : INetworkSession
 
       try
       {
-         await _connection.Input.CompleteAsync();
+         await _connection.Output.CompleteAsync();
       }
       catch
       {
@@ -155,7 +155,7 @@ public sealed class MemoryNetworkSession : INetworkSession
 
       try
       {
-         await _connection.Output.CompleteAsync();
+         await _connection.Input.CompleteAsync();
       }
       catch
       {

@@ -123,7 +123,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
          }
 
          var listIndex = (int)(index - firstIndex);
-         if (listIndex < _entries.Count)
+         if (listIndex >= 0 && listIndex < _entries.Count && _entries[listIndex].Index == index)
          {
             return ValueTask.FromResult<RaftLogEntry?>(_entries[listIndex]);
          }
@@ -193,6 +193,10 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
                }
 
                var existingListIndex = (int)(entry.Index - firstIndex);
+               if (existingListIndex > _entries.Count)
+               {
+                  continue;
+               }
 
                if (existingListIndex >= 0 && existingListIndex < _entries.Count)
                {
@@ -459,6 +463,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
          var readHeaderBytes = _logFileStream.Read(header);
          if (readHeaderBytes < 20)
          {
+            _logFileStream.SetLength(offset);
             break;
          }
 
@@ -481,6 +486,12 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
 
          _entries.Add(new RaftLogEntry(term, index, data));
          _entryOffsets.Add(offset);
+      }
+
+      if (_logFileStream.Position < _logFileStream.Length)
+      {
+         _logFileStream.SetLength(_logFileStream.Position);
+         _logFileStream.Flush(flushToDisk: true);
       }
    }
 

@@ -203,7 +203,7 @@ public partial class MqttTopicGenerator
                   if (isByteSpan)
                   {
                      writer.WriteLineInterpolated(
-                        $"if (!Utf8Parser.TryParse(rawVal_{i}, out {name}, out _)) return false;");
+                        $"if (!Utf8Parser.TryParse(rawVal_{i}, out {name}, out int consumed_{i}) || consumed_{i} != rawVal_{i}.Length) return false;");
                   }
                   else
                   {

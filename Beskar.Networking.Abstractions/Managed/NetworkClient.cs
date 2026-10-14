@@ -14,7 +14,7 @@ namespace Beskar.Networking.Abstractions.Managed;
 /// <summary>
 /// A managed, high-level client wrapper that supports automatic reconnection.
 /// </summary>
-public sealed class NetworkClient : INetworkClient, IAsyncDisposable
+public sealed class NetworkClient : INetworkClient
 {
    private const int StateDisconnected = (int)ConnectionState.Disconnected;
    private const int StateConnecting = (int)ConnectionState.Connecting;
@@ -260,6 +260,8 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
 
       if (TryTransitionState(StateConnected, StateReconnecting))
       {
+         _ = Disconnected.ExecuteAsync(new DisconnectEvent(this));
+
          if (_options.IsEnabled && _lastEndPoint is not null)
          {
             StartReconnectLoop(_lastEndPoint);
@@ -267,7 +269,6 @@ public sealed class NetworkClient : INetworkClient, IAsyncDisposable
          else
          {
             SetState(StateDisconnected);
-            _ = Disconnected.ExecuteAsync(new DisconnectEvent(this));
          }
       }
    }

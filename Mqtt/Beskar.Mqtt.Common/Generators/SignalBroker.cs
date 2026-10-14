@@ -13,7 +13,6 @@ public sealed class SignalBroker : IDisposable
    public SignalAwaiter<TResponseMessage> AddAwaitable<TResponseMessage>(ushort identifier)
    {
       ThrowIfDisposed();
-      var awaitable = SignalAwaiterPool<TResponseMessage>.Get(identifier, this);
 
       lock (_locks[identifier % 1024])
       {
@@ -28,6 +27,8 @@ public sealed class SignalBroker : IDisposable
             currentHead.OnPruned();
             currentHead = next;
          }
+
+         var awaitable = SignalAwaiterPool<TResponseMessage>.Get(identifier, this);
 
          awaitable.Next = currentHead;
          _waiters[identifier] = awaitable;
@@ -80,15 +81,16 @@ public sealed class SignalBroker : IDisposable
 
             if (currentHead.MessageType == msgType)
             {
+               var next = currentHead.Next;
+               _waiters[identifier] = next;
+
                if (currentHead.TryComplete(in message))
                {
-                  var next = currentHead.Next;
-                  _waiters[identifier] = next;
-
                   currentHead.OnPruned();
                   return true;
                }
 
+               currentHead.OnPruned();
                continue;
             }
 
@@ -118,16 +120,15 @@ public sealed class SignalBroker : IDisposable
 
             if (current.MessageType == msgType)
             {
+               prev.Next = current.Next;
+
                if (current.TryComplete(in message))
                {
-                  prev.Next = current.Next;
                   current.OnPruned();
                   return true;
                }
 
-               prev.Next = current.Next;
                current.OnPruned();
-
                current = prev.Next;
                continue;
             }

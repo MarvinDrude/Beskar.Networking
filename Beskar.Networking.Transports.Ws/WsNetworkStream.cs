@@ -100,6 +100,7 @@ public sealed class WsNetworkStream : INetworkStream
    {
       if (_rawTransport is WsDuplexPipe wsDuplexPipe)
       {
+         IncrementBytesSent(payload.Length);
          return wsDuplexPipe.SendFrameDirectAsync(payload, opcode, flush, cancellationToken);
       }
 
@@ -111,6 +112,7 @@ public sealed class WsNetworkStream : INetworkStream
    {
       if (_rawTransport is WsDuplexPipe wsDuplexPipe)
       {
+         IncrementBytesSent(payload.Length);
          return wsDuplexPipe.SendFrameDirectAsync(payload, opcode, flush, cancellationToken);
       }
 

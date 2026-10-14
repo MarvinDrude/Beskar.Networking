@@ -9,6 +9,7 @@ using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Transports.Common.Streams;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Transports.Common.Sockets;
 
 namespace Beskar.Networking.Transports.Tcp;
 
@@ -88,7 +89,29 @@ public sealed class TcpNetworkSession : INetworkSession
       _connection = connection;
       _onDisposeAsync = onDisposeAsync;
 
+      if (_connection is SocketConnection socketConn)
+      {
+         socketConn.ConnectionClosed += OnConnectionClosed;
+      }
+      else if (_connection is StreamConnection streamConn)
+      {
+         streamConn.ConnectionClosed += OnConnectionClosed;
+      }
+
       TransportMetrics.RecordConnectionOpened(TransportKind.Tcp);
+   }
+
+   private void OnConnectionClosed()
+   {
+      if (Volatile.Read(ref _disposed) == 1) return;
+      try
+      {
+         _cts.Cancel();
+      }
+      catch
+      {
+         // Ignored
+      }
    }
 
    /// <inheritdoc />

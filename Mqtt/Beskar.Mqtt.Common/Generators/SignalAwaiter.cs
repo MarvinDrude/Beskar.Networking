@@ -21,11 +21,15 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    // 0 = Pending, 1 = Completed, 2 = Failed/Canceled, 3 = Disposed
    private int _state;
+   private int _isDisposed;
    private volatile bool _isPruned;
 
    private int _isPooled;
    private int _isResultRetrieved;
-   private int _isAwaited;
+   private int _hasContinuation;
+
+   // Bit 1 = Pruned, Bit 2 = Disposed, Bit 4 = ResultRetrieved (or no continuation registered)
+   private int _lifecycleState;
 
    private CancellationTokenRegistration _cancellationRegistration;
 
@@ -38,7 +42,6 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    public ValueTask<TResponseMessage> WaitOneAsync(CancellationToken cancellationToken)
    {
-      _isAwaited = 1;
       if (cancellationToken.CanBeCanceled)
       {
          _cancellationRegistration = cancellationToken.Register(
@@ -53,8 +56,10 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
    {
       if (Interlocked.CompareExchange(ref _state, 1, 0) == 0)
       {
-         _core.SetResult(message);
          _cancellationRegistration.Dispose();
+         _cancellationRegistration = default;
+
+         _core.SetResult(message);
 
          return true;
       }
@@ -83,8 +88,10 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
    {
       if (Interlocked.CompareExchange(ref _state, 2, 0) == 0)
       {
-         _core.SetException(new OperationCanceledException(token));
          _cancellationRegistration.Dispose();
+         _cancellationRegistration = default;
+
+         _core.SetException(new OperationCanceledException(token));
       }
    }
 
@@ -92,8 +99,10 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
    {
       if (Interlocked.CompareExchange(ref _state, 2, 0) == 0)
       {
-         _core.SetException(exception);
          _cancellationRegistration.Dispose();
+         _cancellationRegistration = default;
+
+         _core.SetException(exception);
       }
    }
 
@@ -111,10 +120,19 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       return false;
    }
 
+   private void CompleteLifecycleFlag(int mask)
+   {
+      var prev = Interlocked.Or(ref _lifecycleState, mask);
+      if ((prev & 0b111) != 0b111 && ((prev | mask) & 0b111) == 0b111)
+      {
+         TryPool();
+      }
+   }
+
    public void OnPruned()
    {
       _isPruned = true;
-      CheckAndPool();
+      CompleteLifecycleFlag(0b001);
    }
 
    public void Reset(ushort newIdentifier, SignalBroker broker)
@@ -130,7 +148,9 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
       _isPooled = 0;
       _isResultRetrieved = 0;
-      _isAwaited = 0;
+      _hasContinuation = 0;
+      _lifecycleState = 0;
+      _isDisposed = 0;
 
       _broker = broker;
       _state = 0;
@@ -138,36 +158,26 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    public void Dispose()
    {
+      if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) != 0) return;
+
       var previousState = Interlocked.Exchange(ref _state, 3);
       if (previousState == 3) return;
+
+      _cancellationRegistration.Dispose();
+      _cancellationRegistration = default;
 
       if (previousState == 0)
       {
          _core.SetException(new OperationCanceledException());
       }
 
-      _cancellationRegistration.Dispose();
-      _cancellationRegistration = default;
-
-      CheckAndPool();
-   }
-
-   private void CheckAndPool()
-   {
-      if (Volatile.Read(ref _state) == 3 &&
-          (Volatile.Read(ref _isAwaited) == 0 || Volatile.Read(ref _isResultRetrieved) == 1))
+      if (!_isPruned)
       {
-         var broker = _broker;
-
-         if (_isPruned)
-         {
-            TryPool();
-         }
-         else
-         {
-            broker?.TryRemove(Identifier, this);
-         }
+         _broker?.TryRemove(Identifier, this);
       }
+
+      var mask = Volatile.Read(ref _hasContinuation) == 0 ? 0b110 : 0b010;
+      CompleteLifecycleFlag(mask);
    }
 
    TResponseMessage IValueTaskSource<TResponseMessage>.GetResult(short token)
@@ -180,7 +190,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       {
          if (Interlocked.CompareExchange(ref _isResultRetrieved, 1, 0) == 0)
          {
-            CheckAndPool();
+            CompleteLifecycleFlag(0b100);
          }
       }
    }
@@ -190,5 +200,8 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    void IValueTaskSource<TResponseMessage>.OnCompleted(
       Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
-      => _core.OnCompleted(continuation, state, token, flags);
+   {
+      Volatile.Write(ref _hasContinuation, 1);
+      _core.OnCompleted(continuation, state, token, flags);
+   }
 }

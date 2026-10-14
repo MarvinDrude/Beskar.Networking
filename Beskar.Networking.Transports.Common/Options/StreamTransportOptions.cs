@@ -11,8 +11,10 @@ public sealed class StreamTransportOptions
    {
       var memoryPool = SharedTransportMemoryPool.GetNext();
 
-      var maxReadBufferSize = MaxReadBufferSize ?? 0;
-      var maxWriteBufferSize = MaxWriteBufferSize ?? 0;
+      var pauseRead = MaxReadBufferSize ?? -1;
+      var resumeRead = MaxReadBufferSize.HasValue ? MaxReadBufferSize.Value / 2 : -1;
+      var pauseWrite = MaxWriteBufferSize ?? -1;
+      var resumeWrite = MaxWriteBufferSize.HasValue ? MaxWriteBufferSize.Value / 2 : -1;
 
       return new StreamQueueSettings()
       {
@@ -21,11 +23,11 @@ public sealed class StreamTransportOptions
 
          ReceiveOptions = new PipeOptions(
             memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
-            maxReadBufferSize, maxReadBufferSize / 2,
+            pauseRead, resumeRead,
             useSynchronizationContext: false),
          SendOptions = new PipeOptions(
             memoryPool, PipeScheduler.ThreadPool, PipeScheduler.ThreadPool,
-            maxWriteBufferSize, maxWriteBufferSize / 2,
+            pauseWrite, resumeWrite,
             useSynchronizationContext: false),
       };
    }

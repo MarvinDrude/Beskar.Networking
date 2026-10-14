@@ -101,7 +101,15 @@ public sealed class RaftNetworkTransport : IRaftTransport
          return null;
       }
 
-      using var rpcCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      if (_cts is { IsCancellationRequested: true })
+      {
+         return null;
+      }
+
+      using var rpcCts = _cts != null
+         ? CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token)
+         : CancellationTokenSource.CreateLinkedTokenSource(ct);
+
       rpcCts.CancelAfter(_rpcTimeout);
 
       try
@@ -320,7 +328,13 @@ public sealed class RaftNetworkTransport : IRaftTransport
          }
          finally
          {
-            _semaphore.Release();
+            try
+            {
+               _semaphore.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
          }
       }
 

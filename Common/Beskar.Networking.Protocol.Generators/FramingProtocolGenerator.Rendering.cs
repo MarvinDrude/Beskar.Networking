@@ -153,8 +153,30 @@ public partial class FramingProtocolGenerator
                writer.WriteLine("destination[bytesWritten++] = " + prop.PropertyName + ";");
                break;
             case ProtocolAttributeKind.ProtocolField:
-               writer.WriteLine("BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(bytesWritten), Convert.ToUInt16(" + prop.PropertyName + "));");
+               var pCopyVar = "pCopy_" + prop.PropertyName;
+               var pSizeVar = "pSize_" + prop.PropertyName;
+
+               writer.WriteLine("var " + pCopyVar + " = " + prop.PropertyName + ";");
+               writer.WriteLine("int " + pSizeVar + " = System.Runtime.CompilerServices.Unsafe.SizeOf<" + prop.PropertyType + ">();");
+               writer.WriteLine("if (" + pSizeVar + " == 1)");
+               writer.OpenBody();
+               writer.WriteLine("destination[bytesWritten++] = System.Runtime.CompilerServices.Unsafe.As<" + prop.PropertyType + ", byte>(ref " + pCopyVar + ");");
+               writer.CloseBody();
+               writer.WriteLine("else if (" + pSizeVar + " == 2)");
+               writer.OpenBody();
+               writer.WriteLine("BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(bytesWritten), System.Runtime.CompilerServices.Unsafe.As<" + prop.PropertyType + ", ushort>(ref " + pCopyVar + "));");
                writer.WriteLine("bytesWritten += 2;");
+               writer.CloseBody();
+               writer.WriteLine("else if (" + pSizeVar + " == 4)");
+               writer.OpenBody();
+               writer.WriteLine("BinaryPrimitives.WriteUInt32BigEndian(destination.Slice(bytesWritten), System.Runtime.CompilerServices.Unsafe.As<" + prop.PropertyType + ", uint>(ref " + pCopyVar + "));");
+               writer.WriteLine("bytesWritten += 4;");
+               writer.CloseBody();
+               writer.WriteLine("else if (" + pSizeVar + " == 8)");
+               writer.OpenBody();
+               writer.WriteLine("BinaryPrimitives.WriteUInt64BigEndian(destination.Slice(bytesWritten), System.Runtime.CompilerServices.Unsafe.As<" + prop.PropertyType + ", ulong>(ref " + pCopyVar + "));");
+               writer.WriteLine("bytesWritten += 8;");
+               writer.CloseBody();
                break;
             case ProtocolAttributeKind.FlagsField:
                writer.WriteLine("var flagsCopy_" + prop.PropertyName + " = " + prop.PropertyName + ";");
@@ -198,6 +220,7 @@ public partial class FramingProtocolGenerator
       writer.WriteLine("public static bool TryRead(ref SequenceReader<byte> reader, out " + model.TypeName + " result)");
       writer.OpenBody();
       writer.WriteLine("result = default;");
+      writer.WriteLine("long initialConsumed = reader.Consumed;");
       writer.WriteLine("var pkt = new " + model.TypeName + "();");
 
       foreach (var prop in model.Properties)
@@ -205,69 +228,116 @@ public partial class FramingProtocolGenerator
          switch (prop.AttributeKind)
          {
             case ProtocolAttributeKind.MagicBytes:
-               for (int i = 0; i < prop.MagicBytes.Length; i++)
+               for (var i = 0; i < prop.MagicBytes.Length; i++)
                {
-                  writer.WriteLine("if (!reader.TryRead(out byte b" + i + ") || b" + i + " != 0x" + prop.MagicBytes[i].ToString("X2") + ") return false;");
+                  var bVar = "b_" + prop.PropertyName + "_" + i;
+                  writer.WriteLine("if (!reader.TryRead(out byte " + bVar + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
+                  writer.WriteLine("if (" + bVar + " != 0x" + prop.MagicBytes[i].ToString("X2") + ") return false;");
                }
                break;
             case ProtocolAttributeKind.VersionField:
-               writer.WriteLine("if (!reader.TryRead(out byte ver)) return false;");
-               writer.WriteLine("pkt." + prop.PropertyName + " = ver;");
+               var verVar = "ver_" + prop.PropertyName;
+               writer.WriteLine("if (!reader.TryRead(out byte " + verVar + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
+               writer.WriteLine("pkt." + prop.PropertyName + " = " + verVar + ";");
                break;
             case ProtocolAttributeKind.ProtocolField:
-               writer.WriteLine("if (!reader.TryReadBigEndian(out short pTypeRaw)) return false;");
-               writer.WriteLine("pkt." + prop.PropertyName + " = (" + prop.PropertyType + ")(ushort)pTypeRaw;");
+
+               var pReadSizeVar = "pReadSize_" + prop.PropertyName;
+               writer.WriteLine("int " + pReadSizeVar + " = System.Runtime.CompilerServices.Unsafe.SizeOf<" + prop.PropertyType + ">();");
+               writer.WriteLine("if (" + pReadSizeVar + " == 1)");
+               writer.OpenBody();
+
+               var pRaw1Var = "pRaw1_" + prop.PropertyName;
+               writer.WriteLine("if (!reader.TryRead(out byte " + pRaw1Var + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
+               writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<byte, " + prop.PropertyType + ">(ref " + pRaw1Var + ");");
+               writer.CloseBody();
+               writer.WriteLine("else if (" + pReadSizeVar + " == 2)");
+               writer.OpenBody();
+
+               var pRaw2Var = "pRaw2_" + prop.PropertyName;
+               var pU2Var = "pU2_" + prop.PropertyName;
+
+               writer.WriteLine("if (!reader.TryReadBigEndian(out short " + pRaw2Var + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
+               writer.WriteLine("ushort " + pU2Var + " = (ushort)" + pRaw2Var + ";");
+               writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<ushort, " + prop.PropertyType + ">(ref " + pU2Var + ");");
+               writer.CloseBody();
+               writer.WriteLine("else if (" + pReadSizeVar + " == 4)");
+               writer.OpenBody();
+
+               var pRaw4Var = "pRaw4_" + prop.PropertyName;
+               var pU4Var = "pU4_" + prop.PropertyName;
+
+               writer.WriteLine("if (!reader.TryReadBigEndian(out int " + pRaw4Var + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
+               writer.WriteLine("uint " + pU4Var + " = (uint)" + pRaw4Var + ";");
+               writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<uint, " + prop.PropertyType + ">(ref " + pU4Var + ");");
+               writer.CloseBody();
+               writer.WriteLine("else if (" + pReadSizeVar + " == 8)");
+               writer.OpenBody();
+
+               var pRaw8Var = "pRaw8_" + prop.PropertyName;
+               var pU8Var = "pU8_" + prop.PropertyName;
+
+               writer.WriteLine("if (!reader.TryReadBigEndian(out long " + pRaw8Var + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
+               writer.WriteLine("ulong " + pU8Var + " = (ulong)" + pRaw8Var + ";");
+               writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<ulong, " + prop.PropertyType + ">(ref " + pU8Var + ");");
+               writer.CloseBody();
+
                break;
             case ProtocolAttributeKind.FlagsField:
                if (prop.PropertyType.Contains("PackedBools8"))
                {
-                  writer.WriteLine("if (!reader.TryRead(out byte flags8Raw_" + prop.PropertyName + ")) return false;");
+                  writer.WriteLine("if (!reader.TryRead(out byte flags8Raw_" + prop.PropertyName + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
                   writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<byte, " + prop.PropertyType + ">(ref flags8Raw_" + prop.PropertyName + ");");
                }
                else if (prop.PropertyType.Contains("PackedBools32"))
                {
-                  writer.WriteLine("if (!reader.TryReadBigEndian(out int flags32Raw_" + prop.PropertyName + ")) return false;");
+                  writer.WriteLine("if (!reader.TryReadBigEndian(out int flags32Raw_" + prop.PropertyName + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
                   writer.WriteLine("uint flagsU32_" + prop.PropertyName + " = (uint)flags32Raw_" + prop.PropertyName + ";");
                   writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<uint, " + prop.PropertyType + ">(ref flagsU32_" + prop.PropertyName + ");");
                }
                else if (prop.PropertyType.Contains("PackedBools64"))
                {
-                  writer.WriteLine("if (!reader.TryReadBigEndian(out long flags64Raw_" + prop.PropertyName + ")) return false;");
+                  writer.WriteLine("if (!reader.TryReadBigEndian(out long flags64Raw_" + prop.PropertyName + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
                   writer.WriteLine("ulong flagsU64_" + prop.PropertyName + " = (ulong)flags64Raw_" + prop.PropertyName + ";");
                   writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<ulong, " + prop.PropertyType + ">(ref flagsU64_" + prop.PropertyName + ");");
                }
                else
                {
-                  writer.WriteLine("if (!reader.TryReadBigEndian(out short flags16Raw_" + prop.PropertyName + ")) return false;");
+                  writer.WriteLine("if (!reader.TryReadBigEndian(out short flags16Raw_" + prop.PropertyName + ")) { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
                   writer.WriteLine("ushort flagsU16_" + prop.PropertyName + " = (ushort)flags16Raw_" + prop.PropertyName + ";");
                   writer.WriteLine("pkt." + prop.PropertyName + " = System.Runtime.CompilerServices.Unsafe.As<ushort, " + prop.PropertyType + ">(ref flagsU16_" + prop.PropertyName + ");");
                }
                break;
             case ProtocolAttributeKind.VarNumberField:
-               writer.WriteLine("if (!VarNumber.TryRead(ref reader, out " + prop.PropertyType + " varVal_" + prop.PropertyName + ")) return false;");
+               var beforeVar = "beforeVar_" + prop.PropertyName;
+               writer.WriteLine("long " + beforeVar + " = reader.Consumed;");
+               writer.WriteLine("if (!VarNumber.TryRead(ref reader, out " + prop.PropertyType + " varVal_" + prop.PropertyName + ")) { if (reader.Consumed - " + beforeVar + " < 10) reader.Rewind(reader.Consumed - initialConsumed); return false; }");
                writer.WriteLine("pkt." + prop.PropertyName + " = varVal_" + prop.PropertyName + ";");
                break;
             case ProtocolAttributeKind.ByteSequenceField:
+               var seqLenVar = "seqLen_" + prop.PropertyName;
+               var seqVar = "seq_" + prop.PropertyName;
                if (!string.IsNullOrEmpty(prop.LengthPropertyName))
                {
                   var lenProp = prop.LengthPropertyName;
-                  writer.WriteLine("int seqLen = pkt." + lenProp + ";");
+                  writer.WriteLine("int " + seqLenVar + " = pkt." + lenProp + ";");
                }
                else
                {
-                  writer.WriteLine("int seqLen = (int)(reader.Length - reader.Consumed);");
+                  writer.WriteLine("int " + seqLenVar + " = (int)(reader.Length - reader.Consumed);");
                }
-               writer.WriteLine("if (reader.UnreadSequence.Length < seqLen) return false;");
+               writer.WriteLine("if (" + seqLenVar + " < 0) return false;");
+               writer.WriteLine("if (reader.UnreadSequence.Length < " + seqLenVar + ") { reader.Rewind(reader.Consumed - initialConsumed); return false; }");
                if (prop.SafeCopyData)
                {
-                  writer.WriteLine("var seq = new ReadOnlySequence<byte>(reader.UnreadSequence.Slice(0, seqLen).ToArray());");
+                  writer.WriteLine("var " + seqVar + " = new ReadOnlySequence<byte>(reader.UnreadSequence.Slice(0, " + seqLenVar + ").ToArray());");
                }
                else
                {
-                  writer.WriteLine("var seq = reader.UnreadSequence.Slice(0, seqLen);");
+                  writer.WriteLine("var " + seqVar + " = reader.UnreadSequence.Slice(0, " + seqLenVar + ");");
                }
-               writer.WriteLine("reader.Advance(seqLen);");
-               writer.WriteLine("pkt." + prop.PropertyName + " = seq;");
+               writer.WriteLine("reader.Advance(" + seqLenVar + ");");
+               writer.WriteLine("pkt." + prop.PropertyName + " = " + seqVar + ";");
                break;
          }
       }

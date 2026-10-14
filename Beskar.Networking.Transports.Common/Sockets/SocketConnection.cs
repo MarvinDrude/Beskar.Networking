@@ -16,24 +16,64 @@ public sealed class SocketConnection
    private bool _isDisposed;
    private bool _isAborted;
 
+   private Action? _connectionClosedHandler;
+   private int _connectionClosed;
+
+   public event Action? ConnectionClosed
+   {
+      add
+      {
+         _connectionClosedHandler += value;
+         if (Volatile.Read(ref _connectionClosed) == 1)
+         {
+            try
+            {
+               value?.Invoke();
+            }
+            catch
+            {
+               // Ignored
+            }
+         }
+      }
+      remove => _connectionClosedHandler -= value;
+   }
+
    public PipeReader Input => _receiver.Pipe.Reader;
-   public PipeWriter Output => _sender;
+   public PipeWriter Output => _sender.Pipe.Writer;
 
    public SocketConnection(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
+      : this(
+         new PipeOptions(
+            pool: bufferPool,
+            readerScheduler: scheduler,
+            writerScheduler: scheduler,
+            useSynchronizationContext: false),
+         bufferPool)
    {
-      var pipeOptions = new PipeOptions(
-         pool: bufferPool,
-         readerScheduler: scheduler,
-         writerScheduler: scheduler,
-         useSynchronizationContext: false);
+   }
 
-      _sender = new SocketSender(bufferPool);
-      _receiver = new SocketReceiver(pipeOptions);
+   public SocketConnection(PipeOptions receiveOptions, MemoryPool<byte> bufferPool)
+      : this(
+         receiveOptions,
+         new PipeOptions(
+            pool: bufferPool,
+            readerScheduler: receiveOptions.ReaderScheduler,
+            writerScheduler: receiveOptions.WriterScheduler,
+            useSynchronizationContext: false))
+   {
+   }
+
+   public SocketConnection(PipeOptions receiveOptions, PipeOptions sendOptions)
+   {
+      _sender = new SocketSender(sendOptions);
+      _receiver = new SocketReceiver(receiveOptions);
    }
 
    public void Initialize(Socket socket)
    {
       _socket = socket;
+      Volatile.Write(ref _connectionClosed, 0);
 
       _sender.Initialize(this, socket);
       _receiver.Initialize(this, socket);
@@ -45,16 +85,30 @@ public sealed class SocketConnection
       _receiver.Start();
    }
 
+   internal void NotifyConnectionClosed()
+   {
+      if (Interlocked.Exchange(ref _connectionClosed, 1) == 1)
+      {
+         return;
+      }
+
+      try
+      {
+         _connectionClosedHandler?.Invoke();
+      }
+      catch
+      {
+         // Ignored
+      }
+   }
+
    public void Abort(Exception? exception = null)
    {
       lock (_shutdownLock)
       {
-         if (_isAborted || _isDisposed) return;
+         if (_isAborted) return;
          _isAborted = true;
       }
-
-      _sender.Stop();
-      _receiver.Stop();
 
       if (_socket != null)
       {
@@ -67,6 +121,11 @@ public sealed class SocketConnection
             // Expected
          }
       }
+
+      _sender.Stop();
+      _receiver.Stop();
+
+      NotifyConnectionClosed();
    }
 
    public async ValueTask StopAsync()
@@ -107,12 +166,15 @@ public sealed class SocketConnection
 
    public bool TryResetState()
    {
-      if (!_sender.TryResetState() || !_receiver.TryResetState())
+      if (_isDisposed || !_sender.TryResetState() || !_receiver.TryResetState())
       {
          return false;
       }
 
+      _connectionClosedHandler = null;
+      Volatile.Write(ref _connectionClosed, 0);
       _socket = null;
+
       _isDisposed = false;
       _isAborted = false;
 

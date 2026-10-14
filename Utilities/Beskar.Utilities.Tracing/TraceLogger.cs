@@ -28,12 +28,18 @@ public static class TraceLogger
       return colorized;
    }
 
+   private static string FormatMessage(string template, object?[]? args)
+   {
+      if (args == null || args.Length == 0) return template;
+      return string.Format(template, ColorizeArgs(args));
+   }
+
    [Conditional(Conditional)]
    public static void LogNeutralWarning(string template, params object?[] args)
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Warning, string.Format(template, ColorizeArgs(args)), TraceLogOrigin.None);
+      Log(TraceLogLevel.Warning, FormatMessage(template, args), TraceLogOrigin.None);
 #endif
    }
 
@@ -42,7 +48,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Error, string.Format(template, ColorizeArgs(args)), TraceLogOrigin.None);
+      Log(TraceLogLevel.Error, FormatMessage(template, args), TraceLogOrigin.None);
 #endif
    }
 
@@ -51,7 +57,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Info, string.Format(template, ColorizeArgs(args)), TraceLogOrigin.None);
+      Log(TraceLogLevel.Info, FormatMessage(template, args), TraceLogOrigin.None);
 #endif
    }
 
@@ -60,7 +66,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Warning, string.Format(template, ColorizeArgs(args)), TraceLogOrigin.Client);
+      Log(TraceLogLevel.Warning, FormatMessage(template, args), TraceLogOrigin.Client);
 #endif
    }
 
@@ -69,7 +75,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Error, string.Format(template, ColorizeArgs(args)), TraceLogOrigin.Client);
+      Log(TraceLogLevel.Error, FormatMessage(template, args), TraceLogOrigin.Client);
 #endif
    }
 
@@ -78,7 +84,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Info, string.Format(template, ColorizeArgs(args)), TraceLogOrigin.Client);
+      Log(TraceLogLevel.Info, FormatMessage(template, args), TraceLogOrigin.Client);
 #endif
    }
 
@@ -87,7 +93,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Warning, string.Format(template, ColorizeArgs(args)), TraceLogOrigin.Server);
+      Log(TraceLogLevel.Warning, FormatMessage(template, args), TraceLogOrigin.Server);
 #endif
    }
 
@@ -96,7 +102,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Error, string.Format(template, ColorizeArgs(args)), TraceLogOrigin.Server);
+      Log(TraceLogLevel.Error, FormatMessage(template, args), TraceLogOrigin.Server);
 #endif
    }
 
@@ -105,7 +111,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Info, string.Format(template, ColorizeArgs(args)), TraceLogOrigin.Server);
+      Log(TraceLogLevel.Info, FormatMessage(template, args), TraceLogOrigin.Server);
 #endif
    }
 
@@ -114,7 +120,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Warning, string.Format(template, ColorizeArgs(args)), origin);
+      Log(TraceLogLevel.Warning, FormatMessage(template, args), origin);
 #endif
    }
 
@@ -123,7 +129,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Error, string.Format(template, ColorizeArgs(args)), origin);
+      Log(TraceLogLevel.Error, FormatMessage(template, args), origin);
 #endif
    }
 
@@ -132,7 +138,7 @@ public static class TraceLogger
    {
 #if DEBUG
       if (!IsEnabled) return;
-      Log(TraceLogLevel.Info, string.Format(template, ColorizeArgs(args)), origin);
+      Log(TraceLogLevel.Info, FormatMessage(template, args), origin);
 #endif
    }
 

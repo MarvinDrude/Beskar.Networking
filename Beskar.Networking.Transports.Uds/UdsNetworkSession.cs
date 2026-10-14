@@ -7,6 +7,7 @@ using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
+using Beskar.Networking.Transports.Common.Sockets;
 
 namespace Beskar.Networking.Transports.Uds;
 
@@ -65,7 +66,25 @@ public sealed class UdsNetworkSession : INetworkSession
       _connection = connection;
       _onDisposeAsync = onDisposeAsync;
 
+      if (_connection is SocketConnection socketConn)
+      {
+         socketConn.ConnectionClosed += OnConnectionClosed;
+      }
+
       TransportMetrics.RecordConnectionOpened(TransportKind.UnixDomainSocket);
+   }
+
+   private void OnConnectionClosed()
+   {
+      if (Volatile.Read(ref _disposed) == 1) return;
+      try
+      {
+         _cts.Cancel();
+      }
+      catch
+      {
+         // Ignored
+      }
    }
 
    /// <inheritdoc />

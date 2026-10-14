@@ -74,6 +74,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private ConnectOptions _connectOptions = new() { EndPoint = new IPEndPoint(0, 0) };
 
    private readonly Dictionary<ushort, byte[]> _topicAliases = new(16);
+   private readonly HashSet<ushort> _incomingQos2Packets = [];
    private readonly Lock _topicAliasesLock = new();
 
    private SemaphoreSlim? _inFlightSemaphore;
@@ -83,6 +84,9 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private Task? _reconnectTask;
    private bool _isReconnecting;
    private CancellationTokenSource? _reconnectCts;
+
+   private readonly AsyncLocal<bool> _inReconnectLoop = new();
+   private readonly AsyncLocal<bool> _inConnectingCallback = new();
 
    /// <summary>
    /// Initializes a new instance of the <see cref="MqttClient"/> class using the specified network client transport.
@@ -147,6 +151,9 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          _protocolVersion = options.ProtocolVersion;
          _topicAliases.Clear();
 
+         _clientTokenSource.Dispose();
+         _clientTokenSource = new CancellationTokenSource();
+
          if (Events.OnClientConnecting.Count > 0)
          {
             var ctx = new ClientConnectingContext()
@@ -154,8 +161,23 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                ConnectOptions = options
             };
 
-            await Events.OnClientConnecting.ExecuteAsync(
-               ctx, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+            _inConnectingCallback.Value = true;
+            try
+            {
+               await Events.OnClientConnecting.ExecuteAsync(
+                  ctx, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+            }
+            finally
+            {
+               _inConnectingCallback.Value = false;
+            }
+         }
+
+         if (ct.IsCancellationRequested || _clientTokenSource.IsCancellationRequested ||
+             (MqttClientConnectionState)_state != MqttClientConnectionState.Connecting)
+         {
+            CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Connecting);
+            return new StringError("Connection cancelled during OnClientConnecting.");
          }
 
          if (!_firstConnect)
@@ -164,9 +186,6 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             _identifierGenerator.Reset();
             _signalBroker.Reset();
          }
-
-         _clientTokenSource.Dispose();
-         _clientTokenSource = new CancellationTokenSource();
 
          _disconnectReason = null;
          _disconnectException = null;
@@ -186,11 +205,16 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             result = await ConnectInternalAsync(timed.Token);
          }
 
-         if (result.Failed)
+         if (result.Failed || _clientTokenSource.IsCancellationRequested ||
+             (MqttClientConnectionState)_state != MqttClientConnectionState.Connecting)
          {
-            TraceLogger.LogClientError("MqttClient.ConnectAsync: Connection attempt failed: {0}", result.Error.Detail);
+            TraceLogger.LogClientError("MqttClient.ConnectAsync: Connection attempt failed: {0}",
+               result.Failed ? result.Error.Detail : "Disconnected while connecting.");
+
             await DisconnectInternalAsync();
-            return result;
+            return result.Failed
+               ? result
+               : new StringError("Connection cancelled while connecting.");
          }
 
          var connectResult = result.Success;
@@ -203,11 +227,21 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          lock (_topicAliasesLock)
          {
             _incomingInFlightCount = 0;
+            if (options.CleanSession || !connectResult.IsSessionPresent)
+            {
+               _incomingQos2Packets.Clear();
+            }
          }
 
          TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Successfully connected. Assigned KeepAlive: {0}s",
             connectResult.ServerKeepAlive > 0 ? connectResult.ServerKeepAlive : _connectOptions.KeepAlivePeriod);
-         CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting);
+
+         if (CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting) !=
+             MqttClientConnectionState.Connecting)
+         {
+            await DisconnectInternalAsync();
+            return new StringError("Connection cancelled before transitioning to Connected.");
+         }
 
          await DispatchConnectedAsync(connectResult);
          return result;
@@ -242,6 +276,22 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       lock (_topicAliasesLock)
       {
          _topicAliases[alias] = topic;
+      }
+   }
+
+   internal bool TryAddIncomingQos2Packet(ushort packetId)
+   {
+      lock (_topicAliasesLock)
+      {
+         return _incomingQos2Packets.Add(packetId);
+      }
+   }
+
+   internal bool RemoveIncomingQos2Packet(ushort packetId)
+   {
+      lock (_topicAliasesLock)
+      {
+         return _incomingQos2Packets.Remove(packetId);
       }
    }
 
@@ -497,16 +547,25 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
       lock (_reconnectLock)
       {
+         if (_gracefulDisconnect || Volatile.Read(ref _disposedState) == 1)
+            return Task.CompletedTask;
+
          if (_isReconnecting)
             return _reconnectTask ?? Task.CompletedTask;
+
+         var newReconnectCts = new CancellationTokenSource();
+         var oldReconnectCts = Interlocked.Exchange(ref _reconnectCts, newReconnectCts);
+         oldReconnectCts?.Dispose();
+         var masterCt = newReconnectCts.Token;
 
          _isReconnecting = true;
          _reconnectTask = Task.Run(async () =>
          {
+            _inReconnectLoop.Value = true;
             try
             {
                var autoReconnect = _connectOptions.AutoReconnect;
-               if (autoReconnect is not { IsEnabled: true } || Volatile.Read(ref _disposedState) == 1)
+               if (autoReconnect is not { IsEnabled: true } || Volatile.Read(ref _disposedState) == 1 || masterCt.IsCancellationRequested)
                {
                   return;
                }
@@ -515,11 +574,6 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                   cause?.Message ?? "Transport closed", _connectOptions.EndPoint);
 
                _state = (int)MqttClientConnectionState.Reconnecting;
-
-               var newReconnectCts = new CancellationTokenSource();
-               var oldReconnectCts = Interlocked.Exchange(ref _reconnectCts, newReconnectCts);
-               oldReconnectCts?.Dispose();
-               var masterCt = newReconnectCts.Token;
 
                var attempt = 0;
                var maxRetries = autoReconnect.MaxRetryAttempts;
@@ -569,6 +623,12 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                      return;
                   }
 
+                  if (masterCt.IsCancellationRequested || _gracefulDisconnect || Volatile.Read(ref _disposedState) == 1)
+                  {
+                     _state = (int)MqttClientConnectionState.Disconnected;
+                     break;
+                  }
+
                   _state = (int)MqttClientConnectionState.Reconnecting;
                }
 
@@ -579,6 +639,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             }
             finally
             {
+               _inReconnectLoop.Value = false;
+
                var reconnectCts = Interlocked.Exchange(ref _reconnectCts, null);
                reconnectCts?.Dispose();
 
@@ -622,7 +684,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
 
       var reconnectTask = _reconnectTask;
-      if (reconnectTask is not null)
+      if (reconnectTask is not null && !_inReconnectLoop.Value)
       {
          try
          {
