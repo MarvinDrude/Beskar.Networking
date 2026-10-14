@@ -290,4 +290,31 @@ public class AuditProtocolAndResilientBugConfirmationTests
          await server.StopAsync();
       }
    }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task ResilientServer_DisposeAsyncWithoutStopAsync_ShouldStopServerAndFireOnStop(CancellationToken ct)
+   {
+      var endpoint = new MemoryEndPoint($"resilient_dispose_{Guid.NewGuid():N}");
+      var listener = new MemoryNetworkListener(endpoint, new MemoryTransportOptions());
+      var server = new ResilientServer<BeskarPacket>([listener], new ResilientServerOptions());
+
+      var onStopFired = false;
+      server.Events.OnStop.Add((_, _) =>
+      {
+         onStopFired = true;
+         return ValueTask.CompletedTask;
+      });
+
+      var startRes = await server.StartAsync();
+      await Assert.That(startRes.IsSuccess).IsTrue();
+      await Assert.That(server.State).IsEqualTo(ResilientServerState.Running);
+
+      // Dispose directly without calling StopAsync() first (e.g. `await using var server = ...`)
+      await server.DisposeAsync();
+
+      await Assert.That(server.State).IsEqualTo(ResilientServerState.Stopped);
+      await Assert.That(onStopFired).IsTrue();
+   }
 }
+

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Quic;
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Beskar.Networking.Abstractions.Enums;
 using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
@@ -102,6 +103,15 @@ public sealed class QuicNetworkSession : INetworkSession
    private readonly QuicIoQueueRegistry _ioQueueRegistry;
    private readonly CancellationTokenSource _cts = new();
 
+   private readonly Channel<Result<QuicStream, NetworkCodeError>> _inboundStreamChannel =
+      Channel.CreateUnbounded<Result<QuicStream, NetworkCodeError>>(new UnboundedChannelOptions
+      {
+         SingleReader = false,
+         SingleWriter = true
+      });
+
+   private readonly Task? _acceptStreamsTask;
+
    private readonly ConcurrentDictionary<long, QuicNetworkStream> _activeStreams = new();
 
    private int _disposed;
@@ -123,6 +133,58 @@ public sealed class QuicNetworkSession : INetworkSession
       _ioQueueRegistry = ioQueueRegistry;
 
       TransportMetrics.RecordConnectionOpened(TransportKind.Quic);
+
+      if (_options.MaxInboundBidirectionalStreams > 0 || _options.MaxInboundUnidirectionalStreams > 0)
+      {
+         _acceptStreamsTask = MonitorInboundStreamsAsync();
+      }
+   }
+
+   private async Task MonitorInboundStreamsAsync()
+   {
+      try
+      {
+         while (!_cts.Token.IsCancellationRequested)
+         {
+            var quicStream = await _connection.AcceptInboundStreamAsync(_cts.Token);
+            if (!_inboundStreamChannel.Writer.TryWrite(quicStream))
+            {
+               await quicStream.DisposeAsync();
+               break;
+            }
+         }
+      }
+      catch (QuicException ex)
+      {
+         if (ex.QuicError is QuicError.ConnectionAborted or QuicError.ConnectionTimeout or QuicError.ConnectionIdle or QuicError.OperationAborted)
+         {
+            try { await _cts.CancelAsync(); } catch { /* Ignored */ }
+         }
+
+         if (ex.QuicError == QuicError.ConnectionAborted)
+         {
+            TraceLogger.LogServerInfo("QUIC Session {0}: Connection closed by peer gracefully or aborted (Application Error Code: {1})", Id, ex.ApplicationErrorCode);
+         }
+         else
+         {
+            TraceLogger.LogServerError("QUIC Session {0}: QuicException accepting inbound stream (Code: {1}): {2}", Id, (int)ex.QuicError, ex.Message);
+         }
+
+         _inboundStreamChannel.Writer.TryWrite(new NetworkCodeError((int)ex.QuicError, ex.Message));
+      }
+      catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+      {
+         // Session closing
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogServerError("QUIC Session {0}: Unexpected exception accepting inbound stream: {1}", Id, ex.Message);
+         _inboundStreamChannel.Writer.TryWrite(new NetworkCodeError(-1, ex.Message));
+      }
+      finally
+      {
+         _inboundStreamChannel.Writer.TryComplete();
+      }
    }
 
    public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
@@ -140,10 +202,23 @@ public sealed class QuicNetworkSession : INetworkSession
       {
          TraceLogger.LogServerInfo("QUIC Session {0}: Accepting incoming stream...", Id);
          using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
-         quicStream = await _connection.AcceptInboundStreamAsync(linkedCts.Token);
+
+         if (_acceptStreamsTask is not null)
+         {
+            var streamResult = await _inboundStreamChannel.Reader.ReadAsync(linkedCts.Token);
+            if (streamResult.Failed)
+            {
+               return streamResult.Error;
+            }
+
+            quicStream = streamResult.Success;
+         }
+         else
+         {
+            quicStream = await _connection.AcceptInboundStreamAsync(linkedCts.Token);
+         }
 
          connection = _ioQueueRegistry.Create(quicStream);
-         connection.ConnectionClosed += OnStreamConnectionClosed;
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
          _activeStreams.TryAdd(newStream.StreamId, newStream);
@@ -154,9 +229,14 @@ public sealed class QuicNetworkSession : INetworkSession
 
          return newStream;
       }
+      catch (ChannelClosedException)
+      {
+         TraceLogger.LogServerWarning("QUIC Session {0}: Stream acceptance cancelled because session is closed.", Id);
+         return new NetworkCodeError(-1, "Session has been closed.");
+      }
       catch (QuicException ex)
       {
-         if (ex.QuicError is QuicError.ConnectionAborted or QuicError.ConnectionTimeout or QuicError.OperationAborted)
+         if (ex.QuicError is QuicError.ConnectionAborted or QuicError.ConnectionTimeout or QuicError.ConnectionIdle or QuicError.OperationAborted)
          {
             try { await _cts.CancelAsync(); } catch { /* Ignored */ }
          }
@@ -187,7 +267,6 @@ public sealed class QuicNetworkSession : INetworkSession
          {
             if (connection is not null)
             {
-               connection.ConnectionClosed -= OnStreamConnectionClosed;
                await _ioQueueRegistry.ReturnAsync(connection);
             }
             else if (quicStream is not null)
@@ -221,7 +300,6 @@ public sealed class QuicNetworkSession : INetworkSession
 
          quicStream = await _connection.OpenOutboundStreamAsync(quicStreamType, linkedCts.Token);
          connection = _ioQueueRegistry.Create(quicStream);
-         connection.ConnectionClosed += OnStreamConnectionClosed;
 
          var newStream = new QuicNetworkStream(this, quicStream, connection);
          _activeStreams.TryAdd(newStream.StreamId, newStream);
@@ -233,7 +311,7 @@ public sealed class QuicNetworkSession : INetworkSession
       }
       catch (QuicException ex)
       {
-         if (ex.QuicError is QuicError.ConnectionAborted or QuicError.ConnectionTimeout or QuicError.OperationAborted)
+         if (ex.QuicError is QuicError.ConnectionAborted or QuicError.ConnectionTimeout or QuicError.ConnectionIdle or QuicError.OperationAborted)
          {
             try { await _cts.CancelAsync(); } catch { /* Ignored */ }
          }
@@ -257,7 +335,6 @@ public sealed class QuicNetworkSession : INetworkSession
          {
             if (connection is not null)
             {
-               connection.ConnectionClosed -= OnStreamConnectionClosed;
                await _ioQueueRegistry.ReturnAsync(connection);
             }
             else if (quicStream is not null)
@@ -268,30 +345,11 @@ public sealed class QuicNetworkSession : INetworkSession
       }
    }
 
-   private void OnStreamConnectionClosed()
-   {
-      if (Volatile.Read(ref _disposed) == 1)
-      {
-         return;
-      }
-
-      try
-      {
-         _cts.Cancel();
-      }
-      catch
-      {
-         // Ignored
-      }
-   }
-
    /// <summary>
    /// Returns a retired stream connection adapter to the shared connection pool.
    /// </summary>
    public async ValueTask ReturnConnectionAsync(QuicNetworkStream stream, StreamConnection connection)
    {
-      connection.ConnectionClosed -= OnStreamConnectionClosed;
-
       var stats = stream.Stats;
       Interlocked.Add(ref _accumulatedBytesReceived, stats.BytesReceived);
       Interlocked.Add(ref _accumulatedBytesSent, stats.BytesSent);
@@ -339,6 +397,27 @@ public sealed class QuicNetworkSession : INetworkSession
          // Ignored
       }
 
+      _inboundStreamChannel.Writer.TryComplete();
+      if (_acceptStreamsTask is not null)
+      {
+         try
+         {
+            await _acceptStreamsTask;
+         }
+         catch
+         {
+            // Ignored
+         }
+      }
+
+      while (_inboundStreamChannel.Reader.TryRead(out var pendingStream))
+      {
+         if (!pendingStream.Failed)
+         {
+            await pendingStream.Success.DisposeAsync();
+         }
+      }
+
       await _activeStreams.Values.DisposeAllAsync();
       _activeStreams.Clear();
 
@@ -369,3 +448,4 @@ public sealed class QuicNetworkSession : INetworkSession
       _cts.Dispose();
    }
 }
+

@@ -182,11 +182,16 @@ public sealed partial class MqttServer : IAsyncDisposable
    /// A task representing the asynchronous operation. The result will be a <see cref="VoidResult{StringError}"/>
    /// indicating success or a <see cref="StringError"/> containing an error message if the operation fails.
    /// </returns>
-   public async Task<VoidResult<StringError>> StopAsync(DisconnectOptions? options = null)
+   public Task<VoidResult<StringError>> StopAsync(DisconnectOptions? options = null)
    {
       if (Volatile.Read(ref _disposedState) == 1)
-         return new StringError("Already disposed server.");
+         return Task.FromResult<VoidResult<StringError>>(new StringError("Already disposed server."));
 
+      return StopCoreAsync(options);
+   }
+
+   private async Task<VoidResult<StringError>> StopCoreAsync(DisconnectOptions? options = null)
+   {
       if (State is not MqttServerState.Running)
          return new StringError("Server is not running.");
 
@@ -1031,7 +1036,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    {
       if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
-      await StopAsync();
+      await StopCoreAsync();
 
       foreach (var listener in _listeners)
       {

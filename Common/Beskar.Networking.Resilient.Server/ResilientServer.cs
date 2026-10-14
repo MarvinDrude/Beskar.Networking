@@ -130,11 +130,16 @@ public sealed class ResilientServer<TFrame>
       }
    }
 
-   public async Task<VoidResult<StringError>> StopAsync()
+   public Task<VoidResult<StringError>> StopAsync()
    {
       if (Volatile.Read(ref _disposedState) == 1)
-         return new StringError("Already disposed server.");
+         return Task.FromResult<VoidResult<StringError>>(new StringError("Already disposed server."));
 
+      return StopCoreAsync();
+   }
+
+   private async Task<VoidResult<StringError>> StopCoreAsync()
+   {
       if (Interlocked.CompareExchange(ref _state, (int)ResilientServerState.Stopping, (int)ResilientServerState.Running) != (int)ResilientServerState.Running)
          return new StringError("Server is not running.");
 
@@ -746,7 +751,7 @@ public sealed class ResilientServer<TFrame>
    {
       if (Interlocked.Exchange(ref _disposedState, 1) == 1) return;
 
-      await StopAsync();
+      await StopCoreAsync();
 
       foreach (var listener in _listeners)
       {
