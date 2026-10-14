@@ -36,7 +36,7 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
    private readonly CancellationTokenSource _cts = new();
 
-   private readonly Task _readTask;
+   private Task? _readTask;
    private readonly Task? _writeTask;
    private readonly AsyncLock _writeLock = new();
    private bool _hasPendingFlush;
@@ -91,13 +91,18 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
          }
       });
 
-      _readTask = Task.Run(ReadLoopAsync);
+      if (_onMessage == null && _onMessageAsync == null)
+      {
+         _readTask = Task.Run(ReadLoopAsync);
+      }
+
       _pingTask = _keepAliveInterval > TimeSpan.Zero ? Task.Run(PingLoopAsync) : null;
    }
 
    public void SetSession(WsNetworkSession session)
    {
       _session = session;
+      _readTask ??= Task.Run(ReadLoopAsync);
    }
 
    public async ValueTask SendFrameDirectAsync(
@@ -193,10 +198,20 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                      var currentSession = _session ?? _sessionProvider?.Invoke();
                      if (_onMessageAsync != null && currentSession != null)
                      {
+                        if (currentSession.ActiveStreams.FirstOrDefault() is WsNetworkStream wsStream)
+                        {
+                           wsStream.IncrementBytesReceived(payload.Length);
+                        }
+
                         await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
                      }
                      else if (_onMessage != null && currentSession != null)
                      {
+                        if (currentSession.ActiveStreams.FirstOrDefault() is WsNetworkStream wsStream)
+                        {
+                           wsStream.IncrementBytesReceived(payload.Length);
+                        }
+
                         _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
                      }
                      else if (writer != null)
@@ -230,10 +245,20 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
                      var currentSession = _session ?? _sessionProvider?.Invoke();
                      if (_onMessageAsync != null && currentSession != null)
                      {
+                        if (currentSession.ActiveStreams.FirstOrDefault() is WsNetworkStream wsStream)
+                        {
+                           wsStream.IncrementBytesReceived(payload.Length);
+                        }
+
                         await _onMessageAsync(currentSession, payload, (WebSocketOpcode)opcode);
                      }
                      else if (_onMessage != null && currentSession != null)
                      {
+                        if (currentSession.ActiveStreams.FirstOrDefault() is WsNetworkStream wsStream)
+                        {
+                           wsStream.IncrementBytesReceived(payload.Length);
+                        }
+
                         _onMessage(currentSession, payload, (WebSocketOpcode)opcode);
                      }
                      else if (writer != null)
@@ -918,7 +943,10 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
       try
       {
-         await _readTask;
+         if (_readTask is not null)
+         {
+            await _readTask;
+         }
       }
       catch
       {

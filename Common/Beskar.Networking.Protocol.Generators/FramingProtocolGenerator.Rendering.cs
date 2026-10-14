@@ -207,16 +207,19 @@ public partial class FramingProtocolGenerator
             case ProtocolAttributeKind.MagicBytes:
                for (int i = 0; i < prop.MagicBytes.Length; i++)
                {
-                  writer.WriteLine("if (!reader.TryRead(out byte b" + i + ") || b" + i + " != 0x" + prop.MagicBytes[i].ToString("X2") + ") return false;");
+                  var bVar = "b_" + prop.PropertyName + "_" + i;
+                  writer.WriteLine("if (!reader.TryRead(out byte " + bVar + ") || " + bVar + " != 0x" + prop.MagicBytes[i].ToString("X2") + ") return false;");
                }
                break;
             case ProtocolAttributeKind.VersionField:
-               writer.WriteLine("if (!reader.TryRead(out byte ver)) return false;");
-               writer.WriteLine("pkt." + prop.PropertyName + " = ver;");
+               var verVar = "ver_" + prop.PropertyName;
+               writer.WriteLine("if (!reader.TryRead(out byte " + verVar + ")) return false;");
+               writer.WriteLine("pkt." + prop.PropertyName + " = " + verVar + ";");
                break;
             case ProtocolAttributeKind.ProtocolField:
-               writer.WriteLine("if (!reader.TryReadBigEndian(out short pTypeRaw)) return false;");
-               writer.WriteLine("pkt." + prop.PropertyName + " = (" + prop.PropertyType + ")(ushort)pTypeRaw;");
+               var pTypeVar = "pTypeRaw_" + prop.PropertyName;
+               writer.WriteLine("if (!reader.TryReadBigEndian(out short " + pTypeVar + ")) return false;");
+               writer.WriteLine("pkt." + prop.PropertyName + " = (" + prop.PropertyType + ")(ushort)" + pTypeVar + ";");
                break;
             case ProtocolAttributeKind.FlagsField:
                if (prop.PropertyType.Contains("PackedBools8"))
@@ -248,26 +251,28 @@ public partial class FramingProtocolGenerator
                writer.WriteLine("pkt." + prop.PropertyName + " = varVal_" + prop.PropertyName + ";");
                break;
             case ProtocolAttributeKind.ByteSequenceField:
+               var seqLenVar = "seqLen_" + prop.PropertyName;
+               var seqVar = "seq_" + prop.PropertyName;
                if (!string.IsNullOrEmpty(prop.LengthPropertyName))
                {
                   var lenProp = prop.LengthPropertyName;
-                  writer.WriteLine("int seqLen = pkt." + lenProp + ";");
+                  writer.WriteLine("int " + seqLenVar + " = pkt." + lenProp + ";");
                }
                else
                {
-                  writer.WriteLine("int seqLen = (int)(reader.Length - reader.Consumed);");
+                  writer.WriteLine("int " + seqLenVar + " = (int)(reader.Length - reader.Consumed);");
                }
-               writer.WriteLine("if (reader.UnreadSequence.Length < seqLen) return false;");
+               writer.WriteLine("if (" + seqLenVar + " < 0 || reader.UnreadSequence.Length < " + seqLenVar + ") return false;");
                if (prop.SafeCopyData)
                {
-                  writer.WriteLine("var seq = new ReadOnlySequence<byte>(reader.UnreadSequence.Slice(0, seqLen).ToArray());");
+                  writer.WriteLine("var " + seqVar + " = new ReadOnlySequence<byte>(reader.UnreadSequence.Slice(0, " + seqLenVar + ").ToArray());");
                }
                else
                {
-                  writer.WriteLine("var seq = reader.UnreadSequence.Slice(0, seqLen);");
+                  writer.WriteLine("var " + seqVar + " = reader.UnreadSequence.Slice(0, " + seqLenVar + ");");
                }
-               writer.WriteLine("reader.Advance(seqLen);");
-               writer.WriteLine("pkt." + prop.PropertyName + " = seq;");
+               writer.WriteLine("reader.Advance(" + seqLenVar + ");");
+               writer.WriteLine("pkt." + prop.PropertyName + " = " + seqVar + ";");
                break;
          }
       }

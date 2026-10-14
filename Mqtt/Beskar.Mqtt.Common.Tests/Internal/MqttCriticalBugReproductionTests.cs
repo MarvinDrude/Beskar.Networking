@@ -33,7 +33,7 @@ public partial class MqttCriticalBugReproductionTests
    public async Task Mqtt5_NormalDisconnectWithoutSessionExpiryProperty_ShouldPreservePersistentSession(CancellationToken ct)
    {
       await using var server = MqttServerFactory.CreateBuilder(new MqttServerOptions { SupportPersistentSessions = true })
-         .UseTcp(0)
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -103,7 +103,7 @@ public partial class MqttCriticalBugReproductionTests
    public async Task Mqtt311_CleanSessionFalse_ShouldPreservePersistentSessionAcrossDisconnect(CancellationToken ct)
    {
       await using var server = MqttServerFactory.CreateBuilder(new MqttServerOptions { SupportPersistentSessions = true })
-         .UseTcp(0)
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -143,7 +143,7 @@ public partial class MqttCriticalBugReproductionTests
    public async Task MqttServer_SendPublishMessageAsync_WithPropertiesLargerThan128Bytes_ShouldDeliverWithoutThrowing(CancellationToken ct)
    {
       await using var server = MqttServerFactory.CreateBuilder(new MqttServerOptions { SupportPersistentSessions = true })
-         .UseTcp(0)
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -200,7 +200,7 @@ public partial class MqttCriticalBugReproductionTests
    public async Task MqttClient_RequestAsync_WithQoS1Responses_ShouldAcknowledgeResponsesAndNotExhaustReceiveMaximum(CancellationToken ct)
    {
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(0)
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -317,7 +317,7 @@ public partial class MqttCriticalBugReproductionTests
    public async Task Mqtt5_WillMessage_WithWillDelayAndZeroSessionExpiry_ShouldPublishWillAndWillUserPropertiesOnSessionEnd(CancellationToken ct)
    {
       await using var server = MqttServerFactory.CreateBuilder()
-         .UseTcp(0)
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
          .WithDefaultClientIdGenerator()
          .Build();
 
@@ -362,7 +362,7 @@ public partial class MqttCriticalBugReproductionTests
          {
             if (Encoding.UTF8.GetString(c.ClientIdUtf8Bytes.Span) == doomedClientId)
             {
-               await c.Session.DisposeAsync();
+               await c.MqttSession!.DisposeAsync();
             }
          }
       }
@@ -382,7 +382,7 @@ public partial class MqttCriticalBugReproductionTests
    public async Task MqttClient_DisconnectAsync_WhileInReconnectingState_ShouldCancelReconnectLoopImmediately(CancellationToken ct)
    {
       var server1 = MqttServerFactory.CreateBuilder()
-         .UseTcp(0)
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
          .WithDefaultClientIdGenerator()
          .Build();
 
