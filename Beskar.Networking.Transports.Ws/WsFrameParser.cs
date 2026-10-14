@@ -319,6 +319,8 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
             }
             finally
             {
+               reader.AdvanceTo(buffer.Start, buffer.End);
+
                if (Volatile.Read(ref _batchDepth) > 0 || Volatile.Read(ref _hasPendingFlush))
                {
                   try
@@ -341,13 +343,18 @@ public sealed class WsDuplexPipe : IDuplexPipe, IAsyncDisposable
 
                if (hasPendingWriterFlush && writer != null)
                {
-                  await writer.FlushAsync(_cts.Token);
+                  try
+                  {
+                     await writer.FlushAsync(CancellationToken.None);
+                  }
+                  catch
+                  {
+                     /* Ignored */
+                  }
                }
             }
 
-            reader.AdvanceTo(buffer.Start, buffer.End);
-
-            if (result.IsCompleted || result.IsCanceled)
+            if (result.IsCompleted || result.IsCanceled || _cts.IsCancellationRequested)
             {
                break;
             }

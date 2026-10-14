@@ -251,7 +251,8 @@ public sealed class StreamConnection(
 
    public bool TryResetState()
    {
-      if ((_readTask is { IsCompleted: false })
+      if (_isDisposed
+          || (_readTask is { IsCompleted: false })
           || (_writeTask is { IsCompleted: false }))
       {
          return false;

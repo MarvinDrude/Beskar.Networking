@@ -20,6 +20,7 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
    private Task? _receiveTask;
    private CancellationTokenSource _cts = new();
    private bool _stopped;
+   private bool _isDisposed;
 
    public void Initialize(SocketConnection connection, Socket socket)
    {
@@ -52,11 +53,20 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
          if (_stopped) return;
          _stopped = true;
 
-         _cts.Cancel();
+         if (!_isDisposed)
+         {
+            _cts.Cancel();
+         }
       }
 
-      Pipe.Writer.Complete();
-      Pipe.Reader.Complete();
+      if (_receiveTask is null || _receiveTask.IsCompleted)
+      {
+         Pipe.Writer.Complete();
+      }
+      else
+      {
+         Pipe.Writer.CancelPendingFlush();
+      }
    }
 
    public async ValueTask StopAsync()
@@ -128,7 +138,7 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
 
    public bool TryResetState()
    {
-      if (_receiveTask is { IsCompleted: false })
+      if (_isDisposed || _receiveTask is { IsCompleted: false })
       {
          return false;
       }
@@ -154,6 +164,7 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
       Pipe.Reader.Complete();
       Pipe.Reset();
 
+      _receiveTask = null;
       _connection = null;
       _socket = null;
 
@@ -167,7 +178,24 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
 
    public async ValueTask DisposeAsync()
    {
+      if (_isDisposed) return;
+      _isDisposed = true;
+
       await StopAsync();
+
+      try
+      {
+         Pipe.Writer.Complete();
+
+         while (Pipe.Reader.TryRead(out var result))
+         {
+            Pipe.Reader.AdvanceTo(result.Buffer.End);
+            if (result.IsCompleted || result.Buffer.IsEmpty) break;
+         }
+      }
+      catch (Exception) { /* ignored */ }
+
+      Pipe.Reader.Complete();
       _cts.Dispose();
    }
 }

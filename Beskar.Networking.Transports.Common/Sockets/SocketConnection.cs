@@ -110,9 +110,6 @@ public sealed class SocketConnection
          _isAborted = true;
       }
 
-      _sender.Stop();
-      _receiver.Stop();
-
       if (_socket != null)
       {
          try
@@ -124,6 +121,9 @@ public sealed class SocketConnection
             // Expected
          }
       }
+
+      _sender.Stop();
+      _receiver.Stop();
 
       NotifyConnectionClosed();
    }
@@ -166,7 +166,7 @@ public sealed class SocketConnection
 
    public bool TryResetState()
    {
-      if (!_sender.TryResetState() || !_receiver.TryResetState())
+      if (_isDisposed || !_sender.TryResetState() || !_receiver.TryResetState())
       {
          return false;
       }

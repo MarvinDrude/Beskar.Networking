@@ -220,6 +220,11 @@ public sealed class SocketSender(PipeOptions pipeOptions)
 
    public bool TryResetState()
    {
+      if (_isDisposed)
+      {
+         return false;
+      }
+
       if (_sendTask is { IsCompleted: false })
       {
          if (Pipe.Writer.UnflushedBytes > 0)
