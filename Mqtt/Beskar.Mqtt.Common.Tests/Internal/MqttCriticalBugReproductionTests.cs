@@ -438,6 +438,100 @@ public partial class MqttCriticalBugReproductionTests
       await Assert.That(utf8Matched).IsFalse();
    }
 
+   [Test]
+   [Timeout(5000)]
+   public async Task MqttClient_DisconnectAsync_InsideOnClientConnectingCallbackDuringAutoReconnect_ShouldNotDeadlock(CancellationToken ct)
+   {
+      var server1 = MqttServerFactory.CreateBuilder()
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      await server1.StartAsync();
+      var endPoint = (IPEndPoint)server1.Listeners[0].LocalAddress!;
+
+      var client = (MqttClient)MqttClientFactory.CreateTcp();
+      await client.ConnectAsync(new ConnectOptionsBuilder(endPoint)
+         .WithProtocolVersion(MqttProtocolVersion.V50)
+         .WithCleanSession(true)
+         .WithAutoReconnect(new AutoReconnectOptions
+         {
+            IsEnabled = true,
+            MaxRetryAttempts = 5,
+            BackoffPolicy = new Beskar.Networking.Abstractions.Backoffs.ConstantBackoffPolicy(TimeSpan.FromMilliseconds(30))
+         })
+         .Build(), ct);
+
+      var callbackCompletedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      client.Events.OnClientConnecting.Add(async (_, token) =>
+      {
+         await client.DisconnectAsync(new DisconnectOptions(), token);
+         callbackCompletedTcs.TrySetResult();
+      });
+
+      await server1.StopAsync();
+      await server1.DisposeAsync();
+
+      var completed = await Task.WhenAny(callbackCompletedTcs.Task, Task.Delay(1500, ct));
+      await Assert.That(completed == callbackCompletedTcs.Task).IsTrue();
+
+      await client.DisposeAsync();
+   }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task MqttServer_PublishLargerThan64KiB_ShouldNotStallReceivePipe(CancellationToken ct)
+   {
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(new IPEndPoint(IPAddress.Loopback, 0))
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      await server.StartAsync();
+      var endPoint = (IPEndPoint)server.Listeners[0].LocalAddress!;
+
+      var subClient = MqttClientFactory.CreateTcp();
+      var receivedPayloadTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+      subClient.AddMessageReceiveHandler((ctx, _) =>
+      {
+         receivedPayloadTcs.TrySetResult(ctx.Message.Payload.Length);
+         return ValueTask.CompletedTask;
+      });
+
+      await subClient.ConnectAsync(new ConnectOptionsBuilder(endPoint)
+         .WithProtocolVersion(MqttProtocolVersion.V50)
+         .WithCleanSession(true)
+         .Build(), ct);
+
+      await subClient.SubscribeAsync(SubscribeOptions.Create()
+         .WithTopicFilter("large/frame", QualityOfServiceType.AtLeastOnce)
+         .Build(), ct);
+
+      var pubClient = MqttClientFactory.CreateTcp();
+      await pubClient.ConnectAsync(new ConnectOptionsBuilder(endPoint)
+         .WithProtocolVersion(MqttProtocolVersion.V50)
+         .WithCleanSession(true)
+         .Build(), ct);
+
+      var largePayload = new byte[100 * 1024];
+      Array.Fill(largePayload, (byte)0x42);
+
+      var pubRes = await pubClient.PublishAsync(new PublishOptionsBuilder()
+         .WithTopic("large/frame")
+         .WithPayload(largePayload)
+         .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+         .Build(), ct);
+
+      await Assert.That(pubRes.Failed).IsFalse();
+
+      var receivedLength = await receivedPayloadTcs.Task.WaitAsync(TimeSpan.FromSeconds(2), ct);
+      await Assert.That(receivedLength).IsEqualTo(100 * 1024);
+
+      await pubClient.DisposeAsync();
+      await subClient.DisposeAsync();
+      await server.StopAsync();
+   }
+
    private sealed class CustomSignalBackoff(Func<TimeSpan> onDelay) : Beskar.Networking.Abstractions.Interfaces.Misc.IBackoffPolicy
    {
       public TimeSpan GetNextDelay(int attempt) => onDelay();

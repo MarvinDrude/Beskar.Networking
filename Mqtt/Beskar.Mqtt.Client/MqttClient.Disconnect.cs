@@ -37,7 +37,7 @@ public sealed partial class MqttClient
          reconnectCts.Dispose();
       }
 
-      if (reconnectTask is not null)
+      if (reconnectTask is not null && !_inReconnectLoop.Value)
       {
          try { await reconnectTask; } catch { /* ignored */ }
       }
@@ -46,6 +46,8 @@ public sealed partial class MqttClient
       if (validateResult.Failed)
       {
          CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Reconnecting);
+         CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Connecting);
+
          if ((MqttClientConnectionState)_state != MqttClientConnectionState.Disconnecting)
          {
             _gracefulDisconnect = false;

@@ -26,7 +26,7 @@ public readonly ref partial struct PacketVersion5Encoder
                var propsDataLen = CalculatePropertiesDataLength(packet);
                PacketEncoder.WriteVariableByteInteger(ref writer, (uint)propsDataLen);
 
-               if (!packet.ReasonStringUtf8Bytes.IsEmpty)
+               if (!packet.ReasonStringUtf8Bytes.IsEmpty && !HasReasonStringProperty(packet.PropertiesBytes))
                {
                   writer.WriteByte((byte)PropertyIdentifier.ReasonString);
                   writer.WriteBigEndian((ushort)packet.ReasonStringUtf8Bytes.Length);
@@ -57,7 +57,7 @@ public readonly ref partial struct PacketVersion5Encoder
    private static int CalculatePropertiesDataLength(in PubRecPacket packet)
    {
       var len = packet.PropertiesBytes.Length;
-      if (!packet.ReasonStringUtf8Bytes.IsEmpty)
+      if (!packet.ReasonStringUtf8Bytes.IsEmpty && !HasReasonStringProperty(packet.PropertiesBytes))
       {
          len += 3 + packet.ReasonStringUtf8Bytes.Length;
       }

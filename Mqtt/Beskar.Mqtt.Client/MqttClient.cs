@@ -84,6 +84,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
    private bool _isReconnecting;
    private CancellationTokenSource? _reconnectCts;
 
+   private readonly AsyncLocal<bool> _inReconnectLoop = new();
+
    /// <summary>
    /// Initializes a new instance of the <see cref="MqttClient"/> class using the specified network client transport.
    /// </summary>
@@ -156,6 +158,12 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
             await Events.OnClientConnecting.ExecuteAsync(
                ctx, HandlerExecutionStrategy.SequentialContinueOnError, ct);
+         }
+
+         if (ct.IsCancellationRequested || (MqttClientConnectionState)_state != MqttClientConnectionState.Connecting)
+         {
+            CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Connecting);
+            return new StringError("Connection cancelled during OnClientConnecting.");
          }
 
          if (!_firstConnect)
@@ -511,6 +519,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          _isReconnecting = true;
          _reconnectTask = Task.Run(async () =>
          {
+            _inReconnectLoop.Value = true;
             try
             {
                var autoReconnect = _connectOptions.AutoReconnect;
@@ -572,6 +581,12 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                      return;
                   }
 
+                  if (masterCt.IsCancellationRequested || _gracefulDisconnect || Volatile.Read(ref _disposedState) == 1)
+                  {
+                     _state = (int)MqttClientConnectionState.Disconnected;
+                     break;
+                  }
+
                   _state = (int)MqttClientConnectionState.Reconnecting;
                }
 
@@ -582,6 +597,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             }
             finally
             {
+               _inReconnectLoop.Value = false;
+
                var reconnectCts = Interlocked.Exchange(ref _reconnectCts, null);
                reconnectCts?.Dispose();
 
@@ -625,7 +642,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
 
       var reconnectTask = _reconnectTask;
-      if (reconnectTask is not null)
+      if (reconnectTask is not null && !_inReconnectLoop.Value)
       {
          try
          {

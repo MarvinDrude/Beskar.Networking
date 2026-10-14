@@ -7,6 +7,8 @@ using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Builders.Disconnecting;
 using Beskar.Mqtt.Common.Options;
+using Beskar.Mqtt.Protocol.Enumerators;
+using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
 
@@ -16,6 +18,25 @@ namespace Beskar.Mqtt.Common.Encoders.Version5;
 public readonly ref partial struct PacketVersion5Encoder(IBufferWriter<byte> writer)
 {
    private readonly IBufferWriter<byte> _writer = writer;
+
+   private static bool HasReasonStringProperty(ReadOnlyMemory<byte> propertiesBytes)
+   {
+      if (propertiesBytes.IsEmpty)
+      {
+         return false;
+      }
+
+      var enumerator = new MqttPropertyEnumerator(new ReadOnlySequence<byte>(propertiesBytes));
+      while (enumerator.MoveNext())
+      {
+         if (enumerator.Current.Identifier == PropertyIdentifier.ReasonString)
+         {
+            return true;
+         }
+      }
+
+      return false;
+   }
 
    public void Write<TPacket>(in TPacket packet)
       where TPacket : IRawMqttPacket
