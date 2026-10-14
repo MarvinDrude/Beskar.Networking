@@ -16,19 +16,26 @@ public sealed class SocketConnection
    private bool _isDisposed;
    private bool _isAborted;
 
+   public event Action? ConnectionClosed;
+
    public PipeReader Input => _receiver.Pipe.Reader;
    public PipeWriter Output => _sender;
 
    public SocketConnection(PipeScheduler scheduler, MemoryPool<byte> bufferPool)
+      : this(
+         new PipeOptions(
+            pool: bufferPool,
+            readerScheduler: scheduler,
+            writerScheduler: scheduler,
+            useSynchronizationContext: false),
+         bufferPool)
    {
-      var pipeOptions = new PipeOptions(
-         pool: bufferPool,
-         readerScheduler: scheduler,
-         writerScheduler: scheduler,
-         useSynchronizationContext: false);
+   }
 
+   public SocketConnection(PipeOptions receiveOptions, MemoryPool<byte> bufferPool)
+   {
       _sender = new SocketSender(bufferPool);
-      _receiver = new SocketReceiver(pipeOptions);
+      _receiver = new SocketReceiver(receiveOptions);
    }
 
    public void Initialize(Socket socket)
@@ -45,11 +52,23 @@ public sealed class SocketConnection
       _receiver.Start();
    }
 
+   internal void NotifyConnectionClosed()
+   {
+      try
+      {
+         ConnectionClosed?.Invoke();
+      }
+      catch
+      {
+         // Ignored
+      }
+   }
+
    public void Abort(Exception? exception = null)
    {
       lock (_shutdownLock)
       {
-         if (_isAborted || _isDisposed) return;
+         if (_isAborted) return;
          _isAborted = true;
       }
 
@@ -67,6 +86,8 @@ public sealed class SocketConnection
             // Expected
          }
       }
+
+      NotifyConnectionClosed();
    }
 
    public async ValueTask StopAsync()
@@ -112,7 +133,9 @@ public sealed class SocketConnection
          return false;
       }
 
+      ConnectionClosed = null;
       _socket = null;
+
       _isDisposed = false;
       _isAborted = false;
 

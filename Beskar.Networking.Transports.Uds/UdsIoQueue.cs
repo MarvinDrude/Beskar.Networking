@@ -17,7 +17,7 @@ public sealed class UdsIoQueue(UdsTransportOptions options) : IDisposable
    {
       TraceLogger.LogNeutralInfo("Creating uds socket connection for socket");
       var connection = SocketConnectionPool.Get(() => new SocketConnection(
-         SocketSettings.PipeScheduler, SocketSettings.MemoryPool));
+         SocketSettings.ReceiveOptions, SocketSettings.MemoryPool));
 
       connection.Initialize(socket);
       connection.Start();

@@ -64,7 +64,26 @@ public sealed class NamedPipeNetworkSession : INetworkSession
       RemoteAddress = remoteAddress;
       _connection = connection;
       _onDisposeAsync = onDisposeAsync;
+
+      if (_connection is Common.Streams.StreamConnection streamConn)
+      {
+         streamConn.ConnectionClosed += OnConnectionClosed;
+      }
+
       TransportMetrics.RecordConnectionOpened(TransportKind.NamedPipe);
+   }
+
+   private void OnConnectionClosed()
+   {
+      if (Volatile.Read(ref _disposed) == 1) return;
+      try
+      {
+         _cts.Cancel();
+      }
+      catch
+      {
+         // Ignored
+      }
    }
 
    /// <inheritdoc />

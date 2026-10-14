@@ -96,23 +96,20 @@ public sealed class SocketSender : PipeWriter, IPooledObject, IAsyncDisposable
    {
       Stop();
 
+      var tcs = new TaskCompletionSource(
+         TaskCreationOptions.RunContinuationsAsynchronously);
+
+      Interlocked.Exchange(ref _drainTcs, tcs);
       if (Volatile.Read(ref _inFlightSends) > 0)
       {
-         var tcs = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-
-         _drainTcs = tcs;
-         if (Volatile.Read(ref _inFlightSends) > 0)
+         try
          {
-            try
-            {
-               using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-               await tcs.Task.WaitAsync(cts.Token);
-            }
-            catch
-            {
-               _connection?.Abort();
-            }
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await tcs.Task.WaitAsync(cts.Token);
+         }
+         catch
+         {
+            _connection?.Abort();
          }
       }
    }

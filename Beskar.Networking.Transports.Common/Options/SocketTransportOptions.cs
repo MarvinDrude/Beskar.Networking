@@ -12,8 +12,11 @@ public sealed class SocketTransportOptions
       var memoryPool = SharedTransportMemoryPool.GetNext();
       var scheduler = new IoQueue();
 
-      var maxReadBufferSize = MaxReadBufferSize ?? 0;
-      var maxWriteBufferSize = MaxWriteBufferSize ?? 0;
+      var pauseRead = MaxReadBufferSize ?? -1;
+      var resumeRead = MaxReadBufferSize.HasValue ? MaxReadBufferSize.Value / 2 : -1;
+
+      var pauseWrite = MaxWriteBufferSize ?? -1;
+      var resumeWrite = MaxWriteBufferSize.HasValue ? MaxWriteBufferSize.Value / 2 : -1;
 
       return new SocketQueueSettings()
       {
@@ -23,11 +26,11 @@ public sealed class SocketTransportOptions
 
          ReceiveOptions = new PipeOptions(
             memoryPool, scheduler, scheduler,
-            maxReadBufferSize, maxReadBufferSize / 2,
+            pauseRead, resumeRead,
             useSynchronizationContext: false),
          SendOptions = new PipeOptions(
             memoryPool, scheduler, scheduler,
-            maxWriteBufferSize, maxWriteBufferSize / 2,
+            pauseWrite, resumeWrite,
             useSynchronizationContext: false),
       };
    }

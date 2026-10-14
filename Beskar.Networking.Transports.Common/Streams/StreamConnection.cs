@@ -27,6 +27,8 @@ public sealed class StreamConnection(
 
    private readonly Lock _lock = new();
 
+   public event Action? ConnectionClosed;
+
    public PipeReader Input => _readPipe.Reader;
    public PipeWriter Output => _writePipe.Writer;
 
@@ -43,6 +45,18 @@ public sealed class StreamConnection(
 
       InnerStream = stream;
       AllowFlushOnStop = allowFlushOnStop;
+   }
+
+   internal void NotifyConnectionClosed()
+   {
+      try
+      {
+         ConnectionClosed?.Invoke();
+      }
+      catch
+      {
+         // Ignored
+      }
    }
 
    public void Start()
@@ -109,12 +123,17 @@ public sealed class StreamConnection(
    {
       await _writePipe.Writer.CompleteAsync();
 
-      lock (_lock)
+      var writeTask = _writeTask;
+      if (writeTask is not null)
       {
-         if (!_stopped)
+         try
          {
-            _stopped = true;
-            _cts.Cancel();
+            using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await writeTask.WaitAsync(drainCts.Token).ConfigureAwait(false);
+         }
+         catch
+         {
+            // Expected on timeout or error
          }
       }
 
@@ -133,16 +152,26 @@ public sealed class StreamConnection(
          {
             // Expected
          }
-         finally
+      }
+
+      lock (_lock)
+      {
+         if (!_stopped)
          {
-            try
-            {
-               await stream.DisposeAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-               // Expected
-            }
+            _stopped = true;
+            _cts.Cancel();
+         }
+      }
+
+      if (stream is not null)
+      {
+         try
+         {
+            await stream.DisposeAsync().ConfigureAwait(false);
+         }
+         catch
+         {
+            // Expected
          }
       }
 
@@ -161,7 +190,6 @@ public sealed class StreamConnection(
          }
       }
 
-      var writeTask = _writeTask;
       if (writeTask is not null)
       {
          try
@@ -229,6 +257,7 @@ public sealed class StreamConnection(
       _readPipe.Reset();
       _writePipe.Reset();
 
+      ConnectionClosed = null;
       InnerStream = null;
       AllowFlushOnStop = true;
       _stopped = false;
@@ -314,7 +343,10 @@ public sealed class StreamConnection(
             var read = await stream.ReadAsync(memory, _cts.Token);
 
             if (read <= 0)
+            {
+               NotifyConnectionClosed();
                break;
+            }
 
             TraceLogger.LogNeutralInfo("StreamConnection: Read {0} bytes from stream", read);
 
@@ -328,6 +360,10 @@ public sealed class StreamConnection(
       catch (Exception er)
       {
          error = er;
+         if (!_cts.IsCancellationRequested)
+         {
+            NotifyConnectionClosed();
+         }
       }
 
       await writer.CompleteAsync(error);

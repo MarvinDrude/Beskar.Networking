@@ -91,6 +91,7 @@ public sealed class SocketReceiver(PipeOptions pipeOptions)
             var bytesRead = await socket.ReceiveAsync(memory, SocketFlags.None, _cts.Token);
             if (bytesRead == 0)
             {
+               _connection?.NotifyConnectionClosed();
                break;
             }
 
