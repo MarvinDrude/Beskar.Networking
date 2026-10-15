@@ -1,15 +1,13 @@
 <Project>
    <PropertyGroup>
-      <TargetFramework>net11.0</TargetFramework>
+      <TargetFramework>net10.0</TargetFramework>
       <LangVersion>Preview</LangVersion>
       <ImplicitUsings>enable</ImplicitUsings>
       <Nullable>enable</Nullable>
-      <Features>$(Features);runtime-async=on</Features>
-      <EnablePreviewFeatures>true</EnablePreviewFeatures>
 
-      <Version>11.0.0-rc.3.5</Version>
-      <FileVersion>11.0.0</FileVersion>
-      <AssemblyVersion>11.0.0</AssemblyVersion>
+      <Version>10.3.0</Version>
+      <FileVersion>10.3.0</FileVersion>
+      <AssemblyVersion>10.0.0</AssemblyVersion>
    </PropertyGroup>
 
    <PropertyGroup>
