@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <Title>Beskar.Jobs.Common</Title>
+      <Description>Core models, zero-allocation Cron scheduler, storage abstractions, and telemetry for Beskar.Jobs.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Protocol\Beskar.Mqtt.Protocol.csproj" />
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Common.Generators\Beskar.Mqtt.Common.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+      <ProjectReference Include="..\Beskar.Jobs.Generator\Beskar.Jobs.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+   </ItemGroup>
+
+   <ItemGroup>
+      <PackageReference Include="Beskar.Memory" />
+   </ItemGroup>
+
+   <ItemGroup>
+      <InternalsVisibleTo Include="Beskar.Jobs.Client" />
+      <InternalsVisibleTo Include="Beskar.Jobs.Worker" />
+      <InternalsVisibleTo Include="Beskar.Jobs.Scheduler" />
+      <InternalsVisibleTo Include="Beskar.Jobs.Tests" />
+   </ItemGroup>
+
+   <PropertyGroup>
+      <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackAnalyzer</TargetsForTfmSpecificContentInPackage>
+   </PropertyGroup>
+
+   <Target Name="PackAnalyzer">
+      <ItemGroup>
+         <TfmSpecificPackageFile Include="..\Beskar.Jobs.Generator\bin\$(Configuration)\netstandard2.0\Beskar.Jobs.Generator.dll" PackagePath="analyzers/dotnet/cs" />
+      </ItemGroup>
+   </Target>
+
+</Project>

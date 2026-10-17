@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>Exe</OutputType>
+      <TargetFramework>net11.0</TargetFramework>
+      <ImplicitUsings>enable</ImplicitUsings>
+      <Nullable>enable</Nullable>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\..\..\Jobs\Beskar.Jobs.Common\Beskar.Jobs.Common.csproj" />
+      <ProjectReference Include="..\..\..\..\Jobs\Beskar.Jobs.Client\Beskar.Jobs.Client.csproj" />
+      <ProjectReference Include="..\Beskar.Jobs.Example.Distributed.Common\Beskar.Jobs.Example.Distributed.Common.csproj" />
+   </ItemGroup>
+
+</Project>

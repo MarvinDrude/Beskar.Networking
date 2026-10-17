@@ -7,7 +7,7 @@
       <Features>$(Features);runtime-async=on</Features>
       <EnablePreviewFeatures>true</EnablePreviewFeatures>
 
-      <Version>11.0.0-rc.3.5</Version>
+      <Version>11.0.0-rc.5</Version>
       <FileVersion>11.0.0</FileVersion>
       <AssemblyVersion>11.0.0</AssemblyVersion>
    </PropertyGroup>
@@ -17,7 +17,7 @@
       <Copyright>Copyright (c) Marvin Drude</Copyright>
       <PackageLicenseExpression>MIT</PackageLicenseExpression>
       <PackageReadmeFile>README.md</PackageReadmeFile>
-      <PackageTags>Networking MQTT TCP WebSockets Pipelines QUIC UDS NamedPipes IPC Messaging Performance Allocation Sockets Streams Server Client</PackageTags>
+      <PackageTags>Networking MQTT TCP WebSockets Pipelines QUIC UDS NamedPipes IPC Messaging Performance Allocation Sockets Streams Server Client Jobs Cron Scheduler</PackageTags>
       <PublishRepositoryUrl>true</PublishRepositoryUrl>
       <RepositoryUrl>https://github.com/MarvinDrude/Beskar.Networking</RepositoryUrl>
       <IncludeSymbols>true</IncludeSymbols>
