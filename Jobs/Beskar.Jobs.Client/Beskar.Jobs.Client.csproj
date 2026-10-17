@@ -1,6 +1,16 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-    </PropertyGroup>
+   <PropertyGroup>
+      <Title>Beskar.Jobs.Client</Title>
+      <Description>High-performance MQTT job producer, controller, and real-time status streaming client for Beskar.Jobs.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Client\Beskar.Mqtt.Client.csproj" />
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
+      <ProjectReference Include="..\Beskar.Jobs.Common\Beskar.Jobs.Common.csproj" />
+   </ItemGroup>
 
 </Project>

@@ -1,6 +1,17 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-    </PropertyGroup>
+   <PropertyGroup>
+      <Title>Beskar.Jobs.Scheduler</Title>
+      <Description>High-precision Cron and delayed job scheduler, dispatcher, and LWT crash recovery coordinator for Beskar.Jobs.</Description>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Beskar.Networking.Abstractions\Beskar.Networking.Abstractions.csproj" />
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Client\Beskar.Mqtt.Client.csproj" />
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Common\Beskar.Mqtt.Common.csproj" />
+      <ProjectReference Include="..\..\Mqtt\Beskar.Mqtt.Server\Beskar.Mqtt.Server.csproj" />
+      <ProjectReference Include="..\Beskar.Jobs.Common\Beskar.Jobs.Common.csproj" />
+   </ItemGroup>
 
 </Project>

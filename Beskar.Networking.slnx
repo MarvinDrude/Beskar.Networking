@@ -168,6 +168,7 @@
     <Project Path="Tests/Beskar.Mqtt.Integration.Tests/Beskar.Mqtt.Integration.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Protocol.Tests/Beskar.Networking.Protocol.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Raft.Tests/Beskar.Networking.Raft.Tests.csproj" />
+    <Project Path="Tests/Beskar.Jobs.Tests/Beskar.Jobs.Tests.csproj" />
   </Folder>
   <Folder Name="/Raft/">
     <Project Path="Raft/Beskar.Networking.Raft/Beskar.Networking.Raft.csproj" />
