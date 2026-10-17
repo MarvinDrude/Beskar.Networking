@@ -70,6 +70,9 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 | **Beskar.Networking.Transports.Uds** | Native Unix Domain Sockets (UDS) local transport implementation. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Uds.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Uds/) |
 | **Beskar.Networking.Transports.NamedPipes** | Native local Inter-Process Communication (IPC) Named Pipes transport implementation. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.NamedPipes.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.NamedPipes/) |
 | **Beskar.Networking.Transports.Memory** | Fast, zero-allocation local in-memory transport implementation for tests and local IPC. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Transports.Memory.svg)](https://www.nuget.org/packages/Beskar.Networking.Transports.Memory/) |
+| **Beskar.Jobs.Scheduler** | Distributed job coordinator with zero-allocation Cron scheduling, DAG continuations, load-balanced worker routing, and LWT crash recovery over MQTT. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Jobs.Scheduler.svg)](https://www.nuget.org/packages/Beskar.Jobs.Scheduler/) |
+| **Beskar.Jobs.Worker** | Distributed job execution node supporting source-generated `[GeneratedJobHandler]` handlers, bounded concurrency, and live progress reporting. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Jobs.Worker.svg)](https://www.nuget.org/packages/Beskar.Jobs.Worker/) |
+| **Beskar.Jobs.Client** | High-level job producer client for enqueuing jobs, chaining continuations, registering Cron schedules, and streaming real-time progress over MQTT. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Jobs.Client.svg)](https://www.nuget.org/packages/Beskar.Jobs.Client/) |
 
 ---
 
