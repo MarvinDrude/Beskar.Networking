@@ -58,6 +58,13 @@
     <File Path="Documentation/Resilient/Events.md" />
     <File Path="Documentation/Resilient/Overview.md" />
   </Folder>
+  <Folder Name="/Documentation/Jobs/">
+    <File Path="Documentation/Jobs/Overview.md" />
+    <File Path="Documentation/Jobs/HandlersAndSourceGenerator.md" />
+    <File Path="Documentation/Jobs/SchedulingAndWorkflows.md" />
+    <File Path="Documentation/Jobs/WorkerRoutingAndResilience.md" />
+    <File Path="Documentation/Jobs/StorageAndPersistence.md" />
+  </Folder>
   <Folder Name="/Documentation/Telemetry/">
     <File Path="Documentation/Telemetry/Meters.md" />
   </Folder>

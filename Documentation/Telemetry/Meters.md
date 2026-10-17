@@ -64,3 +64,23 @@ Meter Name: `Beskar.Networking.Transport` (Version `1.0.0`)
 | `beskar.transport.ws.handshake.duration` | `Histogram<double>` | `ms` | Duration of WebSocket upgrade handshakes in milliseconds. |
 | `beskar.transport.ws.handshake.failures` | `Counter<long>` | `{failure}` | Total failed WebSocket upgrade handshakes. |
 | `beskar.transport.udp.packets.dropped` | `Counter<long>` | `{packet}` | Total number of UDP packets dropped due to full pipeline buffer. |
+
+---
+
+# Jobs
+
+Meter Name: `Beskar.Jobs` (Version `1.0.0`)
+
+| Instrument Name | Type | Unit | Description |
+| :--- | :--- | :--- | :--- |
+| `beskar.jobs.enqueued` | `Counter<long>` | `{job}` | Total number of jobs enqueued or scheduled (tagged by `queue` and `job.type`). |
+| `beskar.jobs.dispatched` | `Counter<long>` | `{job}` | Total number of jobs dispatched and claimed by workers (tagged by `queue` and `job.type`). |
+| `beskar.jobs.active` | `UpDownCounter<long>` | `{job}` | Current number of actively executing jobs across workers. |
+| `beskar.jobs.completed` | `Counter<long>` | `{job}` | Total number of jobs reaching a terminal state (tagged by `status`: `succeeded`, `failed`, `cancelled`, `dead_lettered`). |
+| `beskar.jobs.retries` | `Counter<long>` | `{retry}` | Total number of job retry attempts scheduled after failure or worker crash (tagged by `job.type` and `attempt`). |
+| `beskar.jobs.cron.triggered` | `Counter<long>` | `{trigger}` | Total number of recurring Cron job occurrences triggered (tagged by `recurring.id`). |
+| `beskar.jobs.worker.crashes` | `Counter<long>` | `{crash}` | Total number of unexpected worker disconnects/crashes detected via MQTT LWT (tagged by `worker.id`). |
+| `beskar.jobs.workers.online` | `UpDownCounter<long>` | `{worker}` | Current count of online workers registered with the scheduler. |
+| `beskar.jobs.execution.duration` | `Histogram<double>` | `ms` | Duration of job execution on workers in milliseconds (tagged by `job.type` and `status`). |
+| `beskar.jobs.queue.lag` | `Histogram<double>` | `ms` | Queue waiting lag from scheduled due time to worker dispatch in milliseconds (tagged by `queue` and `job.type`). |
+

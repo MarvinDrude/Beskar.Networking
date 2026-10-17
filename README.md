@@ -390,6 +390,12 @@ You can find detailed documentation for `Beskar.Networking` [here](https://githu
   - [Unix Domain Sockets (UDS) Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Uds.md)
   - [Named Pipes Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/NamedPipes.md)
   - [In-Memory Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Memory.md)
+- [**Distributed Job Scheduling & Execution Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Jobs):
+    - [Distributed Jobs Overview & Architecture](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Jobs/Overview.md)
+    - [Job Handlers, Source Generator & Progress Streaming](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Jobs/HandlersAndSourceGenerator.md)
+    - [Cron Scheduling & DAG Continuation Workflows](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Jobs/SchedulingAndWorkflows.md)
+    - [Worker Routing, Retries, Cancellation & LWT Failover](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Jobs/WorkerRoutingAndResilience.md)
+    - [Job Storage & Custom Database Persistence](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Jobs/StorageAndPersistence.md)
 - [**Telemetry Meters Reference**](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Telemetry/Meters.md): Detailed reference of all OpenTelemetry and `System.Diagnostics.Metrics` meters, instruments, types, units, and descriptions across MQTT, Resilient, and Transports.
 
 Or you can find examples directly [here](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples).
