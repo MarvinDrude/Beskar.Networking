@@ -67,6 +67,18 @@
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Common/Beskar.Adv.Chat.Common.csproj" />
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Server/Beskar.Adv.Chat.Server.csproj" />
   </Folder>
+  <Folder Name="/Examples/Jobs/">
+    <Project Path="Examples/Jobs/Beskar.Jobs.Example.QuickStart/Beskar.Jobs.Example.QuickStart.csproj" />
+    <Project Path="Examples/Jobs/Beskar.Jobs.Example.CronAndWorkflows/Beskar.Jobs.Example.CronAndWorkflows.csproj" />
+    <Project Path="Examples/Jobs/Beskar.Jobs.Example.ResilienceAndFailover/Beskar.Jobs.Example.ResilienceAndFailover.csproj" />
+  </Folder>
+  <Folder Name="/Examples/Jobs/Distributed/">
+    <Project Path="Examples/Jobs/Distributed/Beskar.Jobs.Example.Distributed.Common/Beskar.Jobs.Example.Distributed.Common.csproj" />
+    <Project Path="Examples/Jobs/Distributed/Beskar.Jobs.Example.Distributed.Broker/Beskar.Jobs.Example.Distributed.Broker.csproj" />
+    <Project Path="Examples/Jobs/Distributed/Beskar.Jobs.Example.Distributed.Scheduler/Beskar.Jobs.Example.Distributed.Scheduler.csproj" />
+    <Project Path="Examples/Jobs/Distributed/Beskar.Jobs.Example.Distributed.Worker/Beskar.Jobs.Example.Distributed.Worker.csproj" />
+    <Project Path="Examples/Jobs/Distributed/Beskar.Jobs.Example.Distributed.Client/Beskar.Jobs.Example.Distributed.Client.csproj" />
+  </Folder>
   <Folder Name="/Examples/Mqtt/">
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.Authentication/Beskar.Mqtt.Example.Authentication.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.SimplePubSub/Beskar.Mqtt.Example.SimplePubSub.csproj" />

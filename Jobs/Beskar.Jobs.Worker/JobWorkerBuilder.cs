@@ -156,6 +156,16 @@ public sealed class JobWorkerBuilder
    }
 
    /// <summary>
+   /// Registers a source-generated job handler with result annotated with <c>[GeneratedJobHandler]</c> and subscribes to its default queue.
+   /// </summary>
+   public JobWorkerBuilder RegisterGeneratedHandlerWithResult<THandler, TArgs, TResult>(THandler? instance = null)
+      where THandler : class, IGeneratedJobDescriptor, IJobHandlerWithResult<TArgs, TResult>, new()
+   {
+      SubscribeQueue(THandler.GeneratedQueue);
+      return RegisterHandlerWithResult<TArgs, TResult>(THandler.GeneratedJobType, instance ?? new THandler());
+   }
+
+   /// <summary>
    /// Registers a delegate handler that returns a typed <typeparamref name="TResult"/> upon completion.
    /// </summary>
    public JobWorkerBuilder RegisterHandlerWithResult<TArgs, TResult>(
