@@ -336,4 +336,175 @@ public class JobExecutionAndStreamingTests
 
       await broker.StopAsync();
    }
+
+   [Test]
+   public async Task MultiQueueDispatch_UnservicedQueueExceedingBatchSize_DoesNotStarveActiveQueue()
+   {
+      var port = GetFreeTcpPort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var broker = MqttServerFactory.CreateBuilder()
+         .WithDefaultClientIdGenerator()
+         .UseTcp(port)
+         .Build();
+      await broker.StartAsync();
+
+      await using var scheduler = JobSchedulerBuilder.Create()
+         .WithTickInterval(TimeSpan.FromMilliseconds(20))
+         .WithDispatchBatchSize(4)
+         .UseTcp(endPoint)
+         .Build();
+
+      await using var worker = JobWorkerBuilder.Create()
+         .WithWorkerId("worker-active-only")
+         .SubscribeQueue("active-queue")
+         .RegisterHandlerWithResult<string, string>("active.echo", (ctx, _) =>
+            ValueTask.FromResult($"serviced:{ctx.Arguments}"))
+         .UseTcp(endPoint)
+         .Build();
+
+      await using var client = JobClientBuilder.Create()
+         .UseTcp(endPoint)
+         .Build();
+
+      await scheduler.StartAsync();
+      await worker.StartAsync();
+      await client.ConnectAsync();
+
+      // Enqueue more jobs than DispatchBatchSize (4) onto a queue with no online workers
+      for (var i = 0; i < 6; i++)
+      {
+         var unserviced = await client.EnqueueAsync("unserviced.work", $"item-{i}", queue: "unserviced-queue");
+         await Assert.That(unserviced.Failed).IsFalse();
+      }
+
+      // Now enqueue a job onto 'active-queue' which has an online idle worker
+      var activeJob = await client.EnqueueAsync("active.echo", "ready-now", queue: "active-queue");
+      await Assert.That(activeJob.Failed).IsFalse();
+
+      var activeResult = await client.WaitForJobResultAsync<string>(
+         activeJob.Success!.JobId,
+         TimeSpan.FromSeconds(2));
+
+      await Assert.That(activeResult.Failed).IsFalse();
+      await Assert.That(activeResult.Success).IsEqualTo("serviced:ready-now");
+
+      await broker.StopAsync();
+   }
+
+   [Test]
+   public async Task WorkerCompletionEvent_SingleConcurrencySlot_ReleasesActiveSlotBeforeFiringCompletedAndAcceptingNextJob()
+   {
+      var port = GetFreeTcpPort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var broker = MqttServerFactory.CreateBuilder()
+         .WithDefaultClientIdGenerator()
+         .UseTcp(port)
+         .Build();
+      await broker.StartAsync();
+
+      await using var scheduler = JobSchedulerBuilder.Create()
+         .WithTickInterval(TimeSpan.FromMilliseconds(500))
+         .UseTcp(endPoint)
+         .Build();
+
+      JobWorker? workerRef = null;
+      var activeCountInsideCompletedEvent = -1;
+
+      await using var worker = JobWorkerBuilder.Create()
+         .WithWorkerId("worker-single-slot")
+         .WithMaxConcurrency(1)
+         .WithHeartbeatInterval(TimeSpan.Zero)
+         .RegisterHandlerWithResult<string, string>("chain.step", (ctx, _) =>
+            ValueTask.FromResult($"done:{ctx.Arguments}"))
+         .UseTcp(endPoint)
+         .Build();
+
+      workerRef = worker;
+
+      worker.Events.OnJobCompleted.Add(async (_, ct) =>
+      {
+         Interlocked.CompareExchange(ref activeCountInsideCompletedEvent, workerRef.ActiveJobCount, -1);
+         await Task.Delay(80, ct);
+      });
+
+      await using var client = JobClientBuilder.Create()
+         .UseTcp(endPoint)
+         .Build();
+
+      await scheduler.StartAsync();
+      await worker.StartAsync();
+      await client.ConnectAsync();
+
+      var step1 = await client.EnqueueAsync("chain.step", "first");
+      var step2 = await client.EnqueueContinuationAsync(step1.Success!.JobId, "chain.step", "second");
+
+      // With TickInterval = 500ms and HeartbeatInterval = 0, step2 must be accepted on the immediate
+      // wakeup triggered by step1's completion rather than being rejected due to stale ActiveJobCount.
+      var step2Result = await client.WaitForJobResultAsync<string>(
+         step2.Success!.JobId,
+         TimeSpan.FromMilliseconds(350));
+
+      await Assert.That(Volatile.Read(ref activeCountInsideCompletedEvent)).IsEqualTo(0);
+      await Assert.That(step2Result.Failed).IsFalse();
+      await Assert.That(step2Result.Success).IsEqualTo("done:second");
+
+      await broker.StopAsync();
+   }
+
+   [Test]
+   public async Task StartAsync_AfterInitialConnectionFailure_CanRetryAndConnectSuccessfully()
+   {
+      var port = GetFreeTcpPort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      await using var scheduler = JobSchedulerBuilder.Create()
+         .WithTickInterval(TimeSpan.FromMilliseconds(20))
+         .UseTcp(endPoint)
+         .Build();
+
+      await using var worker = JobWorkerBuilder.Create()
+         .WithWorkerId("worker-reconnect-start")
+         .RegisterHandlerWithResult<int, int>("math.double", (ctx, _) =>
+            ValueTask.FromResult(ctx.Arguments * 2))
+         .UseTcp(endPoint)
+         .Build();
+
+      // Broker is not started yet -> initial StartAsync calls fail
+      var initialSchedulerStart = await scheduler.StartAsync();
+      var initialWorkerStart = await worker.StartAsync();
+
+      await Assert.That(initialSchedulerStart.Failed).IsTrue();
+      await Assert.That(initialWorkerStart.Failed).IsTrue();
+
+      // Now start the broker on the endpoint and retry StartAsync
+      var broker = MqttServerFactory.CreateBuilder()
+         .WithDefaultClientIdGenerator()
+         .UseTcp(port)
+         .Build();
+      await broker.StartAsync();
+
+      var retrySchedulerStart = await scheduler.StartAsync();
+      var retryWorkerStart = await worker.StartAsync();
+
+      await Assert.That(retrySchedulerStart.Failed).IsFalse();
+      await Assert.That(retryWorkerStart.Failed).IsFalse();
+      await Assert.That(scheduler.MqttClient.IsConnected).IsTrue();
+      await Assert.That(worker.MqttClient.IsConnected).IsTrue();
+
+      await using var client = JobClientBuilder.Create()
+         .UseTcp(endPoint)
+         .Build();
+      await client.ConnectAsync();
+
+      var enq = await client.EnqueueAsync("math.double", 21);
+      await Assert.That(enq.Failed).IsFalse();
+
+      var res = await client.WaitForJobResultAsync<int>(enq.Success!.JobId, TimeSpan.FromSeconds(3));
+      await Assert.That(res.Failed).IsFalse();
+      await Assert.That(res.Success).IsEqualTo(42);
+
+      await broker.StopAsync();
+   }
 }

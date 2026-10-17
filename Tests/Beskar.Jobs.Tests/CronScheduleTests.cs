@@ -1,3 +1,4 @@
+using System.Globalization;
 using Beskar.Jobs.Common.Scheduling;
 
 namespace Beskar.Jobs.Tests;
@@ -79,6 +80,52 @@ public class CronScheduleTests
 
       await Assert.That(s7.GetNextOccurrence(saturday)).IsEqualTo(sundayMidnight);
       await Assert.That(sSun.GetNextOccurrence(saturday)).IsEqualTo(sundayMidnight);
+   }
+
+   [Test]
+   public async Task Parse_DayOfWeekRangeEndingInSundayAndSundayStep_EvaluatesCorrectly()
+   {
+      var friToSunNamed = CronSchedule.Parse("0 0 * * FRI-SUN");
+      var friToSunNumeric = CronSchedule.Parse("0 0 * * 5-7");
+      await Assert.That(friToSunNamed).IsEqualTo(friToSunNumeric);
+
+      var thursday = new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero);
+      var friday = friToSunNamed.GetNextOccurrence(thursday);
+      var saturday = friToSunNamed.GetNextOccurrence(friday!.Value);
+      var sunday = friToSunNamed.GetNextOccurrence(saturday!.Value);
+      var nextFriday = friToSunNamed.GetNextOccurrence(sunday!.Value);
+
+      await Assert.That(friday).IsEqualTo(new DateTimeOffset(2026, 10, 16, 0, 0, 0, TimeSpan.Zero));
+      await Assert.That(saturday).IsEqualTo(new DateTimeOffset(2026, 10, 17, 0, 0, 0, TimeSpan.Zero));
+      await Assert.That(sunday).IsEqualTo(new DateTimeOffset(2026, 10, 18, 0, 0, 0, TimeSpan.Zero));
+      await Assert.That(nextFriday).IsEqualTo(new DateTimeOffset(2026, 10, 23, 0, 0, 0, TimeSpan.Zero));
+
+      var sundayStep = CronSchedule.Parse("0 0 * * 7/2");
+      var zeroStep = CronSchedule.Parse("0 0 * * 0/2");
+      await Assert.That(sundayStep).IsEqualTo(zeroStep);
+   }
+
+   [Test]
+   public async Task Parse_DecimalIntervalWithCommaDecimalCultureAndNonFiniteValues_ParsesInvariantly()
+   {
+      var originalCulture = CultureInfo.CurrentCulture;
+      try
+      {
+         CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+         var everyOneAndHalfSec = CronSchedule.Parse("@every 1.5s");
+         await Assert.That(everyOneAndHalfSec.Interval).IsEqualTo(TimeSpan.FromMilliseconds(1500));
+
+         var everyTwoAndHalfMs = CronSchedule.Parse("@every 2.5ms");
+         await Assert.That(everyTwoAndHalfMs.Interval).IsEqualTo(TimeSpan.FromMilliseconds(2.5));
+
+         await Assert.That(CronSchedule.TryParse("@every Infinitys", out _)).IsFalse();
+         await Assert.That(CronSchedule.TryParse("@every NaNs", out _)).IsFalse();
+      }
+      finally
+      {
+         CultureInfo.CurrentCulture = originalCulture;
+      }
    }
 
    [Test]

@@ -382,4 +382,170 @@ public class JobRetryCancellationAndCrashTests
 
       await broker.StopAsync();
    }
+
+   [Test]
+   public async Task FastFailingJob_WhenFailureEventArrivesBeforePostDispatchUpdate_DeadLettersAtMaxAttemptsWithoutHanging()
+   {
+      var port = GetFreeTcpPort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var broker = MqttServerFactory.CreateBuilder()
+         .WithDefaultClientIdGenerator()
+         .UseTcp(port)
+         .Build();
+      await broker.StartAsync();
+
+      var storage = new PostDispatchDelayJobStorage(new Beskar.Jobs.Common.Storage.InMemoryJobStorage(), TimeSpan.FromMilliseconds(80));
+
+      await using var scheduler = JobSchedulerBuilder.Create()
+         .WithTickInterval(TimeSpan.FromMilliseconds(20))
+         .UseStorage(storage)
+         .UseTcp(endPoint)
+         .Build();
+
+      await using var worker = JobWorkerBuilder.Create()
+         .WithWorkerId("worker-instant-fail")
+         .RegisterHandler<string>("instant.fail", (_, _) =>
+            throw new InvalidOperationException("Immediate synchronous failure"))
+         .UseTcp(endPoint)
+         .Build();
+
+      await using var client = JobClientBuilder.Create()
+         .UseTcp(endPoint)
+         .Build();
+
+      await scheduler.StartAsync();
+      await worker.StartAsync();
+      await client.ConnectAsync();
+
+      var enq = await client.EnqueueAsync("instant.fail", "payload", maxAttempts: 1);
+      await Assert.That(enq.Failed).IsFalse();
+
+      var completion = await client.WaitForJobCompletionAsync(enq.Success!.JobId, TimeSpan.FromSeconds(2));
+      await Assert.That(completion.Failed).IsFalse();
+      await Assert.That(completion.Success!.Status).IsEqualTo(JobStatus.DeadLettered);
+      await Assert.That(completion.Success.Attempt).IsEqualTo(1);
+
+      var storedRecord = await storage.GetJobAsync(enq.Success.JobId);
+      await Assert.That(storedRecord).IsNotNull();
+      await Assert.That(storedRecord!.Status).IsEqualTo(JobStatus.DeadLettered);
+      await Assert.That(storedRecord.Attempt).IsEqualTo(1);
+
+      await broker.StopAsync();
+   }
+
+   [Test]
+   public async Task CancelJob_WhileInDispatchingState_TransitionsToCancelledImmediately()
+   {
+      var port = GetFreeTcpPort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var broker = MqttServerFactory.CreateBuilder()
+         .WithDefaultClientIdGenerator()
+         .UseTcp(port)
+         .Build();
+      await broker.StartAsync();
+
+      await using var scheduler = JobSchedulerBuilder.Create()
+         .WithTickInterval(TimeSpan.FromMilliseconds(50))
+         .UseTcp(endPoint)
+         .Build();
+
+      await using var client = JobClientBuilder.Create()
+         .UseTcp(endPoint)
+         .Build();
+
+      await scheduler.StartAsync();
+      await client.ConnectAsync();
+
+      const string JobId = "job-dispatching-cancel";
+      await scheduler.Storage.UpsertJobAsync(new JobInstanceRecord
+      {
+         JobId = JobId,
+         JobType = "unregistered.work",
+         Queue = "default",
+         Status = JobStatus.Dispatching,
+         LockedUntilUtc = DateTimeOffset.UtcNow.AddMinutes(5)
+      });
+
+      var cancelRes = await client.CancelJobAsync(JobId, "Cancelled while in Dispatching state");
+      await Assert.That(cancelRes.Failed).IsFalse();
+
+      var completion = await client.WaitForJobCompletionAsync(JobId, TimeSpan.FromSeconds(2));
+      await Assert.That(completion.Failed).IsFalse();
+      await Assert.That(completion.Success!.Status).IsEqualTo(JobStatus.Cancelled);
+
+      await broker.StopAsync();
+   }
+
+   private sealed class PostDispatchDelayJobStorage(
+      Beskar.Jobs.Common.Interfaces.IJobStorage inner,
+      TimeSpan postDispatchDelay) : Beskar.Jobs.Common.Interfaces.IJobStorage
+   {
+      public ValueTask UpsertJobAsync(JobInstanceRecord job, CancellationToken ct = default) =>
+         inner.UpsertJobAsync(job, ct);
+
+      public ValueTask<JobInstanceRecord?> GetJobAsync(string jobId, CancellationToken ct = default) =>
+         inner.GetJobAsync(jobId, ct);
+
+      public ValueTask<JobInstanceRecord?> TryTransitionStateAsync(
+         string jobId,
+         JobStatus expectedStatus,
+         JobStatus newStatus,
+         long? expectedVersion = null,
+         Action<JobInstanceRecord>? mutate = null,
+         CancellationToken ct = default) =>
+         inner.TryTransitionStateAsync(jobId, expectedStatus, newStatus, expectedVersion, mutate, ct);
+
+      public async ValueTask<JobInstanceRecord?> TryUpdateJobAsync(
+         string jobId,
+         Action<JobInstanceRecord> mutate,
+         bool allowIfTerminal = false,
+         CancellationToken ct = default)
+      {
+         var probe = new JobInstanceRecord { JobId = jobId, JobType = "probe", Status = JobStatus.Dispatching };
+         mutate(probe);
+
+         if (probe.Status == JobStatus.Running && probe.Attempt > 0)
+         {
+            await Task.Delay(postDispatchDelay, ct);
+         }
+
+         return await inner.TryUpdateJobAsync(jobId, mutate, allowIfTerminal, ct);
+      }
+
+      public ValueTask<IReadOnlyList<JobInstanceRecord>> ClaimDueJobsAsync(
+         DateTimeOffset nowUtc,
+         int maxBatchSize,
+         TimeSpan lockDuration,
+         CancellationToken ct = default) =>
+         inner.ClaimDueJobsAsync(nowUtc, maxBatchSize, lockDuration, ct);
+
+      public ValueTask<IReadOnlyList<JobInstanceRecord>> GetActiveJobsByWorkerAsync(
+         string workerId,
+         CancellationToken ct = default) =>
+         inner.GetActiveJobsByWorkerAsync(workerId, ct);
+
+      public ValueTask<IReadOnlyList<JobInstanceRecord>> GetContinuationJobsAsync(
+         string parentJobId,
+         CancellationToken ct = default) =>
+         inner.GetContinuationJobsAsync(parentJobId, ct);
+
+      public ValueTask UpsertRecurringJobAsync(RecurringJobRecord recurringJob, CancellationToken ct = default) =>
+         inner.UpsertRecurringJobAsync(recurringJob, ct);
+
+      public ValueTask<RecurringJobRecord?> GetRecurringJobAsync(string recurringJobId, CancellationToken ct = default) =>
+         inner.GetRecurringJobAsync(recurringJobId, ct);
+
+      public ValueTask<IReadOnlyList<RecurringJobRecord>> GetDueRecurringJobsAsync(
+         DateTimeOffset nowUtc,
+         CancellationToken ct = default) =>
+         inner.GetDueRecurringJobsAsync(nowUtc, ct);
+
+      public ValueTask<bool> RemoveRecurringJobAsync(string recurringJobId, CancellationToken ct = default) =>
+         inner.RemoveRecurringJobAsync(recurringJobId, ct);
+
+      public ValueTask<int> PruneCompletedJobsAsync(DateTimeOffset completedBeforeUtc, CancellationToken ct = default) =>
+         inner.PruneCompletedJobsAsync(completedBeforeUtc, ct);
+   }
 }

@@ -275,4 +275,147 @@ public class JobCronAndContinuationsTests
 
       await broker.StopAsync();
    }
+
+   [Test]
+   public async Task ContinuationJobs_WhenParentDeadLetters_CascadesCancellationToChildAndGrandchild()
+   {
+      var port = GetFreeTcpPort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var broker = MqttServerFactory.CreateBuilder()
+         .WithDefaultClientIdGenerator()
+         .UseTcp(port)
+         .Build();
+      await broker.StartAsync();
+
+      await using var scheduler = JobSchedulerBuilder.Create()
+         .WithTickInterval(TimeSpan.FromMilliseconds(20))
+         .UseTcp(endPoint)
+         .Build();
+
+      await using var worker = JobWorkerBuilder.Create()
+         .WithWorkerId("worker-dag-fail")
+         .RegisterHandler<string>("dag.fail.step", (ctx, _) =>
+         {
+            if (ctx.Arguments == "step-1")
+            {
+               throw new InvalidOperationException("Parent stage failed permanently");
+            }
+
+            return ValueTask.CompletedTask;
+         })
+         .UseTcp(endPoint)
+         .Build();
+
+      await using var client = JobClientBuilder.Create()
+         .UseTcp(endPoint)
+         .Build();
+
+      await scheduler.StartAsync();
+      await worker.StartAsync();
+      await client.ConnectAsync();
+
+      var step1 = await client.EnqueueAsync("dag.fail.step", "step-1", maxAttempts: 1);
+      await Assert.That(step1.Failed).IsFalse();
+
+      var step2 = await client.EnqueueContinuationAsync(
+         parentJobId: step1.Success!.JobId,
+         jobType: "dag.fail.step",
+         args: "step-2");
+      await Assert.That(step2.Failed).IsFalse();
+
+      var step3 = await client.EnqueueContinuationAsync(
+         parentJobId: step2.Success!.JobId,
+         jobType: "dag.fail.step",
+         args: "step-3");
+      await Assert.That(step3.Failed).IsFalse();
+
+      var step1Completion = await client.WaitForJobCompletionAsync(step1.Success.JobId, TimeSpan.FromSeconds(2));
+      await Assert.That(step1Completion.Failed).IsFalse();
+      await Assert.That(step1Completion.Success!.Status).IsEqualTo(JobStatus.DeadLettered);
+
+      var step2Completion = await client.WaitForJobCompletionAsync(step2.Success.JobId, TimeSpan.FromSeconds(2));
+      await Assert.That(step2Completion.Failed).IsFalse();
+      await Assert.That(step2Completion.Success!.Status).IsEqualTo(JobStatus.Cancelled);
+
+      var step3Completion = await client.WaitForJobCompletionAsync(step3.Success.JobId, TimeSpan.FromSeconds(2));
+      await Assert.That(step3Completion.Failed).IsFalse();
+      await Assert.That(step3Completion.Success!.Status).IsEqualTo(JobStatus.Cancelled);
+
+      await broker.StopAsync();
+   }
+
+   [Test]
+   public async Task RecurringJob_QueueNextOverlapPolicy_ContinuesExecutingSubsequentRunsAfterFailedInstanceAndSetsRecurringJobId()
+   {
+      var port = GetFreeTcpPort();
+      var endPoint = new IPEndPoint(IPAddress.Loopback, port);
+
+      var broker = MqttServerFactory.CreateBuilder()
+         .WithDefaultClientIdGenerator()
+         .UseTcp(port)
+         .Build();
+      await broker.StartAsync();
+
+      await using var scheduler = JobSchedulerBuilder.Create()
+         .WithTickInterval(TimeSpan.FromMilliseconds(20))
+         .UseTcp(endPoint)
+         .Build();
+
+      string? observedRecurringJobId = null;
+      scheduler.Events.OnRecurringJobTriggered.Add((ctx, _) =>
+      {
+         Interlocked.CompareExchange(ref observedRecurringJobId, ctx.SpawnedJob.RecurringJobId, null);
+         return ValueTask.CompletedTask;
+      });
+
+      var invocationCount = 0;
+      var successfulRuns = 0;
+      var twoSuccessesDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      await using var worker = JobWorkerBuilder.Create()
+         .WithWorkerId("worker-queue-next")
+         .WithMaxConcurrency(2)
+         .RegisterHandler<string>("cron.queuenext", async (_, ct) =>
+         {
+            var runNumber = Interlocked.Increment(ref invocationCount);
+            if (runNumber == 1)
+            {
+               // Hold long enough for the next Cron tick to queue behind run #1 via OverlapPolicy.QueueNext, then fail
+               await Task.Delay(120, ct);
+               throw new InvalidOperationException("First recurring instance failed");
+            }
+
+            if (Interlocked.Increment(ref successfulRuns) >= 2)
+            {
+               twoSuccessesDone.TrySetResult();
+            }
+         })
+         .UseTcp(endPoint)
+         .Build();
+
+      await using var client = JobClientBuilder.Create()
+         .UseTcp(endPoint)
+         .Build();
+
+      await scheduler.StartAsync();
+      await worker.StartAsync();
+      await client.ConnectAsync();
+
+      var scheduleRes = await client.ScheduleRecurringAsync(
+         recurringJobId: "resilient-queue-next",
+         cronExpression: "@every 50ms",
+         jobType: "cron.queuenext",
+         args: "tick",
+         overlapPolicy: OverlapPolicy.QueueNext,
+         maxAttempts: 1);
+
+      await Assert.That(scheduleRes.Failed).IsFalse();
+
+      await twoSuccessesDone.Task.WaitAsync(TimeSpan.FromSeconds(2));
+      await Assert.That(Volatile.Read(ref successfulRuns)).IsGreaterThanOrEqualTo(2);
+      await Assert.That(Volatile.Read(ref observedRecurringJobId)).IsEqualTo("resilient-queue-next");
+
+      await broker.StopAsync();
+   }
 }
