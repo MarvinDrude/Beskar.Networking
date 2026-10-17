@@ -95,11 +95,22 @@ public sealed class JobWorkerBuilder
    /// <summary>
    /// Registers a source-generated job handler annotated with <c>[GeneratedJobHandler]</c> and subscribes to its default queue.
    /// </summary>
-   public JobWorkerBuilder RegisterGeneratedHandler<THandler, TArgs>(THandler? instance = null)
-      where THandler : class, IGeneratedJobDescriptor, IJobHandler<TArgs>, new()
+   public JobWorkerBuilder RegisterGeneratedHandler<THandler, TArgs>()
+      where THandler : IGeneratedJobDescriptor, IJobHandler<TArgs>, new()
    {
       SubscribeQueue(THandler.GeneratedQueue);
-      return RegisterHandler(THandler.GeneratedJobType, instance ?? new THandler());
+      return RegisterHandler(THandler.GeneratedJobType, new THandler());
+   }
+
+   /// <summary>
+   /// Registers an existing instance of a source-generated job handler annotated with <c>[GeneratedJobHandler]</c> and subscribes to its default queue.
+   /// </summary>
+   public JobWorkerBuilder RegisterGeneratedHandler<THandler, TArgs>(THandler instance)
+      where THandler : IGeneratedJobDescriptor, IJobHandler<TArgs>
+   {
+      ArgumentNullException.ThrowIfNull(instance);
+      SubscribeQueue(THandler.GeneratedQueue);
+      return RegisterHandler(THandler.GeneratedJobType, instance);
    }
 
    /// <summary>
@@ -152,17 +163,28 @@ public sealed class JobWorkerBuilder
    public JobWorkerBuilder RegisterHandlerWithResult<TArgs, TResult, THandler>(string jobType)
       where THandler : IJobHandlerWithResult<TArgs, TResult>, new()
    {
-      return RegisterHandlerWithResult<TArgs, TResult>(jobType, new THandler());
+      return RegisterHandlerWithResult(jobType, new THandler());
    }
 
    /// <summary>
    /// Registers a source-generated job handler with result annotated with <c>[GeneratedJobHandler]</c> and subscribes to its default queue.
    /// </summary>
-   public JobWorkerBuilder RegisterGeneratedHandlerWithResult<THandler, TArgs, TResult>(THandler? instance = null)
-      where THandler : class, IGeneratedJobDescriptor, IJobHandlerWithResult<TArgs, TResult>, new()
+   public JobWorkerBuilder RegisterGeneratedHandlerWithResult<THandler, TArgs, TResult>()
+      where THandler : IGeneratedJobDescriptor, IJobHandlerWithResult<TArgs, TResult>, new()
    {
       SubscribeQueue(THandler.GeneratedQueue);
-      return RegisterHandlerWithResult<TArgs, TResult>(THandler.GeneratedJobType, instance ?? new THandler());
+      return RegisterHandlerWithResult<TArgs, TResult>(THandler.GeneratedJobType, new THandler());
+   }
+
+   /// <summary>
+   /// Registers an existing instance of a source-generated job handler with result annotated with <c>[GeneratedJobHandler]</c> and subscribes to its default queue.
+   /// </summary>
+   public JobWorkerBuilder RegisterGeneratedHandlerWithResult<THandler, TArgs, TResult>(THandler instance)
+      where THandler : IGeneratedJobDescriptor, IJobHandlerWithResult<TArgs, TResult>
+   {
+      ArgumentNullException.ThrowIfNull(instance);
+      SubscribeQueue(THandler.GeneratedQueue);
+      return RegisterHandlerWithResult(THandler.GeneratedJobType, instance);
    }
 
    /// <summary>

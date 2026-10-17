@@ -15,7 +15,7 @@ Because it layers directly on `Beskar.Mqtt`, your job cluster can communicate ov
 * **Capability-Aware Load Balancing**: Workers advertise their subscribed queues, registered job types, and live concurrency slots via retained heartbeats; the scheduler routes jobs to the lowest-loaded capable worker with round-robin tie-breaking.
 * **Automatic Retries & Cooperative Cancellation**: Configurable backoff policies (`ExponentialBackoffPolicy`, `DecorrelatedJitterBackoffV2Policy`, etc.), per-attempt timeouts, and instant cooperative `CancellationToken` propagation across the network.
 * **Instant Worker Crash Recovery via MQTT LWT**: Worker nodes register an MQTT v5.0 Last Will and Testament (`IsOnline = false`). If a worker process crashes or loses power mid-job, the broker immediately publishes its Will, and the scheduler automatically recovers and reschedules all orphaned in-flight jobs.
-* **Pluggable Persistence (`IJobStorage`)**: Ships with a thread-safe `InMemoryJobStorage` and a clean 10-method async interface ready for PostgreSQL, SQLite, SQL Server, or Redis.
+* **Pluggable Persistence (`IJobStorage`)**: Ships with a thread-safe `InMemoryJobStorage` and a clean 12-method async interface with optimistic concurrency ready for PostgreSQL, SQLite, SQL Server, or Redis.
 
 ---
 
@@ -67,16 +67,18 @@ stateDiagram-v2
     [*] --> Scheduled: Delayed (ScheduledAtUtc > Now) or Waiting on ParentJobId
     [*] --> Enqueued: Immediate Execution
     Scheduled --> Enqueued: Delay Elapsed or Parent Job Succeeded
-    Enqueued --> Dispatching: Scheduler Selects Candidate Worker
+    Enqueued --> Dispatching: Scheduler Claims Due Job
     Dispatching --> Running: Worker Accepts RPC Claim
-    Dispatching --> Enqueued: Worker Rejects Claim / RPC Timeout
+    Dispatching --> Enqueued: Worker Rejects Claim / RPC Timeout / Lease Expired
     Running --> Succeeded: Handler Completes (Unlocks Child Continuations)
     Running --> AwaitingRetry: Handler Throws or Worker Crashes (Attempt < MaxAttempts)
-    AwaitingRetry --> Enqueued: Backoff Delay Elapsed
-    Running --> Failed: Handler Throws (Attempt >= MaxAttempts)
+    AwaitingRetry --> Dispatching: Backoff Delay Elapsed & Scheduler Claims Job
+    Running --> DeadLettered: Handler Throws or Crashes (Attempt >= MaxAttempts)
     Running --> Cancelled: Cooperative CancelCommand Received
-    Scheduled --> Cancelled: CancelCommand Received Before Dispatch
+    Scheduled --> Cancelled: CancelCommand Received or Parent Job Failed/Cancelled
     Enqueued --> Cancelled: CancelCommand Received Before Dispatch
+    AwaitingRetry --> Cancelled: CancelCommand Received Before Next Attempt
+    Dispatching --> Cancelled: CancelCommand Received Before Worker Starts
 ```
 
 ---

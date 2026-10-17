@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 
 namespace Beskar.Jobs.Common.Scheduling;
@@ -501,16 +502,25 @@ public readonly struct CronSchedule : IEquatable<CronSchedule>
 
       if (span.EndsWith("ms", StringComparison.OrdinalIgnoreCase))
       {
-         if (!double.TryParse(span[..^2].Trim(), out var ms) || ms <= 0) return false;
+         if (!double.TryParse(span[..^2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var ms) ||
+             !double.IsFinite(ms) ||
+             ms <= 0)
+         {
+            return false;
+         }
+
          duration = TimeSpan.FromMilliseconds(ms);
-         return true;
+         return duration > TimeSpan.Zero;
       }
 
       var unit = char.ToLowerInvariant(span[^1]);
       var numPart = span[..^1].Trim();
-      if (!double.TryParse(numPart, out var val) || val <= 0)
+
+      if (!double.TryParse(numPart, NumberStyles.Float, CultureInfo.InvariantCulture, out var val) ||
+          !double.IsFinite(val) ||
+          val <= 0)
       {
-         return TimeSpan.TryParse(span, out duration) && duration > TimeSpan.Zero;
+         return TimeSpan.TryParse(span, CultureInfo.InvariantCulture, out duration) && duration > TimeSpan.Zero;
       }
 
       duration = unit switch
@@ -614,7 +624,9 @@ public readonly struct CronSchedule : IEquatable<CronSchedule>
       if (slashIdx >= 0)
       {
          var stepSpan = part[(slashIdx + 1)..];
-         if (!int.TryParse(stepSpan, out step) || step <= 0 || step > max - min + 1)
+         if (!int.TryParse(stepSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out step) ||
+             step <= 0 ||
+             step > max - min + 1)
          {
             return false;
          }
@@ -641,9 +653,10 @@ public readonly struct CronSchedule : IEquatable<CronSchedule>
                return false;
             }
 
-            if (kind == FieldKind.DayOfWeek && rangeEnd == 7)
+            if (kind == FieldKind.DayOfWeek && rangeEnd == 0 && rangeStart > 0)
             {
-               // e.g. 5-7 (FRI-SUN)
+               // Map trailing SUN (0) in ranges like FRI-SUN or MON-SUN to 7
+               rangeEnd = 7;
             }
 
             if (rangeStart > rangeEnd)
@@ -656,6 +669,11 @@ public readonly struct CronSchedule : IEquatable<CronSchedule>
             if (!TryParseValue(part, min, max, kind, out rangeStart))
             {
                return false;
+            }
+
+            if (slashIdx >= 0 && kind == FieldKind.DayOfWeek && rangeStart == 7)
+            {
+               rangeStart = 0;
             }
 
             // If a step was given with a single value (e.g. "5/15"), it runs from 5 to max

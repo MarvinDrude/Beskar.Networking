@@ -1,9 +1,9 @@
 namespace Beskar.Jobs.Common.Attributes;
 
 /// <summary>
-/// Marks a partial job handler class for compile-time job metadata generation.
+/// Marks a partial job handler class or struct for compile-time job metadata generation.
 /// </summary>
-[AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, Inherited = false, AllowMultiple = false)]
 public sealed class GeneratedJobHandlerAttribute(string jobType) : Attribute
 {
    /// <summary>

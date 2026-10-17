@@ -16,6 +16,7 @@ public sealed record EnqueueJobRequest
    public int MaxAttempts { get; init; } = 3;
    public TimeSpan? Timeout { get; init; }
    public string? ParentJobId { get; init; }
+   public string? RecurringJobId { get; init; }
 
    public Dictionary<string, string>? Metadata { get; init; }
 }

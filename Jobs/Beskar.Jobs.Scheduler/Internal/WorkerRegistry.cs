@@ -27,6 +27,27 @@ internal sealed class WorkerRegistry
       }
    }
 
+   public int TotalAvailableSlots
+   {
+      get
+      {
+         lock (_lock)
+         {
+            var slots = 0;
+
+            foreach (var w in _workers.Values)
+            {
+               if (w is { IsOnline: true, AvailableSlots: > 0 })
+               {
+                  slots += w.AvailableSlots;
+               }
+            }
+
+            return slots;
+         }
+      }
+   }
+
    /// <summary>
    /// Updates worker state from a heartbeat payload. Returns true if the worker transitioned from Online to Offline.
    /// </summary>

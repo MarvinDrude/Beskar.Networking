@@ -128,4 +128,4 @@ var finalStatus = await client.WaitForJobCompletionAsync(stage3.JobId, TimeSpan.
 ```
 
 ### Fan-Out Continuations (1 Parent -> N Children)
-Multiple child jobs can specify the same `parentJobId`. As soon as the parent job succeeds, `JobScheduler` invokes `IJobStorage.GetReadyContinuationsAsync(parentJobId)` and unlocks **all** dependent children in parallel so they can be dispatched concurrently across your worker pool.
+Multiple child jobs can specify the same `parentJobId`. As soon as the parent job succeeds, `JobScheduler` invokes `IJobStorage.GetContinuationJobsAsync(parentJobId)` and unlocks **all** dependent children in parallel so they can be dispatched concurrently across your worker pool. If the parent job instead terminates with `DeadLettered` or `Cancelled`, all dependent continuation jobs in the chain are automatically cascaded to `JobStatus.Cancelled`.

@@ -72,79 +72,102 @@ public sealed class JobWorker : IAsyncDisposable
          return new VoidResult<StringError>();
       }
 
-      _workerCts = new CancellationTokenSource();
-      _messageHandlerToken = MqttClient.AddMessageReceiveHandler(HandleIncomingMessageAsync);
-
-      if (!MqttClient.IsConnected)
+      var startedSuccessfully = false;
+      try
       {
-         if (Options.EndPoint is null)
+         if (!MqttClient.IsConnected && Options.EndPoint is null)
          {
             return new StringError("JobWorkerOptions.EndPoint must be set when starting an unconnected IMqttClient.");
          }
 
-         var offlineWill = new WorkerHeartbeatPayload
-         {
-            WorkerId = Options.WorkerId,
-            IsOnline = false,
-            Queues = [.. Options.Queues],
-            SupportedJobTypes = [.. _handlers.Keys],
-            ActiveJobs = 0,
-            MaxConcurrency = Options.MaxConcurrency,
-            TimestampUtc = DateTimeOffset.UtcNow
-         };
+         _workerCts = new CancellationTokenSource();
+         _messageHandlerToken = MqttClient.AddMessageReceiveHandler(HandleIncomingMessageAsync);
 
-         var willTopicBytes = JobTopics.FormatWorkerHeartbeatToBytes(Options.WorkerId);
-         var willPayloadBytes = Options.Serializer.Serialize(offlineWill);
-
-         var connectOptions = new ConnectOptions
+         if (!MqttClient.IsConnected)
          {
-            EndPoint = Options.EndPoint,
-            ProtocolVersion = MqttProtocolVersion.V50,
-            ClientIdUtf8Bytes = Encoding.UTF8.GetBytes(Options.WorkerId),
-            CleanSession = true,
-            KeepAlivePeriod = Options.KeepAlivePeriodSeconds,
-            HasWill = true,
-            WillTopicUtf8Bytes = willTopicBytes,
-            WillPayload = new ReadOnlySequence<byte>(willPayloadBytes),
-            WillQualityOfService = QualityOfServiceType.AtLeastOnce,
-            WillRetain = true
-         };
+            var offlineWill = new WorkerHeartbeatPayload
+            {
+               WorkerId = Options.WorkerId,
+               IsOnline = false,
+               Queues = [.. Options.Queues],
+               SupportedJobTypes = [.. _handlers.Keys],
+               ActiveJobs = 0,
+               MaxConcurrency = Options.MaxConcurrency,
+               TimestampUtc = DateTimeOffset.UtcNow
+            };
 
-         var connectResult = await MqttClient.ConnectAsync(connectOptions, ct);
-         if (connectResult.Failed)
+            var willTopicBytes = JobTopics.FormatWorkerHeartbeatToBytes(Options.WorkerId);
+            var willPayloadBytes = Options.Serializer.Serialize(offlineWill);
+
+            var connectOptions = new ConnectOptions
+            {
+               EndPoint = Options.EndPoint!,
+               ProtocolVersion = MqttProtocolVersion.V50,
+               ClientIdUtf8Bytes = Encoding.UTF8.GetBytes(Options.WorkerId),
+               CleanSession = true,
+               KeepAlivePeriod = Options.KeepAlivePeriodSeconds,
+               HasWill = true,
+               WillTopicUtf8Bytes = willTopicBytes,
+               WillPayload = new ReadOnlySequence<byte>(willPayloadBytes),
+               WillQualityOfService = QualityOfServiceType.AtLeastOnce,
+               WillRetain = true
+            };
+
+            var connectResult = await MqttClient.ConnectAsync(connectOptions, ct);
+            if (connectResult.Failed)
+            {
+               return connectResult.Error;
+            }
+         }
+
+         var subBuilder = SubscribeOptions.Create()
+            .WithTopicFilter(JobTopics.CancelCommandWildcard, QualityOfServiceType.AtLeastOnce);
+
+         if (Options.Queues.Count == 0)
          {
-            return connectResult.Error;
+            Options.Queues.Add("default");
+         }
+
+         foreach (var queue in Options.Queues.Distinct(StringComparer.Ordinal))
+         {
+            var dispatchTopic = JobTopics.FormatDispatch(queue, Options.WorkerId);
+            subBuilder.WithTopicFilter(dispatchTopic, QualityOfServiceType.AtLeastOnce);
+         }
+
+         var subResult = await MqttClient.SubscribeAsync(subBuilder.Build(), ct);
+         if (subResult.Failed)
+         {
+            if (_ownsMqttClient && MqttClient.IsConnected)
+            {
+               await MqttClient.DisconnectAsync(new DisconnectOptions(), ct);
+            }
+
+            return subResult.Error;
+         }
+
+         await PublishHeartbeatAsync(isOnline: true, ct);
+
+         if (Options.HeartbeatInterval > TimeSpan.Zero)
+         {
+            _heartbeatLoopTask = Task.Run(() => RunHeartbeatLoopAsync(_workerCts.Token), CancellationToken.None);
+         }
+
+         startedSuccessfully = true;
+         return new VoidResult<StringError>();
+      }
+      finally
+      {
+         if (!startedSuccessfully)
+         {
+            _messageHandlerToken?.Dispose();
+            _messageHandlerToken = null;
+
+            _workerCts?.Dispose();
+            _workerCts = null;
+
+            Interlocked.Exchange(ref _started, 0);
          }
       }
-
-      var subBuilder = SubscribeOptions.Create()
-         .WithTopicFilter(JobTopics.CancelCommandWildcard, QualityOfServiceType.AtLeastOnce);
-
-      if (Options.Queues.Count == 0)
-      {
-         Options.Queues.Add("default");
-      }
-
-      foreach (var queue in Options.Queues.Distinct(StringComparer.Ordinal))
-      {
-         var dispatchTopic = JobTopics.FormatDispatch(queue, Options.WorkerId);
-         subBuilder.WithTopicFilter(dispatchTopic, QualityOfServiceType.AtLeastOnce);
-      }
-
-      var subResult = await MqttClient.SubscribeAsync(subBuilder.Build(), ct);
-      if (subResult.Failed)
-      {
-         return subResult.Error;
-      }
-
-      await PublishHeartbeatAsync(isOnline: true, ct);
-
-      if (Options.HeartbeatInterval > TimeSpan.Zero)
-      {
-         _heartbeatLoopTask = Task.Run(() => RunHeartbeatLoopAsync(_workerCts.Token), CancellationToken.None);
-      }
-
-      return new VoidResult<StringError>();
    }
 
    /// <summary>
@@ -364,6 +387,21 @@ public sealed class JobWorker : IAsyncDisposable
 
       var executionToken = combinedCts?.Token ?? cancelCts.Token;
       _runningJobTokens[request.JobId] = cancelCts;
+      var slotReleased = false;
+
+      void ReleaseActiveSlot()
+      {
+         if (slotReleased)
+         {
+            return;
+         }
+
+         slotReleased = true;
+         _runningJobTokens.TryRemove(request.JobId, out _);
+
+         Interlocked.Decrement(ref _activeJobs);
+         JobMetrics.RecordActiveJobsChange(-1);
+      }
 
       try
       {
@@ -397,6 +435,7 @@ public sealed class JobWorker : IAsyncDisposable
          sw.Stop();
          var durationMs = sw.Elapsed.TotalMilliseconds;
 
+         ReleaseActiveSlot();
          JobMetrics.RecordExecutionDuration(request.JobType, succeeded: true, durationMs);
 
          // ReSharper disable once MethodSupportsCancellation
@@ -426,6 +465,8 @@ public sealed class JobWorker : IAsyncDisposable
       {
          sw.Stop();
          var durationMs = sw.Elapsed.TotalMilliseconds;
+
+         ReleaseActiveSlot();
          JobMetrics.RecordExecutionDuration(request.JobType, succeeded: false, durationMs);
 
          // ReSharper disable once MethodSupportsCancellation
@@ -448,6 +489,8 @@ public sealed class JobWorker : IAsyncDisposable
       {
          sw.Stop();
          var durationMs = sw.Elapsed.TotalMilliseconds;
+
+         ReleaseActiveSlot();
          JobMetrics.RecordExecutionDuration(request.JobType, succeeded: false, durationMs);
 
          var errorMsg = timeoutCts is { IsCancellationRequested: true }
@@ -479,10 +522,8 @@ public sealed class JobWorker : IAsyncDisposable
       }
       finally
       {
-         _runningJobTokens.TryRemove(request.JobId, out _);
+         ReleaseActiveSlot();
          _runningJobTasks.TryRemove(request.JobId, out _);
-         Interlocked.Decrement(ref _activeJobs);
-         JobMetrics.RecordActiveJobsChange(-1);
 
          if (Volatile.Read(ref _started) == 1 && MqttClient.IsConnected)
          {

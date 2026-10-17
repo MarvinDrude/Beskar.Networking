@@ -42,7 +42,7 @@ Eligible workers are ranked by:
 When a job handler throws an unhandled exception (or exceeds its configured `Timeout`), `JobWorker` publishes a `failed` lifecycle event to the scheduler.
 
 * If `Attempt < MaxAttempts`, the job transitions to `JobStatus.AwaitingRetry` and its `ScheduledAtUtc` is set to `UtcNow + RetryPolicy.GetRetryDelay(Attempt)`.
-* If `Attempt >= MaxAttempts`, the job transitions to `JobStatus.Failed`, increments the `beskar.jobs.dead_lettered` metric, and fires `JobSchedulerEvents.OnJobDeadLettered`.
+* If `Attempt >= MaxAttempts`, the job transitions to `JobStatus.DeadLettered`, increments the `beskar.jobs.completed` (`status = deadlettered`) metric, fires `JobSchedulerEvents.OnJobDeadLettered`, and cascades `JobStatus.Cancelled` to any dependent continuation jobs.
 
 ### Configuring `RetryPolicy`
 `RetryPolicy` integrates directly with `Beskar.Networking.Abstractions.Backoffs.IBackoffPolicy`:
@@ -70,8 +70,8 @@ var scheduler = JobSchedulerBuilder.Create()
 
 Calling `JobClient.CancelJobAsync(jobId, reason)` publishes a `JobCancelCommand` to `jobs/commands/cancel/{jobId}`:
 
-1. **Pre-Dispatch Cancellation (`Scheduled` or `Enqueued`)**:
-   `JobScheduler` intercepts the command, transitions the job directly to `JobStatus.Cancelled` in `IJobStorage`, and broadcasts a terminal retained `JobStatusUpdate` so watching clients unblock immediately.
+1. **Pre-Execution Cancellation (`Scheduled`, `Enqueued`, `AwaitingRetry`, or `Dispatching`)**:
+   `JobScheduler` intercepts the command, transitions the job directly to `JobStatus.Cancelled` in `IJobStorage`, cascades cancellation to any dependent continuation jobs, and broadcasts a terminal retained `JobStatusUpdate` so watching clients unblock immediately.
 2. **Mid-Flight Cancellation (`Running`)**:
    The `JobWorker` executing `jobId` receives the command on `jobs/commands/cancel/+`, cancels the per-job `CancellationTokenSource` passed to `ExecuteAsync(context, ct)`, and publishes a `cancelled` event back to the scheduler.
 
@@ -103,7 +103,7 @@ sequenceDiagram
     W1->>JS: Event: Job #101 Started (Status = Running)
     Note over W1,MB: Worker #1 Process Crashes / TCP Socket Aborts!
     MB->>JS: Publishes LWT Heartbeat (worker-1, IsOnline = false)
-    JS->>JS: Marks worker-1 Offline & Queries GetJobsByWorkerAsync("worker-1")
+    JS->>JS: Marks worker-1 Offline & Queries GetActiveJobsByWorkerAsync("worker-1")
     JS->>JS: Transitions Job #101 -> AwaitingRetry & Fires OnWorkerCrashed
     JS->>W2: Re-dispatches Job #101 (Attempt 2/3)
     W2->>JS: Event: Job #101 Completed (Status = Succeeded)

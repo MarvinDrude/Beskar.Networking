@@ -74,49 +74,72 @@ public sealed class JobScheduler : IAsyncDisposable
          return new VoidResult<StringError>();
       }
 
-      _schedulerCts = new CancellationTokenSource();
-      _messageHandlerToken = MqttClient.AddMessageReceiveHandler(HandleIncomingMessageAsync);
-
-      if (!MqttClient.IsConnected)
+      var startedSuccessfully = false;
+      try
       {
-         if (Options.EndPoint is null)
+         if (!MqttClient.IsConnected && Options.EndPoint is null)
          {
             return new StringError("JobSchedulerOptions.EndPoint must be set when starting an unconnected IMqttClient.");
          }
 
-         var connectOptions = new ConnectOptions
-         {
-            EndPoint = Options.EndPoint,
-            ProtocolVersion = MqttProtocolVersion.V50,
-            ClientIdUtf8Bytes = Encoding.UTF8.GetBytes(Options.SchedulerId),
-            CleanSession = true
-         };
+         _schedulerCts = new CancellationTokenSource();
+         _messageHandlerToken = MqttClient.AddMessageReceiveHandler(HandleIncomingMessageAsync);
 
-         var connectResult = await MqttClient.ConnectAsync(connectOptions, ct);
-         if (connectResult.Failed)
+         if (!MqttClient.IsConnected)
          {
-            return connectResult.Error;
+            var connectOptions = new ConnectOptions
+            {
+               EndPoint = Options.EndPoint!,
+               ProtocolVersion = MqttProtocolVersion.V50,
+               ClientIdUtf8Bytes = Encoding.UTF8.GetBytes(Options.SchedulerId),
+               CleanSession = true
+            };
+
+            var connectResult = await MqttClient.ConnectAsync(connectOptions, ct);
+            if (connectResult.Failed)
+            {
+               return connectResult.Error;
+            }
+         }
+
+         var subOptions = SubscribeOptions.Create()
+            .WithTopicFilter(JobTopics.EnqueueCommandTopic, QualityOfServiceType.AtLeastOnce)
+            .WithTopicFilter(JobTopics.RecurringCommandTopic, QualityOfServiceType.AtLeastOnce)
+            .WithTopicFilter(JobTopics.CancelCommandWildcard, QualityOfServiceType.AtLeastOnce)
+            .WithTopicFilter(JobTopics.EventsWildcard, QualityOfServiceType.AtLeastOnce)
+            .WithTopicFilter(JobTopics.WorkerHeartbeatWildcard, QualityOfServiceType.AtLeastOnce)
+            .Build();
+
+         var subResult = await MqttClient.SubscribeAsync(subOptions, ct);
+         if (subResult.Failed)
+         {
+            if (_ownsMqttClient && MqttClient.IsConnected)
+            {
+               await MqttClient.DisconnectAsync(new DisconnectOptions(), ct);
+            }
+
+            return subResult.Error;
+         }
+
+         _schedulerLoopTask = Task.Run(() => RunSchedulerLoopAsync(_schedulerCts.Token), CancellationToken.None);
+         SignalWakeup();
+
+         startedSuccessfully = true;
+         return new VoidResult<StringError>();
+      }
+      finally
+      {
+         if (!startedSuccessfully)
+         {
+            _messageHandlerToken?.Dispose();
+            _messageHandlerToken = null;
+
+            _schedulerCts?.Dispose();
+            _schedulerCts = null;
+
+            Interlocked.Exchange(ref _started, 0);
          }
       }
-
-      var subOptions = SubscribeOptions.Create()
-         .WithTopicFilter(JobTopics.EnqueueCommandTopic, QualityOfServiceType.AtLeastOnce)
-         .WithTopicFilter(JobTopics.RecurringCommandTopic, QualityOfServiceType.AtLeastOnce)
-         .WithTopicFilter(JobTopics.CancelCommandWildcard, QualityOfServiceType.AtLeastOnce)
-         .WithTopicFilter(JobTopics.EventsWildcard, QualityOfServiceType.AtLeastOnce)
-         .WithTopicFilter(JobTopics.WorkerHeartbeatWildcard, QualityOfServiceType.AtLeastOnce)
-         .Build();
-
-      var subResult = await MqttClient.SubscribeAsync(subOptions, ct);
-      if (subResult.Failed)
-      {
-         return subResult.Error;
-      }
-
-      _schedulerLoopTask = Task.Run(() => RunSchedulerLoopAsync(_schedulerCts.Token), CancellationToken.None);
-      SignalWakeup();
-
-      return new VoidResult<StringError>();
    }
 
    /// <summary>
@@ -186,7 +209,11 @@ public sealed class JobScheduler : IAsyncDisposable
       if (!string.IsNullOrWhiteSpace(request.ParentJobId))
       {
          var parent = await Storage.GetJobAsync(request.ParentJobId, ct);
-         if (parent is null || parent.Status != JobStatus.Succeeded)
+         if (parent is null || !parent.Status.IsTerminal())
+         {
+            initialStatus = JobStatus.Scheduled;
+         }
+         else if (parent.Status != JobStatus.Succeeded && string.IsNullOrEmpty(request.RecurringJobId))
          {
             initialStatus = JobStatus.Scheduled;
          }
@@ -208,6 +235,7 @@ public sealed class JobScheduler : IAsyncDisposable
          MaxAttempts = Math.Max(1, request.MaxAttempts),
          Timeout = request.Timeout,
          ParentJobId = request.ParentJobId,
+         RecurringJobId = request.RecurringJobId,
          Metadata = request.Metadata
       };
 
@@ -221,17 +249,37 @@ public sealed class JobScheduler : IAsyncDisposable
          await Events.OnJobEnqueued.ExecuteAsync(new JobSchedulerJobContext(record), cancellationToken: ct);
       }
 
-      if (initialStatus == JobStatus.Enqueued)
+      // Guard against a parent finishing concurrently while this continuation was being inserted
+      if (!string.IsNullOrWhiteSpace(request.ParentJobId) && initialStatus == JobStatus.Scheduled)
+      {
+         var parentAfterInsert = await Storage.GetJobAsync(request.ParentJobId, ct);
+         if (parentAfterInsert is not null && parentAfterInsert.Status.IsTerminal())
+         {
+            if (parentAfterInsert.Status == JobStatus.Succeeded)
+            {
+               await TriggerContinuationJobsAsync(request.ParentJobId, ct);
+               SignalWakeup();
+            }
+            else
+            {
+               await HandleFailedOrCancelledParentContinuationsAsync(request.ParentJobId, parentAfterInsert.Status, ct);
+               SignalWakeup();
+            }
+         }
+      }
+      else if (initialStatus == JobStatus.Enqueued)
       {
          SignalWakeup();
       }
 
+      var latestRecord = await Storage.GetJobAsync(record.JobId, ct) ?? record;
+
       return new EnqueueJobResponse
       {
          Accepted = true,
-         JobId = record.JobId,
-         InitialStatus = record.Status,
-         ScheduledAtUtc = record.ScheduledAtUtc
+         JobId = latestRecord.JobId,
+         InitialStatus = latestRecord.Status,
+         ScheduledAtUtc = latestRecord.ScheduledAtUtc
       };
    }
 
@@ -362,21 +410,25 @@ public sealed class JobScheduler : IAsyncDisposable
          return;
       }
 
-      // If the job is not actively running on a worker (e.g. Scheduled, Enqueued, AwaitingRetry), transition immediately
-      if (job.Status is JobStatus.Scheduled or JobStatus.Enqueued or JobStatus.AwaitingRetry)
+      // If the job is not actively running on a worker (e.g. Scheduled, Enqueued, AwaitingRetry, Dispatching), transition immediately
+      if (job.Status is JobStatus.Scheduled or JobStatus.Enqueued or JobStatus.AwaitingRetry or JobStatus.Dispatching)
       {
          var updated = await Storage.TryUpdateJobAsync(
             jobId,
             r =>
             {
-               r.Status = JobStatus.Cancelled;
-               r.CompletedAtUtc = DateTimeOffset.UtcNow;
-               r.ErrorMessage = reason ?? "Job cancelled before execution.";
+               if (r.Status is JobStatus.Scheduled or JobStatus.Enqueued or JobStatus.AwaitingRetry or JobStatus.Dispatching)
+               {
+                  r.Status = JobStatus.Cancelled;
+                  r.LockedUntilUtc = null;
+                  r.CompletedAtUtc = DateTimeOffset.UtcNow;
+                  r.ErrorMessage = reason ?? "Job cancelled before execution.";
+               }
             },
             allowIfTerminal: false,
             ct);
 
-         if (updated is not null)
+         if (updated is { Status: JobStatus.Cancelled })
          {
             JobMetrics.RecordJobCompleted(JobStatus.Cancelled);
             await PublishJobStatusAsync(updated, message: updated.ErrorMessage, ct: ct);
@@ -385,6 +437,9 @@ public sealed class JobScheduler : IAsyncDisposable
             {
                await Events.OnJobCancelled.ExecuteAsync(new JobSchedulerJobContext(updated), cancellationToken: ct);
             }
+
+            await HandleFailedOrCancelledParentContinuationsAsync(updated.JobId, JobStatus.Cancelled, ct);
+            SignalWakeup();
          }
       }
    }
@@ -399,11 +454,12 @@ public sealed class JobScheduler : IAsyncDisposable
                evt.JobId,
                r =>
                {
-                  if (!r.Status.IsTerminal())
+                  if (r.Status is JobStatus.Dispatching or JobStatus.Enqueued or JobStatus.Running)
                   {
                      r.Status = JobStatus.Running;
                      r.StartedAtUtc ??= evt.TimestampUtc;
                      r.AssignedWorkerId = evt.WorkerId;
+                     r.LockedUntilUtc = null;
                      r.ProgressPercent = 0;
                   }
                },
@@ -438,6 +494,10 @@ public sealed class JobScheduler : IAsyncDisposable
                r =>
                {
                   r.Status = JobStatus.Succeeded;
+                  r.Attempt = Math.Max(r.Attempt, evt.Attempt);
+                  r.AssignedWorkerId = evt.WorkerId;
+                  r.StartedAtUtc ??= evt.TimestampUtc;
+                  r.LockedUntilUtc = null;
                   r.ProgressPercent = 100;
                   r.ProgressMessage = evt.Message ?? "Completed";
                   r.ResultPayload = evt.ResultPayload;
@@ -471,6 +531,10 @@ public sealed class JobScheduler : IAsyncDisposable
                r =>
                {
                   r.Status = JobStatus.Cancelled;
+                  r.Attempt = Math.Max(r.Attempt, evt.Attempt);
+                  r.AssignedWorkerId = evt.WorkerId;
+                  r.StartedAtUtc ??= evt.TimestampUtc;
+                  r.LockedUntilUtc = null;
                   r.CompletedAtUtc = evt.TimestampUtc;
                   r.ErrorMessage = evt.Message ?? "Job cancelled";
                },
@@ -487,6 +551,7 @@ public sealed class JobScheduler : IAsyncDisposable
                   await Events.OnJobCancelled.ExecuteAsync(new JobSchedulerJobContext(updated), cancellationToken: ct);
                }
 
+               await HandleFailedOrCancelledParentContinuationsAsync(updated.JobId, JobStatus.Cancelled, ct);
                SignalWakeup();
             }
             break;
@@ -495,7 +560,7 @@ public sealed class JobScheduler : IAsyncDisposable
          case "failed":
          {
             _workerRegistry.DecrementWorkerActiveCount(evt.WorkerId);
-            await HandleJobAttemptFailureAsync(evt.JobId, evt.ErrorMessage ?? "Job handler failed", ct);
+            await HandleJobAttemptFailureAsync(evt.JobId, evt.ErrorMessage ?? "Job handler failed", ct, evt.Attempt, evt.WorkerId);
             SignalWakeup();
             break;
          }
@@ -538,14 +603,21 @@ public sealed class JobScheduler : IAsyncDisposable
             await HandleJobAttemptFailureAsync(
                orphan.JobId,
                $"Worker '{heartbeat.WorkerId}' disconnected unexpectedly (LWT crash recovery).",
-               ct);
+               ct,
+               orphan.Attempt,
+               heartbeat.WorkerId);
          }
 
          SignalWakeup();
       }
    }
 
-   private async ValueTask HandleJobAttemptFailureAsync(string jobId, string errorReason, CancellationToken ct)
+   private async ValueTask HandleJobAttemptFailureAsync(
+      string jobId,
+      string errorReason,
+      CancellationToken ct,
+      int? failedAttempt = null,
+      string? workerId = null)
    {
       var current = await Storage.GetJobAsync(jobId, ct);
       if (current is null || current.Status.IsTerminal())
@@ -554,10 +626,15 @@ public sealed class JobScheduler : IAsyncDisposable
       }
 
       var now = DateTimeOffset.UtcNow;
-
-      if (current.Attempt < current.MaxAttempts)
+      var effectiveAttempt = Math.Max(current.Attempt, failedAttempt.GetValueOrDefault());
+      if (effectiveAttempt <= 0)
       {
-         var retryDelay = Options.RetryPolicy.GetRetryDelay(current.Attempt);
+         effectiveAttempt = 1;
+      }
+
+      if (effectiveAttempt < current.MaxAttempts)
+      {
+         var retryDelay = Options.RetryPolicy.GetRetryDelay(effectiveAttempt);
          var nextRun = now.Add(retryDelay);
 
          var retrying = await Storage.TryUpdateJobAsync(
@@ -565,6 +642,11 @@ public sealed class JobScheduler : IAsyncDisposable
             r =>
             {
                r.Status = JobStatus.AwaitingRetry;
+               r.Attempt = Math.Max(r.Attempt, effectiveAttempt);
+               if (workerId is not null)
+               {
+                  r.AssignedWorkerId = workerId;
+               }
                r.ScheduledAtUtc = nextRun;
                r.LockedUntilUtc = null;
                r.ErrorMessage = errorReason;
@@ -574,7 +656,7 @@ public sealed class JobScheduler : IAsyncDisposable
 
          if (retrying is not null)
          {
-            JobMetrics.RecordJobRetry(retrying.JobType, current.Attempt);
+            JobMetrics.RecordJobRetry(retrying.JobType, effectiveAttempt);
             await PublishJobStatusAsync(
                retrying,
                message: $"Retry scheduled after {retryDelay.TotalMilliseconds:F0}ms ({errorReason})",
@@ -583,7 +665,7 @@ public sealed class JobScheduler : IAsyncDisposable
             if (Events.OnJobRetryScheduled.Count > 0)
             {
                await Events.OnJobRetryScheduled.ExecuteAsync(
-                  new JobSchedulerRetryContext(retrying, current.Attempt, retryDelay, errorReason),
+                  new JobSchedulerRetryContext(retrying, effectiveAttempt, retryDelay, errorReason),
                   cancellationToken: ct);
             }
          }
@@ -595,6 +677,11 @@ public sealed class JobScheduler : IAsyncDisposable
             r =>
             {
                r.Status = JobStatus.DeadLettered;
+               r.Attempt = Math.Max(r.Attempt, effectiveAttempt);
+               if (workerId is not null)
+               {
+                  r.AssignedWorkerId = workerId;
+               }
                r.CompletedAtUtc = now;
                r.LockedUntilUtc = null;
                r.ErrorMessage = errorReason;
@@ -613,6 +700,8 @@ public sealed class JobScheduler : IAsyncDisposable
                   new JobSchedulerFailedContext(deadLettered, errorReason),
                   cancellationToken: ct);
             }
+
+            await HandleFailedOrCancelledParentContinuationsAsync(deadLettered.JobId, JobStatus.DeadLettered, ct);
          }
       }
    }
@@ -645,6 +734,77 @@ public sealed class JobScheduler : IAsyncDisposable
          if (activated is not null)
          {
             await PublishJobStatusAsync(activated, message: $"Continuation unlocked by parent '{completedParentJobId}'", ct: ct);
+         }
+      }
+   }
+
+   private async ValueTask HandleFailedOrCancelledParentContinuationsAsync(
+      string parentJobId,
+      JobStatus parentTerminalStatus,
+      CancellationToken ct)
+   {
+      var continuations = await Storage.GetContinuationJobsAsync(parentJobId, ct);
+      if (continuations.Count == 0)
+      {
+         return;
+      }
+
+      var now = DateTimeOffset.UtcNow;
+      foreach (var child in continuations)
+      {
+         if (!string.IsNullOrEmpty(child.RecurringJobId))
+         {
+            // Recurring jobs chained via OverlapPolicy.QueueNext should still execute their next scheduled occurrence
+            // after the previous run terminates, even if that previous run failed or was cancelled.
+            var activated = await Storage.TryTransitionStateAsync(
+               child.JobId,
+               JobStatus.Scheduled,
+               JobStatus.Enqueued,
+               expectedVersion: child.Version,
+               mutate: r =>
+               {
+                  if (r.ScheduledAtUtc < now)
+                  {
+                     r.ScheduledAtUtc = now;
+                  }
+               },
+               ct: ct);
+
+            if (activated is not null)
+            {
+               await PublishJobStatusAsync(
+                  activated,
+                  message: $"Queued recurring job unlocked after previous run '{parentJobId}' ended with '{parentTerminalStatus}'",
+                  ct: ct);
+            }
+
+            continue;
+         }
+
+         var cancelledChild = await Storage.TryTransitionStateAsync(
+            child.JobId,
+            JobStatus.Scheduled,
+            JobStatus.Cancelled,
+            expectedVersion: child.Version,
+            mutate: r =>
+            {
+               r.CompletedAtUtc = now;
+               r.LockedUntilUtc = null;
+               r.ErrorMessage = $"Cancelled because parent job '{parentJobId}' terminated with status '{parentTerminalStatus}'.";
+            },
+            ct: ct);
+
+         if (cancelledChild is not null)
+         {
+            JobMetrics.RecordJobCompleted(JobStatus.Cancelled);
+            await PublishJobStatusAsync(cancelledChild, message: cancelledChild.ErrorMessage, ct: ct);
+
+            if (Events.OnJobCancelled.Count > 0)
+            {
+               await Events.OnJobCancelled.ExecuteAsync(new JobSchedulerJobContext(cancelledChild), cancellationToken: ct);
+            }
+
+            await HandleFailedOrCancelledParentContinuationsAsync(cancelledChild.JobId, JobStatus.Cancelled, ct);
          }
       }
    }
@@ -751,7 +911,8 @@ public sealed class JobScheduler : IAsyncDisposable
                ScheduledAtUtc = now,
                MaxAttempts = rec.MaxAttempts,
                Timeout = rec.Timeout,
-               ParentJobId = parentContinuationId
+               ParentJobId = parentContinuationId,
+               RecurringJobId = rec.RecurringJobId
             };
 
             var enqueueResp = await EnqueueAsync(enqueueReq, ct);
@@ -780,7 +941,7 @@ public sealed class JobScheduler : IAsyncDisposable
 
    private async ValueTask DispatchDueJobsAsync(CancellationToken ct)
    {
-      if (_workerRegistry.OnlineWorkerCount == 0)
+      if (_workerRegistry.TotalAvailableSlots == 0)
       {
          return;
       }
@@ -790,121 +951,141 @@ public sealed class JobScheduler : IAsyncDisposable
          return;
       }
 
+      var deferredJobs = new List<JobInstanceRecord>();
+
       try
       {
-         var now = DateTimeOffset.UtcNow;
-         var claimedJobs = await Storage.ClaimDueJobsAsync(
-            now,
-            Options.DispatchBatchSize,
-            Options.ClaimLockDuration,
-            ct);
-
-         if (claimedJobs.Count == 0)
+         while (_workerRegistry.TotalAvailableSlots > 0)
          {
-            return;
-         }
+            var now = DateTimeOffset.UtcNow;
+            var claimedJobs = await Storage.ClaimDueJobsAsync(
+               now,
+               Options.DispatchBatchSize,
+               Options.ClaimLockDuration,
+               ct);
 
-         foreach (var job in claimedJobs)
-         {
-            var candidateWorkers = _workerRegistry.SelectCandidateWorkers(job.Queue, job.JobType);
-            if (candidateWorkers.Count == 0)
+            if (claimedJobs.Count == 0)
             {
-               // Release back to Enqueued until a matching worker becomes available
-               await Storage.TryTransitionStateAsync(
-                  job.JobId,
-                  JobStatus.Dispatching,
-                  JobStatus.Enqueued,
-                  expectedVersion: job.Version,
-                  mutate: r => r.LockedUntilUtc = null,
-                  ct: ct);
-               continue;
-            }
-
-            var dispatched = false;
-            var nextAttempt = job.Attempt + 1;
-
-            foreach (var workerId in candidateWorkers)
-            {
-               var dispatchReq = new JobDispatchRequest
-               {
-                  JobId = job.JobId,
-                  JobType = job.JobType,
-                  Queue = job.Queue,
-                  Payload = job.Payload,
-                  Attempt = nextAttempt,
-                  MaxAttempts = job.MaxAttempts,
-                  Timeout = job.Timeout,
-                  Metadata = job.Metadata,
-                  DispatchedAtUtc = DateTimeOffset.UtcNow
-               };
-
-               var dispatchTopic = JobTopics.FormatDispatch(job.Queue, workerId);
-               var reqBytes = Options.Serializer.Serialize(dispatchReq);
-
-               var rpcResult = await MqttClient.RequestAsync(
-                  dispatchTopic,
-                  reqBytes,
-                  Options.DispatchAckTimeout,
-                  ct);
-
-               if (rpcResult.Failed)
-               {
-                  continue;
-               }
-
-               var dispatchResp = Options.Serializer.Deserialize<JobDispatchResponse>(rpcResult.Success.Payload.Span);
-               if (dispatchResp is not { Accepted: true })
-               {
-                  continue;
-               }
-
-               _workerRegistry.IncrementWorkerActiveCount(workerId);
-               dispatched = true;
-
-               var dispatchTimestamp = DateTimeOffset.UtcNow;
-               var queueLagMs = Math.Max(0, (dispatchTimestamp - job.ScheduledAtUtc).TotalMilliseconds);
-               JobMetrics.RecordJobDispatched(job.Queue, job.JobType, queueLagMs);
-
-               var runningRecord = await Storage.TryUpdateJobAsync(
-                  job.JobId,
-                  r =>
-                  {
-                     if (!r.Status.IsTerminal())
-                     {
-                        r.Status = JobStatus.Running;
-                     }
-                     r.Attempt = nextAttempt;
-                     r.AssignedWorkerId = workerId;
-                     r.StartedAtUtc = dispatchTimestamp;
-                     r.LockedUntilUtc = null;
-                  },
-                  allowIfTerminal: false,
-                  ct);
-
-               if (runningRecord is not null && Events.OnJobDispatched.Count > 0)
-               {
-                  await Events.OnJobDispatched.ExecuteAsync(
-                     new JobSchedulerDispatchedContext(runningRecord, workerId),
-                     cancellationToken: ct);
-               }
-
                break;
             }
 
-            if (!dispatched)
+            foreach (var job in claimedJobs)
             {
-               await Storage.TryTransitionStateAsync(
-                  job.JobId,
-                  JobStatus.Dispatching,
-                  JobStatus.Enqueued,
-                  expectedVersion: job.Version,
-                  mutate: r => r.LockedUntilUtc = null,
-                  ct: ct);
+               var candidateWorkers = _workerRegistry.SelectCandidateWorkers(job.Queue, job.JobType);
+               if (candidateWorkers.Count == 0)
+               {
+                  // Keep claimed until this dispatch pass finishes scanning all due batches,
+                  // then release back to Enqueued in finally.
+                  deferredJobs.Add(job);
+                  continue;
+               }
+
+               var dispatched = false;
+               var nextAttempt = job.Attempt + 1;
+
+               foreach (var workerId in candidateWorkers)
+               {
+                  _workerRegistry.IncrementWorkerActiveCount(workerId);
+
+                  var dispatchReq = new JobDispatchRequest
+                  {
+                     JobId = job.JobId,
+                     JobType = job.JobType,
+                     Queue = job.Queue,
+                     Payload = job.Payload,
+                     Attempt = nextAttempt,
+                     MaxAttempts = job.MaxAttempts,
+                     Timeout = job.Timeout,
+                     Metadata = job.Metadata,
+                     DispatchedAtUtc = DateTimeOffset.UtcNow
+                  };
+
+                  var dispatchTopic = JobTopics.FormatDispatch(job.Queue, workerId);
+                  var reqBytes = Options.Serializer.Serialize(dispatchReq);
+
+                  var rpcResult = await MqttClient.RequestAsync(
+                     dispatchTopic,
+                     reqBytes,
+                     Options.DispatchAckTimeout,
+                     ct);
+
+                  if (rpcResult.Failed)
+                  {
+                     _workerRegistry.DecrementWorkerActiveCount(workerId);
+                     continue;
+                  }
+
+                  var dispatchResp = Options.Serializer.Deserialize<JobDispatchResponse>(rpcResult.Success.Payload.Span);
+                  if (dispatchResp is not { Accepted: true })
+                  {
+                     _workerRegistry.DecrementWorkerActiveCount(workerId);
+                     continue;
+                  }
+
+                  dispatched = true;
+
+                  var dispatchTimestamp = DateTimeOffset.UtcNow;
+                  var queueLagMs = Math.Max(0, (dispatchTimestamp - job.ScheduledAtUtc).TotalMilliseconds);
+                  JobMetrics.RecordJobDispatched(job.Queue, job.JobType, queueLagMs);
+
+                  var runningRecord = await Storage.TryUpdateJobAsync(
+                     job.JobId,
+                     r =>
+                     {
+                        if (r.Status == JobStatus.Dispatching)
+                        {
+                           r.Status = JobStatus.Running;
+                           r.LockedUntilUtc = null;
+                        }
+
+                        r.Attempt = Math.Max(r.Attempt, nextAttempt);
+                        r.AssignedWorkerId ??= workerId;
+                        r.StartedAtUtc ??= dispatchTimestamp;
+                     },
+                     allowIfTerminal: false,
+                     ct);
+
+                  if (Events.OnJobDispatched.Count > 0)
+                  {
+                     var dispatchedRecord = runningRecord ?? await Storage.GetJobAsync(job.JobId, ct);
+                     if (dispatchedRecord is not null)
+                     {
+                        await Events.OnJobDispatched.ExecuteAsync(
+                           new JobSchedulerDispatchedContext(dispatchedRecord, workerId),
+                           cancellationToken: ct);
+                     }
+                  }
+
+                  break;
+               }
+
+               if (!dispatched)
+               {
+                  deferredJobs.Add(job);
+               }
             }
          }
       }
       finally
       {
+         foreach (var deferred in deferredJobs)
+         {
+            try
+            {
+               await Storage.TryTransitionStateAsync(
+                  deferred.JobId,
+                  JobStatus.Dispatching,
+                  JobStatus.Enqueued,
+                  expectedVersion: deferred.Version,
+                  mutate: r => r.LockedUntilUtc = null,
+                  ct: CancellationToken.None);
+            }
+            catch
+            {
+               // Best-effort release; claim lock expiration will recover if storage throws
+            }
+         }
+
          _dispatchLock.Release();
       }
    }
