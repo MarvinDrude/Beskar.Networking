@@ -198,6 +198,56 @@ public sealed class JobClient : IAsyncDisposable
    }
 
    /// <summary>
+   /// Enqueues a source-generated <see cref="IJobHandler{TArgs}"/> continuation job that automatically executes once <paramref name="parentJobId"/> succeeds.
+   /// </summary>
+   public Task<Result<EnqueueJobResponse, StringError>> EnqueueGeneratedContinuationAsync<THandler, TArgs>(
+      string parentJobId,
+      TArgs args,
+      int maxAttempts = 3,
+      TimeSpan? timeout = null,
+      Dictionary<string, string>? metadata = null,
+      string? jobId = null,
+      CancellationToken ct = default)
+      where THandler : IGeneratedJobDescriptor, IJobHandler<TArgs>
+   {
+      ArgumentException.ThrowIfNullOrWhiteSpace(parentJobId);
+      return EnqueueGeneratedAsync<THandler, TArgs>(
+         args,
+         delay: null,
+         maxAttempts: maxAttempts,
+         timeout: timeout,
+         parentJobId: parentJobId,
+         metadata: metadata,
+         jobId: jobId,
+         ct: ct);
+   }
+
+   /// <summary>
+   /// Enqueues a source-generated <see cref="IJobHandlerWithResult{TArgs, TResult}"/> continuation job that automatically executes once <paramref name="parentJobId"/> succeeds.
+   /// </summary>
+   public Task<Result<EnqueueJobResponse, StringError>> EnqueueGeneratedContinuationWithResultAsync<THandler, TArgs, TResult>(
+      string parentJobId,
+      TArgs args,
+      int maxAttempts = 3,
+      TimeSpan? timeout = null,
+      Dictionary<string, string>? metadata = null,
+      string? jobId = null,
+      CancellationToken ct = default)
+      where THandler : IGeneratedJobDescriptor, IJobHandlerWithResult<TArgs, TResult>
+   {
+      ArgumentException.ThrowIfNullOrWhiteSpace(parentJobId);
+      return EnqueueGeneratedWithResultAsync<THandler, TArgs, TResult>(
+         args,
+         delay: null,
+         maxAttempts: maxAttempts,
+         timeout: timeout,
+         parentJobId: parentJobId,
+         metadata: metadata,
+         jobId: jobId,
+         ct: ct);
+   }
+
+   /// <summary>
    /// Registers or updates a recurring Cron or interval job schedule with the scheduler.
    /// </summary>
    public async Task<Result<ScheduleRecurringJobResponse, StringError>> ScheduleRecurringAsync<TArgs>(

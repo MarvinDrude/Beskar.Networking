@@ -69,6 +69,7 @@
   </Folder>
   <Folder Name="/Examples/Jobs/">
     <Project Path="Examples/Jobs/Beskar.Jobs.Example.QuickStart/Beskar.Jobs.Example.QuickStart.csproj" />
+    <Project Path="Examples/Jobs/Beskar.Jobs.Example.GeneratedContinuations/Beskar.Jobs.Example.GeneratedContinuations.csproj" />
     <Project Path="Examples/Jobs/Beskar.Jobs.Example.CronAndWorkflows/Beskar.Jobs.Example.CronAndWorkflows.csproj" />
     <Project Path="Examples/Jobs/Beskar.Jobs.Example.ResilienceAndFailover/Beskar.Jobs.Example.ResilienceAndFailover.csproj" />
   </Folder>
