@@ -338,7 +338,7 @@ public class JobCronAndContinuationsTests
       await Assert.That(step2Completion.Failed).IsFalse();
       await Assert.That(step2Completion.Success!.Status).IsEqualTo(JobStatus.Cancelled);
 
-      var step3Completion = await client.WaitForJobCompletionAsync(step3.Success.JobId, TimeSpan.FromSeconds(2));
+      var step3Completion = await client.WaitForJobCompletionAsync(step3.Success!.JobId, TimeSpan.FromSeconds(2));
       await Assert.That(step3Completion.Failed).IsFalse();
       await Assert.That(step3Completion.Success!.Status).IsEqualTo(JobStatus.Cancelled);
 

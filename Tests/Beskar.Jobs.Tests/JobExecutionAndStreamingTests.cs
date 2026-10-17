@@ -409,24 +409,32 @@ public class JobExecutionAndStreamingTests
          .UseTcp(endPoint)
          .Build();
 
-      JobWorker? workerRef = null;
-      var activeCountInsideCompletedEvent = -1;
+      var step1CompletedCallbackStillRunning = true;
+      var step2AcceptedWhileStep1CallbackRunning = false;
 
       await using var worker = JobWorkerBuilder.Create()
          .WithWorkerId("worker-single-slot")
          .WithMaxConcurrency(1)
          .WithHeartbeatInterval(TimeSpan.Zero)
          .RegisterHandlerWithResult<string, string>("chain.step", (ctx, _) =>
-            ValueTask.FromResult($"done:{ctx.Arguments}"))
+         {
+            if (ctx.Arguments == "second" && Volatile.Read(ref step1CompletedCallbackStillRunning))
+            {
+               Volatile.Write(ref step2AcceptedWhileStep1CallbackRunning, true);
+            }
+
+            return ValueTask.FromResult($"done:{ctx.Arguments}");
+         })
          .UseTcp(endPoint)
          .Build();
 
-      workerRef = worker;
-
-      worker.Events.OnJobCompleted.Add(async (_, ct) =>
+      worker.Events.OnJobCompleted.Add(async (ctx, ct) =>
       {
-         Interlocked.CompareExchange(ref activeCountInsideCompletedEvent, workerRef.ActiveJobCount, -1);
-         await Task.Delay(80, ct);
+         if (ctx.Attempt == 1)
+         {
+            await Task.Delay(120, ct);
+            Volatile.Write(ref step1CompletedCallbackStillRunning, false);
+         }
       });
 
       await using var client = JobClientBuilder.Create()
@@ -440,13 +448,13 @@ public class JobExecutionAndStreamingTests
       var step1 = await client.EnqueueAsync("chain.step", "first");
       var step2 = await client.EnqueueContinuationAsync(step1.Success!.JobId, "chain.step", "second");
 
-      // With TickInterval = 500ms and HeartbeatInterval = 0, step2 must be accepted on the immediate
-      // wakeup triggered by step1's completion rather than being rejected due to stale ActiveJobCount.
+      // With TickInterval = 500ms, HeartbeatInterval = 0, and MaxConcurrency = 1, step2 must be accepted
+      // on the immediate wakeup triggered by step1's completion while step1's OnJobCompleted is still running.
       var step2Result = await client.WaitForJobResultAsync<string>(
          step2.Success!.JobId,
          TimeSpan.FromMilliseconds(350));
 
-      await Assert.That(Volatile.Read(ref activeCountInsideCompletedEvent)).IsEqualTo(0);
+      await Assert.That(Volatile.Read(ref step2AcceptedWhileStep1CallbackRunning)).IsTrue();
       await Assert.That(step2Result.Failed).IsFalse();
       await Assert.That(step2Result.Success).IsEqualTo("done:second");
 
