@@ -8,6 +8,8 @@
       <IsPackable>true</IsPackable>
       <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
       <IncludeBuildOutput>false</IncludeBuildOutput>
+      <IncludeSymbols>false</IncludeSymbols>
+      <IncludeSource>false</IncludeSource>
       <NoWarn>$(NoWarn);RS2008;NU5128</NoWarn>
       <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
       <PolySharpUsePublicAccessibilityForGeneratedTypes>true</PolySharpUsePublicAccessibilityForGeneratedTypes>
