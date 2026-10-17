@@ -134,6 +134,15 @@
     <Project Path="Experiments/Beskar.Networking.RealWorldWavesServer/Beskar.Networking.RealWorldWavesServer.csproj" />
     <Project Path="Experiments/Beskar.Networking.RealWorldWavesClient/Beskar.Networking.RealWorldWavesClient.csproj" />
   </Folder>
+  <Folder Name="/Jobs/">
+    <Project Path="Jobs/Beskar.Jobs.Client/Beskar.Jobs.Client.csproj" />
+    <Project Path="Jobs/Beskar.Jobs.Common/Beskar.Jobs.Common.csproj" />
+    <Project Path="Jobs/Beskar.Jobs.Scheduler/Beskar.Jobs.Scheduler.csproj" />
+    <Project Path="Jobs/Beskar.Jobs.Worker/Beskar.Jobs.Worker.csproj" />
+  </Folder>
+  <Folder Name="/Jobs/Generators/">
+    <Project Path="Jobs/Beskar.Jobs.Generator/Beskar.Jobs.Generator.csproj" />
+  </Folder>
   <Folder Name="/Mqtt/">
     <Project Path="Mqtt/Beskar.Mqtt.Client/Beskar.Mqtt.Client.csproj" />
     <Project Path="Mqtt/Beskar.Mqtt.Common.Tests/Beskar.Mqtt.Common.Tests.csproj" />
