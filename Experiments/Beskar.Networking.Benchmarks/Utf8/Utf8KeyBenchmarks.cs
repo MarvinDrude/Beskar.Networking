@@ -69,7 +69,7 @@ public class Utf8KeyBenchmarks
       public Config()
       {
          AddJob(Job.Default
-            .WithToolchain(new InProcessEmitToolchain(new InProcessEmitSettings()))
+            .WithToolchain(InProcessEmitToolchain.From(new InProcessEmitSettings()))
             .WithLaunchCount(1)
             .WithWarmupCount(2));
       }

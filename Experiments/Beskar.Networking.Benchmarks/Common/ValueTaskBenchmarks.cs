@@ -4,7 +4,7 @@ using BenchmarkDotNet.Jobs;
 
 namespace Beskar.Networking.Benchmarks.Common;
 
-[SimpleJob(RuntimeMoniker.HostProcess, 1, 2)]
+[SimpleJob(launchCount: 1, warmupCount: 2)]
 [MemoryDiagnoser]
 public class ValueTaskBenchmarks
 {
