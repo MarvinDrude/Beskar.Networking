@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Quic;
+using System.Net.Security;
 using System.Text;
 using Beskar.Mqtt.Client;
 using Beskar.Mqtt.Common.Builders.Connecting;
@@ -14,8 +15,11 @@ using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Server;
 using Beskar.Mqtt.Server.Enums;
 using Beskar.Networking.Abstractions.Enums;
+using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Telemetry;
 using Beskar.Networking.Resilient.Common.Telemetry;
+using Beskar.Networking.Transports.Quic;
+using Beskar.Networking.Transports.Tcp;
 using Beskar.Utilities.Console.Rendering;
 using Beskar.Utilities.Tracing;
 using Beskar.Memory.Results;
@@ -30,8 +34,15 @@ public static class Program
    internal static readonly ConcurrentDictionary<string, long> TelemetryCounters = new();
    private static readonly MeterListener MeterListener = new();
    private const int ServerPortTcp = 1883;
+   private const int ServerPortTcpTls = 8884;
    private const int ServerPortWs = 8083;
    private const int ServerPortQuic = 8883;
+
+   private static readonly SslClientAuthenticationOptions ClientSslOptions = new()
+   {
+      TargetHost = "localhost",
+      RemoteCertificateValidationCallback = (_, _, _, _) => true
+   };
 
    internal static long ServerConnectionsTotal;
    internal static long ServerConnectionsGraceful;
@@ -58,12 +69,13 @@ public static class Program
    internal static long ClientPingsSent = 0;
 
    internal static long ActiveTcpConnections;
+   internal static long ActiveTcpTlsConnections;
    internal static long ActiveWsConnections;
    internal static long ActiveQuicConnections;
 
    internal static readonly Lock LogLock = new();
    internal static bool IsQuietMode { get; set; }
-   internal static int TransportMode { get; set; } = 0; // 0 = Mixed, 1 = QUIC Only, 2 = TCP Only, 3 = WS Only
+   internal static int TransportMode { get; set; } = 0; // 0 = Mixed, 1 = QUIC Only, 2 = TCP Only, 3 = WS Only, 4 = TCP (TLS) Only
    internal static int TargetConcurrentClients { get; set; } = 20;
    internal static int StatsIntervalSeconds { get; set; } = 10;
 
@@ -126,25 +138,39 @@ public static class Program
       if (isQuicSupported)
       {
          Console.WriteLine("Select Transport Mode:");
-         Console.WriteLine("  0. Mixed Transports (TCP, WS, QUIC)");
+         Console.WriteLine("  0. Mixed Transports (TCP, TCP (TLS), WS, QUIC)");
          Console.WriteLine("  1. QUIC ONLY");
          Console.WriteLine("  2. TCP ONLY");
          Console.WriteLine("  3. WebSocket ONLY");
+         Console.WriteLine("  4. TCP (TLS) ONLY");
          TransportMode = PromptInt("Transport Mode", 0);
 
          if (TransportMode == 1) ConsoleRender.Success("QUIC ONLY mode selected for all clients.");
          else if (TransportMode == 2) ConsoleRender.Info("TCP ONLY mode selected for all clients.");
          else if (TransportMode == 3) ConsoleRender.Info("WebSocket ONLY mode selected for all clients.");
+         else if (TransportMode == 4) ConsoleRender.Success("TCP (TLS) ONLY mode selected for all clients.");
       }
       else
       {
-         ConsoleRender.Warning("QUIC is not supported on this platform/OS. Defaulting to TCP & WS.");
+         ConsoleRender.Warning("QUIC is not supported on this platform/OS. Defaulting to TCP, TCP (TLS) & WS.");
       }
 
       ConsoleRender.Info("Starting MQTT Server...");
+      using var tlsCertificate = CertificateUtility.GenerateSelfSignedCertificate();
+      var tcpTlsServerOptions = new TcpTransportOptions
+      {
+         UseSsl = true,
+         SslServerOptions = new SslServerAuthenticationOptions
+         {
+            ServerCertificate = tlsCertificate,
+            ClientCertificateRequired = false
+         }
+      };
+
       var serverBuilder = MqttServerFactory.CreateBuilder()
          .WithDefaultClientIdGenerator()
          .UseTcp(ServerPortTcp)
+         .UseTcp(ServerPortTcpTls, tcpTlsServerOptions)
          .UseWs(ServerPortWs);
 
       if (isQuicSupported) serverBuilder.UseQuic(ServerPortQuic);
@@ -160,7 +186,7 @@ public static class Program
       }
 
       ConsoleRender.Success(
-         $"MQTT Server listening on TCP:{ServerPortTcp}, WS:{ServerPortWs}{(isQuicSupported ? $", QUIC:{ServerPortQuic}" : "")}");
+         $"MQTT Server listening on TCP:{ServerPortTcp}, TCP(TLS):{ServerPortTcpTls}, WS:{ServerPortWs}{(isQuicSupported ? $", QUIC:{ServerPortQuic}" : "")}");
 
       // 2. Start Chaos Client horde
       ConsoleRender.Info($"Launching chaos engine with target {TargetConcurrentClients} concurrent clients...");
@@ -336,16 +362,19 @@ public static class Program
       {
          var client = ctx.Client;
          var transport = client.Session.Transport;
+         var isTcpTls = IsTcpTlsSession(client.Session);
+         var transportLabel = isTcpTls ? "TCP+TLS" : transport.ToString().ToUpper();
          var version = client.ProtocolVersion == MqttProtocolVersion.V50 ? "v5" : "v3";
          var clientId = Encoding.UTF8.GetString(client.ClientIdUtf8Bytes.Span);
 
          Interlocked.Increment(ref ServerConnectionsTotal);
 
-         if (transport == TransportKind.Tcp) Interlocked.Increment(ref ActiveTcpConnections);
+         if (isTcpTls) Interlocked.Increment(ref ActiveTcpTlsConnections);
+         else if (transport == TransportKind.Tcp) Interlocked.Increment(ref ActiveTcpConnections);
          else if (transport == TransportKind.WebSocket) Interlocked.Increment(ref ActiveWsConnections);
          else if (transport == TransportKind.Quic) Interlocked.Increment(ref ActiveQuicConnections);
 
-         LogChaos("SERVER", transport.ToString().ToUpper(), version, "CONNECT",
+         LogChaos("SERVER", transportLabel, version, "CONNECT",
             $"Client '{clientId}' connected successfully.", ConsoleColor.Green);
          return ValueTask.CompletedTask;
       });
@@ -361,10 +390,13 @@ public static class Program
          }
 
          var transport = client.Session.Transport;
+         var isTcpTls = IsTcpTlsSession(client.Session);
+         var transportLabel = isTcpTls ? "TCP+TLS" : transport.ToString().ToUpper();
          var version = client.ProtocolVersion == MqttProtocolVersion.V50 ? "v5" : "v3";
          var clientId = Encoding.UTF8.GetString(client.ClientIdUtf8Bytes.Span);
 
-         if (transport == TransportKind.Tcp) Interlocked.Decrement(ref ActiveTcpConnections);
+         if (isTcpTls) Interlocked.Decrement(ref ActiveTcpTlsConnections);
+         else if (transport == TransportKind.Tcp) Interlocked.Decrement(ref ActiveTcpConnections);
          else if (transport == TransportKind.WebSocket) Interlocked.Decrement(ref ActiveWsConnections);
          else if (transport == TransportKind.Quic) Interlocked.Decrement(ref ActiveQuicConnections);
 
@@ -372,13 +404,13 @@ public static class Program
          if (disconnectKind == ClientDisconnectKind.Graceful)
          {
             Interlocked.Increment(ref ServerConnectionsGraceful);
-            LogChaos("SERVER", transport.ToString().ToUpper(), version, "DISCONNECT",
+            LogChaos("SERVER", transportLabel, version, "DISCONNECT",
                $"Client '{clientId}' disconnected gracefully.", ConsoleColor.Gray);
          }
          else
          {
             Interlocked.Increment(ref ServerConnectionsAbrupt);
-            LogChaos("SERVER", transport.ToString().ToUpper(), version, "DISCONNECT",
+            LogChaos("SERVER", transportLabel, version, "DISCONNECT",
                $"Client '{clientId}' disconnected abruptly! Reason: {ctx.Reason}", ConsoleColor.Red, true);
          }
 
@@ -409,11 +441,14 @@ public static class Program
       server.Events.OnSubscribe.Add((ctx, ct) =>
       {
          var clientId = Encoding.UTF8.GetString(ctx.Session.ClientIdUtf8Bytes);
-         var transport = ctx.Session.Client?.Session?.Transport ?? TransportKind.Unknown;
+         var session = ctx.Session.Client?.Session;
+         var transportLabel = session is not null && IsTcpTlsSession(session)
+            ? "TCP+TLS"
+            : (session?.Transport ?? TransportKind.Unknown).ToString().ToUpper();
          var version = ctx.Session.Client?.ProtocolVersion == MqttProtocolVersion.V50 ? "v5" : "v3";
 
          Interlocked.Increment(ref ServerSubscriptions);
-         LogChaos("SERVER", transport.ToString().ToUpper(), version, "SUBSCRIBE",
+         LogChaos("SERVER", transportLabel, version, "SUBSCRIBE",
             $"Client '{clientId}' subscribed to '{ctx.TopicFilter}' (QoS {ctx.QualityOfService})", ConsoleColor.Blue);
          return ValueTask.CompletedTask;
       });
@@ -421,15 +456,22 @@ public static class Program
       server.Events.OnUnsubscribe.Add((ctx, ct) =>
       {
          var clientId = Encoding.UTF8.GetString(ctx.Session.ClientIdUtf8Bytes);
-         var transport = ctx.Session.Client?.Session?.Transport ?? TransportKind.Unknown;
+         var session = ctx.Session.Client?.Session;
+         var transportLabel = session is not null && IsTcpTlsSession(session)
+            ? "TCP+TLS"
+            : (session?.Transport ?? TransportKind.Unknown).ToString().ToUpper();
          var version = ctx.Session.Client?.ProtocolVersion == MqttProtocolVersion.V50 ? "v5" : "v3";
 
          Interlocked.Increment(ref ServerUnsubscriptions);
-         LogChaos("SERVER", transport.ToString().ToUpper(), version, "UNSUBSCRIBE",
+         LogChaos("SERVER", transportLabel, version, "UNSUBSCRIBE",
             $"Client '{clientId}' unsubscribed.", ConsoleColor.Cyan);
          return ValueTask.CompletedTask;
       });
    }
+
+   private static bool IsTcpTlsSession(INetworkSession session) =>
+      session.Transport == TransportKind.Tcp &&
+      session.LocalAddress is IPEndPoint { Port: ServerPortTcpTls };
 
    private static async Task ClientLifecycleLoopAsync(int clientIndex, bool isQuicSupported, CancellationToken ct)
    {
@@ -454,24 +496,29 @@ public static class Program
    private static async Task RunClientScenarioAsync(int clientIndex, bool isQuicSupported, CancellationToken ct)
    {
       // Select Transport
-      var transports = new List<TransportKind>();
+      var transports = new List<SimulatedTransport>();
       if (TransportMode == 1 && isQuicSupported)
       {
-         transports.Add(TransportKind.Quic);
+         transports.Add(SimulatedTransport.Quic);
       }
       else if (TransportMode == 2)
       {
-         transports.Add(TransportKind.Tcp);
+         transports.Add(SimulatedTransport.Tcp);
       }
       else if (TransportMode == 3)
       {
-         transports.Add(TransportKind.WebSocket);
+         transports.Add(SimulatedTransport.WebSocket);
+      }
+      else if (TransportMode == 4)
+      {
+         transports.Add(SimulatedTransport.TcpTls);
       }
       else
       {
-         transports.Add(TransportKind.Tcp);
-         transports.Add(TransportKind.WebSocket);
-         if (isQuicSupported) transports.Add(TransportKind.Quic);
+         transports.Add(SimulatedTransport.Tcp);
+         transports.Add(SimulatedTransport.TcpTls);
+         transports.Add(SimulatedTransport.WebSocket);
+         if (isQuicSupported) transports.Add(SimulatedTransport.Quic);
       }
       var transport = transports[Random.Shared.Next(transports.Count)];
 
@@ -512,18 +559,24 @@ public static class Program
       // Instantiate Client
       await using var client = transport switch
       {
-         TransportKind.Tcp => MqttClientFactory.CreateTcp(),
-         TransportKind.WebSocket => MqttClientFactory.CreateWs(),
-         TransportKind.Quic => MqttClientFactory.CreateQuic(),
+         SimulatedTransport.Tcp => MqttClientFactory.CreateTcp(),
+         SimulatedTransport.TcpTls => MqttClientFactory.CreateTcp(new TcpTransportOptions
+         {
+            UseSsl = true,
+            SslClientOptions = ClientSslOptions
+         }),
+         SimulatedTransport.WebSocket => MqttClientFactory.CreateWs(),
+         SimulatedTransport.Quic => MqttClientFactory.CreateQuic(),
          _ => throw new InvalidOperationException()
       };
 
       // Setup Connect Options
       var port = transport switch
       {
-         TransportKind.Tcp => ServerPortTcp,
-         TransportKind.WebSocket => ServerPortWs,
-         TransportKind.Quic => ServerPortQuic,
+         SimulatedTransport.Tcp => ServerPortTcp,
+         SimulatedTransport.TcpTls => ServerPortTcpTls,
+         SimulatedTransport.WebSocket => ServerPortWs,
+         SimulatedTransport.Quic => ServerPortQuic,
          _ => throw new InvalidOperationException()
       };
 
@@ -569,7 +622,7 @@ public static class Program
 
       Interlocked.Increment(ref ClientAttempts);
       var versionStr = version == MqttProtocolVersion.V50 ? "v5" : "v3";
-      var transportStr = transport.ToString().ToUpper();
+      var transportStr = transport == SimulatedTransport.TcpTls ? "TCP+TLS" : transport.ToString().ToUpper();
 
       LogChaos("CLIENT", transportStr, versionStr, "CONNECTING",
          $"Client '{clientIdStr}' connecting (Auth scenario: {authScenario})...", ConsoleColor.DarkYellow);

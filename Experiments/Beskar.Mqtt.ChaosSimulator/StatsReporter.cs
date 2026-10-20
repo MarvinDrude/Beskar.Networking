@@ -44,7 +44,7 @@ public static class StatsReporter
                   Program.ServerAuthV5Failure.ToString(),
                   $"Total: {Program.ServerAuthV3Failure + Program.ServerAuthV5Failure}")
                .AddRow("Active Connections", "", "",
-                  $"TCP: {Interlocked.Read(ref Program.ActiveTcpConnections)} | WS: {Interlocked.Read(ref Program.ActiveWsConnections)} | QUIC: {Interlocked.Read(ref Program.ActiveQuicConnections)}")
+                  $"TCP: {Interlocked.Read(ref Program.ActiveTcpConnections)} | TCP (TLS): {Interlocked.Read(ref Program.ActiveTcpTlsConnections)} | WS: {Interlocked.Read(ref Program.ActiveWsConnections)} | QUIC: {Interlocked.Read(ref Program.ActiveQuicConnections)}")
                .AddRow("Server Disconnects", "", "",
                   $"Graceful: {Interlocked.Read(ref Program.ServerConnectionsGraceful)} | Abrupt/Crash: {Interlocked.Read(ref Program.ServerConnectionsAbrupt)}")
                .AddRow("Shared Memory Blocks", "", "",

@@ -19,3 +19,11 @@ public enum ClientRole
    AuthAlternator,
    ChannelCongestor
 }
+
+public enum SimulatedTransport
+{
+   Tcp,
+   TcpTls,
+   WebSocket,
+   Quic
+}
