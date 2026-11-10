@@ -8,7 +8,7 @@
     <PackageVersion Include="Beskar.Memory.Code.EnumGenerator" Version="10.0.1" />
     <PackageVersion Include="Beskar.Memory.Code.PacketGenerator" Version="10.0.1" />
     <PackageVersion Include="Beskar.Memory.Serialization" Version="10.0.1" />
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="11.0.100-rc.2.26504.105" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="11.0.100" />
     <PackageVersion Include="TUnit" Version="1.75.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.16.0-preview.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
