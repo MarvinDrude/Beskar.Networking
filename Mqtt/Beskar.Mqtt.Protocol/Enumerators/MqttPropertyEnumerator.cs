@@ -12,16 +12,18 @@ public ref struct MqttPropertyEnumerator(ReadOnlySequence<byte> sequence)
 {
    private SequenceReader<byte> _reader = new (sequence);
    private int _length;
+   private bool _hasError;
 
    public MqttProperty Current { get; private set; } = default;
-   public bool IsCompleted => _reader.End;
+   public bool IsCompleted => !_hasError && _reader.End;
 
    public bool MoveNext()
    {
-      if (_reader.End) return false;
+      if (_hasError || _reader.End) return false;
       if (_reader.TryReadVariableByteInteger(out var id)
           is not VariableByteIntegerResult.Success)
       {
+         _hasError = true;
          return false;
       }
 
@@ -30,6 +32,7 @@ public ref struct MqttPropertyEnumerator(ReadOnlySequence<byte> sequence)
 
       if (!MqttPropertyParsingHelper.TrySkipProperty(ref _reader, identifier))
       {
+         _hasError = true;
          return false;
       }
 
