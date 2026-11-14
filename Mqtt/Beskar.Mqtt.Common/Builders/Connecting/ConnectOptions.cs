@@ -176,12 +176,16 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    /// </summary>
    public ReadOnlyMemory<byte> WillCorrelationDataBytes { get; set; }
 
+   private UserPropertyListBuilder? _willUserProperties;
+
    /// <summary>
    /// Key-Value pairs by the user for the will.
    /// <remarks>MQTT 5.0.0 and above required.</remarks>
    /// </summary>
    public UserPropertyListBuilder WillUserProperties
-      => field ??= new UserPropertyListBuilder(_builderCapacity == -1 ? 128 :  _builderCapacity);
+      => _willUserProperties ??= new UserPropertyListBuilder(_builderCapacity == -1 ? 128 :  _builderCapacity);
+
+   internal bool HasWillUserProperties => _willUserProperties is { Count: > 0 };
 
    /// <summary>
    /// Provider used to fill in username and password in CONNECT,
@@ -198,7 +202,7 @@ public sealed class ConnectOptions(int builderCapacity = -1)
    public override void Clear()
    {
       base.Clear();
-      WillUserProperties.Clear();
+      _willUserProperties?.Clear();
 
       ProtocolVersion = MqttProtocolVersion.V50;
       CleanSession = true;
@@ -237,6 +241,60 @@ public sealed class ConnectOptions(int builderCapacity = -1)
       CredentialsProvider = null;
       AuthenticationHandler = null;
       AutoReconnect = null;
+   }
+
+   /// <summary>
+   /// Creates a per-connection clone so client state updates (such as AssignedClientIdentifier or credentials)
+   /// do not mutate a caller-shared ConnectOptions instance.
+   /// </summary>
+   public ConnectOptions Clone()
+   {
+      var clone = new ConnectOptions(_builderCapacity)
+      {
+         EndPoint = EndPoint,
+         AutoReconnect = AutoReconnect,
+         ProtocolVersion = ProtocolVersion,
+         CleanSession = CleanSession,
+         KeepAlivePeriod = KeepAlivePeriod,
+         Timeout = Timeout,
+         ClientIdUtf8Bytes = ClientIdUtf8Bytes,
+         UsernameUtf8Bytes = UsernameUtf8Bytes,
+         PasswordBytes = PasswordBytes,
+         SessionExpiryInterval = SessionExpiryInterval,
+         TopicAliasMaximum = TopicAliasMaximum,
+         ReceiveMaximum = ReceiveMaximum,
+         MaximumPacketSize = MaximumPacketSize,
+         RequestResponseInformation = RequestResponseInformation,
+         RequestProblemInformation = RequestProblemInformation,
+         AuthenticationMethodUtf8Bytes = AuthenticationMethodUtf8Bytes,
+         AuthenticationDataBytes = AuthenticationDataBytes,
+         TryPrivate = TryPrivate,
+         HasWill = HasWill,
+         WillTopicUtf8Bytes = WillTopicUtf8Bytes,
+         WillPayload = WillPayload,
+         WillQualityOfService = WillQualityOfService,
+         WillRetain = WillRetain,
+         WillDelayInterval = WillDelayInterval,
+         WillPayloadFormatIndicator = WillPayloadFormatIndicator,
+         WillMessageExpiryInterval = WillMessageExpiryInterval,
+         WillContentTypeUtf8Bytes = WillContentTypeUtf8Bytes,
+         WillResponseTopicUtf8Bytes = WillResponseTopicUtf8Bytes,
+         WillCorrelationDataBytes = WillCorrelationDataBytes,
+         CredentialsProvider = CredentialsProvider,
+         AuthenticationHandler = AuthenticationHandler
+      };
+
+      if (HasUserProperties)
+      {
+         clone.UserProperties.CopyFrom(UserProperties);
+      }
+
+      if (HasWillUserProperties)
+      {
+         clone.WillUserProperties.CopyFrom(WillUserProperties);
+      }
+
+      return clone;
    }
 
    /// <summary>

@@ -49,7 +49,7 @@ public sealed partial class MqttClient
 
          if ((MqttClientConnectionState)_state == MqttClientConnectionState.Connecting)
          {
-            try { await _clientTokenSource.CancelAsync(); } catch { /* ignored */ }
+            await CancelClientTokenSourceAsync();
 
             if (_inConnectingCallback.Value)
             {
@@ -170,7 +170,7 @@ public sealed partial class MqttClient
     private async ValueTask DisconnectRoutineAsync(bool beforeConnected, bool awaitReceiveTask = true, bool awaitKeepAliveTask = true)
     {
        TraceLogger.LogClientInfo("MqttClient: Starting disconnect routine (BeforeConnected: {0}).", beforeConnected);
-       await _clientTokenSource.CancelAsync();
+       await CancelClientTokenSourceAsync();
 
        try
        {
@@ -257,15 +257,15 @@ public sealed partial class MqttClient
 
          try
          {
-            var sem = _inFlightSemaphore;
-            _inFlightSemaphore = null;
-
+            var sem = Interlocked.Exchange(ref _inFlightSemaphore, null);
             sem?.Dispose();
          }
          catch
          {
             // ignored
          }
+
+         ResetServerCapabilities();
 
          CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Disconnecting);
          TraceLogger.LogClientInfo("MqttClient: Disconnected from transport layer. State transitioned to Disconnected.");

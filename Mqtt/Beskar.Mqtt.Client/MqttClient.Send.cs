@@ -34,6 +34,9 @@ public sealed partial class MqttClient
       var clientResult = ValidateClient();
       if (!clientResult.IsSuccess) return clientResult.Error;
 
+      var capabilityResult = ValidateServerSubscribeCapabilities(options);
+      if (capabilityResult.Failed) return capabilityResult.Error;
+
       if (_controlStream is not { } stream)
       {
          return new StringError("Invalid control stream.");
