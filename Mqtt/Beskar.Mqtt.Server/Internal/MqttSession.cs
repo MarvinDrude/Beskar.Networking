@@ -41,6 +41,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal MqttServer Server { get; }
    internal SemaphoreSlim DeliverySemaphore { get; } = new(1, 1);
+   internal Lock OutboundOrderLock { get; } = new();
 
    private Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; }
       = new(ByteArrayEqualityComparer.Instance);

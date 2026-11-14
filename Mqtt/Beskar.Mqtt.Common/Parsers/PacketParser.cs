@@ -18,7 +18,8 @@ public ref struct PacketParser(
    INetworkStream stream,
    IPacketHandler handler,
    MqttProtocolVersion protocolVersion,
-   uint maximumPacketSize = 0)
+   uint maximumPacketSize = 0,
+   Action? onValidPacketParsed = null)
 {
    public MqttProtocolVersion ProtocolVersion { get; private set; } = protocolVersion;
    public bool TryPrivate => _tryPrivate;
@@ -26,6 +27,7 @@ public ref struct PacketParser(
    private readonly INetworkStream _stream = stream;
    private readonly IPacketHandler _packetHandler = handler;
    private readonly uint _maximumPacketSize = maximumPacketSize;
+   private readonly Action? _onValidPacketParsed = onValidPacketParsed;
    private bool _tryPrivate;
 
    public ValueTask<Result<PacketDispatchResult, StringError>> TryDispatch(
@@ -98,9 +100,9 @@ public ref struct PacketParser(
       var innerConsumed = 0;
       var dispatchTask = ProtocolVersion switch
       {
-         MqttProtocolVersion.V50 => new PacketVersion5Parser(_stream, _packetHandler)
+         MqttProtocolVersion.V50 => new PacketVersion5Parser(_stream, _packetHandler, _onValidPacketParsed)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
-         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_stream, _packetHandler, ProtocolVersion)
+         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_stream, _packetHandler, ProtocolVersion, _onValidPacketParsed)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
          _ => ValueTask.FromResult(PacketDispatchResult.ProtocolError)
       };

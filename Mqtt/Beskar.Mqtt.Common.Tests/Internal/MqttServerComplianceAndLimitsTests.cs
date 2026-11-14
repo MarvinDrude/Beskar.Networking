@@ -188,6 +188,86 @@ public sealed class MqttServerComplianceAndLimitsTests
    }
 
    [Test]
+   public async Task OutgoingPublish_LiveBufferedInChannelWhileOfflineDrainTriggered_ShouldPreserveStrictOrder()
+   {
+      var listener = new ControlledNetworkListener();
+      var options = new MqttServerOptions();
+      await using var server = new MqttServer([listener], options);
+      await server.StartAsync();
+
+      var subConnection = listener.AcceptControlledConnection();
+      var pubConnection = listener.AcceptControlledConnection();
+
+      await subConnection.SendToServerAsync(EncodeConnectV5("order-live-sub", receiveMax: 3));
+      await subConnection.ReadPacketTypeAsync(MqttPacketType.ConnAck);
+      await subConnection.SendToServerAsync(EncodeSubscribeV5(1, "order/live-offline", QualityOfServiceType.AtLeastOnce));
+      await subConnection.ReadPacketTypeAsync(MqttPacketType.SubAck);
+
+      await pubConnection.SendToServerAsync(EncodeConnectV5("order-live-pub"));
+      await pubConnection.ReadPacketTypeAsync(MqttPacketType.ConnAck);
+
+      var subSession = await GetServerSessionAsync(server, "order-live-sub");
+      await Assert.That(subSession).IsNotNull();
+
+      var delivered = new List<string>();
+
+      // msg-0 consumes slot 1 of ReceiveMaximum=3; leave it unacked
+      await pubConnection.SendToServerAsync(EncodePublishV5(10, "order/live-offline", "msg-0", QualityOfServiceType.AtLeastOnce));
+      await pubConnection.ReadPacketTypeAsync(MqttPacketType.PubAck);
+      var pkt0 = await subConnection.ReadNextPacketAsync(TimeSpan.FromSeconds(5));
+      await Assert.That((MqttPacketType)(pkt0[0] >> 4)).IsEqualTo(MqttPacketType.Publish);
+      delivered.Add(ReadPublishPayloadUtf8(pkt0));
+
+      // msg-1 consumes slot 2 and stalls mid-write inside the outgoing channel consumer
+      subConnection.HoldNextServerPublish();
+      await pubConnection.SendToServerAsync(EncodePublishV5(11, "order/live-offline", "msg-1", QualityOfServiceType.AtLeastOnce));
+      await pubConnection.ReadPacketTypeAsync(MqttPacketType.PubAck);
+      await subConnection.WaitUntilServerPublishStartedAsync();
+
+      // msg-2 consumes slot 3 as a live publish buffered inside _outgoingPublishChannel behind msg-1
+      await pubConnection.SendToServerAsync(EncodePublishV5(12, "order/live-offline", "msg-2", QualityOfServiceType.AtLeastOnce));
+      await pubConnection.ReadPacketTypeAsync(MqttPacketType.PubAck);
+
+      // msg-3 sees DeliverySemaphore == 0 and goes to _offlineQueue
+      await pubConnection.SendToServerAsync(EncodePublishV5(13, "order/live-offline", "msg-3", QualityOfServiceType.AtLeastOnce));
+      await pubConnection.ReadPacketTypeAsync(MqttPacketType.PubAck);
+
+      var deadline = DateTime.UtcNow.AddSeconds(5);
+      while (subSession!.OfflineQueueCount < 1 && DateTime.UtcNow < deadline)
+      {
+         await Task.Delay(10);
+      }
+      await Assert.That(subSession.OfflineQueueCount).IsEqualTo(1);
+
+      // Ack msg-0 while msg-1 is still stalled and msg-2 sits in the outgoing channel.
+      // Offline drain must enqueue msg-3 behind msg-2 on the ordered outgoing channel rather than bypassing it.
+      await subConnection.SendToServerAsync(EncodePubAckV5(ReadPublishPacketId(pkt0)));
+
+      deadline = DateTime.UtcNow.AddSeconds(5);
+      while (subSession.OfflineQueueCount > 0 && DateTime.UtcNow < deadline)
+      {
+         await Task.Delay(10);
+      }
+      await Assert.That(subSession.OfflineQueueCount).IsEqualTo(0);
+
+      subConnection.ReleaseHeldPublish();
+
+      for (var i = 0; i < 3; i++)
+      {
+         var pkt = await subConnection.ReadNextPacketAsync(TimeSpan.FromSeconds(5));
+         await Assert.That((MqttPacketType)(pkt[0] >> 4)).IsEqualTo(MqttPacketType.Publish);
+         delivered.Add(ReadPublishPayloadUtf8(pkt));
+         await subConnection.SendToServerAsync(EncodePubAckV5(ReadPublishPacketId(pkt)));
+      }
+
+      await Assert.That(delivered.Count).IsEqualTo(4);
+      await Assert.That(delivered[0]).IsEqualTo("msg-0");
+      await Assert.That(delivered[1]).IsEqualTo("msg-1");
+      await Assert.That(delivered[2]).IsEqualTo("msg-2");
+      await Assert.That(delivered[3]).IsEqualTo("msg-3");
+   }
+
+   [Test]
    [NotInParallel]
    public async Task SessionTakeover_BeforeOldDisconnectFlushes_ShouldFenceOldClientAndPreserveActiveSessionCount()
    {
@@ -319,6 +399,137 @@ public sealed class MqttServerComplianceAndLimitsTests
    }
 
    [Test]
+   public async Task Qos2_InterceptBlockedWithDefaultSuccess_ShouldRetainTrackingAndCompletePubRelWithoutReIntercept()
+   {
+      var options = new MqttServerOptions();
+      var tcpListener = new Beskar.Networking.Transports.Tcp.TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), new Beskar.Networking.Transports.Tcp.TcpTransportOptions());
+      await using var server = new MqttServer([tcpListener], options);
+
+      var interceptCount = 0;
+      server.Events.OnPublishIntercept.Add((ctx, _) =>
+      {
+         Interlocked.Increment(ref interceptCount);
+         ctx.Block(); // Default ReasonCode == 0 (Success PUBREC)
+         return ValueTask.CompletedTask;
+      });
+
+      await server.StartAsync();
+      var port = ((IPEndPoint)tcpListener.LocalAddress).Port;
+
+      using var rawClient = new TcpClient();
+      await rawClient.ConnectAsync(IPAddress.Loopback, port);
+      await using var stream = rawClient.GetStream();
+
+      await SendRawConnectV5Async(stream, "qos2-block-success-v5");
+      var connAck = await ReadNextRawPacketAsync(stream);
+      await Assert.That((MqttPacketType)(connAck[0] >> 4)).IsEqualTo(MqttPacketType.ConnAck);
+
+      // First QoS 2 PUBLISH blocked with successful PUBREC must retain packet ID tracking
+      await stream.WriteAsync(EncodePublishV5(51, "blocked/qos2-ok", "payload", QualityOfServiceType.ExactlyOnce, dup: false));
+      var pubRec1 = await ReadNextRawPacketAsync(stream);
+      await Assert.That((MqttPacketType)(pubRec1[0] >> 4)).IsEqualTo(MqttPacketType.PubRec);
+      await Assert.That(Volatile.Read(ref interceptCount)).IsEqualTo(1);
+
+      // Retransmitted DUP=1 PUBLISH must NOT re-invoke interceptor
+      await stream.WriteAsync(EncodePublishV5(51, "blocked/qos2-ok", "payload", QualityOfServiceType.ExactlyOnce, dup: true));
+      var pubRec2 = await ReadNextRawPacketAsync(stream);
+      await Assert.That((MqttPacketType)(pubRec2[0] >> 4)).IsEqualTo(MqttPacketType.PubRec);
+      await Assert.That(Volatile.Read(ref interceptCount)).IsEqualTo(1);
+
+      // PUBREL must complete with Success (not PacketIdentifierNotFound)
+      await SendRawPubRelV5Async(stream, 51);
+      var pubComp = await ReadNextRawPacketAsync(stream);
+      await Assert.That((MqttPacketType)(pubComp[0] >> 4)).IsEqualTo(MqttPacketType.PubComp);
+      await Assert.That((PubCompReasonCode)ReadPubCompReasonCodeV5(pubComp))
+         .IsEqualTo(PubCompReasonCode.Success);
+
+      // Second PUBREL for the completed packet ID now reports PacketIdentifierNotFound
+      await SendRawPubRelV5Async(stream, 51);
+      var duplicatePubComp = await ReadNextRawPacketAsync(stream);
+      await Assert.That((MqttPacketType)(duplicatePubComp[0] >> 4)).IsEqualTo(MqttPacketType.PubComp);
+      await Assert.That((PubCompReasonCode)ReadPubCompReasonCodeV5(duplicatePubComp))
+         .IsEqualTo(PubCompReasonCode.PacketIdentifierNotFound);
+   }
+
+   [Test]
+   public async Task Qos2_V311_InterceptBlockedWithFailureReasonCode_ShouldStillRetainTrackingForPubRel()
+   {
+      var options = new MqttServerOptions();
+      var tcpListener = new Beskar.Networking.Transports.Tcp.TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), new Beskar.Networking.Transports.Tcp.TcpTransportOptions());
+      await using var server = new MqttServer([tcpListener], options);
+
+      var interceptCount = 0;
+      server.Events.OnPublishIntercept.Add((ctx, _) =>
+      {
+         Interlocked.Increment(ref interceptCount);
+         ctx.Block((byte)PubRecReasonCode.UnspecifiedError);
+         return ValueTask.CompletedTask;
+      });
+
+      await server.StartAsync();
+      var port = ((IPEndPoint)tcpListener.LocalAddress).Port;
+
+      using var rawClient = new TcpClient();
+      await rawClient.ConnectAsync(IPAddress.Loopback, port);
+      await using var stream = rawClient.GetStream();
+
+      // MQTT 3.1.1 CONNECT ("v311-qos2-blk", CleanSession = true, KeepAlive = 60)
+      var clientIdBytes = "v311-qos2-blk"u8.ToArray();
+      var connectPacket = new byte[2 + 10 + 2 + clientIdBytes.Length];
+      connectPacket[0] = 0x10;
+      connectPacket[1] = (byte)(10 + 2 + clientIdBytes.Length);
+      connectPacket[2] = 0x00; connectPacket[3] = 0x04;
+      connectPacket[4] = (byte)'M'; connectPacket[5] = (byte)'Q'; connectPacket[6] = (byte)'T'; connectPacket[7] = (byte)'T';
+      connectPacket[8] = 0x04; // MQTT 3.1.1
+      connectPacket[9] = 0x02; // CleanSession
+      connectPacket[10] = 0x00; connectPacket[11] = 0x3C;
+      connectPacket[12] = (byte)(clientIdBytes.Length >> 8);
+      connectPacket[13] = (byte)(clientIdBytes.Length & 0xFF);
+      clientIdBytes.CopyTo(connectPacket.AsSpan(14));
+      await stream.WriteAsync(connectPacket);
+      await stream.FlushAsync();
+
+      var connAck = await ReadNextRawPacketAsync(stream);
+      await Assert.That((MqttPacketType)(connAck[0] >> 4)).IsEqualTo(MqttPacketType.ConnAck);
+
+      static byte[] EncodePublishV3(ushort packetId, bool dup)
+      {
+         var topic = "blk/v3"u8;
+         var payload = "hi"u8;
+         var remLen = 2 + topic.Length + 2 + payload.Length;
+         var pkt = new byte[2 + remLen];
+         pkt[0] = (byte)(0x34 | (dup ? 0x08 : 0x00));
+         pkt[1] = (byte)remLen;
+         pkt[2] = 0x00; pkt[3] = (byte)topic.Length;
+         topic.CopyTo(pkt.AsSpan(4));
+         var pos = 4 + topic.Length;
+         pkt[pos] = (byte)(packetId >> 8);
+         pkt[pos + 1] = (byte)(packetId & 0xFF);
+         payload.CopyTo(pkt.AsSpan(pos + 2));
+         return pkt;
+      }
+
+      // First QoS 2 PUBLISH in V3.1.1: PUBREC carries no reason code so tracking must remain until PUBREL
+      await stream.WriteAsync(EncodePublishV3(61, dup: false));
+      var pubRec1 = await ReadNextRawPacketAsync(stream);
+      await Assert.That((MqttPacketType)(pubRec1[0] >> 4)).IsEqualTo(MqttPacketType.PubRec);
+      await Assert.That(Volatile.Read(ref interceptCount)).IsEqualTo(1);
+
+      // Retransmitted DUP=1 PUBLISH must not re-invoke interceptor
+      await stream.WriteAsync(EncodePublishV3(61, dup: true));
+      var pubRec2 = await ReadNextRawPacketAsync(stream);
+      await Assert.That((MqttPacketType)(pubRec2[0] >> 4)).IsEqualTo(MqttPacketType.PubRec);
+      await Assert.That(Volatile.Read(ref interceptCount)).IsEqualTo(1);
+
+      // PUBREL must receive PUBCOMP with packet ID 61
+      await stream.WriteAsync(new byte[] { 0x62, 0x02, 0x00, 61 });
+      var pubComp = await ReadNextRawPacketAsync(stream);
+      await Assert.That((MqttPacketType)(pubComp[0] >> 4)).IsEqualTo(MqttPacketType.PubComp);
+      await Assert.That(pubComp[2]).IsEqualTo((byte)0x00);
+      await Assert.That(pubComp[3]).IsEqualTo((byte)61);
+   }
+
+   [Test]
    public async Task Server_NonConnectFirstPacket_ShouldCloseConnectionInsteadOfResponding()
    {
       await using var server = MqttServerFactory.CreateBuilder()
@@ -385,6 +596,98 @@ public sealed class MqttServerComplianceAndLimitsTests
       var reply = await TryReadNextRawPacketAsync(stream, TimeSpan.FromMilliseconds(500));
       var respondedWithPingResp = reply is not null && (MqttPacketType)(reply[0] >> 4) == MqttPacketType.PingResp;
       await Assert.That(respondedWithPingResp).IsFalse();
+   }
+
+   [Test]
+   public async Task DisconnectV5_WithNonZeroSessionExpiryAfterNonZeroConnect_WhenPersistenceDisabled_ShouldNotFailWithProtocolError()
+   {
+      var options = new MqttServerOptions(); // SupportPersistentSessions defaults to false
+      var tcpListener = new Beskar.Networking.Transports.Tcp.TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), new Beskar.Networking.Transports.Tcp.TcpTransportOptions());
+      await using var server = new MqttServer([tcpListener], options);
+
+      var disconnectedReasons = new ConcurrentDictionary<string, Beskar.Mqtt.Server.Contexts.MqttDisconnectContext>();
+      var firstDisconnectTcs = new TaskCompletionSource<Beskar.Mqtt.Server.Contexts.MqttDisconnectContext>(TaskCreationOptions.RunContinuationsAsynchronously);
+      var secondDisconnectTcs = new TaskCompletionSource<Beskar.Mqtt.Server.Contexts.MqttDisconnectContext>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      server.Events.OnDisconnect.Add((ctx, _) =>
+      {
+         var id = System.Text.Encoding.UTF8.GetString(ctx.ServerClient.ClientIdUtf8Bytes.Span);
+         if (id is not null)
+         {
+            disconnectedReasons[id] = ctx;
+            if (id == "disc-expiry-ok")
+            {
+               firstDisconnectTcs.TrySetResult(ctx);
+            }
+            else if (id == "disc-expiry-err")
+            {
+               secondDisconnectTcs.TrySetResult(ctx);
+            }
+         }
+         return ValueTask.CompletedTask;
+      });
+
+      await server.StartAsync();
+      var port = ((IPEndPoint)tcpListener.LocalAddress).Port;
+
+      // Case A: Non-zero SessionExpiryInterval in CONNECT (60) followed by non-zero (30) in DISCONNECT
+      // must be allowed even when SupportPersistentSessions is disabled.
+      using (var rawClient = new TcpClient())
+      {
+         await rawClient.ConnectAsync(IPAddress.Loopback, port);
+         await using var stream = rawClient.GetStream();
+
+         await SendRawConnectV5Async(stream, "disc-expiry-ok", sessionExpiry: 60);
+         var connAck = await ReadNextRawPacketAsync(stream);
+         await Assert.That((MqttPacketType)(connAck[0] >> 4)).IsEqualTo(MqttPacketType.ConnAck);
+
+         var disconnectWriter = new System.Buffers.ArrayBufferWriter<byte>();
+         new Beskar.Mqtt.Common.Encoders.Version5.PacketVersion5Encoder(disconnectWriter).WriteDisconnect(
+            new Beskar.Mqtt.Common.Builders.Disconnecting.DisconnectOptions
+            {
+               ReasonCode = DisconnectReasonCode.NormalDisconnection,
+               SessionExpiryInterval = 30
+            });
+         await stream.WriteAsync(disconnectWriter.WrittenMemory);
+         await stream.FlushAsync();
+
+         var ctx = await firstDisconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+         await Assert.That(ctx.Reason).IsEqualTo(DisconnectReasonCode.NormalDisconnection);
+
+         var trailingPacket = await TryReadNextRawPacketAsync(stream, TimeSpan.FromMilliseconds(300));
+         await Assert.That(trailingPacket).IsNull();
+      }
+
+      // Case B: Zero SessionExpiryInterval in CONNECT followed by non-zero in DISCONNECT
+      // must still fail with MQTT 5.0 ProtocolError.
+      using (var rawClient = new TcpClient())
+      {
+         await rawClient.ConnectAsync(IPAddress.Loopback, port);
+         await using var stream = rawClient.GetStream();
+
+         await SendRawConnectV5Async(stream, "disc-expiry-err", sessionExpiry: 0);
+         var connAck = await ReadNextRawPacketAsync(stream);
+         await Assert.That((MqttPacketType)(connAck[0] >> 4)).IsEqualTo(MqttPacketType.ConnAck);
+
+         var disconnectWriter = new System.Buffers.ArrayBufferWriter<byte>();
+         new Beskar.Mqtt.Common.Encoders.Version5.PacketVersion5Encoder(disconnectWriter).WriteDisconnect(
+            new Beskar.Mqtt.Common.Builders.Disconnecting.DisconnectOptions
+            {
+               ReasonCode = DisconnectReasonCode.NormalDisconnection,
+               SessionExpiryInterval = 30
+            });
+         await stream.WriteAsync(disconnectWriter.WrittenMemory);
+         await stream.FlushAsync();
+
+         var reply = await ReadNextRawPacketAsync(stream);
+         await Assert.That((MqttPacketType)(reply[0] >> 4)).IsEqualTo(MqttPacketType.Disconnect);
+         var idx = 1;
+         while ((reply[idx++] & 0x80) != 0) { }
+         await Assert.That((DisconnectReasonCode)reply[idx]).IsEqualTo(DisconnectReasonCode.ProtocolError);
+
+         var ctx = await secondDisconnectTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+         await Assert.That(ctx.Reason).IsEqualTo(DisconnectReasonCode.ProtocolError);
+      }
    }
 
    [Test]

@@ -118,41 +118,52 @@ public sealed partial class MqttServer
                            continue;
                         }
 
-                        if (targetQos > 0)
+                        var enqueuedOffline = false;
+                        lock (session.OutboundOrderLock)
                         {
-                           if (session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum)
+                           if (!client.IsConnected || client.IsFenced || !session.IsActiveClient(client)) break;
+
+                           if (session.OfflineQueueCount > 0
+                               || (targetQos > 0 && session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum))
                            {
                               session.EnqueueOfflineMessage(new MqttQueuedMessage(
                                  message,
                                  targetQos,
                                  retainAsPublished: true,
                                  subId));
-                              continue;
+                              enqueuedOffline = true;
                            }
-
-                           var packetId = session.GenerateNextPacketIdentifier();
-                           publishPacket.PacketIdentifier = packetId;
-                           var pending = new MqttPendingPublish
+                           else if (targetQos > 0)
                            {
-                              PacketIdentifier = packetId,
-                              Message = message,
-                              QualityOfService = targetQos,
-                              RetainAsPublished = true,
-                              SubscriptionIdentifier = subId
-                           };
+                              var packetId = session.GenerateNextPacketIdentifier();
+                              publishPacket.PacketIdentifier = packetId;
+                              var pending = new MqttPendingPublish
+                              {
+                                 PacketIdentifier = packetId,
+                                 Message = message,
+                                 QualityOfService = targetQos,
+                                 RetainAsPublished = true,
+                                 SubscriptionIdentifier = subId
+                              };
 
-                           if (!session.TryAddUnacknowledgedPublish(pending))
-                           {
-                              session.EnqueueOfflineMessage(new MqttQueuedMessage(
-                                 message,
-                                 targetQos,
-                                 retainAsPublished: true,
-                                 subId));
-                              continue;
+                              if (!session.TryAddUnacknowledgedPublish(pending))
+                              {
+                                 session.EnqueueOfflineMessage(new MqttQueuedMessage(
+                                    message,
+                                    targetQos,
+                                    retainAsPublished: true,
+                                    subId));
+                                 enqueuedOffline = true;
+                              }
                            }
                         }
 
-                        await client.Stream.Send(in publishPacket, client.ProtocolVersion, CancellationToken.None);
+                        if (enqueuedOffline)
+                        {
+                           continue;
+                        }
+
+                        await client.SendViaOutgoingQueueAsync(in publishPacket, client.CancellationToken);
                      }
                   }
                   catch (Exception)

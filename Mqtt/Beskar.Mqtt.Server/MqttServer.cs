@@ -703,15 +703,17 @@ public sealed partial class MqttServer : IAsyncDisposable
 
             var consumed = buffer.Start;
             var examined = buffer.End;
+            var updatePacketTimestamp = client.UpdateLastPacketReceivedTimestamp;
 
-            while (!buffer.IsEmpty && !ct.IsCancellationRequested && client.IsConnected && !client.IsFenced)
+            while (!buffer.IsEmpty && !ct.IsCancellationRequested && client is { IsConnected: true, IsFenced: false })
             {
                var sequenceReader = new SequenceReader<byte>(buffer);
                var parser = new PacketParser(
                   streamContext.Stream,
                   packetHandler,
                   client.ProtocolVersion,
-                  Options.MaximumPacketSize);
+                  Options.MaximumPacketSize,
+                  updatePacketTimestamp);
                var parseResult = await parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct).ConfigureAwait(false);
 
                if (parseResult.Failed || parseResult.Success is PacketDispatchResult.ProtocolError
@@ -738,8 +740,6 @@ public sealed partial class MqttServer : IAsyncDisposable
                {
                   break;
                }
-
-               client.UpdateLastPacketReceivedTimestamp();
 
                consumed = buffer.GetPosition(parsedBytes);
                buffer = buffer.Slice(consumed);
@@ -1032,7 +1032,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          return false;
       }
 
-      await client.Stream.Send(in publishPacket, client.ProtocolVersion, ct);
+      await client.SendViaOutgoingQueueAsync(in publishPacket, ct);
       return true;
    }
 
@@ -1063,7 +1063,7 @@ public sealed partial class MqttServer : IAsyncDisposable
                   ReasonCode = PubRelReasonCode.Success
                };
 
-               await client.Stream.Send(in pubRel, client.ProtocolVersion, ct);
+               await client.SendViaOutgoingPubRelAsync(in pubRel, ct);
                continue;
             }
 
@@ -1144,14 +1144,19 @@ public sealed partial class MqttServer : IAsyncDisposable
 
    internal static void ReleaseDeliverySemaphoreAndScheduleNext(MqttSession session, MqttServerClient? client)
    {
-      session.DeliverySemaphore.Release();
-      if (client is not null
-          && client.IsConnected
-          && !client.IsFenced
-          && !client.CancellationToken.IsCancellationRequested
-          && session.IsActiveClient(client)
-          && session.OfflineQueueCount > 0
-          && session.GetUnacknowledgedPublishCount() < session.ClientReceiveMaximum)
+      bool shouldSchedule;
+      lock (session.OutboundOrderLock)
+      {
+         session.DeliverySemaphore.Release();
+         shouldSchedule = client is not null
+                          && client.IsConnected
+                          && client is { IsFenced: false, CancellationToken.IsCancellationRequested: false }
+                          && session.IsActiveClient(client)
+                          && session.OfflineQueueCount > 0
+                          && session.GetUnacknowledgedPublishCount() < session.ClientReceiveMaximum;
+      }
+
+      if (shouldSchedule)
       {
          _ = Task.Run(() => DeliverNextQueuedMessagesAsync(session));
       }
@@ -1213,7 +1218,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             }
          }
 
-         await client.Stream.Send(in publishPacket, client.ProtocolVersion, ct);
+         await client.SendViaOutgoingQueueAsync(in publishPacket, ct);
       }
    }
 

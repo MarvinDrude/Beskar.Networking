@@ -189,7 +189,9 @@ public sealed partial class ServerPacketHandler
                {
                   TraceLogger.LogServerWarning("ServerPacketHandler.Publish: Incoming publish packet to topic '{0}' was blocked by OnPublishIntercept pipeline.", publishMsg.Topic);
 
-                  if (isNewRegistered)
+                  if (isNewRegistered
+                      && client.ProtocolVersion is MqttProtocolVersion.V50
+                      && interceptCtx.ReasonCode >= (byte)PubRecReasonCode.UnspecifiedError)
                   {
                      // Failed PUBREC (>= 0x80) terminates QoS 2 state; release packet id so future PUBREL is unknown.
                      session.RemoveQos2Packet(packet.PacketIdentifier);
@@ -212,7 +214,20 @@ public sealed partial class ServerPacketHandler
                         PacketIdentifier = packet.PacketIdentifier,
                         ReasonCode = (PubRecReasonCode)interceptCtx.ReasonCode
                      };
-                     await stream.Send(in pubRec, client.ProtocolVersion, ct);
+
+                     try
+                     {
+                        await stream.Send(in pubRec, client.ProtocolVersion, ct);
+                     }
+                     catch
+                     {
+                        if (isNewRegistered)
+                        {
+                           session.RemoveQos2Packet(packet.PacketIdentifier);
+                           isNewRegistered = false;
+                        }
+                        throw;
+                     }
                   }
 
                   return;
@@ -448,11 +463,16 @@ public sealed partial class ServerPacketHandler
                   return; // Expired or exceeds client MaximumPacketSize
                }
 
-               if (localQos > 0)
+               lock (localSession.OutboundOrderLock)
                {
-                  if (localSession.GetUnacknowledgedPublishCount() >= localSession.ClientReceiveMaximum
-                      || localSession.OfflineQueueCount > 0
-                      || localSession.DeliverySemaphore.CurrentCount == 0)
+                  if (!localClient.IsConnected || localClient.IsFenced || !localSession.IsActiveClient(localClient))
+                  {
+                     return;
+                  }
+
+                  if (localSession.OfflineQueueCount > 0
+                      || localSession.DeliverySemaphore.CurrentCount == 0
+                      || (localQos > 0 && localSession.GetUnacknowledgedPublishCount() >= localSession.ClientReceiveMaximum))
                   {
                      EnqueueOfflineAndScheduleDrain(
                         localSession,
@@ -461,29 +481,32 @@ public sealed partial class ServerPacketHandler
                      return;
                   }
 
-                  var packetId = localSession.GenerateNextPacketIdentifier();
-                  publishPacket.PacketIdentifier = packetId;
-
-                  var pendingPublish = new MqttPendingPublish
+                  if (localQos > 0)
                   {
-                     PacketIdentifier = packetId,
-                     Message = localMsg,
-                     QualityOfService = localQos,
-                     RetainAsPublished = localRetainAsPublished,
-                     SubscriptionIdentifier = localSubId
-                  };
+                     var packetId = localSession.GenerateNextPacketIdentifier();
+                     publishPacket.PacketIdentifier = packetId;
 
-                  if (!localSession.TryAddUnacknowledgedPublish(pendingPublish))
-                  {
-                     EnqueueOfflineAndScheduleDrain(
-                        localSession,
-                        new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId));
+                     var pendingPublish = new MqttPendingPublish
+                     {
+                        PacketIdentifier = packetId,
+                        Message = localMsg,
+                        QualityOfService = localQos,
+                        RetainAsPublished = localRetainAsPublished,
+                        SubscriptionIdentifier = localSubId
+                     };
 
-                     return;
+                     if (!localSession.TryAddUnacknowledgedPublish(pendingPublish))
+                     {
+                        EnqueueOfflineAndScheduleDrain(
+                           localSession,
+                           new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId));
+
+                        return;
+                     }
                   }
+
+                  localClient.QueueOutgoingPublish(in publishPacket);
                }
-
-               localClient.QueueOutgoingPublish(in publishPacket);
             }
             catch (Exception ex)
             {

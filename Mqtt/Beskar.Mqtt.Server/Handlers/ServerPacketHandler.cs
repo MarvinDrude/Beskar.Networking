@@ -111,7 +111,7 @@ public sealed partial class ServerPacketHandler
 
       if (_client.ProtocolVersion is MqttProtocolVersion.V50 &&
           packet.SessionExpiryInterval is > 0 &&
-          ((_client.MqttSession?.ExpiryInterval ?? 0) == 0 || (_client.ConnectOptions?.SessionExpiryInterval ?? 0) == 0))
+          (_client.ConnectOptions?.SessionExpiryInterval ?? 0) == 0)
       {
          TraceLogger.LogServerWarning(
             "ServerPacketHandler: Client attempted to set non-zero SessionExpiryInterval ({0}) in DISCONNECT after zero session expiry.",

@@ -357,6 +357,119 @@ public class MqttKeepAliveTests
       await Assert.That(await disconnectedReasonTcs.Task).IsEqualTo(DisconnectReasonCode.KeepAliveTimeout);
    }
 
+   [Test]
+   public async Task KeepAlive_SlowPublishInterceptorCompletingAfterDeadline_ShouldUpdateTimestampOnPacketParseAndStayConnected()
+   {
+      var options = new MqttServerOptions();
+      options.KeepAlive.Interval = TimeSpan.FromMilliseconds(25);
+
+      var tcpListener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), new TcpTransportOptions());
+      await using var server = new MqttServer([tcpListener], options);
+
+      var disconnectedReasonTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
+      var interceptStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var interceptRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      server.Events.OnDisconnect.Add((ctx, _) =>
+      {
+         disconnectedReasonTcs.TrySetResult(ctx.Reason);
+         return ValueTask.CompletedTask;
+      });
+
+      server.Events.OnPublishIntercept.Add(async (_, ct) =>
+      {
+         interceptStarted.TrySetResult();
+         await interceptRelease.Task.WaitAsync(ct);
+      });
+
+      await server.StartAsync();
+      var port = ((IPEndPoint)tcpListener.LocalAddress).Port;
+
+      using var rawClient = new System.Net.Sockets.TcpClient();
+      await rawClient.ConnectAsync(IPAddress.Loopback, port);
+      await using var stream = rawClient.GetStream();
+
+      static async Task<byte[]> ReadPacketAsync(System.Net.Sockets.NetworkStream s)
+      {
+         var header = new byte[1];
+         await s.ReadExactlyAsync(header.AsMemory(0, 1));
+         var lenBytes = new List<byte>(4);
+         var multiplier = 1;
+         var remLen = 0;
+         while (true)
+         {
+            var b = new byte[1];
+            await s.ReadExactlyAsync(b.AsMemory(0, 1));
+            lenBytes.Add(b[0]);
+            remLen += (b[0] & 0x7F) * multiplier;
+            if ((b[0] & 0x80) == 0) break;
+            multiplier *= 128;
+         }
+         var frame = new byte[1 + lenBytes.Count + remLen];
+         frame[0] = header[0];
+         for (var i = 0; i < lenBytes.Count; i++) frame[1 + i] = lenBytes[i];
+         if (remLen > 0)
+         {
+            await s.ReadExactlyAsync(frame.AsMemory(1 + lenBytes.Count, remLen));
+         }
+         return frame;
+      }
+
+      var connectWriter = new System.Buffers.ArrayBufferWriter<byte>();
+      new Beskar.Mqtt.Common.Encoders.Version5.PacketVersion5Encoder(connectWriter).WriteConnect(new ConnectOptions
+      {
+         KeepAlivePeriod = 1, // 1.5s timeout deadline
+         ClientIdUtf8Bytes = "ka-slow-intercept"u8.ToArray(),
+         CleanSession = true,
+         EndPoint = (IPEndPoint)tcpListener.LocalAddress
+      });
+      await stream.WriteAsync(connectWriter.WrittenMemory);
+      await stream.FlushAsync();
+
+      var connAck = await ReadPacketAsync(stream);
+      await Assert.That((MqttPacketType)(connAck[0] >> 4)).IsEqualTo(MqttPacketType.ConnAck);
+
+      var sinceConnAck = System.Diagnostics.Stopwatch.StartNew();
+
+      // Send complete valid PUBLISH ~650ms after CONNECT (well before the 1.5s deadline)
+      await Task.Delay(650);
+
+      var topic = "slow/intercept"u8;
+      var payload = "hi"u8;
+      var remLen = 2 + topic.Length + 2 + 1 + payload.Length;
+      var publishPkt = new byte[2 + remLen];
+      publishPkt[0] = 0x32; // PUBLISH QoS 1
+      publishPkt[1] = (byte)remLen;
+      publishPkt[2] = 0x00;
+      publishPkt[3] = (byte)topic.Length;
+      topic.CopyTo(publishPkt.AsSpan(4));
+      var pos = 4 + topic.Length;
+      publishPkt[pos] = 0x00;
+      publishPkt[pos + 1] = 0x01; // PacketId = 1
+      publishPkt[pos + 2] = 0x00; // V5 Properties Length = 0
+      payload.CopyTo(publishPkt.AsSpan(pos + 3));
+
+      await stream.WriteAsync(publishPkt);
+      await stream.FlushAsync();
+
+      await interceptStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+      // Keep the interceptor stalled past the original 1.5s CONNECT deadline while keep-alive checks run
+      var remainingToCrossOriginalDeadline = TimeSpan.FromMilliseconds(1700) - sinceConnAck.Elapsed;
+      if (remainingToCrossOriginalDeadline > TimeSpan.Zero)
+      {
+         await Task.Delay(remainingToCrossOriginalDeadline);
+      }
+
+      await Assert.That(disconnectedReasonTcs.Task.IsCompleted).IsFalse();
+
+      interceptRelease.TrySetResult();
+
+      var pubAck = await ReadPacketAsync(stream).WaitAsync(TimeSpan.FromSeconds(5));
+      await Assert.That((MqttPacketType)(pubAck[0] >> 4)).IsEqualTo(MqttPacketType.PubAck);
+      await Assert.That(disconnectedReasonTcs.Task.IsCompleted).IsFalse();
+   }
+
    private sealed class TransportReadTrackingListener(INetworkListener inner) : INetworkListener
    {
       public EndPoint LocalAddress => inner.LocalAddress;

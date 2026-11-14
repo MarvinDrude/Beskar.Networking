@@ -22,7 +22,7 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
 {
    private readonly MqttClient _client;
    private readonly ConcurrentDictionary<string, TopicSubscriptionEntry> _subscriptions = new(StringComparer.Ordinal);
-   private readonly ConcurrentDictionary<string, SemaphoreSlim> _topicBrokerLocks = new(StringComparer.Ordinal);
+   private readonly ConcurrentDictionary<string, TopicBrokerGate> _topicBrokerLocks = new(StringComparer.Ordinal);
 
    private readonly IDisposable _receiveHandlerToken;
    private readonly IDisposable _connectedHandlerToken;
@@ -218,8 +218,29 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       Task<VoidResult<StringError>> WaitTask,
       TaskCompletionSource<VoidResult<StringError>>? OwnedSubscribeTcs);
 
-   private SemaphoreSlim GetTopicBrokerLock(string topicFilter)
-      => _topicBrokerLocks.GetOrAdd(topicFilter, static _ => new SemaphoreSlim(1, 1));
+   private TopicBrokerGate AcquireTopicBrokerGate(string topicFilter)
+   {
+      while (true)
+      {
+         var gate = _topicBrokerLocks.GetOrAdd(topicFilter, static _ => new TopicBrokerGate());
+         if (gate.TryAddRef())
+         {
+            return gate;
+         }
+
+         ((ICollection<KeyValuePair<string, TopicBrokerGate>>)_topicBrokerLocks)
+            .Remove(new KeyValuePair<string, TopicBrokerGate>(topicFilter, gate));
+      }
+   }
+
+   private void ReleaseTopicBrokerGate(string topicFilter, TopicBrokerGate gate)
+   {
+      if (gate.ReleaseRefAndTryMarkRemoved())
+      {
+         ((ICollection<KeyValuePair<string, TopicBrokerGate>>)_topicBrokerLocks)
+            .Remove(new KeyValuePair<string, TopicBrokerGate>(topicFilter, gate));
+      }
+   }
 
    private SinkRegistration AddSinkToTopic(
       string topicFilter,
@@ -260,23 +281,22 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       }
 
       var ownedTcs = registration.OwnedSubscribeTcs!;
-      var topicLock = GetTopicBrokerLock(topicFilter);
-      try
-      {
-         await topicLock.WaitAsync(ct).ConfigureAwait(false);
-      }
-      catch (Exception ex)
-      {
-         var cancelError = new StringError(ex.Message);
-         ownedTcs.TrySetResult(cancelError);
-         return cancelError;
-      }
-
+      var gate = AcquireTopicBrokerGate(topicFilter);
+      var lockAcquired = false;
       VoidResult<StringError> outcome = true;
       try
       {
+         await gate.Semaphore.WaitAsync(ct).ConfigureAwait(false);
+         lockAcquired = true;
+
+         if (!registration.Entry.TryGetSubscribeQos(out var currentTargetQos))
+         {
+            outcome = new StringError($"Subscription for topic '{topicFilter}' was removed before subscribing.");
+            return outcome;
+         }
+
          var options = SubscribeOptions.Create()
-            .WithTopicFilter(topicFilter, registration.TargetQos)
+            .WithTopicFilter(topicFilter, currentTargetQos)
             .Build();
 
          var result = await _client.SubscribeAsync(options, ct).ConfigureAwait(false);
@@ -307,8 +327,14 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       }
       finally
       {
-         topicLock.Release();
+         // Publish outcome before releasing lock/gate so concurrent waiters never hang on client disposal.
          ownedTcs.TrySetResult(outcome);
+         if (lockAcquired)
+         {
+            gate.Semaphore.Release();
+         }
+
+         ReleaseTopicBrokerGate(topicFilter, gate);
       }
 
       return outcome;
@@ -353,11 +379,11 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
 
       if (shouldUnsubscribeBroker && _client.IsConnected)
       {
-         var topicLock = GetTopicBrokerLock(topicFilter);
-         await topicLock.WaitAsync().ConfigureAwait(false);
+         var gate = AcquireTopicBrokerGate(topicFilter);
+         await gate.Semaphore.WaitAsync().ConfigureAwait(false);
          try
          {
-            if (_subscriptions.ContainsKey(topicFilter))
+            if (_subscriptions.ContainsKey(topicFilter) || !_client.IsConnected)
             {
                return;
             }
@@ -375,7 +401,8 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          }
          finally
          {
-            topicLock.Release();
+            gate.Semaphore.Release();
+            ReleaseTopicBrokerGate(topicFilter, gate);
          }
       }
    }
@@ -451,12 +478,46 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       }
 
       _subscriptions.Clear();
-      foreach (var kvp in _topicBrokerLocks)
-      {
-         kvp.Value.Dispose();
-      }
+      // In-flight operations may still await or release these semaphores (which have no native wait handles).
       _topicBrokerLocks.Clear();
       return ValueTask.CompletedTask;
+   }
+
+   private sealed class TopicBrokerGate
+   {
+      private readonly Lock _sync = new();
+      private int _refCount;
+      private bool _removed;
+
+      public SemaphoreSlim Semaphore { get; } = new(1, 1);
+
+      public bool TryAddRef()
+      {
+         lock (_sync)
+         {
+            if (_removed)
+            {
+               return false;
+            }
+
+            _refCount++;
+            return true;
+         }
+      }
+
+      public bool ReleaseRefAndTryMarkRemoved()
+      {
+         lock (_sync)
+         {
+            if (--_refCount == 0 && !_removed)
+            {
+               _removed = true;
+               return true;
+            }
+
+            return false;
+         }
+      }
    }
 
    private sealed class SubscriptionDisposable(Func<ValueTask> onDispose) : IAsyncDisposable
@@ -537,6 +598,21 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
                MaxQos,
                existingTask!,
                OwnedSubscribeTcs: null);
+         }
+      }
+
+      public bool TryGetSubscribeQos(out QualityOfServiceType qos)
+      {
+         lock (_lock)
+         {
+            if (IsRemoved || _sinks.Count == 0)
+            {
+               qos = default;
+               return false;
+            }
+
+            qos = MaxQos;
+            return true;
          }
       }
 

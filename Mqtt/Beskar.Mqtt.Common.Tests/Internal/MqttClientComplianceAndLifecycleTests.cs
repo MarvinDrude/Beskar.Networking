@@ -987,6 +987,244 @@ public sealed class MqttClientComplianceAndLifecycleTests
       await client.DisconnectAsync(new DisconnectOptions());
    }
 
+   [Test]
+   public async Task SubscribeTopicAsync_WhenConcurrentQosUpgradeOccursBeforeBrokerSend_ShouldSendUpgradedQos()
+   {
+      var firstSubscribeSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var releaseFirstSubAck = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var observedQos = new ConcurrentQueue<QualityOfServiceType>();
+      var subscribeCount = 0;
+
+      var harness = new MockBrokerHarness(async (h, packetType, packetBytes, sendPacket) =>
+      {
+         switch (packetType)
+         {
+            case MqttPacketType.Connect:
+               await sendPacket(EncodeConnAck(new ConnAckPacket
+               {
+                  ReasonCode = ConnectReasonCode.Success,
+                  MaximumQualityOfService = QualityOfServiceType.ExactlyOnce
+               }));
+               break;
+
+            case MqttPacketType.Subscribe:
+               var subId = ReadPacketIdAtVariableHeader(packetBytes);
+               var qos = (QualityOfServiceType)(packetBytes[^1] & 0x03);
+               observedQos.Enqueue(qos);
+               var seq = Interlocked.Increment(ref subscribeCount);
+               if (seq == 1)
+               {
+                  firstSubscribeSeen.TrySetResult();
+                  _ = Task.Run(async () =>
+                  {
+                     await releaseFirstSubAck.Task;
+                     await sendPacket(EncodeSubAck(subId, SubscribeReasonCode.GrantedQos0));
+                  });
+               }
+               else
+               {
+                  var granted = qos switch
+                  {
+                     QualityOfServiceType.ExactlyOnce => SubscribeReasonCode.GrantedQos2,
+                     QualityOfServiceType.AtLeastOnce => SubscribeReasonCode.GrantedQos1,
+                     _ => SubscribeReasonCode.GrantedQos0
+                  };
+                  await sendPacket(EncodeSubAck(subId, granted));
+               }
+               break;
+
+            case MqttPacketType.Unsubscribe:
+               var unsubId = ReadPacketIdAtVariableHeader(packetBytes);
+               await sendPacket(EncodeUnsubAck(unsubId, UnsubscribeReasonCode.Success));
+               break;
+         }
+      });
+
+      await using var client = new MqttClient(harness.CreateClient());
+      var connectResult = await client.ConnectAsync(new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, 1883))
+         .WithProtocolVersion(MqttProtocolVersion.V50)
+         .WithClientId("sub-qos-upgrade-race")
+         .Build());
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var sub1Task = client.SubscribeTopicAsync(
+         "qos/upgrade",
+         static (_, _) => ValueTask.CompletedTask,
+         QualityOfServiceType.AtMostOnce);
+
+      await firstSubscribeSeen.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+      var sub2Task = client.SubscribeTopicAsync(
+         "qos/upgrade",
+         static (_, _) => ValueTask.CompletedTask,
+         QualityOfServiceType.AtLeastOnce);
+
+      var sub3Task = client.SubscribeTopicAsync(
+         "qos/upgrade",
+         static (_, _) => ValueTask.CompletedTask,
+         QualityOfServiceType.ExactlyOnce);
+
+      await Task.Delay(50);
+      releaseFirstSubAck.TrySetResult();
+
+      await Task.WhenAll(sub1Task, sub2Task, sub3Task).WaitAsync(TimeSpan.FromSeconds(5));
+
+      var sentQos = observedQos.ToArray();
+      await Assert.That(sentQos.Length).IsGreaterThanOrEqualTo(2);
+      await Assert.That(sentQos[0]).IsEqualTo(QualityOfServiceType.AtMostOnce);
+      foreach (var upgradedQos in sentQos.Skip(1))
+      {
+         await Assert.That(upgradedQos).IsEqualTo(QualityOfServiceType.ExactlyOnce);
+      }
+
+      await (await sub1Task).DisposeAsync();
+      await (await sub2Task).DisposeAsync();
+      await (await sub3Task).DisposeAsync();
+   }
+
+   [Test]
+   public async Task DisposeAsync_WhileBrokerSubscribeInFlightAndSharedWaiterPending_ShouldCompleteWithoutHangingOrThrowing()
+   {
+      var firstSubscribeSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      var harness = new MockBrokerHarness(async (h, packetType, packetBytes, sendPacket) =>
+      {
+         switch (packetType)
+         {
+            case MqttPacketType.Connect:
+               await sendPacket(EncodeConnAck(new ConnAckPacket
+               {
+                  ReasonCode = ConnectReasonCode.Success,
+                  MaximumQualityOfService = QualityOfServiceType.ExactlyOnce
+               }));
+               break;
+
+            case MqttPacketType.Subscribe:
+               firstSubscribeSeen.TrySetResult();
+               // Deliberately hold SUBACK so the broker subscribe remains in flight across DisposeAsync.
+               break;
+         }
+      });
+
+      var client = new MqttClient(harness.CreateClient());
+      var connectResult = await client.ConnectAsync(new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, 1883))
+         .WithProtocolVersion(MqttProtocolVersion.V50)
+         .WithClientId("sub-dispose-race")
+         .Build());
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      var sub1Task = client.SubscribeTopicAsync(
+         "dispose/race",
+         static (_, _) => ValueTask.CompletedTask,
+         QualityOfServiceType.AtLeastOnce);
+
+      await firstSubscribeSeen.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+      var sub2Task = client.SubscribeTopicAsync(
+         "dispose/race",
+         static (_, _) => ValueTask.CompletedTask,
+         QualityOfServiceType.AtMostOnce);
+
+      var sub3Task = client.SubscribeTopicAsync(
+         "dispose/race",
+         static (_, _) => ValueTask.CompletedTask,
+         QualityOfServiceType.ExactlyOnce);
+
+      await Task.Delay(50);
+
+      await client.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+
+      foreach (var task in new[] { sub1Task, sub2Task, sub3Task })
+      {
+         try
+         {
+            await task.WaitAsync(TimeSpan.FromSeconds(5));
+         }
+         catch (ObjectDisposedException ex)
+         {
+            Assert.Fail($"Unexpected ObjectDisposedException during concurrent subscription disposal: {ex}");
+         }
+         catch
+         {
+            // Non-ObjectDisposed failures (cancellation / disconnect) are expected when tearing down in flight.
+         }
+      }
+   }
+
+   [Test]
+   public async Task TopicBrokerLocks_AfterUnsubscribeAndRollback_ShouldBeEvicted()
+   {
+      var harness = new MockBrokerHarness(async (h, packetType, packetBytes, sendPacket) =>
+      {
+         switch (packetType)
+         {
+            case MqttPacketType.Connect:
+               await sendPacket(EncodeConnAck(new ConnAckPacket
+               {
+                  ReasonCode = ConnectReasonCode.Success,
+                  MaximumQualityOfService = QualityOfServiceType.ExactlyOnce
+               }));
+               break;
+
+            case MqttPacketType.Subscribe:
+               var subId = ReadPacketIdAtVariableHeader(packetBytes);
+               var failTopic = Encoding.UTF8.GetString(packetBytes).Contains("bad/topic", StringComparison.Ordinal);
+               await sendPacket(EncodeSubAck(
+                  subId,
+                  failTopic ? SubscribeReasonCode.UnspecifiedError : SubscribeReasonCode.GrantedQos1));
+               break;
+
+            case MqttPacketType.Unsubscribe:
+               var unsubId = ReadPacketIdAtVariableHeader(packetBytes);
+               await sendPacket(EncodeUnsubAck(unsubId, UnsubscribeReasonCode.Success));
+               break;
+         }
+      });
+
+      await using var client = new MqttClient(harness.CreateClient());
+      var connectResult = await client.ConnectAsync(new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, 1883))
+         .WithProtocolVersion(MqttProtocolVersion.V50)
+         .WithClientId("topic-lock-evict")
+         .Build());
+      await Assert.That(connectResult.Failed).IsFalse();
+
+      for (var i = 0; i < 5; i++)
+      {
+         var sub = await client.SubscribeTopicAsync(
+            $"transient/topic/{i}",
+            static (_, _) => ValueTask.CompletedTask,
+            QualityOfServiceType.AtLeastOnce);
+         await sub.DisposeAsync();
+      }
+
+      try
+      {
+         await client.SubscribeTopicAsync(
+            "bad/topic",
+            static (_, _) => ValueTask.CompletedTask,
+            QualityOfServiceType.AtLeastOnce);
+      }
+      catch
+      {
+         // Rejected SUBACK rolls back the subscription entry and releases its broker gate.
+      }
+
+      var managerField = typeof(MqttClient).GetField(
+         "_subscriptionManager",
+         System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+      await Assert.That(managerField).IsNotNull();
+      var manager = managerField!.GetValue(client);
+      await Assert.That(manager).IsNotNull();
+
+      var locksField = manager!.GetType().GetField(
+         "_topicBrokerLocks",
+         System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+      await Assert.That(locksField).IsNotNull();
+      var locksCollection = locksField!.GetValue(manager) as System.Collections.ICollection;
+      await Assert.That(locksCollection).IsNotNull();
+      await Assert.That(locksCollection!.Count).IsEqualTo(0);
+   }
+
    private sealed class DelegateAuthHandler(
       Func<MqttAuthContext, CancellationToken, Task<VoidResult<StringError>>> callback)
       : IMqttAuthenticationHandler
