@@ -109,9 +109,6 @@ public sealed class MqttTopicGeneratorDiagnosticsAndTypesTests
 
    [Test]
    [Arguments("")]
-   [Arguments("sensors//temp")]
-   [Arguments("/sensors/temp")]
-   [Arguments("sensors/temp/")]
    [Arguments("sensors/{id")]
    [Arguments("sensors/node{id}/temp")]
    public async Task Generator_OnEmptyOrMalformedPattern_ShouldReportErrorDiagnostic(string pattern)
@@ -136,5 +133,63 @@ public sealed class MqttTopicGeneratorDiagnosticsAndTypesTests
          .ToArray();
 
       await Assert.That(generatorErrors).IsNotEmpty();
+   }
+
+   [Test]
+   [Arguments("/sensors/temp")]
+   [Arguments("sensors/temp/")]
+   [Arguments("sensors//temp")]
+   [Arguments("/")]
+   [Arguments("/sensors/{id}/")]
+   public async Task Generator_OnEmptyTopicLevels_ShouldCompileWithoutDiagnostics(string pattern)
+   {
+      var source = $$"""
+         using System;
+         using Beskar.Mqtt.Common.Generators;
+
+         namespace TestTopics;
+
+         public partial class EmptyLevelTopicMatcher
+         {
+            [GeneratedMqttTopic("{{pattern}}")]
+            public static partial bool IsMatch(ReadOnlySpan<char> topic);
+         }
+         """;
+
+      var (outputCompilation, runResult) = RunGenerator(source);
+      var allErrors = runResult.Diagnostics
+         .Concat(outputCompilation.GetDiagnostics())
+         .Where(static d => d.Severity == DiagnosticSeverity.Error)
+         .ToArray();
+
+      await Assert.That(allErrors).IsEmpty();
+   }
+
+   [Test]
+   public async Task Generator_TryFormatWithTotalWrittenParameter_ShouldCompileWithoutCollision()
+   {
+      const string source = """
+         using System;
+         using Beskar.Mqtt.Common.Generators;
+
+         namespace TestTopics;
+
+         public partial class TotalWrittenFormatter
+         {
+            [GeneratedMqttTopic("devices/{deviceId}/telemetry")]
+            public static partial bool TryFormat(Span<char> destination, int deviceId, out int totalWritten);
+
+            [GeneratedMqttTopic("devices/{deviceId}/telemetry")]
+            public static partial bool TryFormatBytes(Span<byte> destination, int deviceId, out int totalWritten);
+         }
+         """;
+
+      var (outputCompilation, runResult) = RunGenerator(source);
+      var allErrors = runResult.Diagnostics
+         .Concat(outputCompilation.GetDiagnostics())
+         .Where(static d => d.Severity == DiagnosticSeverity.Error)
+         .ToArray();
+
+      await Assert.That(allErrors).IsEmpty();
    }
 }

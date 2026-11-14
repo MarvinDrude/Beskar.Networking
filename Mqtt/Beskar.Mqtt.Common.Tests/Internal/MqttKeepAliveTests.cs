@@ -235,13 +235,47 @@ public class MqttKeepAliveTests
    public async Task ServerOptionsBuilder_DefaultKeepAliveInterval_ShouldStartWithoutThrowing()
    {
       var options = new MqttServerOptionsBuilder().Build();
+      await Assert.That(options.KeepAlive.Interval).IsEqualTo(TimeSpan.FromMilliseconds(1_000));
+
       await using var server = MqttServerFactory.CreateBuilder(options)
          .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
 
+      var disconnectedReasonTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
+      server.Events.OnDisconnect.Add((ctx, _) =>
+      {
+         disconnectedReasonTcs.TrySetResult(ctx.Reason);
+         return ValueTask.CompletedTask;
+      });
+
       var startResult = await server.StartAsync();
       await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
+      using var tcpClient = new System.Net.Sockets.TcpClient { NoDelay = true };
+      await tcpClient.ConnectAsync(IPAddress.Loopback, port);
+      using var stream = tcpClient.GetStream();
+
+      // Send valid MQTT 5.0 CONNECT with KeepAlive = 1 second (1.5x timeout = 1.5s)
+      byte[] connectPacket =
+      [
+         0x10, 0x16,
+         0x00, 0x04, (byte)'M', (byte)'Q', (byte)'T', (byte)'T',
+         0x05, 0x02, 0x00, 0x01, 0x00,
+         0x00, 0x09,
+         (byte)'k', (byte)'a', (byte)'-', (byte)'i', (byte)'d', (byte)'l', (byte)'e', (byte)'t', (byte)'1'
+      ];
+      await stream.WriteAsync(connectPacket);
+      await stream.FlushAsync();
+
+      var connAckBuf = new byte[16];
+      var connAckRead = await stream.ReadAsync(connAckBuf);
+      await Assert.That(connAckRead).IsGreaterThanOrEqualTo(4);
+
+      var completed = await Task.WhenAny(disconnectedReasonTcs.Task, Task.Delay(5_000)) == disconnectedReasonTcs.Task;
+      await Assert.That(completed).IsTrue();
+      await Assert.That(await disconnectedReasonTcs.Task).IsEqualTo(DisconnectReasonCode.KeepAliveTimeout);
    }
 
    [Test]

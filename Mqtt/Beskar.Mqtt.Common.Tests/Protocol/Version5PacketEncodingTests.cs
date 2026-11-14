@@ -326,6 +326,59 @@ public class Version5PacketEncodingTests
       await Assert.That(buffer[4]).IsEqualTo((byte)0);
    }
 
+   [Test]
+   public async Task WriteConnect_WithRequestProblemInfoFalse_ShouldEncodeProperty()
+   {
+      var buffer = new MemoryBuffer();
+      var packet = new ConnectPacket
+      {
+         IsCleanSession = true,
+         KeepAliveInterval = 60,
+         ClientIdUtf8Bytes = new ReadOnlySequence<byte>("prob-info-false"u8.ToArray()),
+         RequestProblemInfo = false,
+         PropertiesBytes = ReadOnlySequence<byte>.Empty
+      };
+
+      new PacketVersion5Encoder(buffer).WriteConnect(in packet);
+
+      ConnectPacket? parsed = null;
+      var handler = new TestPacketHandler
+      {
+         OnConnect = (in p) => parsed = CopyConnect(in p)
+      };
+
+      var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.Unknown);
+      var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+      var dispatchResult = await parser.TryDispatch(ref reader, out _);
+
+      await Assert.That(dispatchResult.Failed).IsFalse();
+      await Assert.That(dispatchResult.Success).IsEqualTo(PacketDispatchResult.Success);
+      await Assert.That(parsed.HasValue).IsTrue();
+      await Assert.That(parsed!.Value.RequestProblemInfo).IsFalse();
+
+      // Omitted RequestProblemInformation property defaults to true per MQTT 5.0 §3.1.2.11.7
+      var defaultBuffer = new MemoryBuffer();
+      var defaultPacket = new ConnectPacket
+      {
+         IsCleanSession = true,
+         KeepAliveInterval = 60,
+         ClientIdUtf8Bytes = new ReadOnlySequence<byte>("prob-info-true"u8.ToArray()),
+         PropertiesBytes = ReadOnlySequence<byte>.Empty
+      };
+      new PacketVersion5Encoder(defaultBuffer).WriteConnect(in defaultPacket);
+
+      ConnectPacket? parsedDefault = null;
+      var defaultHandler = new TestPacketHandler
+      {
+         OnConnect = (in p) => parsedDefault = CopyConnect(in p)
+      };
+      var parser2 = new PacketParser(new DummyNetworkStream(), defaultHandler, MqttProtocolVersion.Unknown);
+      var reader2 = new SequenceReader<byte>(defaultBuffer.WrittenSequence);
+      var dispatchResult2 = await parser2.TryDispatch(ref reader2, out _);
+      await Assert.That(dispatchResult2.Failed).IsFalse();
+      await Assert.That(parsedDefault!.Value.RequestProblemInfo).IsTrue();
+   }
+
    private static byte[] BuildSubscribeFilter(string topic, byte optionsByte)
    {
       var topicBytes = Encoding.UTF8.GetBytes(topic);
@@ -345,6 +398,7 @@ public class Version5PacketEncodingTests
       SessionExpiryInterval = p.SessionExpiryInterval,
       ReceiveMaximum = p.ReceiveMaximum,
       TopicAliasMaximum = p.TopicAliasMaximum,
+      RequestProblemInfo = p.RequestProblemInfo,
       HasWill = p.HasWill,
       WillDelayInterval = p.WillDelayInterval,
       WillMessageExpiryInterval = p.WillMessageExpiryInterval

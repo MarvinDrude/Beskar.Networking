@@ -191,6 +191,65 @@ public class Version5PacketParsingComplianceTests
       await Assert.That(unsubscribeInvoked).IsFalse();
    }
 
+   [Test]
+   public async Task ParseUnsubscribePacket_MalformedOrTruncatedProperty_ShouldFail()
+   {
+      var body = new byte[64];
+      var writer = new ByteWriter(body);
+      writer.WriteBigEndian((ushort)2); // Packet Identifier
+
+      // Property length = 1, unknown/truncated property identifier 0x7F
+      writer.WriteByte(1);
+      writer.WriteByte(0x7F);
+
+      // Valid filter: "a/b"
+      writer.WriteBigEndian((ushort)3);
+      writer.WriteBytes("a/b"u8);
+
+      var buffer = new MemoryBuffer();
+      WritePacket(buffer, MqttPacketType.Unsubscribe, flags: 0x02, body.AsSpan(0, writer.Position));
+
+      var unsubscribeInvoked = false;
+      var handler = new TestPacketHandler { OnUnsubscribe = (in _) => unsubscribeInvoked = true };
+
+      var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
+      var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+      var result = await parser.TryDispatch(ref reader, out _);
+
+      await Assert.That(result.Failed || result.Success != PacketDispatchResult.Success).IsTrue();
+      await Assert.That(unsubscribeInvoked).IsFalse();
+   }
+
+   [Test]
+   public async Task ParseSubAckPacket_DuplicateOrMalformedPropertyAfterReasonString_ShouldFail()
+   {
+      var body = new byte[64];
+      var writer = new ByteWriter(body);
+      writer.WriteBigEndian((ushort)3); // Packet Identifier
+
+      // Properties: ReasonString "ok" (1 + 2 + 2 = 5 bytes), followed by unknown/truncated byte 0x7F (total 6 bytes)
+      writer.WriteByte(6);
+      writer.WriteByte((byte)PropertyIdentifier.ReasonString);
+      writer.WriteBigEndian((ushort)2);
+      writer.WriteBytes("ok"u8);
+      writer.WriteByte(0x7F);
+
+      writer.WriteByte(0x00); // Granted QoS 0
+
+      var buffer = new MemoryBuffer();
+      WritePacket(buffer, MqttPacketType.SubAck, flags: 0x00, body.AsSpan(0, writer.Position));
+
+      var subAckInvoked = false;
+      var handler = new TestPacketHandler { OnSubAck = (in _) => subAckInvoked = true };
+
+      var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
+      var reader = new SequenceReader<byte>(buffer.WrittenSequence);
+      var result = await parser.TryDispatch(ref reader, out _);
+
+      await Assert.That(result.Failed || result.Success != PacketDispatchResult.Success).IsTrue();
+      await Assert.That(subAckInvoked).IsFalse();
+   }
+
    private static void WritePacket(MemoryBuffer buffer, MqttPacketType type, byte flags, ReadOnlySpan<byte> body)
    {
       var total = new byte[5 + body.Length];

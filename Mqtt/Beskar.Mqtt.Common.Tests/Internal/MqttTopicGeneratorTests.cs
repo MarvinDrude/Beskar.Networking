@@ -404,4 +404,71 @@ public partial class MqttTopicGeneratorTests
         await Assert.That(paramResult).IsFalse();
         await Assert.That(paramWritten).IsEqualTo(0);
     }
+
+    [GeneratedMqttTopic("devices/{deviceId}/sensors/{sensor}")]
+    public static partial bool TryFormatSensorTopicWithTotalWritten(Span<char> destination, int deviceId, string sensor, out int totalWritten);
+
+    [GeneratedMqttTopic("devices/{deviceId}/sensors/{sensor}")]
+    public static partial bool TryFormatSensorTopicBytesWithTotalWritten(Span<byte> destination, int deviceId, string sensor, out int totalWritten);
+
+    [GeneratedMqttTopic("/sensors/temp")]
+    public static partial bool IsMatchLeadingSlash(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("sensors/temp/")]
+    public static partial bool IsMatchTrailingSlash(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("sensors//temp")]
+    public static partial bool IsMatchMiddleEmptyLevel(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("/")]
+    public static partial bool IsMatchRootSlash(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("/sensors/{id}/")]
+    public static partial bool TryParseEmptyLevelParamTopic(ReadOnlySpan<char> topic, out int id);
+
+    [GeneratedMqttTopic("/sensors/{id}/")]
+    public static partial bool TryFormatEmptyLevelParamTopic(Span<char> destination, int id, out int totalWritten);
+
+    [Test]
+    public async Task TryFormat_WithTotalWrittenParameterName_ShouldSucceedAndTrackLength()
+    {
+        Span<char> charBuf = stackalloc char[64];
+        var charOk = TryFormatSensorTopicWithTotalWritten(charBuf, 42, "temperature", out var charWritten);
+        await Assert.That(charOk).IsTrue();
+        await Assert.That(charBuf[..charWritten].ToString()).IsEqualTo("devices/42/sensors/temperature");
+
+        Span<byte> byteBuf = stackalloc byte[64];
+        var byteOk = TryFormatSensorTopicBytesWithTotalWritten(byteBuf, 42, "temperature", out var byteWritten);
+        await Assert.That(byteOk).IsTrue();
+        await Assert.That(System.Text.Encoding.UTF8.GetString(byteBuf[..byteWritten])).IsEqualTo("devices/42/sensors/temperature");
+
+        Span<char> tinyBuf = stackalloc char[10];
+        var tinyOk = TryFormatSensorTopicWithTotalWritten(tinyBuf, 42, "temperature", out var tinyWritten);
+        await Assert.That(tinyOk).IsFalse();
+        await Assert.That(tinyWritten).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task EmptyTopicLevels_ShouldMatchParseAndFormatPerMqttSpec()
+    {
+        await Assert.That(IsMatchLeadingSlash("/sensors/temp")).IsTrue();
+        await Assert.That(IsMatchLeadingSlash("sensors/temp")).IsFalse();
+
+        await Assert.That(IsMatchTrailingSlash("sensors/temp/")).IsTrue();
+        await Assert.That(IsMatchTrailingSlash("sensors/temp")).IsFalse();
+
+        await Assert.That(IsMatchMiddleEmptyLevel("sensors//temp")).IsTrue();
+        await Assert.That(IsMatchMiddleEmptyLevel("sensors/temp")).IsFalse();
+
+        await Assert.That(IsMatchRootSlash("/")).IsTrue();
+        await Assert.That(IsMatchRootSlash("")).IsFalse();
+
+        await Assert.That(TryParseEmptyLevelParamTopic("/sensors/99/", out var parsedId)).IsTrue();
+        await Assert.That(parsedId).IsEqualTo(99);
+        await Assert.That(TryParseEmptyLevelParamTopic("/sensors/99", out _)).IsFalse();
+
+        Span<char> buf = stackalloc char[32];
+        await Assert.That(TryFormatEmptyLevelParamTopic(buf, 99, out var written)).IsTrue();
+        await Assert.That(buf[..written].ToString()).IsEqualTo("/sensors/99/");
+    }
 }
