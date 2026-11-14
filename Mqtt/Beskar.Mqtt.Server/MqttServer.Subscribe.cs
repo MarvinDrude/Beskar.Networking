@@ -6,6 +6,7 @@ using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Server.Contexts;
 using Beskar.Memory.Threading;
 using Beskar.Mqtt.Server.Enumerators;
+using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Internal;
 
 namespace Beskar.Mqtt.Server;
@@ -97,19 +98,25 @@ public sealed partial class MqttServer
                      var propertiesBuffer = new byte[128];
                      foreach (var message in matched)
                      {
-                        if (!client.IsConnected) break;
-
-                        if (message.MessageExpiryInterval > 0)
-                        {
-                           var timeSpent = (uint)(DateTimeOffset.UtcNow - message.CreatedAt).TotalSeconds;
-                           if (timeSpent >= message.MessageExpiryInterval)
-                           {
-                              continue;
-                           }
-                        }
+                        if (!client.IsConnected || client.IsFenced || !session.IsActiveClient(client)) break;
 
                         var targetQos = (QualityOfServiceType)Math.Min((int)qos, (int)message.QualityOfService);
-                        ushort packetId = 0;
+                        var tentativeId = targetQos > 0 ? (ushort)1 : (ushort)0;
+
+                        // per MQTT §3.3.1.3
+                        if (!TryCreateOutgoingPublishPacket(
+                               client,
+                               message,
+                               targetQos,
+                               retain: true,
+                               subId,
+                               tentativeId,
+                               dup: false,
+                               propertiesBuffer,
+                               out var publishPacket))
+                        {
+                           continue;
+                        }
 
                         if (targetQos > 0)
                         {
@@ -123,7 +130,8 @@ public sealed partial class MqttServer
                               continue;
                            }
 
-                           packetId = session.GenerateNextPacketIdentifier();
+                           var packetId = session.GenerateNextPacketIdentifier();
+                           publishPacket.PacketIdentifier = packetId;
                            var pending = new MqttPendingPublish
                            {
                               PacketIdentifier = packetId,
@@ -144,18 +152,7 @@ public sealed partial class MqttServer
                            }
                         }
 
-                        // Per MQTT §3.3.1.3, RETAIN must be set on initial retained deliveries
-                        // regardless of the subscription's Retain As Published option.
-                        await SendPublishMessageAsync(
-                           client,
-                           message,
-                           targetQos,
-                           retainAsPublished: true,
-                           subId,
-                           packetId,
-                           dup: false,
-                           propertiesBuffer,
-                           CancellationToken.None);
+                        await client.Stream.Send(in publishPacket, client.ProtocolVersion, CancellationToken.None);
                      }
                   }
                   catch (Exception)
@@ -166,7 +163,7 @@ public sealed partial class MqttServer
                   {
                      if (semaphoreAcquired)
                      {
-                        session.DeliverySemaphore.Release();
+                        ReleaseDeliverySemaphoreAndScheduleNext(session, client);
                      }
                   }
                });

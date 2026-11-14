@@ -18,9 +18,12 @@ using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Handlers;
 using Beskar.Mqtt.Server.Internal;
 using Beskar.Mqtt.Server.Options;
+using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Mqtt.Common.Encoders.Properties;
+using Beskar.Mqtt.Common.Encoders.Version3;
+using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Telemetry;
 using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Utilities.Tracing;
@@ -73,6 +76,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    internal MqttServerOptions Options { get; }
 
    private int _disposedState; // 0 = active, 1 = disposed
+   private int _activeConnectionCount;
    private volatile int _state = (int)MqttServerState.Stopped;
 
    private readonly INetworkListener[] _listeners;
@@ -138,7 +142,6 @@ public sealed partial class MqttServer : IAsyncDisposable
       foreach (var listener in _listeners)
       {
          var startResult = await listener.BindAsync(ct);
-         _ = Task.Run(() => RunAcceptTask(listener, ct), ct);
 
          if (!startResult.Failed)
          {
@@ -146,8 +149,14 @@ public sealed partial class MqttServer : IAsyncDisposable
             continue;
          }
 
-         await CleanupCode(startedBuilder, ct);
+         await CleanupListenersAsync(startedBuilder, _cancellationTokenSource);
+         State = MqttServerState.Stopped;
          return new StringError($"Failed to start one of the listener: {startResult.Error.Message}");
+      }
+
+      foreach (var listener in _listeners)
+      {
+         _ = Task.Run(() => RunAcceptTask(listener, ct), ct);
       }
 
       _keepAliveService.Start();
@@ -161,12 +170,28 @@ public sealed partial class MqttServer : IAsyncDisposable
 
       return true;
 
-      static async Task CleanupCode(ArrayBuilder<INetworkListener> builder, CancellationToken ct)
+      static async Task CleanupListenersAsync(ArrayBuilder<INetworkListener> builder, CancellationTokenSource cts)
       {
+         try
+         {
+            await cts.CancelAsync();
+         }
+         catch (ObjectDisposedException)
+         {
+            // ignored
+         }
+
          var cleanups = builder.WrittenSpan.ToArray();
          foreach (var cleanup in cleanups)
          {
-            await cleanup.UnbindAsync(ct);
+            try
+            {
+               await cleanup.UnbindAsync(CancellationToken.None);
+            }
+            catch
+            {
+               // ignored
+            }
          }
       }
    }
@@ -306,7 +331,8 @@ public sealed partial class MqttServer : IAsyncDisposable
    {
       if (ct.IsCancellationRequested
           || State is MqttServerState.Stopping or MqttServerState.Stopped
-          || !OpenToNewConnections)
+          || !OpenToNewConnections
+          || !TryAcquireConnectionSlot())
       {
          await session.DisposeAsync();
          return;
@@ -317,7 +343,7 @@ public sealed partial class MqttServer : IAsyncDisposable
 
       try
       {
-         var controlStream = await session.AcceptStreamAsync(ct);
+         var controlStream = await AcceptControlStreamWithTimeoutAsync(session, ct);
          if (controlStream.Failed)
          {
             await session.DisposeAsync();
@@ -409,7 +435,48 @@ public sealed partial class MqttServer : IAsyncDisposable
          {
             /* ignored */
          }
+
+         Interlocked.Decrement(ref _activeConnectionCount);
       }
+   }
+
+   private bool TryAcquireConnectionSlot()
+   {
+      var maxConnections = Options.MaxConnections;
+      if (maxConnections <= 0)
+      {
+         Interlocked.Increment(ref _activeConnectionCount);
+         return true;
+      }
+
+      while (true)
+      {
+         var current = Volatile.Read(ref _activeConnectionCount);
+         if (current >= maxConnections)
+         {
+            return false;
+         }
+
+         if (Interlocked.CompareExchange(ref _activeConnectionCount, current + 1, current) == current)
+         {
+            return true;
+         }
+      }
+   }
+
+   private async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptControlStreamWithTimeoutAsync(
+      INetworkSession session,
+      CancellationToken ct)
+   {
+      if (Options.DefaultTimeout <= TimeSpan.Zero)
+      {
+         return await session.AcceptStreamAsync(ct);
+      }
+
+      using var timeoutCts = new CancellationTokenSource(Options.DefaultTimeout);
+      using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+      return await session.AcceptStreamAsync(linkedCts.Token);
    }
 
    private async Task RunClientConnectionTask(
@@ -459,7 +526,7 @@ public sealed partial class MqttServer : IAsyncDisposable
          {
             ResponseInfoUtf8Bytes = ReadOnlySequence<byte>.Empty,
             ReceiveMaximum = Options.ReceiveMaximum,
-            MaximumPacketSize = 0,
+            MaximumPacketSize = Options.MaximumPacketSize,
             MaximumQualityOfService = QualityOfServiceType.ExactlyOnce,
 
             ReturnCode = context.ReasonCode.ToReturnCode,
@@ -497,6 +564,7 @@ public sealed partial class MqttServer : IAsyncDisposable
 
          var sessionResult = await ClientSessions.GetOrCreateSession(client, connectOptions, ct);
          connAck.IsSessionPresent = sessionResult.IsSessionPresent;
+         client.MarkHandshakeCompleted();
 
          await streamContext.Stream.Send(in connAck, client.ProtocolVersion, ct);
 
@@ -544,6 +612,11 @@ public sealed partial class MqttServer : IAsyncDisposable
             if (server.Options.ReceiveMaximum > 0)
             {
                propEncoder.WriteReceiveMaximum(server.Options.ReceiveMaximum);
+            }
+
+            if (server.Options.MaximumPacketSize > 0)
+            {
+               propEncoder.WriteMaximumPacketSize(server.Options.MaximumPacketSize);
             }
 
             propEncoder.WriteMaximumQoS(QualityOfServiceType.ExactlyOnce);
@@ -631,15 +704,29 @@ public sealed partial class MqttServer : IAsyncDisposable
             var consumed = buffer.Start;
             var examined = buffer.End;
 
-            while (!buffer.IsEmpty)
+            while (!buffer.IsEmpty && !ct.IsCancellationRequested && client.IsConnected && !client.IsFenced)
             {
                var sequenceReader = new SequenceReader<byte>(buffer);
-               var parser = new PacketParser(streamContext.Stream, packetHandler, client.ProtocolVersion);
+               var parser = new PacketParser(
+                  streamContext.Stream,
+                  packetHandler,
+                  client.ProtocolVersion,
+                  Options.MaximumPacketSize);
                var parseResult = await parser.TryDispatch(ref sequenceReader, out var parsedBytes, ct).ConfigureAwait(false);
 
                if (parseResult.Failed || parseResult.Success is PacketDispatchResult.ProtocolError
-                      or PacketDispatchResult.InvalidPacketType)
+                      or PacketDispatchResult.InvalidPacketType
+                      or PacketDispatchResult.PacketTooLarge)
                {
+                  if (parseResult.Success is PacketDispatchResult.PacketTooLarge
+                      && client is { IsHandshakeCompleted: true, ProtocolVersion: MqttProtocolVersion.V50 })
+                  {
+                     await client.DisconnectAsync(new DisconnectOptions
+                     {
+                        ReasonCode = DisconnectReasonCode.PacketTooLarge
+                     });
+                  }
+
                   // Protocol violation: exit the loop to drop the connection
                   TraceLogger.LogClientError(
                      "MqttServer: Protocol violation or parser error (Result: {0}). Exiting receive loop.",
@@ -782,16 +869,19 @@ public sealed partial class MqttServer : IAsyncDisposable
       SubscriptionRouter.Route(topicBytes, ref visitor);
    }
 
-   private static async Task SendPublishMessageAsync(
+   /// <summary>
+   /// Builds an outgoing PUBLISH packet if the message has not expired and fits within the client's Maximum Packet Size.
+   /// </summary>
+   internal static bool TryCreateOutgoingPublishPacket(
       MqttServerClient client,
       MqttPublishMessage message,
       QualityOfServiceType qos,
-      bool retainAsPublished,
+      bool retain,
       uint subscriptionIdentifier,
       ushort packetIdentifier,
       bool dup,
-      byte[] propertiesBuffer,
-      CancellationToken ct)
+      Span<byte> propertiesScratchBuffer,
+      out PublishPacket publishPacket)
    {
       var remainingExpiry = message.MessageExpiryInterval;
       if (message.MessageExpiryInterval > 0)
@@ -799,7 +889,8 @@ public sealed partial class MqttServer : IAsyncDisposable
          var timeSpent = (uint)(DateTimeOffset.UtcNow - message.CreatedAt).TotalSeconds;
          if (timeSpent >= message.MessageExpiryInterval)
          {
-            return; // Message expired, do not deliver
+            publishPacket = default;
+            return false; // Message expired, do not deliver
          }
 
          remainingExpiry = message.MessageExpiryInterval - timeSpent;
@@ -814,11 +905,11 @@ public sealed partial class MqttServer : IAsyncDisposable
          ? ReadOnlyMemory<byte>.Empty
          : Encoding.UTF8.GetBytes(message.ContentType);
 
-      var publishPacket = new PublishPacket
+      publishPacket = new PublishPacket
       {
          Dup = dup,
          QualityOfService = qos,
-         Retain = retainAsPublished && message.Retain,
+         Retain = retain,
          TopicUtf8Bytes = new ReadOnlySequence<byte>(topicBytes),
          Payload = new ReadOnlySequence<byte>(message.Payload),
          PacketIdentifier = packetIdentifier,
@@ -835,7 +926,7 @@ public sealed partial class MqttServer : IAsyncDisposable
 
       if (client.ProtocolVersion is MqttProtocolVersion.V50)
       {
-         var writer = new ByteWriter(propertiesBuffer);
+         var writer = new ByteWriter(propertiesScratchBuffer);
          try
          {
             var propEncoder = writer.AsPublishPropertyEncoder();
@@ -898,9 +989,51 @@ public sealed partial class MqttServer : IAsyncDisposable
          {
             writer.Dispose();
          }
+
+         if (client.ConnectOptions?.MaximumPacketSize is > 0 and var clientMaxV5Size &&
+             PacketVersion5Encoder.CalculatePublishPacketLength(in publishPacket) > clientMaxV5Size)
+         {
+            publishPacket = default;
+            return false; // MQTT §3.1.2.11.4: do not transmit packets exceeding client's MaximumPacketSize
+         }
+      }
+      else if (client.ConnectOptions?.MaximumPacketSize is > 0 and var clientMaxV3Size &&
+               PacketVersion3Encoder.CalculatePublishPacketLength(in publishPacket) > clientMaxV3Size)
+      {
+         publishPacket = default;
+         return false;
+      }
+
+      return true;
+   }
+
+   private static async Task<bool> SendPublishMessageAsync(
+      MqttServerClient client,
+      MqttPublishMessage message,
+      QualityOfServiceType qos,
+      bool retainAsPublished,
+      uint subscriptionIdentifier,
+      ushort packetIdentifier,
+      bool dup,
+      byte[] propertiesBuffer,
+      CancellationToken ct)
+   {
+      if (!TryCreateOutgoingPublishPacket(
+             client,
+             message,
+             qos,
+             retainAsPublished && message.Retain,
+             subscriptionIdentifier,
+             packetIdentifier,
+             dup,
+             propertiesBuffer,
+             out var publishPacket))
+      {
+         return false;
       }
 
       await client.Stream.Send(in publishPacket, client.ProtocolVersion, ct);
+      return true;
    }
 
    private static async Task DeliverOfflineMessagesAsync(MqttServerClient client, MqttSession session,
@@ -934,26 +1067,19 @@ public sealed partial class MqttServer : IAsyncDisposable
                continue;
             }
 
-            if (pending.Message.MessageExpiryInterval > 0)
+            if (!await SendPublishMessageAsync(
+                   client,
+                   pending.Message,
+                   pending.QualityOfService,
+                   pending.RetainAsPublished,
+                   pending.SubscriptionIdentifier,
+                   pending.PacketIdentifier,
+                   dup: true,
+                   propertiesBuffer,
+                   ct))
             {
-               var timeSpent = (uint)(DateTimeOffset.UtcNow - pending.Message.CreatedAt).TotalSeconds;
-               if (timeSpent >= pending.Message.MessageExpiryInterval)
-               {
-                  session.AcknowledgePublish(pending.PacketIdentifier);
-                  continue;
-               }
+               session.AcknowledgePublish(pending.PacketIdentifier);
             }
-
-            await SendPublishMessageAsync(
-               client,
-               pending.Message,
-               pending.QualityOfService,
-               pending.RetainAsPublished,
-               pending.SubscriptionIdentifier,
-               pending.PacketIdentifier,
-               dup: true,
-               propertiesBuffer,
-               ct);
          }
 
          await DrainOfflineQueueAsync(client, session, propertiesBuffer, ct);
@@ -971,7 +1097,7 @@ public sealed partial class MqttServer : IAsyncDisposable
       {
          if (acquired)
          {
-            session.DeliverySemaphore.Release();
+            ReleaseDeliverySemaphoreAndScheduleNext(session, client);
          }
       }
    }
@@ -1011,8 +1137,23 @@ public sealed partial class MqttServer : IAsyncDisposable
       {
          if (acquired)
          {
-            session.DeliverySemaphore.Release();
+            ReleaseDeliverySemaphoreAndScheduleNext(session, client);
          }
+      }
+   }
+
+   internal static void ReleaseDeliverySemaphoreAndScheduleNext(MqttSession session, MqttServerClient? client)
+   {
+      session.DeliverySemaphore.Release();
+      if (client is not null
+          && client.IsConnected
+          && !client.IsFenced
+          && !client.CancellationToken.IsCancellationRequested
+          && session.IsActiveClient(client)
+          && session.OfflineQueueCount > 0
+          && session.GetUnacknowledgedPublishCount() < session.ClientReceiveMaximum)
+      {
+         _ = Task.Run(() => DeliverNextQueuedMessagesAsync(session));
       }
    }
 
@@ -1034,20 +1175,28 @@ public sealed partial class MqttServer : IAsyncDisposable
             break;
          }
 
-         if (queuedMessage.Message.MessageExpiryInterval > 0)
-         {
-            var timeSpent = (uint)(DateTimeOffset.UtcNow - queuedMessage.Message.CreatedAt).TotalSeconds;
-            if (timeSpent >= queuedMessage.Message.MessageExpiryInterval)
-            {
-               continue; // Message expired, discard and skip
-            }
-         }
-
          var targetQos = queuedMessage.QualityOfService;
-         var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
+         var tentativeId = targetQos > 0 ? (ushort)1 : (ushort)0;
+
+         if (!TryCreateOutgoingPublishPacket(
+                client,
+                queuedMessage.Message,
+                targetQos,
+                queuedMessage.RetainAsPublished && queuedMessage.Message.Retain,
+                queuedMessage.SubscriptionIdentifier,
+                tentativeId,
+                dup: false,
+                propertiesBuffer,
+                out var publishPacket))
+         {
+            continue; // Expired or exceeds client MaximumPacketSize
+         }
 
          if (targetQos > 0)
          {
+            var packetId = session.GenerateNextPacketIdentifier();
+            publishPacket.PacketIdentifier = packetId;
+
             var pendingPublish = new MqttPendingPublish
             {
                PacketIdentifier = packetId,
@@ -1064,16 +1213,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             }
          }
 
-         await SendPublishMessageAsync(
-            client,
-            queuedMessage.Message,
-            targetQos,
-            queuedMessage.RetainAsPublished,
-            queuedMessage.SubscriptionIdentifier,
-            packetId,
-            dup: false,
-            propertiesBuffer,
-            ct);
+         await client.Stream.Send(in publishPacket, client.ProtocolVersion, ct);
       }
    }
 
