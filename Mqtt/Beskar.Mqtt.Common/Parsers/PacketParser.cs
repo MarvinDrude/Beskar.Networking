@@ -39,7 +39,9 @@ public ref struct PacketParser(
          return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.NotEnoughData);
       }
 
-      if (TryParseBodyLength(ref reader, out var fixedHeader,
+      var copyReader = reader;
+
+      if (TryParseBodyLength(ref copyReader, out var fixedHeader,
              out var headerLength, out var bodyLength)
           is not PacketDispatchResult.Success and var res)
       {
@@ -47,11 +49,13 @@ public ref struct PacketParser(
          return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(res);
       }
 
-      if (reader.Remaining < bodyLength)
+      if (copyReader.Remaining < bodyLength)
       {
          // enough data for the entire body not provided
          return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.NotEnoughData);
       }
+
+      reader = copyReader;
 
       var rawPacket = new RawPacket(fixedHeader, headerLength + bodyLength, bodyLength)
       {
@@ -180,9 +184,10 @@ public ref struct PacketParser(
          return new StringError("Could not read protocol code.");
       }
 
-      // Remove the mosquitto try_private flag (MQTT 3.1.1 Bridge)
-      tryPrivate = (protocolCode & 0x80) > 0;
-      protocolCode &= 0x7F;
+      // The Mosquitto try_private bit (0x80) only applies to MQTT 3.1 / 3.1.1 bridges.
+      // MQTT 5.0 strictly requires Protocol Level 5 without the high bit set.
+      var hasTryPrivateFlag = (protocolCode & 0x80) != 0;
+      var strippedProtocolCode = (byte)(protocolCode & 0x7F);
 
       if (utf8Bytes.SequenceEqual("MQTT"u8))
       {
@@ -191,8 +196,9 @@ public ref struct PacketParser(
             return MqttProtocolVersion.V50;
          }
 
-         if (protocolCode == 4)
+         if (strippedProtocolCode == 4)
          {
+            tryPrivate = hasTryPrivateFlag;
             return MqttProtocolVersion.V311;
          }
 
@@ -201,8 +207,9 @@ public ref struct PacketParser(
 
       if (utf8Bytes.SequenceEqual("MQIsdp"u8))
       {
-         if (protocolCode == 3)
+         if (strippedProtocolCode == 3)
          {
+            tryPrivate = hasTryPrivateFlag;
             return MqttProtocolVersion.V31;
          }
 
