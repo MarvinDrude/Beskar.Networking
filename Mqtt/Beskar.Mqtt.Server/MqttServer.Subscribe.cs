@@ -86,11 +86,14 @@ public sealed partial class MqttServer
             if (matched.Count > 0 && session.Client is { IsConnected: true } client)
             {
                var subId = subscriptionIdentifier;
-               var localRetainAsPublished = filter.RetainAsPublished;
                _ = Task.Run(async () =>
                {
+                  var semaphoreAcquired = false;
                   try
                   {
+                     await session.DeliverySemaphore.WaitAsync(client.CancellationToken);
+                     semaphoreAcquired = true;
+
                      var propertiesBuffer = new byte[128];
                      foreach (var message in matched)
                      {
@@ -106,26 +109,48 @@ public sealed partial class MqttServer
                         }
 
                         var targetQos = (QualityOfServiceType)Math.Min((int)qos, (int)message.QualityOfService);
-                        var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
+                        ushort packetId = 0;
 
                         if (targetQos > 0)
                         {
-                           session.AddUnacknowledgedPublish(new MqttPendingPublish
+                           if (session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum)
+                           {
+                              session.EnqueueOfflineMessage(new MqttQueuedMessage(
+                                 message,
+                                 targetQos,
+                                 retainAsPublished: true,
+                                 subId));
+                              continue;
+                           }
+
+                           packetId = session.GenerateNextPacketIdentifier();
+                           var pending = new MqttPendingPublish
                            {
                               PacketIdentifier = packetId,
                               Message = message,
                               QualityOfService = targetQos,
-                              RetainAsPublished = localRetainAsPublished,
+                              RetainAsPublished = true,
                               SubscriptionIdentifier = subId
-                           });
+                           };
+
+                           if (!session.TryAddUnacknowledgedPublish(pending))
+                           {
+                              session.EnqueueOfflineMessage(new MqttQueuedMessage(
+                                 message,
+                                 targetQos,
+                                 retainAsPublished: true,
+                                 subId));
+                              continue;
+                           }
                         }
 
-                        var retainAsPublished = client.ProtocolVersion is not MqttProtocolVersion.V50 || localRetainAsPublished;
+                        // Per MQTT §3.3.1.3, RETAIN must be set on initial retained deliveries
+                        // regardless of the subscription's Retain As Published option.
                         await SendPublishMessageAsync(
                            client,
                            message,
                            targetQos,
-                           retainAsPublished,
+                           retainAsPublished: true,
                            subId,
                            packetId,
                            dup: false,
@@ -136,6 +161,13 @@ public sealed partial class MqttServer
                   catch (Exception)
                   {
                      // ignored
+                  }
+                  finally
+                  {
+                     if (semaphoreAcquired)
+                     {
+                        session.DeliverySemaphore.Release();
+                     }
                   }
                });
             }

@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Text;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
@@ -78,6 +79,7 @@ public sealed partial class MqttServer : IAsyncDisposable
    private CancellationTokenSource _cancellationTokenSource = new();
 
    private readonly MqttKeepAliveService _keepAliveService;
+   private readonly ConcurrentDictionary<Task, byte> _activeClientTasks = new();
 
    internal MqttServer(INetworkListener[] listeners, MqttServerOptions options)
    {
@@ -210,6 +212,22 @@ public sealed partial class MqttServer : IAsyncDisposable
          // ignored
       }
 
+      MqttServerClient[] activeClients;
+      using (var clientsResult = await ClientSessions.GetClients())
+      {
+         activeClients = [.. clientsResult.WrittenSpan];
+      }
+
+      if (activeClients.Length > 0)
+      {
+         await Task.WhenAll(activeClients.Select(DisconnectClientAsync));
+      }
+
+      foreach (var listener in _listeners)
+      {
+         await listener.UnbindAsync();
+      }
+
       try
       {
          await _cancellationTokenSource.CancelAsync();
@@ -220,11 +238,17 @@ public sealed partial class MqttServer : IAsyncDisposable
          // already disposed
       }
 
-      // notify clients
-
-      foreach (var listener in _listeners)
+      var pendingTasks = _activeClientTasks.Keys.ToArray();
+      if (pendingTasks.Length > 0)
       {
-         await listener.UnbindAsync();
+         try
+         {
+            await Task.WhenAll(pendingTasks).WaitAsync(TimeSpan.FromSeconds(5));
+         }
+         catch (Exception)
+         {
+            // ignored
+         }
       }
 
       State = MqttServerState.Stopped;
@@ -235,6 +259,29 @@ public sealed partial class MqttServer : IAsyncDisposable
       }
 
       return true;
+
+      async Task DisconnectClientAsync(MqttServerClient client)
+      {
+         try
+         {
+            await client.DisconnectAsync(options);
+         }
+         catch (Exception)
+         {
+            // ignored
+         }
+      }
+   }
+
+   private void TrackClientTask(Task task)
+   {
+      _activeClientTasks.TryAdd(task, 0);
+      _ = task.ContinueWith(
+         static (completedTask, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(completedTask, out _),
+         _activeClientTasks,
+         CancellationToken.None,
+         TaskContinuationOptions.ExecuteSynchronously,
+         TaskScheduler.Default);
    }
 
    private async Task RunAcceptTask(INetworkListener listener, CancellationToken ct)
@@ -246,7 +293,7 @@ public sealed partial class MqttServer : IAsyncDisposable
             var session = await listener.AcceptSessionAsync(ct);
             if (session.Failed) continue;
 
-            _ = Task.Run(() => RunClientTask(listener, session.Success, ct), ct);
+            TrackClientTask(Task.Run(() => RunClientTask(listener, session.Success, ct), CancellationToken.None));
          }
          catch (Exception)
          {
@@ -605,6 +652,8 @@ public sealed partial class MqttServer : IAsyncDisposable
                   break;
                }
 
+               client.UpdateLastPacketReceivedTimestamp();
+
                consumed = buffer.GetPosition(parsedBytes);
                buffer = buffer.Slice(consumed);
             }
@@ -857,8 +906,12 @@ public sealed partial class MqttServer : IAsyncDisposable
    private static async Task DeliverOfflineMessagesAsync(MqttServerClient client, MqttSession session,
       CancellationToken ct)
    {
+      var acquired = false;
       try
       {
+         await session.DeliverySemaphore.WaitAsync(ct);
+         acquired = true;
+
          var propertiesBuffer = new byte[128];
          var unacknowledged = session.GetUnacknowledgedPublishes();
 
@@ -867,6 +920,18 @@ public sealed partial class MqttServer : IAsyncDisposable
             if (!client.IsConnected || ct.IsCancellationRequested)
             {
                break;
+            }
+
+            if (pending.IsPubRecReceived)
+            {
+               var pubRel = new PubRelPacket
+               {
+                  PacketIdentifier = pending.PacketIdentifier,
+                  ReasonCode = PubRelReasonCode.Success
+               };
+
+               await client.Stream.Send(in pubRel, client.ProtocolVersion, ct);
+               continue;
             }
 
             if (pending.Message.MessageExpiryInterval > 0)
@@ -891,58 +956,23 @@ public sealed partial class MqttServer : IAsyncDisposable
                ct);
          }
 
-         while (client.IsConnected && !ct.IsCancellationRequested)
-         {
-            if (session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum)
-            {
-               break;
-            }
-
-            if (!session.TryDequeueOfflineMessage(out var queuedMessage))
-            {
-               break;
-            }
-
-            if (queuedMessage.Message.MessageExpiryInterval > 0)
-            {
-               var timeSpent = (uint)(DateTimeOffset.UtcNow - queuedMessage.Message.CreatedAt).TotalSeconds;
-               if (timeSpent >= queuedMessage.Message.MessageExpiryInterval)
-               {
-                  continue; // Message expired, discard and skip
-               }
-            }
-
-            var targetQos = queuedMessage.QualityOfService;
-            var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
-
-            if (targetQos > 0)
-            {
-               session.AddUnacknowledgedPublish(new MqttPendingPublish
-               {
-                  PacketIdentifier = packetId,
-                  Message = queuedMessage.Message,
-                  QualityOfService = targetQos,
-                  RetainAsPublished = queuedMessage.RetainAsPublished,
-                  SubscriptionIdentifier = queuedMessage.SubscriptionIdentifier
-               });
-            }
-
-            await SendPublishMessageAsync(
-               client,
-               queuedMessage.Message,
-               targetQos,
-               queuedMessage.RetainAsPublished,
-               queuedMessage.SubscriptionIdentifier,
-               packetId,
-               dup: false,
-               propertiesBuffer,
-               ct);
-         }
+         await DrainOfflineQueueAsync(client, session, propertiesBuffer, ct);
+      }
+      catch (OperationCanceledException) when (ct.IsCancellationRequested)
+      {
+         // ignored
       }
       catch (Exception ex)
       {
          TraceLogger.LogServerError("MqttServer: Error delivering offline messages to client '{0}': {1}",
             client.ClientIdUtf8Bytes.GetUtf8String(), ex.Message);
+      }
+      finally
+      {
+         if (acquired)
+         {
+            session.DeliverySemaphore.Release();
+         }
       }
    }
 
@@ -951,73 +981,99 @@ public sealed partial class MqttServer : IAsyncDisposable
       var client = session.Client;
       if (client is null || !client.IsConnected) return;
 
-      if (!await session.DeliverySemaphore.WaitAsync(0)) return;
+      var initialCt = client.CancellationToken;
+      var acquired = false;
 
       try
       {
+         await session.DeliverySemaphore.WaitAsync(initialCt);
+         acquired = true;
+
+         client = session.Client;
+         if (client is null || !client.IsConnected) return;
+
          using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(client.CancellationToken);
          var ct = combinedCts.Token;
 
-         try
-         {
-            var propertiesBuffer = new byte[128];
-            while (client.IsConnected && !ct.IsCancellationRequested)
-            {
-               if (session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum)
-               {
-                  break;
-               }
-
-               if (!session.TryDequeueOfflineMessage(out var queuedMessage))
-               {
-                  break;
-               }
-
-               if (queuedMessage.Message.MessageExpiryInterval > 0)
-               {
-                  var timeSpent = (uint)(DateTimeOffset.UtcNow - queuedMessage.Message.CreatedAt).TotalSeconds;
-                  if (timeSpent >= queuedMessage.Message.MessageExpiryInterval)
-                  {
-                     continue; // Message expired, discard and skip
-                  }
-               }
-
-               var targetQos = queuedMessage.QualityOfService;
-               var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
-
-               if (targetQos > 0)
-               {
-                  session.AddUnacknowledgedPublish(new MqttPendingPublish
-                  {
-                     PacketIdentifier = packetId,
-                     Message = queuedMessage.Message,
-                     QualityOfService = targetQos,
-                     RetainAsPublished = queuedMessage.RetainAsPublished,
-                     SubscriptionIdentifier = queuedMessage.SubscriptionIdentifier
-                  });
-               }
-
-               await SendPublishMessageAsync(
-                  client,
-                  queuedMessage.Message,
-                  targetQos,
-                  queuedMessage.RetainAsPublished,
-                  queuedMessage.SubscriptionIdentifier,
-                  packetId,
-                  dup: false,
-                  propertiesBuffer,
-                  ct);
-            }
-         }
-         catch (Exception ex)
-         {
-            TraceLogger.LogServerError("MqttServer: Error delivering next queued messages to client '{0}': {1}",
-               client.ClientIdUtf8Bytes.GetUtf8String(), ex.Message);
-         }
+         var propertiesBuffer = new byte[128];
+         await DrainOfflineQueueAsync(client, session, propertiesBuffer, ct);
+      }
+      catch (OperationCanceledException) when (initialCt.IsCancellationRequested)
+      {
+         // ignored
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogServerError("MqttServer: Error delivering next queued messages to client '{0}': {1}",
+            client?.ClientIdUtf8Bytes.GetUtf8String() ?? Encoding.UTF8.GetString(session.ClientIdUtf8Bytes), ex.Message);
       }
       finally
       {
-         session.DeliverySemaphore.Release();
+         if (acquired)
+         {
+            session.DeliverySemaphore.Release();
+         }
+      }
+   }
+
+   private static async Task DrainOfflineQueueAsync(
+      MqttServerClient client,
+      MqttSession session,
+      byte[] propertiesBuffer,
+      CancellationToken ct)
+   {
+      while (client.IsConnected && !ct.IsCancellationRequested)
+      {
+         if (session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum)
+         {
+            break;
+         }
+
+         if (!session.TryDequeueOfflineMessage(out var queuedMessage))
+         {
+            break;
+         }
+
+         if (queuedMessage.Message.MessageExpiryInterval > 0)
+         {
+            var timeSpent = (uint)(DateTimeOffset.UtcNow - queuedMessage.Message.CreatedAt).TotalSeconds;
+            if (timeSpent >= queuedMessage.Message.MessageExpiryInterval)
+            {
+               continue; // Message expired, discard and skip
+            }
+         }
+
+         var targetQos = queuedMessage.QualityOfService;
+         var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
+
+         if (targetQos > 0)
+         {
+            var pendingPublish = new MqttPendingPublish
+            {
+               PacketIdentifier = packetId,
+               Message = queuedMessage.Message,
+               QualityOfService = targetQos,
+               RetainAsPublished = queuedMessage.RetainAsPublished,
+               SubscriptionIdentifier = queuedMessage.SubscriptionIdentifier
+            };
+
+            if (!session.TryAddUnacknowledgedPublish(pendingPublish))
+            {
+               session.EnqueueOfflineMessage(queuedMessage);
+               break;
+            }
+         }
+
+         await SendPublishMessageAsync(
+            client,
+            queuedMessage.Message,
+            targetQos,
+            queuedMessage.RetainAsPublished,
+            queuedMessage.SubscriptionIdentifier,
+            packetId,
+            dup: false,
+            propertiesBuffer,
+            ct);
       }
    }
 
