@@ -36,16 +36,29 @@ public readonly ref partial struct PacketVersion5Parser
          return new StringError("Could not read properties.");
       }
 
+      var hasSubscriptionId = false;
       var enumerator = packet.GetProperties();
+
       while (enumerator.MoveNext())
       {
          switch (enumerator.Current.Identifier)
          {
             case PropertyIdentifier.SubscriptionIdentifier:
+               if (hasSubscriptionId)
+               {
+                  return new StringError("Protocol Violation: Duplicate Subscription Identifier property in SUBSCRIBE packet.");
+               }
+
                var subIdResult = enumerator.Current.AsSubscriptionIdentifier();
                if (subIdResult.Failed) return subIdResult.Error;
 
+               if (subIdResult.Success == 0)
+               {
+                  return new StringError("Protocol Violation: Subscription Identifier cannot be 0.");
+               }
+
                packet.SubscriptionIdentifier = subIdResult.Success;
+               hasSubscriptionId = true;
                break;
             case PropertyIdentifier.UserProperty:
                break;

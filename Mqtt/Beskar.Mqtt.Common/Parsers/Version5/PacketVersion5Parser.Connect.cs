@@ -37,11 +37,6 @@ public readonly ref partial struct PacketVersion5Parser
       var passwordFlagRaw = (connectFlags & 0x40) > 0;
       var usernameFlag = (connectFlags & 0x80) > 0;
 
-      if (passwordFlagRaw && !usernameFlag)
-      {
-         return new StringError("Protocol Violation: Password Flag is set to 1, but User Name Flag is set to 0.");
-      }
-
       if (!willFlag)
       {
          if (willQoS != 0 || willRetain)
@@ -73,49 +68,45 @@ public readonly ref partial struct PacketVersion5Parser
 
       while (propEnumerator.MoveNext())
       {
-         switch (propEnumerator.Current.Identifier)
+         var identifier = propEnumerator.Current.Identifier;
+         switch (identifier)
          {
             case PropertyIdentifier.SessionExpiryInterval:
+               if (!TryMarkProperty(ref foundFlags, 0x01)) return DuplicatePropertyError(identifier);
                packet.SessionExpiryInterval = propEnumerator.Current.AsSessionExpiryInterval();
-               foundFlags |= 0x01;
                break;
             case PropertyIdentifier.RequestProblemInformation:
+               if (!TryMarkProperty(ref foundFlags, 0x02)) return DuplicatePropertyError(identifier);
                packet.RequestProblemInfo = propEnumerator.Current.AsRequestProblemInfo();
-               foundFlags |= 0x02;
                break;
             case PropertyIdentifier.RequestResponseInformation:
+               if (!TryMarkProperty(ref foundFlags, 0x04)) return DuplicatePropertyError(identifier);
                packet.RequestResponseInfo = propEnumerator.Current.AsRequestResponseInfo();
-               foundFlags |= 0x04;
                break;
             case PropertyIdentifier.MaximumPacketSize:
+               if (!TryMarkProperty(ref foundFlags, 0x08)) return DuplicatePropertyError(identifier);
                packet.MaximumPacketSize = propEnumerator.Current.AsMaximumPacketSize();
-               foundFlags |= 0x08;
                break;
             case PropertyIdentifier.AuthenticationMethod:
+               if (!TryMarkProperty(ref foundFlags, 0x10)) return DuplicatePropertyError(identifier);
                packet.AuthenticationMethodUtf8Bytes = propEnumerator.Current.AsAuthenticationMethod();
-               foundFlags |= 0x10;
                break;
             case PropertyIdentifier.AuthenticationData:
+               if (!TryMarkProperty(ref foundFlags, 0x20)) return DuplicatePropertyError(identifier);
                packet.AuthenticationDataBytes = propEnumerator.Current.AsAuthenticationData();
-               foundFlags |= 0x20;
                break;
             case PropertyIdentifier.ReceiveMaximum:
+               if (!TryMarkProperty(ref foundFlags, 0x40)) return DuplicatePropertyError(identifier);
                packet.ReceiveMaximum = propEnumerator.Current.AsReceiveMaximum();
-               foundFlags |= 0x40;
                break;
             case PropertyIdentifier.TopicAliasMaximum:
+               if (!TryMarkProperty(ref foundFlags, 0x80)) return DuplicatePropertyError(identifier);
                packet.TopicAliasMaximum = propEnumerator.Current.AsTopicAliasMaximum();
-               foundFlags |= 0x80;
                break;
             case PropertyIdentifier.UserProperty:
                break;
             default:
-               return new StringError($"Invalid property identifier. ({propEnumerator.Current.Identifier})");
-         }
-
-         if (foundFlags == 0xFF)
-         {
-            break;
+               return new StringError($"Invalid property identifier. ({identifier})");
          }
       }
 
@@ -140,41 +131,37 @@ public readonly ref partial struct PacketVersion5Parser
 
          while (enumerator.MoveNext())
          {
-            switch (enumerator.Current.Identifier)
+            var identifier = enumerator.Current.Identifier;
+            switch (identifier)
             {
                case PropertyIdentifier.PayloadFormatIndicator:
+                  if (!TryMarkProperty(ref foundFlags, 0b000001)) return DuplicatePropertyError(identifier);
                   packet.WillPayloadFormatIndicator = enumerator.Current.AsPayloadFormat();
-                  foundFlags |= 0b000001;
                   break;
                case PropertyIdentifier.MessageExpiryInterval:
+                  if (!TryMarkProperty(ref foundFlags, 0b000010)) return DuplicatePropertyError(identifier);
                   packet.WillMessageExpiryInterval = enumerator.Current.AsMessageExpiryInterval();
-                  foundFlags |= 0b000010;
                   break;
                case PropertyIdentifier.WillDelayInterval:
+                  if (!TryMarkProperty(ref foundFlags, 0b000100)) return DuplicatePropertyError(identifier);
                   packet.WillDelayInterval = enumerator.Current.AsWillDelayInterval();
-                  foundFlags |= 0b000100;
                   break;
                case PropertyIdentifier.ContentType:
+                  if (!TryMarkProperty(ref foundFlags, 0b001000)) return DuplicatePropertyError(identifier);
                   packet.WillContentTypeUtf8Bytes = enumerator.Current.AsContentType();
-                  foundFlags |= 0b001000;
                   break;
                case PropertyIdentifier.CorrelationData:
+                  if (!TryMarkProperty(ref foundFlags, 0b010000)) return DuplicatePropertyError(identifier);
                   packet.WillCorrelationDataBytes = enumerator.Current.AsCorrelationData();
-                  foundFlags |= 0b010000;
                   break;
                case PropertyIdentifier.ResponseTopic:
+                  if (!TryMarkProperty(ref foundFlags, 0b100000)) return DuplicatePropertyError(identifier);
                   packet.WillResponseTopicUtf8Bytes = enumerator.Current.AsResponseTopic();
-                  foundFlags |= 0b100000;
                   break;
                case PropertyIdentifier.UserProperty:
                   break;
                default:
-                  return new StringError($"Invalid property identifier. ({enumerator.Current.Identifier})");
-            }
-
-            if (foundFlags == 0b111111)
-            {
-               break;
+                  return new StringError($"Invalid property identifier. ({identifier})");
             }
          }
 
@@ -210,4 +197,18 @@ public readonly ref partial struct PacketVersion5Parser
 
       return PacketDispatchResult.Success;
    }
+
+   private static bool TryMarkProperty(ref byte foundFlags, byte bit)
+   {
+      if ((foundFlags & bit) != 0)
+      {
+         return false;
+      }
+
+      foundFlags |= bit;
+      return true;
+   }
+
+   private static StringError DuplicatePropertyError(PropertyIdentifier identifier)
+      => new($"Protocol Violation: Duplicate property identifier. ({identifier})");
 }
