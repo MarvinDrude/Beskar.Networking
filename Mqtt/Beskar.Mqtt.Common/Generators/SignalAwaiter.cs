@@ -31,6 +31,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
    // Bit 1 = Pruned, Bit 2 = Disposed, Bit 4 = ResultRetrieved (or no continuation registered)
    private int _lifecycleState;
 
+   private readonly Lock _registrationLock = new();
    private CancellationTokenRegistration _cancellationRegistration;
 
    private ManualResetValueTaskSourceCore<TResponseMessage> _core = new()
@@ -40,13 +41,40 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    private volatile SignalBroker? _broker;
 
+   private void ClearCancellationRegistration()
+   {
+      CancellationTokenRegistration registration;
+      lock (_registrationLock)
+      {
+         registration = _cancellationRegistration;
+         _cancellationRegistration = default;
+      }
+
+      registration.Dispose();
+   }
+
    public ValueTask<TResponseMessage> WaitOneAsync(CancellationToken cancellationToken)
    {
-      if (cancellationToken.CanBeCanceled)
+      if (cancellationToken.CanBeCanceled && Volatile.Read(ref _state) == 0)
       {
-         _cancellationRegistration = cancellationToken.Register(
+         var registration = cancellationToken.Register(
             static (state, token) => ((SignalAwaiter<TResponseMessage>)state!).Cancel(token),
             this);
+
+         var keepRegistration = false;
+         lock (_registrationLock)
+         {
+            if (Volatile.Read(ref _state) == 0)
+            {
+               _cancellationRegistration = registration;
+               keepRegistration = true;
+            }
+         }
+
+         if (!keepRegistration)
+         {
+            registration.Dispose();
+         }
       }
 
       return new ValueTask<TResponseMessage>(this, _core.Version);
@@ -56,9 +84,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
    {
       if (Interlocked.CompareExchange(ref _state, 1, 0) == 0)
       {
-         _cancellationRegistration.Dispose();
-         _cancellationRegistration = default;
-
+         ClearCancellationRegistration();
          _core.SetResult(message);
 
          return true;
@@ -88,9 +114,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
    {
       if (Interlocked.CompareExchange(ref _state, 2, 0) == 0)
       {
-         _cancellationRegistration.Dispose();
-         _cancellationRegistration = default;
-
+         ClearCancellationRegistration();
          _core.SetException(new OperationCanceledException(token));
       }
    }
@@ -99,9 +123,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
    {
       if (Interlocked.CompareExchange(ref _state, 2, 0) == 0)
       {
-         _cancellationRegistration.Dispose();
-         _cancellationRegistration = default;
-
+         ClearCancellationRegistration();
          _core.SetException(exception);
       }
    }
@@ -137,8 +159,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
 
    public void Reset(ushort newIdentifier, SignalBroker broker)
    {
-      _cancellationRegistration.Dispose();
-      _cancellationRegistration = default;
+      ClearCancellationRegistration();
 
       _core.Reset();
 
@@ -163,8 +184,7 @@ public sealed class SignalAwaiter<TResponseMessage>(ushort identifier)
       var previousState = Interlocked.Exchange(ref _state, 3);
       if (previousState == 3) return;
 
-      _cancellationRegistration.Dispose();
-      _cancellationRegistration = default;
+      ClearCancellationRegistration();
 
       if (previousState == 0)
       {

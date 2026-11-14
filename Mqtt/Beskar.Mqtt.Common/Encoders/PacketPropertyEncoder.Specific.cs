@@ -72,7 +72,6 @@ public ref partial struct PacketPropertyEncoder
 
    public void WriteServerKeepAlive(ushort value)
    {
-      if (value == 0) return;
       Write(PropertyIdentifier.ServerKeepAlive, value);
    }
 
@@ -123,7 +122,6 @@ public ref partial struct PacketPropertyEncoder
 
    public void WriteMessageExpiryInterval(uint value)
    {
-      if (value == 0) return;
       Write(PropertyIdentifier.MessageExpiryInterval, value);
    }
 

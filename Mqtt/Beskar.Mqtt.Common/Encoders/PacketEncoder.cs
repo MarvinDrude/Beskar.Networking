@@ -57,17 +57,7 @@ public static class PacketEncoder
       writer.WriteBigEndian(length);
       if (length == 0) return;
 
-      if (sequence.IsSingleSegment)
-      {
-         writer.WriteBytes(sequence.First.Span);
-      }
-      else
-      {
-         foreach (var memory in sequence)
-         {
-            writer.WriteBytes(memory.Span);
-         }
-      }
+      WriteRawSequence(ref writer, sequence);
    }
 
    [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -105,13 +95,20 @@ public static class PacketEncoder
 
       if (length == 0) return;
 
-      if (properties.IsSingleSegment)
+      WriteRawSequence(ref writer, properties);
+   }
+
+   public static void WriteRawSequence(ref ByteWriter writer, ReadOnlySequence<byte> sequence)
+   {
+      if (sequence.IsEmpty) return;
+
+      if (sequence.IsSingleSegment)
       {
-         writer.WriteBytes(properties.First.Span);
+         writer.WriteBytes(sequence.First.Span);
       }
       else
       {
-         foreach (var memory in properties)
+         foreach (var memory in sequence)
          {
             writer.WriteBytes(memory.Span);
          }
