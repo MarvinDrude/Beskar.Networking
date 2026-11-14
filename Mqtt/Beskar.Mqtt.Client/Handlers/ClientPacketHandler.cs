@@ -22,9 +22,12 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
    {
       TraceLogger.LogClientInfo("ClientPacketHandler: Received AUTH packet from server.");
       var result = AuthPacketResult.Create(in packet);
-      _client.TryDispatch(in result, 0);
+      if (_client.TryDispatch(in result, 0))
+      {
+         return ValueTask.CompletedTask;
+      }
 
-      return ValueTask.CompletedTask;
+      return _client.HandleUnsolicitedAuthAsync(result, ct);
    }
 
    public ValueTask ExecuteAsync(INetworkStream stream, in ConnAckPacket packet, CancellationToken ct = default)
