@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
@@ -19,23 +20,83 @@ public readonly ref partial struct PacketVersion5Encoder(IBufferWriter<byte> wri
 {
    private readonly IBufferWriter<byte> _writer = writer;
 
-   private static bool HasReasonStringProperty(ReadOnlyMemory<byte> propertiesBytes)
+   private static ulong CollectPresentProperties(ReadOnlySequence<byte> propertiesBytes)
    {
       if (propertiesBytes.IsEmpty)
       {
-         return false;
+         return 0UL;
       }
 
-      var enumerator = new MqttPropertyEnumerator(new ReadOnlySequence<byte>(propertiesBytes));
+      ulong mask = 0;
+      var enumerator = new MqttPropertyEnumerator(propertiesBytes);
       while (enumerator.MoveNext())
       {
-         if (enumerator.Current.Identifier == PropertyIdentifier.ReasonString)
+         var bit = (int)enumerator.Current.Identifier;
+         if (bit < 64)
          {
-            return true;
+            mask |= 1UL << bit;
          }
       }
 
-      return false;
+      return mask;
+   }
+
+   private static ulong CollectPresentProperties(ReadOnlyMemory<byte> propertiesBytes)
+   {
+      return CollectPresentProperties(new ReadOnlySequence<byte>(propertiesBytes));
+   }
+
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
+   private static bool HasProperty(ulong mask, PropertyIdentifier identifier)
+   {
+      return (mask & (1UL << (int)identifier)) != 0;
+   }
+
+   private static int CalculateReasonPropertiesDataLength(
+      ReadOnlyMemory<byte> reasonStringUtf8Bytes,
+      ReadOnlyMemory<byte> propertiesBytes)
+   {
+      var length = propertiesBytes.Length;
+      if (!reasonStringUtf8Bytes.IsEmpty &&
+          !HasProperty(CollectPresentProperties(propertiesBytes), PropertyIdentifier.ReasonString))
+      {
+         length += 1 + 2 + reasonStringUtf8Bytes.Length;
+      }
+
+      return length;
+   }
+
+   private static void WriteReasonProperties(
+      ref ByteWriter writer,
+      ReadOnlyMemory<byte> reasonStringUtf8Bytes,
+      ReadOnlyMemory<byte> propertiesBytes,
+      int propsDataLen)
+   {
+      PacketEncoder.WriteVariableByteInteger(ref writer, (uint)propsDataLen);
+
+      if (propsDataLen == 0)
+      {
+         return;
+      }
+
+      if (!reasonStringUtf8Bytes.IsEmpty &&
+          !HasProperty(CollectPresentProperties(propertiesBytes), PropertyIdentifier.ReasonString))
+      {
+         var propEncoder = new PacketPropertyEncoder(writer);
+         try
+         {
+            propEncoder.Write(PropertyIdentifier.ReasonString, reasonStringUtf8Bytes.Span);
+         }
+         finally
+         {
+            writer = propEncoder.Writer;
+         }
+      }
+
+      if (!propertiesBytes.IsEmpty)
+      {
+         writer.WriteBytes(propertiesBytes.Span);
+      }
    }
 
    public void Write<TPacket>(in TPacket packet)

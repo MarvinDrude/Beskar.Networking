@@ -10,35 +10,38 @@ public readonly ref partial struct PacketVersion5Encoder
 {
    public void WriteAuth(in AuthPacket packet)
    {
-      var length = CalculateLength(packet);
+      var existingMask = CollectPresentProperties(packet.PropertiesBytes);
+      var propertiesLength = CalculatePropertiesLength(in packet, existingMask);
+      var remainingLength = CalculateRemainingLength(in packet, propertiesLength);
+      var length = PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
       var writer = new ByteWriter(_writer.GetSpan(length));
 
       try
       {
-         var remainingLength = CalculateRemainingLength(packet);
          PacketEncoder.WriteFixedHeader(ref writer, MqttPacketType.Auth, 0, remainingLength);
 
          if (remainingLength > 0)
          {
             writer.WriteByte((byte)packet.ReasonCode);
-            
-            var propertiesLength = CalculatePropertiesLength(packet);
             PacketEncoder.WriteVariableByteInteger(ref writer, (uint)propertiesLength);
-            
+
             if (propertiesLength > 0)
             {
                var propEncoder = writer.AsAuthPropertyEncoder();
                try
                {
-                  if (!packet.AuthenticationMethodUtf8Bytes.IsEmpty)
+                  if (!packet.AuthenticationMethodUtf8Bytes.IsEmpty
+                      && !HasProperty(existingMask, PropertyIdentifier.AuthenticationMethod))
                   {
                      propEncoder.Encoder.Write(PropertyIdentifier.AuthenticationMethod, packet.AuthenticationMethodUtf8Bytes);
                   }
-                  if (!packet.AuthenticationDataBytes.IsEmpty)
+                  if (!packet.AuthenticationDataBytes.IsEmpty
+                      && !HasProperty(existingMask, PropertyIdentifier.AuthenticationData))
                   {
                      propEncoder.Encoder.Write(PropertyIdentifier.AuthenticationData, packet.AuthenticationDataBytes);
                   }
-                  if (!packet.ReasonUtf8Bytes.IsEmpty)
+                  if (!packet.ReasonUtf8Bytes.IsEmpty
+                      && !HasProperty(existingMask, PropertyIdentifier.ReasonString))
                   {
                      propEncoder.Encoder.Write(PropertyIdentifier.ReasonString, packet.ReasonUtf8Bytes);
                   }
@@ -48,20 +51,7 @@ public readonly ref partial struct PacketVersion5Encoder
                   writer = propEncoder.Encoder.Writer;
                }
 
-               if (!packet.PropertiesBytes.IsEmpty)
-               {
-                  if (packet.PropertiesBytes.IsSingleSegment)
-                  {
-                     writer.WriteBytes(packet.PropertiesBytes.First.Span);
-                  }
-                  else
-                  {
-                     foreach (var memory in packet.PropertiesBytes)
-                     {
-                        writer.WriteBytes(memory.Span);
-                     }
-                  }
-               }
+               PacketEncoder.WriteRawSequence(ref writer, packet.PropertiesBytes);
             }
          }
 
@@ -168,39 +158,31 @@ public readonly ref partial struct PacketVersion5Encoder
       return len;
    }
 
-   private static int CalculateLength(in AuthPacket packet)
+   private static int CalculateRemainingLength(in AuthPacket packet, int propertiesLength)
    {
-      var remainingLength = CalculateRemainingLength(packet);
-      return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
-   }
-
-   private static int CalculateRemainingLength(in AuthPacket packet)
-   {
-      if (packet.ReasonCode == AuthenticateReasonCode.Success 
-          && packet.AuthenticationMethodUtf8Bytes.IsEmpty 
-          && packet.AuthenticationDataBytes.IsEmpty 
-          && packet.ReasonUtf8Bytes.IsEmpty 
-          && packet.PropertiesBytes.IsEmpty)
+      if (packet.ReasonCode == AuthenticateReasonCode.Success && propertiesLength == 0)
       {
          return 0;
       }
 
-      var propertiesLength = CalculatePropertiesLength(packet);
       return 1 + PacketEncoder.GetVariableByteIntegerLength(propertiesLength) + propertiesLength;
    }
 
-   private static int CalculatePropertiesLength(in AuthPacket packet)
+   private static int CalculatePropertiesLength(in AuthPacket packet, ulong existingMask)
    {
       var len = 0;
-      if (!packet.AuthenticationMethodUtf8Bytes.IsEmpty)
+      if (!packet.AuthenticationMethodUtf8Bytes.IsEmpty
+          && !HasProperty(existingMask, PropertyIdentifier.AuthenticationMethod))
       {
          len += 3 + (int)packet.AuthenticationMethodUtf8Bytes.Length;
       }
-      if (!packet.AuthenticationDataBytes.IsEmpty)
+      if (!packet.AuthenticationDataBytes.IsEmpty
+          && !HasProperty(existingMask, PropertyIdentifier.AuthenticationData))
       {
          len += 3 + (int)packet.AuthenticationDataBytes.Length;
       }
-      if (!packet.ReasonUtf8Bytes.IsEmpty)
+      if (!packet.ReasonUtf8Bytes.IsEmpty
+          && !HasProperty(existingMask, PropertyIdentifier.ReasonString))
       {
          len += 3 + (int)packet.ReasonUtf8Bytes.Length;
       }

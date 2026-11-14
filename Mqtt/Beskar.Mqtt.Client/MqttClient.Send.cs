@@ -346,13 +346,6 @@ public sealed partial class MqttClient
    {
       TraceLogger.LogClientInfo("MqttClient.Send: Sending packet '{0}'...", typeof(TPacket).Name);
 
-      if (typeof(TPacket) == typeof(PubAckPacket) ||
-          typeof(TPacket) == typeof(PubCompPacket) ||
-          packet is PubRecPacket { ReasonCode: >= PubRecReasonCode.UnspecifiedError })
-      {
-         DecrementIncomingInFlight();
-      }
-
       try
       {
          using (await stream.AcquireWriterLock(ct).ConfigureAwait(false))
@@ -373,6 +366,12 @@ public sealed partial class MqttClient
 
             await writer.FlushAsync(ct).ConfigureAwait(false);
             ResetKeepAliveTimestamp();
+
+            if (typeof(TPacket) == typeof(PubAckPacket) ||
+                packet is PubRecPacket { ReasonCode: >= PubRecReasonCode.UnspecifiedError })
+            {
+               DecrementIncomingInFlight();
+            }
          }
       }
       catch (Exception error)

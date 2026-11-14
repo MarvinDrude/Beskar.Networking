@@ -9,16 +9,20 @@ public readonly ref partial struct PacketVersion5Encoder
 {
    public void WriteUnsubAck(in UnsubAckPacket packet)
    {
-      var length = CalculateLength(packet);
+      var propsDataLen = CalculateReasonPropertiesDataLength(packet.ReasonStringUtf8Bytes, packet.PropertiesBytes);
+      var remainingLength = 2
+         + PacketEncoder.GetVariableByteIntegerLength(propsDataLen)
+         + propsDataLen
+         + packet.ReasonCodesBytes.Length;
+      var length = PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
       var writer = new ByteWriter(_writer.GetSpan(length));
 
       try
       {
-         var remainingLength = CalculateRemainingLength(packet);
          PacketEncoder.WriteFixedHeader(ref writer, MqttPacketType.UnsubAck, 0, remainingLength);
          writer.WriteBigEndian(packet.PacketIdentifier);
 
-         PacketEncoder.WriteProperties(ref writer, new ReadOnlySequence<byte>(packet.PropertiesBytes));
+         WriteReasonProperties(ref writer, packet.ReasonStringUtf8Bytes, packet.PropertiesBytes, propsDataLen);
 
          writer.WriteBytes(packet.ReasonCodesBytes.Span);
 
@@ -28,16 +32,5 @@ public readonly ref partial struct PacketVersion5Encoder
       {
          writer.Dispose();
       }
-   }
-
-   private static int CalculateLength(in UnsubAckPacket packet)
-   {
-      var remainingLength = CalculateRemainingLength(packet);
-      return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
-   }
-
-   private static int CalculateRemainingLength(in UnsubAckPacket packet)
-   {
-      return 2 + CalculatePropertiesLength(new ReadOnlySequence<byte>(packet.PropertiesBytes)) + packet.ReasonCodesBytes.Length;
    }
 }

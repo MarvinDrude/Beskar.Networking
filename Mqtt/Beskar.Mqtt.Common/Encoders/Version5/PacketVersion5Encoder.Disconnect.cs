@@ -1,4 +1,5 @@
 using Beskar.Memory.Writers;
+using Beskar.Mqtt.Common.Encoders.Properties;
 using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
 
@@ -8,20 +9,50 @@ public readonly ref partial struct PacketVersion5Encoder
 {
    public void WriteDisconnect(in DisconnectPacket packet)
    {
-      var length = CalculateLength(packet);
+      var existingMask = CollectPresentProperties(packet.PropertiesBytes);
+      var propsDataLen = CalculateDisconnectPropertiesDataLength(in packet, existingMask);
+      var remainingLength = CalculateRemainingLength(in packet, propsDataLen);
+      var length = PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
       var writer = new ByteWriter(_writer.GetSpan(length));
 
       try
       {
-         var remainingLength = CalculateRemainingLength(packet);
          PacketEncoder.WriteFixedHeader(ref writer, MqttPacketType.Disconnect, 0, remainingLength);
 
          if (remainingLength > 0)
          {
             writer.WriteByte((byte)packet.ReasonCode);
-            if (remainingLength > 1)
+            if (propsDataLen > 0)
             {
-               PacketEncoder.WriteProperties(ref writer, packet.PropertiesBytes);
+               PacketEncoder.WriteVariableByteInteger(ref writer, (uint)propsDataLen);
+
+               var propEncoder = writer.AsDisconnectPropertyEncoder();
+               try
+               {
+                  if (packet.SessionExpiryInterval.HasValue
+                      && !HasProperty(existingMask, PropertyIdentifier.SessionExpiryInterval))
+                  {
+                     propEncoder.WriteSessionExpiryInterval(packet.SessionExpiryInterval.Value);
+                  }
+
+                  if (!packet.ReasonUtf8Bytes.IsEmpty
+                      && !HasProperty(existingMask, PropertyIdentifier.ReasonString))
+                  {
+                     propEncoder.Encoder.Write(PropertyIdentifier.ReasonString, packet.ReasonUtf8Bytes);
+                  }
+
+                  if (!packet.ServerReferenceUtf8Bytes.IsEmpty
+                      && !HasProperty(existingMask, PropertyIdentifier.ServerReference))
+                  {
+                     propEncoder.Encoder.Write(PropertyIdentifier.ServerReference, packet.ServerReferenceUtf8Bytes);
+                  }
+               }
+               finally
+               {
+                  writer = propEncoder.Encoder.Writer;
+               }
+
+               PacketEncoder.WriteRawSequence(ref writer, packet.PropertiesBytes);
             }
          }
 
@@ -33,24 +64,43 @@ public readonly ref partial struct PacketVersion5Encoder
       }
    }
 
-   private static int CalculateLength(in DisconnectPacket packet)
+   private static int CalculateRemainingLength(in DisconnectPacket packet, int propsDataLen)
    {
-      var remainingLength = CalculateRemainingLength(packet);
-      return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
-   }
-
-   private static int CalculateRemainingLength(in DisconnectPacket packet)
-   {
-      if (packet.ReasonCode == DisconnectReasonCode.NormalDisconnection && packet.PropertiesBytes.IsEmpty)
+      if (packet.ReasonCode == DisconnectReasonCode.NormalDisconnection && propsDataLen == 0)
       {
          return 0;
       }
 
-      if (packet.PropertiesBytes.IsEmpty)
+      if (propsDataLen == 0)
       {
          return 1;
       }
 
-      return 1 + CalculatePropertiesLength(packet.PropertiesBytes);
+      return 1 + PacketEncoder.GetVariableByteIntegerLength(propsDataLen) + propsDataLen;
+   }
+
+   private static int CalculateDisconnectPropertiesDataLength(in DisconnectPacket packet, ulong existingMask)
+   {
+      var len = (int)packet.PropertiesBytes.Length;
+
+      if (packet.SessionExpiryInterval.HasValue
+          && !HasProperty(existingMask, PropertyIdentifier.SessionExpiryInterval))
+      {
+         len += 5;
+      }
+
+      if (!packet.ReasonUtf8Bytes.IsEmpty
+          && !HasProperty(existingMask, PropertyIdentifier.ReasonString))
+      {
+         len += 3 + (int)packet.ReasonUtf8Bytes.Length;
+      }
+
+      if (!packet.ServerReferenceUtf8Bytes.IsEmpty
+          && !HasProperty(existingMask, PropertyIdentifier.ServerReference))
+      {
+         len += 3 + (int)packet.ServerReferenceUtf8Bytes.Length;
+      }
+
+      return len;
    }
 }
