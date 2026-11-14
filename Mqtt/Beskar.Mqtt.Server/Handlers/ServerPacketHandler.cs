@@ -78,13 +78,26 @@ public sealed partial class ServerPacketHandler
       TraceLogger.LogServerInfo("ServerPacketHandler: Received DISCONNECT packet. SessionExpiryInterval: {0}",
          packet.SessionExpiryInterval);
 
-      _client.DisconnectOptions = DisconnectOptions.Create(in packet);
-      return Awaited();
-
-      async ValueTask Awaited()
+      if (_client.ProtocolVersion is MqttProtocolVersion.V50 &&
+          packet.SessionExpiryInterval is > 0 &&
+          ((_client.MqttSession?.ExpiryInterval ?? 0) == 0 || (_client.ConnectOptions?.SessionExpiryInterval ?? 0) == 0))
       {
-         await _server.ClientSessions.HandleClientDisconnectAsync(_client);
-         await _client.DisconnectAsync();
+         TraceLogger.LogServerWarning(
+            "ServerPacketHandler: Client attempted to set non-zero SessionExpiryInterval ({0}) in DISCONNECT after zero session expiry.",
+            packet.SessionExpiryInterval);
+
+         var protocolError = new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError };
+         _client.DisconnectOptions = protocolError;
+         return Awaited(_server, _client, protocolError);
+      }
+
+      _client.DisconnectOptions = DisconnectOptions.Create(in packet);
+      return Awaited(_server, _client, null);
+
+      static async ValueTask Awaited(MqttServer server, MqttServerClient client, DisconnectOptions? replyOptions)
+      {
+         await server.ClientSessions.HandleClientDisconnectAsync(client);
+         await client.DisconnectAsync(replyOptions);
       }
    }
 
@@ -218,6 +231,7 @@ public sealed partial class ServerPacketHandler
            return ValueTask.CompletedTask;
         }
 
+        pending.MarkPubRecReceived();
         return Awaited(stream, packet, _client, ct);
 
         static async ValueTask Awaited(INetworkStream stream, PubRecPacket packet, MqttServerClient client, CancellationToken ct)

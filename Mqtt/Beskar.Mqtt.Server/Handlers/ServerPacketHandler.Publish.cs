@@ -218,7 +218,7 @@ public sealed partial class ServerPacketHandler
                   {
                      await server.Events.OnAcknowledgePub.ExecuteAsync(
                         new MqttAcknowledgePubContext()
-                           { Session = session, PublishMessage = new MqttPublishMessage(packet) },
+                           { Session = session, PublishMessage = CreatePublishMessage(in packet, resolvedTopicBytes) },
                         HandlerExecutionStrategy.SequentialContinueOnError, ct);
                   }
 
@@ -262,7 +262,7 @@ public sealed partial class ServerPacketHandler
                   {
                      await server.Events.OnAcknowledgePub.ExecuteAsync(
                         new MqttAcknowledgePubContext()
-                           { Session = session, PublishMessage = new MqttPublishMessage(packet) },
+                           { Session = session, PublishMessage = CreatePublishMessage(in packet, resolvedTopicBytes) },
                         HandlerExecutionStrategy.SequentialContinueOnError, ct);
                   }
 
@@ -299,7 +299,7 @@ public sealed partial class ServerPacketHandler
          var session = publisherClient.MqttSession;
 
          if (server.Events.OnNoSubscriberMessage.Count <= 0) return;
-         var publishMessageContext = new MqttPublishMessage(packet);
+         var publishMessageContext = publishMessage;
 
          _ = Task.Run(async () =>
          {
@@ -412,14 +412,22 @@ public sealed partial class ServerPacketHandler
                }
 
                packetId = localSession.GenerateNextPacketIdentifier();
-               localSession.AddUnacknowledgedPublish(new MqttPendingPublish
+               var pendingPublish = new MqttPendingPublish
                {
                   PacketIdentifier = packetId,
                   Message = localMsg,
                   QualityOfService = localQos,
                   RetainAsPublished = localRetainAsPublished,
                   SubscriptionIdentifier = localSubId
-               });
+               };
+
+               if (!localSession.TryAddUnacknowledgedPublish(pendingPublish))
+               {
+                  var queuedMessage = new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId);
+                  localSession.EnqueueOfflineMessage(queuedMessage);
+
+                  return;
+               }
             }
 
             try
