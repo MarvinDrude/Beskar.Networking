@@ -368,4 +368,40 @@ public partial class MqttTopicGeneratorTests
         await Assert.That(IsMatchCombinedWildcards("building/A/floor/3/room"u8)).IsTrue();
         await Assert.That(IsMatchCombinedWildcards("building/A/floor/room/101"u8)).IsFalse();
     }
+
+    [GeneratedMqttTopic("$SYS/#")]
+    public static partial bool IsMatchSysPrefixWildcard(ReadOnlySpan<char> topic);
+
+    [GeneratedMqttTopic("$SYS/#")]
+    public static partial bool IsMatchSysPrefixWildcard(ReadOnlySpan<byte> topic);
+
+    [GeneratedMqttTopic("devices/{deviceId}/sensors/{sensor}")]
+    public static partial bool TryFormatSensorTopicBytes(Span<byte> destination, int deviceId, string sensor, out int bytesWritten);
+
+    [Test]
+    public async Task IsMatch_LeadingWildcard_ShouldNotMatchDollarPrefixedTopics()
+    {
+        await Assert.That(IsMatchRootWildcard("$SYS/broker/uptime".AsSpan())).IsFalse();
+        await Assert.That(IsMatchSingleWildcardStart("$SYS/status".AsSpan())).IsFalse();
+        await Assert.That(IsMatchRootWildcard("$SYS/broker/uptime"u8)).IsFalse();
+        await Assert.That(IsMatchSingleWildcardStart("$SYS/status"u8)).IsFalse();
+
+        // Explicit $-prefixed topic filters remain valid matches per MQTT 5.0 §4.7.2
+        await Assert.That(IsMatchSysPrefixWildcard("$SYS/broker/uptime".AsSpan())).IsTrue();
+        await Assert.That(IsMatchSysPrefixWildcard("$SYS/broker/uptime"u8)).IsTrue();
+    }
+
+    [Test]
+    public async Task TryFormat_WhenDestinationBufferIsTooSmall_ShouldReturnFalseWithoutThrowing()
+    {
+        Span<byte> smallLiteralBuffer = new byte[5];
+        var literalResult = TryFormatNonAsciiTopicBytes(smallLiteralBuffer, out var literalWritten);
+        await Assert.That(literalResult).IsFalse();
+        await Assert.That(literalWritten).IsEqualTo(0);
+
+        Span<byte> smallParamBuffer = new byte[22];
+        var paramResult = TryFormatSensorTopicBytes(smallParamBuffer, 42, "temperature", out var paramWritten);
+        await Assert.That(paramResult).IsFalse();
+        await Assert.That(paramWritten).IsEqualTo(0);
+    }
 }
