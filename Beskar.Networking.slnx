@@ -101,6 +101,7 @@
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.AcknowledgedPublish/Beskar.Mqtt.Example.AcknowledgedPublish.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.JsonStreaming/Beskar.Mqtt.Example.JsonStreaming.csproj" />
     <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.MessagePackStreaming/Beskar.Mqtt.Example.MessagePackStreaming.csproj" />
+    <Project Path="Examples/Mqtt/Beskar.Mqtt.Example.NodeRegistry/Beskar.Mqtt.Example.NodeRegistry.csproj" />
   </Folder>
   <Folder Name="/Examples/Raft/">
     <Project Path="Examples/Raft/Beskar.Raft.Example.QuickStart/Beskar.Raft.Example.QuickStart.csproj" />
