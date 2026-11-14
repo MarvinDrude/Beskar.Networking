@@ -434,13 +434,15 @@ public partial class MqttTopicGeneratorTests
     {
         Span<char> charBuf = stackalloc char[64];
         var charOk = TryFormatSensorTopicWithTotalWritten(charBuf, 42, "temperature", out var charWritten);
+        var charFormatted = charBuf[..charWritten].ToString();
         await Assert.That(charOk).IsTrue();
-        await Assert.That(charBuf[..charWritten].ToString()).IsEqualTo("devices/42/sensors/temperature");
+        await Assert.That(charFormatted).IsEqualTo("devices/42/sensors/temperature");
 
         Span<byte> byteBuf = stackalloc byte[64];
         var byteOk = TryFormatSensorTopicBytesWithTotalWritten(byteBuf, 42, "temperature", out var byteWritten);
+        var byteFormatted = Encoding.UTF8.GetString(byteBuf[..byteWritten]);
         await Assert.That(byteOk).IsTrue();
-        await Assert.That(System.Text.Encoding.UTF8.GetString(byteBuf[..byteWritten])).IsEqualTo("devices/42/sensors/temperature");
+        await Assert.That(byteFormatted).IsEqualTo("devices/42/sensors/temperature");
 
         Span<char> tinyBuf = stackalloc char[10];
         var tinyOk = TryFormatSensorTopicWithTotalWritten(tinyBuf, 42, "temperature", out var tinyWritten);
@@ -468,7 +470,9 @@ public partial class MqttTopicGeneratorTests
         await Assert.That(TryParseEmptyLevelParamTopic("/sensors/99", out _)).IsFalse();
 
         Span<char> buf = stackalloc char[32];
-        await Assert.That(TryFormatEmptyLevelParamTopic(buf, 99, out var written)).IsTrue();
-        await Assert.That(buf[..written].ToString()).IsEqualTo("/sensors/99/");
+        var formatOk = TryFormatEmptyLevelParamTopic(buf, 99, out var written);
+        var formatted = buf[..written].ToString();
+        await Assert.That(formatOk).IsTrue();
+        await Assert.That(formatted).IsEqualTo("/sensors/99/");
     }
 }
