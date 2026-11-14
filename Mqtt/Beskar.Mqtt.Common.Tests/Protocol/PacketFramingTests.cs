@@ -1,4 +1,6 @@
 using System.Buffers;
+using Beskar.Memory.Results;
+using Beskar.Memory.Results.Errors;
 using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Encoders;
 using Beskar.Mqtt.Common.Encoders.Version5;
@@ -31,16 +33,26 @@ public class PacketFramingTests
       var fragmentedSlice = fullBytes[..5];
 
       var handler = new TestPacketHandler();
-      var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
 
-      var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(fragmentedSlice));
-      var result = await parser.TryDispatch(ref reader, out var bytesConsumed);
+      ValueTask<Result<PacketDispatchResult, StringError>> dispatchTask;
+      int bytesConsumed;
+      long readerConsumed;
+      long readerRemaining;
+      {
+         var parser = new PacketParser(new DummyNetworkStream(), handler, MqttProtocolVersion.V50);
+         var reader = new SequenceReader<byte>(new ReadOnlySequence<byte>(fragmentedSlice));
+         dispatchTask = parser.TryDispatch(ref reader, out bytesConsumed);
+         readerConsumed = reader.Consumed;
+         readerRemaining = reader.Remaining;
+      }
+
+      var result = await dispatchTask;
 
       await Assert.That(result.Failed).IsFalse();
       await Assert.That(result.Success).IsEqualTo(PacketDispatchResult.NotEnoughData);
       await Assert.That(bytesConsumed).IsEqualTo(0);
-      await Assert.That(reader.Consumed).IsEqualTo(0);
-      await Assert.That(reader.Remaining).IsEqualTo(fragmentedSlice.Length);
+      await Assert.That(readerConsumed).IsEqualTo(0);
+      await Assert.That(readerRemaining).IsEqualTo(fragmentedSlice.Length);
    }
 
    [Test]
