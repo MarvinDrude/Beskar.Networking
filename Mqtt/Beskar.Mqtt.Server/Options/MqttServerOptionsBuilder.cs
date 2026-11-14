@@ -13,6 +13,9 @@ public sealed class MqttServerOptionsBuilder
    private MessageOverflowBehavior _pendingMessageOverflowBehavior = MessageOverflowBehavior.DropOldest;
    private ushort _maxPendingMessagesPerConnection = 1024;
 
+   private int _maxConnections;
+   private uint _maximumPacketSize;
+
    /// <summary>
    /// Sets the interval at which the server will check the keep alive states of all connected clients.
    /// </summary>
@@ -59,6 +62,29 @@ public sealed class MqttServerOptionsBuilder
    }
 
    /// <summary>
+   /// Sets the maximum number of concurrent client connections allowed by the server.
+   /// </summary>
+   /// <param name="maxConnections">The maximum connection count (<c>0</c> for unlimited).</param>
+   /// <returns>The builder instance for chaining.</returns>
+   public MqttServerOptionsBuilder WithMaxConnections(int maxConnections)
+   {
+      ArgumentOutOfRangeException.ThrowIfNegative(maxConnections);
+      _maxConnections = maxConnections;
+      return this;
+   }
+
+   /// <summary>
+   /// Sets the maximum MQTT packet size in bytes accepted by the server.
+   /// </summary>
+   /// <param name="maximumPacketSize">The maximum packet size (<c>0</c> for no protocol limit).</param>
+   /// <returns>The builder instance for chaining.</returns>
+   public MqttServerOptionsBuilder WithMaximumPacketSize(uint maximumPacketSize)
+   {
+      _maximumPacketSize = maximumPacketSize;
+      return this;
+   }
+
+   /// <summary>
    /// Builds and returns the configured <see cref="MqttServerOptions"/> instance.
    /// </summary>
    /// <returns>A new <see cref="MqttServerOptions"/> instance.</returns>
@@ -72,7 +98,9 @@ public sealed class MqttServerOptionsBuilder
          },
          SupportPersistentSessions = _supportPersistentSessions,
          PendingMessageOverflowBehavior = _pendingMessageOverflowBehavior,
-         MaxPendingMessagesPerConnection = _maxPendingMessagesPerConnection
+         MaxPendingMessagesPerConnection = _maxPendingMessagesPerConnection,
+         MaxConnections = _maxConnections,
+         MaximumPacketSize = _maximumPacketSize
       };
    }
 }
