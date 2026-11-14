@@ -6,7 +6,8 @@ namespace Beskar.Networking.Raft.Protocol.Models;
 /// <param name="Term">The election term when this entry was received by the leader.</param>
 /// <param name="Index">The 1-based monotonically increasing index in the log.</param>
 /// <param name="Data">The command payload to apply to the state machine upon commitment.</param>
-public readonly record struct RaftLogEntry(ulong Term, ulong Index, ReadOnlyMemory<byte> Data)
+/// <param name="IsNoOp">Whether this entry is an internal leader no-op barrier rather than a state machine command.</param>
+public readonly record struct RaftLogEntry(ulong Term, ulong Index, ReadOnlyMemory<byte> Data, bool IsNoOp = false)
 {
    /// <summary>
    /// Empty/null representation of a log entry.

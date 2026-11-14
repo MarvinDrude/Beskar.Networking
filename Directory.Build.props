@@ -4,7 +4,7 @@
       <LangVersion>Preview</LangVersion>
       <ImplicitUsings>enable</ImplicitUsings>
       <Nullable>enable</Nullable>
-      <Features>$(Features);runtime-async=on</Features>
+<!--      <Features>$(Features);runtime-async=on</Features>-->
 
       <Version>11.1.0</Version>
       <FileVersion>11.1.0</FileVersion>

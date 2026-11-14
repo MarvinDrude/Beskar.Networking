@@ -29,6 +29,11 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         if (term < _currentTerm)
+         {
+            return ValueTask.CompletedTask;
+         }
+
          _currentTerm = term;
          return ValueTask.CompletedTask;
       }
@@ -55,6 +60,18 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         if (term < _currentTerm)
+         {
+            return ValueTask.CompletedTask;
+         }
+
+         if (term == _currentTerm &&
+             !string.IsNullOrEmpty(_votedFor) &&
+             !string.Equals(_votedFor, candidateId, StringComparison.Ordinal))
+         {
+            return ValueTask.CompletedTask;
+         }
+
          _currentTerm = term;
          _votedFor = candidateId;
          return ValueTask.CompletedTask;
@@ -91,24 +108,9 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
-         if (index == 0 || _entries.Count == 0)
-         {
-            return ValueTask.FromResult<RaftLogEntry?>(null);
-         }
-
-         var firstIndex = _entries[0].Index;
-         if (index < firstIndex)
-         {
-            return ValueTask.FromResult<RaftLogEntry?>(null);
-         }
-
-         var listIndex = (int)(index - firstIndex);
-         if (listIndex >= 0 && listIndex < _entries.Count && _entries[listIndex].Index == index)
-         {
-            return ValueTask.FromResult<RaftLogEntry?>(_entries[listIndex]);
-         }
-
-         return ValueTask.FromResult<RaftLogEntry?>(null);
+         return RaftLogStorageHelper.TryGetEntryOffset(index, _entries, out var listIndex)
+            ? ValueTask.FromResult<RaftLogEntry?>(_entries[listIndex])
+            : ValueTask.FromResult<RaftLogEntry?>(null);
       }
    }
 
@@ -116,31 +118,7 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
-         if (fromIndex == 0 || _entries.Count == 0 || maxCount <= 0)
-         {
-            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>(Array.Empty<RaftLogEntry>());
-         }
-
-         var firstIndex = _entries[0].Index;
-         if (fromIndex < firstIndex)
-         {
-            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>(Array.Empty<RaftLogEntry>());
-         }
-
-         var startListIndex = (int)(fromIndex - firstIndex);
-         if (startListIndex >= _entries.Count)
-         {
-            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>(Array.Empty<RaftLogEntry>());
-         }
-
-         var count = Math.Min(maxCount, _entries.Count - startListIndex);
-         var result = new List<RaftLogEntry>(count);
-         for (var i = 0; i < count; i++)
-         {
-            result.Add(_entries[startListIndex + i]);
-         }
-
-         return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>(result);
+         return ValueTask.FromResult(RaftLogStorageHelper.GetEntriesSlice(_entries, fromIndex, maxCount));
       }
    }
 
@@ -151,37 +129,17 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
          for (var i = 0; i < entries.Count; i++)
          {
             var entry = entries[i];
-            if (entry.Index <= _compactedUntilIndex)
+            switch (RaftLogStorageHelper.ClassifyAppendEntry(entry, _entries, _compactedUntilIndex))
             {
-               continue;
-            }
-
-            if (_entries.Count > 0)
-            {
-               var firstIndex = _entries[0].Index;
-               if (entry.Index < firstIndex)
-               {
+               case RaftLogStorageHelper.AppendEntryAction.Skip:
                   continue;
-               }
 
-               var existingListIndex = (int)(entry.Index - firstIndex);
-               if (existingListIndex > _entries.Count)
-               {
-                  continue;
-               }
-
-               if (existingListIndex >= 0 && existingListIndex < _entries.Count)
-               {
-                  if (_entries[existingListIndex].Term != entry.Term)
+               case RaftLogStorageHelper.AppendEntryAction.TruncateAndAppend:
+                  if (RaftLogStorageHelper.TryGetEntryOffset(entry.Index, _entries, out var existingListIndex))
                   {
                      _entries.RemoveRange(existingListIndex, _entries.Count - existingListIndex);
                   }
-                  else
-                  {
-                     _entries[existingListIndex] = entry;
-                     continue;
-                  }
-               }
+                  break;
             }
 
             _entries.Add(entry);
@@ -195,22 +153,16 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
-         if (_entries.Count == 0 || fromIndex == 0)
+         if (RaftLogStorageHelper.TryGetTruncateAction(fromIndex, _entries, out var clearAll, out var startListIndex))
          {
-            return ValueTask.CompletedTask;
-         }
-
-         var firstIndex = _entries[0].Index;
-         if (fromIndex < firstIndex)
-         {
-            _entries.Clear();
-            return ValueTask.CompletedTask;
-         }
-
-         var startListIndex = (int)(fromIndex - firstIndex);
-         if (startListIndex < _entries.Count)
-         {
-            _entries.RemoveRange(startListIndex, _entries.Count - startListIndex);
+            if (clearAll)
+            {
+               _entries.Clear();
+            }
+            else
+            {
+               _entries.RemoveRange(startListIndex, _entries.Count - startListIndex);
+            }
          }
 
          return ValueTask.CompletedTask;
@@ -221,41 +173,28 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
-         if (_entries.Count == 0 || untilIndex == 0)
+         var plan = RaftLogStorageHelper.PlanCompaction(
+            untilIndex,
+            untilTerm,
+            _entries,
+            _compactedUntilIndex,
+            _compactedUntilTerm);
+
+         if (!plan.ShouldUpdate)
          {
-            if (untilIndex >= _compactedUntilIndex)
-            {
-               _compactedUntilIndex = untilIndex;
-               if (untilTerm > 0)
-               {
-                  _compactedUntilTerm = untilTerm;
-               }
-            }
             return ValueTask.CompletedTask;
          }
 
-         var firstIndex = _entries[0].Index;
-         if (untilIndex < firstIndex)
-         {
-            if (untilIndex == _compactedUntilIndex && untilTerm > 0)
-            {
-               _compactedUntilTerm = untilTerm;
-            }
-            return ValueTask.CompletedTask;
-         }
+         _compactedUntilIndex = plan.NewCompactedUntilIndex;
+         _compactedUntilTerm = plan.NewCompactedUntilTerm;
 
-         var removeCount = (int)(untilIndex - firstIndex + 1);
-         var targetEntry = _entries[Math.Min(removeCount - 1, _entries.Count - 1)];
-         _compactedUntilIndex = untilIndex;
-         _compactedUntilTerm = untilTerm > 0 ? untilTerm : targetEntry.Term;
-
-         if (removeCount >= _entries.Count || (untilTerm > 0 && targetEntry.Term != untilTerm))
+         if (plan.ClearAllRemaining)
          {
             _entries.Clear();
          }
-         else
+         else if (plan.RemoveCount > 0)
          {
-            _entries.RemoveRange(0, removeCount);
+            _entries.RemoveRange(0, plan.RemoveCount);
          }
 
          return ValueTask.CompletedTask;

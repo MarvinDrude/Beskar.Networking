@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using Beskar.Networking.Raft.Enums;
+using Beskar.Networking.Raft.Internal;
 using Beskar.Networking.Raft.Options;
 using Beskar.Networking.Raft.Protocol.Messages;
 using Beskar.Networking.Raft.Protocol.Models;
@@ -72,10 +75,7 @@ public class RaftBugReproductionTests
       await Assert.That(leader.Role).IsEqualTo(RaftRole.Leader);
 
       // Propose entries 1..5
-      for (var i = 1; i <= 5; i++)
-      {
-         await leader.ProposeAsync(Encoding.UTF8.GetBytes($"SET key{i}=val{i}"), ct);
-      }
+      for (var i = 1; i <= 5; i++) await leader.ProposeAsync(Encoding.UTF8.GetBytes($"SET key{i}=val{i}"), ct);
 
       // Compact leader log up to index 5
       await storageLeader.CompactPrefixAsync(5, leader.CurrentTerm, ct);
@@ -87,7 +87,7 @@ public class RaftBugReproductionTests
 
       // Reset leader's tracker for follower-1 to NextIndex = 1, MatchIndex = 0
       var trackersField = typeof(RaftNode).GetField("_peerTrackers", BindingFlags.NonPublic | BindingFlags.Instance)!;
-      var trackers = (System.Collections.Concurrent.ConcurrentDictionary<string, Internal.RaftPeerTracker>)trackersField.GetValue(leader)!;
+      var trackers = (ConcurrentDictionary<string, RaftPeerTracker>)trackersField.GetValue(leader)!;
       if (trackers.TryGetValue("follower-1", out var tracker))
       {
          tracker.NextIndex = 1;
@@ -98,10 +98,7 @@ public class RaftBugReproductionTests
       var deadline = Environment.TickCount64 + 1500;
       while (Environment.TickCount64 < deadline && !ct.IsCancellationRequested)
       {
-         if (smFollower.Store.ContainsKey("key5"))
-         {
-            break;
-         }
+         if (smFollower.Store.ContainsKey("key5")) break;
          await Task.Delay(50, ct);
       }
 
@@ -189,10 +186,7 @@ public class RaftBugReproductionTests
       var deadline = Environment.TickCount64 + 1500;
       while (Environment.TickCount64 < deadline && !ct.IsCancellationRequested)
       {
-         if (smFollower.Store.ContainsKey("k4") && smFollower.Store.GetValueOrDefault("k3") == "NEW")
-         {
-            break;
-         }
+         if (smFollower.Store.ContainsKey("k4") && smFollower.Store.GetValueOrDefault("k3") == "NEW") break;
          await Task.Delay(50, ct);
       }
 
@@ -201,7 +195,8 @@ public class RaftBugReproductionTests
    }
 
    [Test]
-   public async Task Bug3_AdvanceCommitIndex_StarvesUnappliedEntries_WhenNewCommitLessThanOrEqualToCommitIndex(CancellationToken ct)
+   public async Task Bug3_AdvanceCommitIndex_StarvesUnappliedEntries_WhenNewCommitLessThanOrEqualToCommitIndex(
+      CancellationToken ct)
    {
       var memoryOptions = new MemoryTransportOptions();
       var ep = new MemoryEndPoint($"node-bug3-{Guid.NewGuid():N}");
@@ -250,7 +245,8 @@ public class RaftBugReproductionTests
          PrevLogIndex = 0,
          PrevLogTerm = 0,
          LeaderCommitIndex = 3,
-         Entries = [
+         Entries =
+         [
             new RaftLogEntry(1, 1, "SET k1=v1"u8.ToArray()),
             new RaftLogEntry(1, 2, "SET k2=v2"u8.ToArray()),
             new RaftLogEntry(1, 3, "SET k3=v3"u8.ToArray())
@@ -306,7 +302,7 @@ public class RaftBugReproductionTests
       try
       {
          // Send InstallSnapshot while _applyLock is held
-         var snapshotData = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["k1"] = "snap" });
+         var snapshotData = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["k1"] = "snap" });
          var snapReq = new InstallSnapshotRequest
          {
             Term = 1,
@@ -328,37 +324,10 @@ public class RaftBugReproductionTests
       }
    }
 
-   private sealed class ConcurrencyDetectingStateMachine : IRaftStateMachine
-   {
-      private int _activeOperations;
-      public bool ConcurrencyDetected { get; private set; }
-
-      public async ValueTask<ReadOnlyMemory<byte>> ApplyAsync(ReadOnlyMemory<byte> command, ulong logIndex, CancellationToken ct = default)
-      {
-         if (Interlocked.Increment(ref _activeOperations) > 1)
-         {
-            ConcurrencyDetected = true;
-         }
-         await Task.Delay(50, ct);
-         Interlocked.Decrement(ref _activeOperations);
-         return command;
-      }
-
-      public async ValueTask RestoreSnapshotAsync(ReadOnlyMemory<byte> snapshot, ulong lastIncludedIndex, ulong lastIncludedTerm, CancellationToken ct = default)
-      {
-         if (Interlocked.Increment(ref _activeOperations) > 1)
-         {
-            ConcurrencyDetected = true;
-         }
-         await Task.Delay(50, ct);
-         Interlocked.Decrement(ref _activeOperations);
-      }
-   }
-
    /// <summary>
-   /// VERIFICATION:
-   /// When a node is partitioned away, Pre-Vote prevents it from incrementing its term,
-   /// ensuring it does not disrupt an active leader when it reconnects.
+   ///    VERIFICATION:
+   ///    When a node is partitioned away, Pre-Vote prevents it from incrementing its term,
+   ///    ensuring it does not disrupt an active leader when it reconnects.
    /// </summary>
    [Test]
    [Timeout(10000)]
@@ -398,8 +367,8 @@ public class RaftBugReproductionTests
    }
 
    /// <summary>
-   /// VERIFICATION:
-   /// A leader partitioned from its quorum must step down after ElectionTimeoutMax.
+   ///    VERIFICATION:
+   ///    A leader partitioned from its quorum must step down after ElectionTimeoutMax.
    /// </summary>
    [Test]
    [Timeout(10000)]
@@ -441,8 +410,10 @@ public class RaftBugReproductionTests
          HeartbeatInterval = TimeSpan.FromMilliseconds(20)
       };
 
-      await using var leader = new RaftNode(optionsLeader, new InMemoryRaftLogStorage(), new SnapshotStateMachine(), transportLeader);
-      await using var follower = new RaftNode(optionsFollower, new InMemoryRaftLogStorage(), new SnapshotStateMachine(), transportFollower);
+      await using var leader = new RaftNode(optionsLeader, new InMemoryRaftLogStorage(), new SnapshotStateMachine(),
+         transportLeader);
+      await using var follower = new RaftNode(optionsFollower, new InMemoryRaftLogStorage(), new SnapshotStateMachine(),
+         transportFollower);
 
       await leader.StartAsync(ct);
       await follower.StartAsync(ct);
@@ -462,9 +433,10 @@ public class RaftBugReproductionTests
    }
 
    /// <summary>
-   /// VERIFICATION:
-   /// A stale snapshot (LastIncludedIndex <= localCompactedIndex or < CommitIndex) is ignored
-   /// and does not regress the local state machine or log.
+   ///    VERIFICATION:
+   ///    A stale snapshot (LastIncludedIndex <= localCompactedIndex or < CommitIndex) is ignored
+   ///                                                                     and does not regress the local state machine or
+   ///                                                                     log.
    /// </summary>
    [Test]
    [Timeout(10000)]
@@ -507,7 +479,7 @@ public class RaftBugReproductionTests
       await using var clientTransport = new RaftNetworkTransport(clientListener, clientPeerEndpoints);
 
       // Attempt to send an old snapshot with LastIncludedIndex = 1 (local is compacted to 2)
-      var staleData = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["k1"] = "STALE_OLD" });
+      var staleData = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["k1"] = "STALE_OLD" });
       var snapReq = new InstallSnapshotRequest
       {
          Term = 1,
@@ -522,5 +494,28 @@ public class RaftBugReproductionTests
 
       // State machine must NOT have reverted to stale state
       await Assert.That(sm.Store["k1"]).IsEqualTo("new_val");
+   }
+
+   private sealed class ConcurrencyDetectingStateMachine : IRaftStateMachine
+   {
+      private int _activeOperations;
+      public bool ConcurrencyDetected { get; private set; }
+
+      public async ValueTask<ReadOnlyMemory<byte>> ApplyAsync(ReadOnlyMemory<byte> command, ulong logIndex,
+         CancellationToken ct = default)
+      {
+         if (Interlocked.Increment(ref _activeOperations) > 1) ConcurrencyDetected = true;
+         await Task.Delay(50, ct);
+         Interlocked.Decrement(ref _activeOperations);
+         return command;
+      }
+
+      public async ValueTask RestoreSnapshotAsync(ReadOnlyMemory<byte> snapshot, ulong lastIncludedIndex,
+         ulong lastIncludedTerm, CancellationToken ct = default)
+      {
+         if (Interlocked.Increment(ref _activeOperations) > 1) ConcurrencyDetected = true;
+         await Task.Delay(50, ct);
+         Interlocked.Decrement(ref _activeOperations);
+      }
    }
 }
