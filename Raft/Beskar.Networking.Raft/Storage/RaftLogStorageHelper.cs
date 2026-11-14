@@ -165,7 +165,7 @@ internal static class RaftLogStorageHelper
 
          if (untilIndex == compactedUntilIndex && untilTerm > 0 && untilTerm != compactedUntilTerm)
          {
-            return new CompactionPlan(true, 0, compactedUntilIndex, untilTerm, false);
+            return new CompactionPlan(true, entries.Count, compactedUntilIndex, untilTerm, true);
          }
 
          return new CompactionPlan(false, 0, compactedUntilIndex, compactedUntilTerm, false);
@@ -176,7 +176,7 @@ internal static class RaftLogStorageHelper
       {
          if (untilIndex == compactedUntilIndex && untilTerm > 0 && untilTerm != compactedUntilTerm)
          {
-            return new CompactionPlan(true, 0, compactedUntilIndex, untilTerm, false);
+            return new CompactionPlan(true, entries.Count, compactedUntilIndex, untilTerm, true);
          }
 
          return new CompactionPlan(false, 0, compactedUntilIndex, compactedUntilTerm, false);

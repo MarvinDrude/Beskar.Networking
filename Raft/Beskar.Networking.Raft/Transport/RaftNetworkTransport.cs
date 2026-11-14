@@ -14,16 +14,21 @@ namespace Beskar.Networking.Raft.Transport;
 public sealed class RaftNetworkTransport : IRaftTransport
 {
    private readonly INetworkListener _listener;
+
    private readonly IReadOnlyDictionary<string, RaftPeerEndpoint> _peers;
    private readonly ConcurrentDictionary<string, PeerConnectionHolder> _activePeerConnections = new();
    private readonly ConcurrentDictionary<long, Task> _activeSessions = new();
    private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
+
+   private readonly Lock _connectionsLock = new();
    private readonly TimeSpan _rpcTimeout;
    private Func<RaftRpcRequest, ValueTask<RaftRpcResponse>>? _rpcHandler;
    private CancellationTokenSource? _cts;
    private Task? _acceptLoopTask;
+
    private long _nextSessionTaskId;
    private int _running;
+   private bool _shutdownRequested;
    private int _disposed;
 
    public RaftNetworkTransport(
@@ -56,9 +61,13 @@ public sealed class RaftNetworkTransport : IRaftTransport
          }
 
          _rpcHandler = rpcHandler;
-         _cts?.Dispose();
-         _cts = new CancellationTokenSource();
-         Volatile.Write(ref _running, 1);
+         lock (_connectionsLock)
+         {
+            _cts?.Dispose();
+            _cts = new CancellationTokenSource();
+            _shutdownRequested = false;
+            Volatile.Write(ref _running, 1);
+         }
          _acceptLoopTask = Task.Run(() => RunAcceptLoopAsync(_cts.Token), CancellationToken.None);
       }
       finally
@@ -72,30 +81,46 @@ public sealed class RaftNetworkTransport : IRaftTransport
       await _lifecycleLock.WaitAsync(ct);
       try
       {
-         if (Interlocked.Exchange(ref _running, 0) == 0)
+         var wasRunning = Interlocked.Exchange(ref _running, 0) != 0;
+
+         CancellationTokenSource? cts;
+         List<PeerConnectionHolder> holders;
+
+         lock (_connectionsLock)
+         {
+            _shutdownRequested = true;
+            cts = _cts;
+            _cts = null;
+            holders = _activePeerConnections.Values.ToList();
+            _activePeerConnections.Clear();
+         }
+
+         if (!wasRunning && holders.Count == 0 && cts == null)
          {
             return;
          }
 
-         if (_cts != null)
+         if (cts != null)
          {
-            await _cts.CancelAsync();
+            await cts.CancelAsync();
          }
 
-         try
+         if (wasRunning)
          {
-            await _listener.UnbindAsync(ct);
-         }
-         catch
-         {
-            // Continue cleanup even if listener unbind fails
+            try
+            {
+               await _listener.UnbindAsync(ct);
+            }
+            catch
+            {
+               // Continue cleanup even if listener unbind fails
+            }
          }
 
-         foreach (var holder in _activePeerConnections.Values)
+         foreach (var holder in holders)
          {
             await holder.DisposeAsync();
          }
-         _activePeerConnections.Clear();
 
          if (_acceptLoopTask != null)
          {
@@ -122,8 +147,7 @@ public sealed class RaftNetworkTransport : IRaftTransport
             }
          }
 
-         _cts?.Dispose();
-         _cts = null;
+         cts?.Dispose();
       }
       finally
       {
@@ -153,26 +177,45 @@ public sealed class RaftNetworkTransport : IRaftTransport
          return null;
       }
 
-      var transportCts = Volatile.Read(ref _cts);
-      if (transportCts is { IsCancellationRequested: true })
+      PeerConnectionHolder holder;
+      CancellationTokenSource rpcCts;
+
+      lock (_connectionsLock)
       {
-         return null;
+         if (Volatile.Read(ref _disposed) != 0 || _shutdownRequested)
+         {
+            return null;
+         }
+
+         if (_cts != null)
+         {
+            if (_cts.IsCancellationRequested)
+            {
+               return null;
+            }
+
+            rpcCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
+         }
+         else
+         {
+            rpcCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+         }
+
+         holder = _activePeerConnections.GetOrAdd(peerId, _ => new PeerConnectionHolder(peerConfig));
       }
 
-      using var rpcCts = transportCts != null
-         ? CancellationTokenSource.CreateLinkedTokenSource(ct, transportCts.Token)
-         : CancellationTokenSource.CreateLinkedTokenSource(ct);
-
-      rpcCts.CancelAfter(_rpcTimeout);
-
-      try
+      using (rpcCts)
       {
-         var holder = _activePeerConnections.GetOrAdd(peerId, _ => new PeerConnectionHolder(peerConfig));
-         return await holder.ExecuteRpcAsync(type, requestPayload, rpcCts.Token);
-      }
-      catch
-      {
-         return null;
+         rpcCts.CancelAfter(_rpcTimeout);
+
+         try
+         {
+            return await holder.ExecuteRpcAsync(type, requestPayload, rpcCts.Token);
+         }
+         catch
+         {
+            return null;
+         }
       }
    }
 
@@ -332,9 +375,11 @@ public sealed class RaftNetworkTransport : IRaftTransport
    {
       private readonly RaftPeerEndpoint _peer;
       private readonly SemaphoreSlim _semaphore = new(1, 1);
+      private readonly CancellationTokenSource _disposeCts = new();
       private INetworkClient? _client;
       private INetworkSession? _session;
       private INetworkStream? _stream;
+      private int _disposed;
 
       public PeerConnectionHolder(RaftPeerEndpoint peer)
       {
@@ -343,117 +388,144 @@ public sealed class RaftNetworkTransport : IRaftTransport
 
       public async ValueTask<object?> ExecuteRpcAsync(RaftMessageType type, object payload, CancellationToken ct)
       {
+         if (Volatile.Read(ref _disposed) != 0 || ct.IsCancellationRequested)
+         {
+            return null;
+         }
+
+         CancellationTokenSource? linkedCts;
          try
          {
-            await _semaphore.WaitAsync(ct);
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposeCts.Token);
          }
          catch (ObjectDisposedException)
          {
             return null;
          }
 
-         try
+         using (linkedCts)
          {
-            for (var attempt = 0; attempt < 2; attempt++)
+            var effectiveCt = linkedCts.Token;
+
+            try
             {
-               var wasPooled = _stream != null && _client != null && _client.IsConnected;
-               var stream = await GetOrCreateStreamAsync(ct);
-               if (stream == null)
+               await _semaphore.WaitAsync(effectiveCt);
+            }
+            catch (OperationCanceledException)
+            {
+               return null;
+            }
+            catch (ObjectDisposedException)
+            {
+               return null;
+            }
+
+            try
+            {
+               if (Volatile.Read(ref _disposed) != 0 || effectiveCt.IsCancellationRequested)
                {
+                  await ResetConnectionAsync();
                   return null;
                }
 
-               try
+               for (var attempt = 0; attempt < 2; attempt++)
                {
-                  var writer = stream.Transport.Output;
-                  var reader = stream.Transport.Input;
-
-                  using (await stream.AcquireWriterLock(ct))
+                  var wasPooled = _stream != null && _client != null && _client.IsConnected;
+                  var stream = await GetOrCreateStreamAsync(effectiveCt);
+                  if (stream == null)
                   {
-                     WriteRequest(writer, type, payload);
-                     await writer.FlushAsync(ct);
+                     return null;
                   }
 
-                  var expectedResponseType = GetExpectedResponseType(type);
-                  var streamClosedWithoutMatch = false;
-
-                  while (!ct.IsCancellationRequested)
+                  try
                   {
-                     var readResult = await reader.ReadAsync(ct);
-                     var buffer = readResult.Buffer;
+                     var writer = stream.Transport.Output;
+                     var reader = stream.Transport.Input;
 
-                     object? responsePayload = null;
-                     var matched = false;
-                     var seqReader = new SequenceReader<byte>(buffer);
-                     while (RaftProtocolCodec.TryReadFrame(ref seqReader, out var responseType, out var framePayload))
+                     using (await stream.AcquireWriterLock(effectiveCt))
                      {
-                        if (responseType == expectedResponseType)
+                        WriteRequest(writer, type, payload);
+                        await writer.FlushAsync(effectiveCt);
+                     }
+
+                     var expectedResponseType = GetExpectedResponseType(type);
+                     var streamClosedWithoutMatch = false;
+
+                     while (!effectiveCt.IsCancellationRequested && Volatile.Read(ref _disposed) == 0)
+                     {
+                        var readResult = await reader.ReadAsync(effectiveCt);
+                        var buffer = readResult.Buffer;
+
+                        object? responsePayload = null;
+                        var matched = false;
+                        var seqReader = new SequenceReader<byte>(buffer);
+                        while (RaftProtocolCodec.TryReadFrame(ref seqReader, out var responseType, out var framePayload))
                         {
-                           responsePayload = framePayload;
-                           matched = true;
+                           if (responseType == expectedResponseType)
+                           {
+                              responsePayload = framePayload;
+                              matched = true;
+                              break;
+                           }
+                        }
+
+                        if (matched)
+                        {
+                           // Leave remaining buffered bytes unexamined so sequential RPC reads see them immediately.
+                           reader.AdvanceTo(seqReader.Position);
+                           return responsePayload;
+                        }
+
+                        reader.AdvanceTo(seqReader.Position, buffer.End);
+
+                        if (readResult.IsCompleted || readResult.IsCanceled)
+                        {
+                           streamClosedWithoutMatch = true;
                            break;
                         }
                      }
 
-                     if (matched)
-                     {
-                        // Leave remaining buffered bytes unexamined so sequential RPC reads see them immediately.
-                        reader.AdvanceTo(seqReader.Position);
-                        return responsePayload;
-                     }
-
-                     reader.AdvanceTo(seqReader.Position, buffer.End);
-
-                     if (readResult.IsCompleted || readResult.IsCanceled)
-                     {
-                        streamClosedWithoutMatch = true;
-                        break;
-                     }
-                  }
-
-                  if (streamClosedWithoutMatch)
-                  {
                      await ResetConnectionAsync();
-                     if (wasPooled && attempt == 0 && !ct.IsCancellationRequested)
+                     if (streamClosedWithoutMatch && wasPooled && attempt == 0 && !effectiveCt.IsCancellationRequested && Volatile.Read(ref _disposed) == 0)
                      {
                         continue;
                      }
-                  }
 
-                  return null;
-               }
-               catch (OperationCanceledException) when (ct.IsCancellationRequested)
-               {
-                  await ResetConnectionAsync();
-                  return null;
-               }
-               catch
-               {
-                  await ResetConnectionAsync();
-                  if (wasPooled && attempt == 0 && !ct.IsCancellationRequested)
+                     return null;
+                  }
+                  catch (OperationCanceledException) when (effectiveCt.IsCancellationRequested)
                   {
-                     continue;
+                     await ResetConnectionAsync();
+                     return null;
                   }
+                  catch
+                  {
+                     await ResetConnectionAsync();
+                     if (wasPooled && attempt == 0 && !effectiveCt.IsCancellationRequested && Volatile.Read(ref _disposed) == 0)
+                     {
+                        continue;
+                     }
 
-                  return null;
+                     return null;
+                  }
                }
-            }
 
-            return null;
-         }
-         finally
-         {
-            try
-            {
-               _semaphore.Release();
+               return null;
             }
-            catch (ObjectDisposedException)
+            finally
             {
+               try
+               {
+                  _semaphore.Release();
+               }
+               catch (ObjectDisposedException)
+               {
+               }
             }
          }
       }
 
-      private static void WriteRequest(System.Buffers.IBufferWriter<byte> writer, RaftMessageType type, object payload)
+      private static void WriteRequest(IBufferWriter<byte> writer, RaftMessageType type, object payload)
       {
          switch (type)
          {
@@ -479,7 +551,13 @@ public sealed class RaftNetworkTransport : IRaftTransport
 
       private async ValueTask<INetworkStream?> GetOrCreateStreamAsync(CancellationToken ct)
       {
-         if (_stream != null && _client != null && _client.IsConnected)
+         if (Volatile.Read(ref _disposed) != 0 || ct.IsCancellationRequested)
+         {
+            await ResetConnectionAsync();
+            return null;
+         }
+
+         if (_stream != null && _client is { IsConnected: true })
          {
             return _stream;
          }
@@ -499,6 +577,12 @@ public sealed class RaftNetworkTransport : IRaftTransport
             }
 
             session = connectResult.Success;
+            if (Volatile.Read(ref _disposed) != 0 || ct.IsCancellationRequested)
+            {
+               await DisposeClientAndUnownedSessionAsync(client, session);
+               return null;
+            }
+
             var streamResult = await session.OpenStreamAsync(NetworkStreamDirection.Bidirectional, ct);
             if (streamResult.Failed || streamResult.Success == null)
             {
@@ -507,6 +591,13 @@ public sealed class RaftNetworkTransport : IRaftTransport
             }
 
             stream = streamResult.Success;
+            if (Volatile.Read(ref _disposed) != 0 || ct.IsCancellationRequested)
+            {
+               await stream.DisposeAsync();
+               await DisposeClientAndUnownedSessionAsync(client, session);
+               return null;
+            }
+
             _client = client;
             _session = session;
             _stream = stream;
@@ -576,8 +667,31 @@ public sealed class RaftNetworkTransport : IRaftTransport
 
       public async ValueTask DisposeAsync()
       {
-         await ResetConnectionAsync();
+         if (Interlocked.Exchange(ref _disposed, 1) != 0)
+         {
+            return;
+         }
+
+         try
+         {
+            await _disposeCts.CancelAsync();
+         }
+         catch (ObjectDisposedException)
+         {
+         }
+
+         await _semaphore.WaitAsync();
+         try
+         {
+            await ResetConnectionAsync();
+         }
+         finally
+         {
+            _semaphore.Release();
+         }
+
          _semaphore.Dispose();
+         _disposeCts.Dispose();
       }
    }
 }

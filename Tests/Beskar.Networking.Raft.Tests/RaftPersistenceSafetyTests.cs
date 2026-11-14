@@ -348,7 +348,7 @@ public class RaftPersistenceSafetyTests
       public async ValueTask SetCurrentTermAsync(ulong term, CancellationToken ct = default)
       {
          await inner.SetCurrentTermAsync(term, ct);
-         RecordTermWrite(term);
+         RecordTermWrite(await inner.GetCurrentTermAsync(ct));
       }
 
       public ValueTask<string?> GetVotedForAsync(CancellationToken ct = default) => inner.GetVotedForAsync(ct);
@@ -363,7 +363,7 @@ public class RaftPersistenceSafetyTests
          }
 
          await inner.SetTermAndVoteAsync(term, candidateId, ct);
-         RecordTermWrite(term);
+         RecordTermWrite(await inner.GetCurrentTermAsync(ct));
       }
 
       private void RecordTermWrite(ulong term)

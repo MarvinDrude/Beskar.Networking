@@ -15,7 +15,9 @@ public static class RaftProtocolCodec
    public const byte MagicByte1 = 0xBE;
    public const byte MagicByte2 = 0x52; // 'R' for Raft
    public const byte CurrentVersion = 0x01;
+
    public const int HeaderSize = 8; // Magic (2) + Version (1) + MessageType (1) + PayloadLength (4)
+   public const int MaxPayloadLength = 64 * 1024 * 1024;
 
    /// <summary>
    /// Attempts to read a full Raft packet from the sequence reader.
@@ -51,7 +53,7 @@ public static class RaftProtocolCodec
             continue;
          }
 
-         if (!headerReader.TryReadLittleEndian(out int payloadLength) || payloadLength < 0)
+         if (!headerReader.TryReadLittleEndian(out int payloadLength) || payloadLength < 0 || payloadLength > MaxPayloadLength)
          {
             reader.Advance(1);
             continue;
@@ -146,7 +148,7 @@ public static class RaftProtocolCodec
       {
          for (var i = 0; i < entries.Count; i++)
          {
-            entriesLength += 8 + 8 + 4 + entries[i].Data.Length;
+            entriesLength += 8 + 8 + 1 + 4 + entries[i].Data.Length;
          }
 
          payloadLength = 8 + 2 + leaderIdBytes.Length + 8 + 8 + 8 + 4 + entriesLength;
@@ -171,9 +173,12 @@ public static class RaftProtocolCodec
          var entry = entries[i];
          BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(offset, 8), entry.Term);
          BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(offset + 8, 8), entry.Index);
-         BinaryPrimitives.WriteInt32LittleEndian(span.Slice(offset + 16, 4), entry.Data.Length);
-         entry.Data.Span.CopyTo(span.Slice(offset + 20, entry.Data.Length));
-         offset += 20 + entry.Data.Length;
+
+         span[offset + 16] = entry.IsNoOp ? (byte)1 : (byte)0;
+         BinaryPrimitives.WriteInt32LittleEndian(span.Slice(offset + 17, 4), entry.Data.Length);
+
+         entry.Data.Span.CopyTo(span.Slice(offset + 21, entry.Data.Length));
+         offset += 21 + entry.Data.Length;
       }
 
       writer.Advance(payloadLength);
@@ -312,7 +317,7 @@ public static class RaftProtocolCodec
           !reader.TryReadLittleEndian(out long leaderCommitIndexRaw) ||
           !reader.TryReadLittleEndian(out int entriesCount) ||
           entriesCount < 0 ||
-          (long)entriesCount * 20 > reader.Remaining)
+          (long)entriesCount * 21 > reader.Remaining)
       {
          return null;
       }
@@ -322,6 +327,7 @@ public static class RaftProtocolCodec
       {
          if (!reader.TryReadLittleEndian(out long entryTermRaw) ||
              !reader.TryReadLittleEndian(out long entryIndexRaw) ||
+             !reader.TryRead(out var flags) ||
              !reader.TryReadLittleEndian(out int dataLength) ||
              dataLength < 0 ||
              reader.Remaining < dataLength)
@@ -336,7 +342,7 @@ public static class RaftProtocolCodec
          }
          reader.Advance(dataLength);
 
-         entries.Add(new RaftLogEntry((ulong)entryTermRaw, (ulong)entryIndexRaw, data));
+         entries.Add(new RaftLogEntry((ulong)entryTermRaw, (ulong)entryIndexRaw, data, (flags & 0x01) != 0));
       }
 
       return new AppendEntriesRequest

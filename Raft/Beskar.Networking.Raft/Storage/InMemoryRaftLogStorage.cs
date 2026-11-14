@@ -29,6 +29,11 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         if (term < _currentTerm)
+         {
+            return ValueTask.CompletedTask;
+         }
+
          _currentTerm = term;
          return ValueTask.CompletedTask;
       }
@@ -55,6 +60,18 @@ public sealed class InMemoryRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         if (term < _currentTerm)
+         {
+            return ValueTask.CompletedTask;
+         }
+
+         if (term == _currentTerm &&
+             !string.IsNullOrEmpty(_votedFor) &&
+             !string.Equals(_votedFor, candidateId, StringComparison.Ordinal))
+         {
+            return ValueTask.CompletedTask;
+         }
+
          _currentTerm = term;
          _votedFor = candidateId;
          return ValueTask.CompletedTask;
