@@ -181,6 +181,21 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
+   internal bool TryAddUnacknowledgedPublish(MqttPendingPublish pendingPublish)
+   {
+      lock (_unacknowledgedPublishesLock)
+      {
+         if (_unacknowledgedPublishes.Count >= ClientReceiveMaximum)
+         {
+            return false;
+         }
+
+         _unacknowledgedPublishes.Add(pendingPublish);
+         MqttMetrics.RecordQosInflightChange(1);
+         return true;
+      }
+   }
+
    internal MqttPendingPublish? AcknowledgePublish(ushort packetIdentifier)
    {
       lock (_unacknowledgedPublishesLock)

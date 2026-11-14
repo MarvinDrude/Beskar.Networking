@@ -28,8 +28,17 @@ public sealed class MqttPendingPublish
    /// </summary>
    public required bool RetainAsPublished { get; init; }
 
+   private int _pubRecReceived;
+
    /// <summary>
    /// Gets the identifier of the subscription that matched this message, if any.
    /// </summary>
    public required uint SubscriptionIdentifier { get; init; }
+
+   /// <summary>
+   /// Gets a value indicating whether a PUBREC has already been received for this QoS 2 publish.
+   /// </summary>
+   public bool IsPubRecReceived => Volatile.Read(ref _pubRecReceived) != 0;
+
+   internal void MarkPubRecReceived() => Interlocked.Exchange(ref _pubRecReceived, 1);
 }

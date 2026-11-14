@@ -300,7 +300,14 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
          {
             if (client.DisconnectOptions?.ReasonCode is not DisconnectReasonCode.NormalDisconnection)
             {
-               session.PendingWillMessage.StartDelayTimer(_server, this);
+               if (session.ExpiryInterval == 0)
+               {
+                  session.PendingWillMessage.TryPublish(_server, this);
+               }
+               else
+               {
+                  session.PendingWillMessage.StartDelayTimer(_server, this);
+               }
             }
             else
             {

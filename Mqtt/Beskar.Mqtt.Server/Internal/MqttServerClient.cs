@@ -88,6 +88,19 @@ public sealed class MqttServerClient
 
    private bool _isDisconnecting;
    private int _disconnectEventFired;
+   private long _lastPacketReceivedTicks;
+
+   internal DateTimeOffset? LastPacketReceivedTimestamp
+   {
+      get
+      {
+         var ticks = Interlocked.Read(ref _lastPacketReceivedTicks);
+         return ticks > 0 ? new DateTimeOffset(ticks, TimeSpan.Zero) : null;
+      }
+   }
+
+   internal void UpdateLastPacketReceivedTimestamp()
+      => Interlocked.Exchange(ref _lastPacketReceivedTicks, DateTimeOffset.UtcNow.UtcTicks);
 
    internal bool TryMarkDisconnectEventFired()
       => Interlocked.CompareExchange(ref _disconnectEventFired, 1, 0) == 0;
