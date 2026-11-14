@@ -183,16 +183,6 @@ public partial class MqttTopicGenerator
       for (var i = 0; i < segments.Length; i++)
       {
          var seg = segments[i];
-         if (string.IsNullOrEmpty(seg))
-         {
-            spc.ReportDiagnostic(Diagnostic.Create(
-               InvalidTopicPattern,
-               location.ToLocation(),
-               pattern,
-               "Topic segments cannot be empty."));
-            return false;
-         }
-
          if (seg.Contains('#'))
          {
             // Multi-level wildcard must be the last segment and be exactly '#'

@@ -341,12 +341,10 @@ public partial class MqttTopicGenerator
             var isByteSpan = firstParamType.Contains("System.Span<byte>");
             var charsWrittenParam = model.Parameters.LastOrDefault(p => p.RefKind == "out" && p.Type.Contains("int"));
             var writtenParamName = charsWrittenParam.Name;
-            var hasWrittenParam = writtenParamName is not null;
 
             if (writtenParamName is not null)
             {
                writer.WriteLineInterpolated($"{writtenParamName} = 0;");
-               writer.WriteLine("int totalWritten = 0;");
             }
             writer.WriteLineInterpolated($"var remainingDest = {firstParam.Name};");
             writer.WriteLine();
@@ -374,13 +372,13 @@ public partial class MqttTopicGenerator
                         if (isByteSpan)
                         {
                            writer.WriteLine("// Convert string/span to UTF8 bytes");
-                           EmitCheckedUtf8Bytes(ref writer, argParam.Name, $"{paramName}Bytes", hasWrittenParam);
+                           EmitCheckedUtf8Bytes(ref writer, argParam.Name, $"{paramName}Bytes");
                         }
                         else
                         {
                            var accessExpr = argType == "string" ? $"{argParam.Name}.AsSpan()" : argParam.Name;
                            writer.WriteLineInterpolated($"if (!{accessExpr}.TryCopyTo(remainingDest)) return false;");
-                           EmitAdvanceDest(ref writer, $"{argParam.Name}.Length", hasWrittenParam);
+                           EmitAdvanceDest(ref writer, $"{argParam.Name}.Length");
                         }
                      }
                      else if (argType.Contains("System.ReadOnlySpan<byte>"))
@@ -389,7 +387,7 @@ public partial class MqttTopicGenerator
                         {
                            writer.WriteLineInterpolated(
                               $"if (!{argParam.Name}.TryCopyTo(remainingDest)) return false;");
-                           EmitAdvanceDest(ref writer, $"{argParam.Name}.Length", hasWrittenParam);
+                           EmitAdvanceDest(ref writer, $"{argParam.Name}.Length");
                         }
                         else
                         {
@@ -399,7 +397,7 @@ public partial class MqttTopicGenerator
                            writer.WriteLineInterpolated($"if ({paramName}Chars > remainingDest.Length) return false;");
                            writer.WriteLineInterpolated(
                               $"Encoding.UTF8.GetChars({argParam.Name}, remainingDest);");
-                           EmitAdvanceDest(ref writer, $"{paramName}Chars", hasWrittenParam);
+                           EmitAdvanceDest(ref writer, $"{paramName}Chars");
                         }
                      }
                      else if (argParam.IsEnum)
@@ -407,13 +405,13 @@ public partial class MqttTopicGenerator
                         if (isByteSpan)
                         {
                            writer.WriteLineInterpolated($"var {paramName}Str = {argParam.Name}.ToString();");
-                           EmitCheckedUtf8Bytes(ref writer, $"{paramName}Str", $"{paramName}Bytes", hasWrittenParam);
+                           EmitCheckedUtf8Bytes(ref writer, $"{paramName}Str", $"{paramName}Bytes");
                         }
                         else
                         {
                            writer.WriteLineInterpolated(
                               $"if (!System.Enum.TryFormat({argParam.Name}, remainingDest, out int {paramName}Written)) return false;");
-                           EmitAdvanceDest(ref writer, $"{paramName}Written", hasWrittenParam);
+                           EmitAdvanceDest(ref writer, $"{paramName}Written");
                         }
                      }
                      else
@@ -422,40 +420,43 @@ public partial class MqttTopicGenerator
                            ? $"System.Buffers.Text.Utf8Formatter.TryFormat({argParam.Name}, remainingDest, out int {paramName}Written)"
                            : $"{argParam.Name}.TryFormat(remainingDest, out int {paramName}Written)";
                         writer.WriteLineInterpolated($"if (!{tryFormatCall}) return false;");
-                        EmitAdvanceDest(ref writer, $"{paramName}Written", hasWrittenParam);
+                        EmitAdvanceDest(ref writer, $"{paramName}Written");
                      }
                   }
                }
                else
                {
                   var literalText = segment + suffix;
-                  var escapedLiteralText = SymbolDisplay.FormatLiteral(literalText, true);
-                  var literalLength = isByteSpan ? Encoding.UTF8.GetByteCount(literalText) : literalText.Length;
-
-                  if (isByteSpan)
+                  if (literalText.Length > 0)
                   {
-                     writer.WriteLineInterpolated(
-                        $"if (!{escapedLiteralText}u8.TryCopyTo(remainingDest)) return false;");
-                  }
-                  else
-                  {
-                     writer.WriteLineInterpolated(
-                        $"if (!{escapedLiteralText}.AsSpan().TryCopyTo(remainingDest)) return false;");
-                  }
+                     var escapedLiteralText = SymbolDisplay.FormatLiteral(literalText, true);
+                     var literalLength = isByteSpan ? Encoding.UTF8.GetByteCount(literalText) : literalText.Length;
 
-                  EmitAdvanceDest(ref writer, literalLength.ToString(), hasWrittenParam);
+                     if (isByteSpan)
+                     {
+                        writer.WriteLineInterpolated(
+                           $"if (!{escapedLiteralText}u8.TryCopyTo(remainingDest)) return false;");
+                     }
+                     else
+                     {
+                        writer.WriteLineInterpolated(
+                           $"if (!{escapedLiteralText}.AsSpan().TryCopyTo(remainingDest)) return false;");
+                     }
+
+                     EmitAdvanceDest(ref writer, literalLength.ToString());
+                  }
                }
 
                if (!isLast && segment.StartsWith("{") && segment.EndsWith("}"))
                {
                   writer.WriteLine("if (remainingDest.IsEmpty) return false;");
                   writer.WriteLine(isByteSpan ? "remainingDest[0] = (byte)'/';" : "remainingDest[0] = '/';");
-                  EmitAdvanceDest(ref writer, "1", hasWrittenParam);
+                  EmitAdvanceDest(ref writer, "1");
                }
             }
 
             if (writtenParamName is not null)
-               writer.WriteLineInterpolated($"{writtenParamName} = totalWritten;");
+               writer.WriteLineInterpolated($"{writtenParamName} = {firstParam.Name}.Length - remainingDest.Length;");
             writer.WriteLine("return true;");
          }
 
@@ -597,8 +598,11 @@ public partial class MqttTopicGenerator
                else
                {
                   var literalText = segment + suffix;
-                  var escapedLiteralText = SymbolDisplay.FormatLiteral(literalText, true);
-                  writer.WriteLineInterpolated($"writer.Write({escapedLiteralText}u8);");
+                  if (literalText.Length > 0)
+                  {
+                     var escapedLiteralText = SymbolDisplay.FormatLiteral(literalText, true);
+                     writer.WriteLineInterpolated($"writer.Write({escapedLiteralText}u8);");
+                  }
                }
 
                if (!isLast && segment.StartsWith("{") && segment.EndsWith("}"))
@@ -667,19 +671,17 @@ public partial class MqttTopicGenerator
       }
    }
 
-   private static void EmitCheckedUtf8Bytes(ref CodeTextWriter writer, string sourceExpr, string byteCountVar, bool hasWrittenParam)
+   private static void EmitCheckedUtf8Bytes(ref CodeTextWriter writer, string sourceExpr, string byteCountVar)
    {
       writer.WriteLineInterpolated($"int {byteCountVar} = Encoding.UTF8.GetByteCount({sourceExpr});");
       writer.WriteLineInterpolated($"if ({byteCountVar} > remainingDest.Length) return false;");
       writer.WriteLineInterpolated($"Encoding.UTF8.GetBytes({sourceExpr}, remainingDest);");
-      EmitAdvanceDest(ref writer, byteCountVar, hasWrittenParam);
+      EmitAdvanceDest(ref writer, byteCountVar);
    }
 
-   private static void EmitAdvanceDest(ref CodeTextWriter writer, string countExpr, bool hasWrittenParam)
+   private static void EmitAdvanceDest(ref CodeTextWriter writer, string countExpr)
    {
       writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({countExpr});");
-      if (hasWrittenParam)
-         writer.WriteLineInterpolated($"totalWritten += {countExpr};");
    }
 
    private static void GenerateIsMatchBody(
