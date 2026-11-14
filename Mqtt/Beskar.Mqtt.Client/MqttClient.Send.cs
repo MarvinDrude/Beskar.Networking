@@ -121,6 +121,9 @@ public sealed partial class MqttClient
       var clientResult = ValidateClient();
       if (!clientResult.IsSuccess) return clientResult.Error;
 
+      var capabilityResult = ValidateServerUnsubscribeCapabilities(options);
+      if (capabilityResult.Failed) return capabilityResult.Error;
+
       if (_controlStream is not { } stream)
       {
          return new StringError("Invalid control stream.");
@@ -238,6 +241,12 @@ public sealed partial class MqttClient
    private async Task<TResponse> SendAndAckAsync<TPacket, TResponse>(TPacket packet, INetworkStream stream, CancellationToken ct)
       where TPacket : IRawMqttPacket
    {
+      var sizeValidation = ValidateServerMaximumPacketSize(in packet);
+      if (sizeValidation.Failed)
+      {
+         throw new InvalidOperationException(sizeValidation.Error.Detail);
+      }
+
       ushort identifier = 0;
       if (packet is not PingReqPacket)
       {
@@ -289,6 +298,12 @@ public sealed partial class MqttClient
    private async Task<TResponse> SendAndAck<TOptions, TResponse>(TOptions options, INetworkStream stream, CancellationToken ct = default)
       where TOptions : class, IHeapMqttOptions
    {
+      var sizeValidation = ValidateServerMaximumPacketSize(options);
+      if (sizeValidation.Failed)
+      {
+         throw new InvalidOperationException(sizeValidation.Error.Detail);
+      }
+
       ushort identifier = 0;
       if (options is not ConnectOptions)
       {
@@ -347,6 +362,12 @@ public sealed partial class MqttClient
    private async Task SendInternalAsync<TPacket>(TPacket packet, INetworkStream stream, CancellationToken ct)
       where TPacket : IRawMqttPacket
    {
+      var sizeValidation = ValidateServerMaximumPacketSize(in packet);
+      if (sizeValidation.Failed)
+      {
+         throw new InvalidOperationException(sizeValidation.Error.Detail);
+      }
+
       TraceLogger.LogClientInfo("MqttClient.Send: Sending packet '{0}'...", typeof(TPacket).Name);
 
       try
@@ -387,6 +408,12 @@ public sealed partial class MqttClient
    private async Task Send<TOptions>(TOptions options, INetworkStream stream, ushort identifier = 0, CancellationToken ct = default)
       where TOptions : class, IHeapMqttOptions
    {
+      var sizeValidation = ValidateServerMaximumPacketSize(options);
+      if (sizeValidation.Failed)
+      {
+         throw new InvalidOperationException(sizeValidation.Error.Detail);
+      }
+
       TraceLogger.LogClientInfo("MqttClient.Send: Sending option packet '{0}' (PacketId: {1})...", typeof(TOptions).Name, identifier);
       try
       {

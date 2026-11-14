@@ -107,14 +107,17 @@ public sealed partial class MqttClient
       }
    }
 
-   internal async Task DisconnectFromReceiveLoopAsync(DisconnectOptions options, CancellationToken ct = default)
+   internal Task DisconnectFromReceiveLoopAsync(DisconnectOptions options, CancellationToken ct = default)
+      => DisconnectWithReasonAsync(options, awaitReceiveTask: false, ct);
+
+   private async Task DisconnectWithReasonAsync(DisconnectOptions options, bool awaitReceiveTask, CancellationToken ct = default)
    {
       var validateResult = ValidateClient();
       if (validateResult.Failed) return;
 
       var beforeConnected = IsConnected;
-      TraceLogger.LogClientInfo("MqttClient.DisconnectFromReceiveLoopAsync: Initiating disconnect from receive loop (ReasonCode: {0}, SessionExpiryInterval: {1}).",
-         options.ReasonCode, options.SessionExpiryInterval);
+      TraceLogger.LogClientInfo("MqttClient.DisconnectFromReceiveLoopAsync: Initiating disconnect (ReasonCode: {0}, SessionExpiryInterval: {1}, AwaitReceiveTask: {2}).",
+         options.ReasonCode, options.SessionExpiryInterval, awaitReceiveTask);
 
       if (DisconnectingAlreadyInProcessOrDone())
       {
@@ -141,7 +144,7 @@ public sealed partial class MqttClient
       }
       finally
       {
-         await DisconnectRoutineAsync(beforeConnected, awaitReceiveTask: false);
+         await DisconnectRoutineAsync(beforeConnected, awaitReceiveTask: awaitReceiveTask);
          _gracefulDisconnect = false;
       }
    }
