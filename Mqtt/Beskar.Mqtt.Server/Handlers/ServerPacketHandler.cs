@@ -27,7 +27,20 @@ public sealed partial class ServerPacketHandler
    : IPacketHandler
 {
    [MemberNotNullWhen(true, nameof(_server), nameof(_client))]
-   public bool IsValid => _server is not null && _client is not null && _client.IsConnected;
+   public bool IsValid => _server is not null && _client is not null && _client.IsConnected && !_client.IsFenced;
+
+   [MemberNotNullWhen(true, nameof(_server), nameof(_client))]
+   private bool TryGetActiveSession([NotNullWhen(true)] out MqttSession? session)
+   {
+      if (!IsValid)
+      {
+         session = null;
+         return false;
+      }
+
+      session = _client.MqttSession;
+      return session is not null && session.IsActiveClient(_client);
+   }
 
    private MqttServer? _server;
    private MqttServerClient? _client;
@@ -43,6 +56,14 @@ public sealed partial class ServerPacketHandler
    {
       if (!IsValid) return ValueTask.CompletedTask;
 
+      if (_client.IsHandshakeCompleted)
+      {
+         TraceLogger.LogServerWarning(
+            "ServerPacketHandler: Received unsupported mid-session AUTH packet (ReasonCode: {0}). Disconnecting with ProtocolError.",
+            packet.ReasonCode);
+         return new ValueTask(_client.DisconnectAsync(new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError }));
+      }
+
       _client.PushControlPacket(new AuthPacketOptions(packet));
       return ValueTask.CompletedTask;
    }
@@ -56,6 +77,16 @@ public sealed partial class ServerPacketHandler
    public ValueTask ExecuteAsync(INetworkStream stream, in ConnectPacket packet, CancellationToken ct = default)
    {
       if (!IsValid) return ValueTask.CompletedTask;
+
+      // MQTT §3.1.0: a client MUST only send CONNECT once over a network connection.
+      if (!_client.TryMarkConnectReceived())
+      {
+         TraceLogger.LogServerWarning("ServerPacketHandler: Received duplicate CONNECT packet on existing connection. Disconnecting with ProtocolError.");
+         return new ValueTask(_client.DisconnectAsync(new DisconnectOptions
+         {
+            ReasonCode = DisconnectReasonCode.ProtocolError
+         }));
+      }
 
       stream.Session.Properties.TryGet("MqttProtocolVersion", out MqttProtocolVersion protocolVersion);
       if (protocolVersion is MqttProtocolVersion.Unknown)
@@ -121,10 +152,7 @@ public sealed partial class ServerPacketHandler
 
     public ValueTask ExecuteAsync(INetworkStream stream, in PubAckPacket packet, CancellationToken ct = default)
     {
-        if (!IsValid) return ValueTask.CompletedTask;
-
-        var session = _client.MqttSession;
-        if (session is null) return ValueTask.CompletedTask;
+        if (!TryGetActiveSession(out var session)) return ValueTask.CompletedTask;
 
         var pending = session.AcknowledgePublish(packet.PacketIdentifier);
         if (pending is not null)
@@ -192,10 +220,7 @@ public sealed partial class ServerPacketHandler
 
      public ValueTask ExecuteAsync(INetworkStream stream, in PubRecPacket packet, CancellationToken ct = default)
      {
-        if (!IsValid) return ValueTask.CompletedTask;
-
-        var session = _client.MqttSession;
-        if (session is null) return ValueTask.CompletedTask;
+        if (!TryGetActiveSession(out var session)) return ValueTask.CompletedTask;
 
         var pending = session.PeekUnacknowledgedPublish(packet.PacketIdentifier);
         if (pending is null) return ValueTask.CompletedTask;
@@ -248,10 +273,7 @@ public sealed partial class ServerPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in PubRelPacket packet, CancellationToken ct = default)
    {
-      if (!IsValid) return ValueTask.CompletedTask;
-
-      var session = _client.MqttSession;
-      if (session is null) return ValueTask.CompletedTask;
+      if (!TryGetActiveSession(out var session)) return ValueTask.CompletedTask;
 
       return Awaited(_client, stream, packet, session, ct);
 
@@ -262,8 +284,8 @@ public sealed partial class ServerPacketHandler
          MqttSession session,
          CancellationToken ct)
       {
-         session.RemoveQos2Packet(packet.PacketIdentifier);
-         if (client.ProtocolVersion is MqttProtocolVersion.V50)
+         var removed = session.TryRemoveQos2Packet(packet.PacketIdentifier);
+         if (removed && client.ProtocolVersion is MqttProtocolVersion.V50)
          {
             session.DecrementIncomingInFlight();
          }
@@ -271,7 +293,7 @@ public sealed partial class ServerPacketHandler
          var pubComp = new PubCompPacket
          {
             PacketIdentifier = packet.PacketIdentifier,
-            ReasonCode = PubCompReasonCode.Success
+            ReasonCode = removed ? PubCompReasonCode.Success : PubCompReasonCode.PacketIdentifierNotFound
          };
 
          await stream.Send(in pubComp, client.ProtocolVersion, ct);
@@ -286,10 +308,7 @@ public sealed partial class ServerPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in SubscribePacket packet, CancellationToken ct = default)
    {
-      if (!IsValid) return ValueTask.CompletedTask;
-
-      var session = _client.MqttSession;
-      if (session is null) return ValueTask.CompletedTask;
+      if (!TryGetActiveSession(out var session)) return ValueTask.CompletedTask;
 
       return Awaited(_server, _client, stream, packet, session, ct);
 
@@ -314,10 +333,20 @@ public sealed partial class ServerPacketHandler
          var index = 0;
          while (filtersEnumerator.MoveNext())
          {
+            if (!client.IsConnected || client.IsFenced || !session.IsActiveClient(client))
+            {
+               return;
+            }
+
             var filter = filtersEnumerator.Current;
             var reasonCode = server.Subscribe(session, in filter, packet.SubscriptionIdentifier);
 
             returnCodesSpan[index++] = (byte)reasonCode;
+         }
+
+         if (!client.IsConnected || client.IsFenced || !session.IsActiveClient(client))
+         {
+            return;
          }
 
          var subAck = new SubAckPacket
@@ -340,10 +369,7 @@ public sealed partial class ServerPacketHandler
 
    public ValueTask ExecuteAsync(INetworkStream stream, in UnsubscribePacket packet, CancellationToken ct = default)
    {
-      if (!IsValid) return ValueTask.CompletedTask;
-
-      var session = _client.MqttSession;
-      if (session is null) return ValueTask.CompletedTask;
+      if (!TryGetActiveSession(out var session)) return ValueTask.CompletedTask;
 
       return Awaited(_server, _client, stream, packet, session, ct);
 
@@ -368,10 +394,20 @@ public sealed partial class ServerPacketHandler
          var index = 0;
          while (filtersEnumerator.MoveNext())
          {
+            if (!client.IsConnected || client.IsFenced || !session.IsActiveClient(client))
+            {
+               return;
+            }
+
             var filterSequence = filtersEnumerator.Current;
             var reasonCode = server.Unsubscribe(session, filterSequence);
 
             reasonCodeSpan[index++] = (byte)reasonCode;
+         }
+
+         if (!client.IsConnected || client.IsFenced || !session.IsActiveClient(client))
+         {
+            return;
          }
 
          var unsubAck = new UnsubAckPacket
