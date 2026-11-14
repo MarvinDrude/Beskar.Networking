@@ -94,6 +94,36 @@ public readonly ref partial struct PacketVersion5Encoder
                {
                   propEncoder.Encoder.Write(PropertyIdentifier.AuthenticationData, packet.AuthenticationDataBytes);
                }
+
+               if (!packet.IsRetainAvailable
+                   && !HasProperty(existingMask, PropertyIdentifier.RetainAvailable))
+               {
+                  propEncoder.WriteRetainAvailable(false);
+               }
+
+               if (!packet.IsSharedSubscriptionAvailable
+                   && !HasProperty(existingMask, PropertyIdentifier.SharedSubscriptionAvailable))
+               {
+                  propEncoder.WriteSharedSubscriptionAvailable(false);
+               }
+
+               if (!packet.IsSubscriptionIdentifierAvailable
+                   && !HasProperty(existingMask, PropertyIdentifier.SubscriptionIdentifierAvailable))
+               {
+                  propEncoder.WriteSubscriptionIdentifiersAvailable(false);
+               }
+
+               if (!packet.IsWildcardSubscriptionAvailable
+                   && !HasProperty(existingMask, PropertyIdentifier.WildcardSubscriptionAvailable))
+               {
+                  propEncoder.WriteWildcardSubscriptionAvailable(false);
+               }
+
+               if (packet.MaximumQualityOfService != QualityOfServiceType.ExactlyOnce
+                   && !HasProperty(existingMask, PropertyIdentifier.MaximumQos))
+               {
+                  propEncoder.WriteMaximumQoS(packet.MaximumQualityOfService);
+               }
             }
             finally
             {
@@ -171,6 +201,32 @@ public readonly ref partial struct PacketVersion5Encoder
           && !HasProperty(existingMask, PropertyIdentifier.AuthenticationData))
       {
          len += 3 + (int)packet.AuthenticationDataBytes.Length;
+      }
+
+      if (!packet.IsRetainAvailable && !HasProperty(existingMask, PropertyIdentifier.RetainAvailable))
+      {
+         len += 2;
+      }
+
+      if (!packet.IsSharedSubscriptionAvailable && !HasProperty(existingMask, PropertyIdentifier.SharedSubscriptionAvailable))
+      {
+         len += 2;
+      }
+
+      if (!packet.IsSubscriptionIdentifierAvailable && !HasProperty(existingMask, PropertyIdentifier.SubscriptionIdentifierAvailable))
+      {
+         len += 2;
+      }
+
+      if (!packet.IsWildcardSubscriptionAvailable && !HasProperty(existingMask, PropertyIdentifier.WildcardSubscriptionAvailable))
+      {
+         len += 2;
+      }
+
+      if (packet.MaximumQualityOfService != QualityOfServiceType.ExactlyOnce
+          && !HasProperty(existingMask, PropertyIdentifier.MaximumQos))
+      {
+         len += 2;
       }
 
       return len;

@@ -115,13 +115,16 @@ public readonly ref partial struct PacketVersion5Encoder
       }
    }
 
-   private int CalculateLength(PublishOptions options)
+   internal static int CalculatePublishPacketLength(PublishOptions options)
    {
       var remainingLength = CalculateRemainingLength(options);
       return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
    }
 
-   private int CalculateRemainingLength(PublishOptions options)
+   private int CalculateLength(PublishOptions options)
+      => CalculatePublishPacketLength(options);
+
+   private static int CalculateRemainingLength(PublishOptions options)
    {
       var len = 2 + options.TopicUtf8Bytes.Length;
 

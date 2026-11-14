@@ -94,6 +94,18 @@ public readonly ref partial struct PacketVersion5Encoder
       }
    }
 
+   /// <summary>
+   /// Calculates the exact encoded byte length of an MQTT 5.0 PUBLISH packet.
+   /// </summary>
+   internal static int CalculatePublishPacketLength(in PublishPacket packet)
+   {
+      var existingMask = CollectPresentProperties(packet.PropertiesBytes);
+      var propsDataLen = CalculatePublishPropertiesDataLength(in packet, existingMask);
+      var remainingLength = CalculateRemainingLength(in packet, propsDataLen);
+
+      return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
+   }
+
    private static int CalculateRemainingLength(in PublishPacket packet, int propsDataLen)
    {
       var len = 2 + (int)packet.TopicUtf8Bytes.Length;

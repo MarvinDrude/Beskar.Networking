@@ -38,6 +38,12 @@ public readonly ref partial struct PacketVersion3Encoder
       }
    }
 
+   /// <summary>
+   /// Calculates the exact encoded byte length of an MQTT 3.x PUBLISH packet.
+   /// </summary>
+   internal static int CalculatePublishPacketLength(in PublishPacket packet)
+      => CalculateLength(in packet);
+
    private static int CalculateLength(in PublishPacket packet)
    {
       var remainingLength = CalculateRemainingLength(packet);
