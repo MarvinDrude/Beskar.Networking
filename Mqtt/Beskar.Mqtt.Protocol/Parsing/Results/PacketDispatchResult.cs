@@ -6,4 +6,5 @@ public enum PacketDispatchResult : byte
    NotEnoughData = 2,
    ProtocolError = 3,
    InvalidPacketType = 4,
+   PacketTooLarge = 5,
 }

@@ -17,13 +17,15 @@ namespace Beskar.Mqtt.Common.Parsers;
 public ref struct PacketParser(
    INetworkStream stream,
    IPacketHandler handler,
-   MqttProtocolVersion protocolVersion)
+   MqttProtocolVersion protocolVersion,
+   uint maximumPacketSize = 0)
 {
    public MqttProtocolVersion ProtocolVersion { get; private set; } = protocolVersion;
    public bool TryPrivate => _tryPrivate;
 
    private readonly INetworkStream _stream = stream;
    private readonly IPacketHandler _packetHandler = handler;
+   private readonly uint _maximumPacketSize = maximumPacketSize;
    private bool _tryPrivate;
 
    public ValueTask<Result<PacketDispatchResult, StringError>> TryDispatch(
@@ -49,6 +51,11 @@ public ref struct PacketParser(
          return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(res);
       }
 
+      if (_maximumPacketSize > 0 && (ulong)(headerLength + bodyLength) > _maximumPacketSize)
+      {
+         return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.PacketTooLarge);
+      }
+
       if (copyReader.Remaining < bodyLength)
       {
          // enough data for the entire body not provided
@@ -63,7 +70,22 @@ public ref struct PacketParser(
       };
 
       var packetType = (MqttPacketType)(rawPacket.FixedHeader >> 4);
-      if (ProtocolVersion is MqttProtocolVersion.Unknown || packetType is MqttPacketType.Connect)
+      if (ProtocolVersion is MqttProtocolVersion.Unknown)
+      {
+         if (packetType is not MqttPacketType.Connect)
+         {
+            // MQTT §3.1.0: the first packet sent from Client to Server MUST be CONNECT.
+            return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.ProtocolError);
+         }
+
+         var protocolResult = ParseProtocolVersion(ref rawPacket, out _tryPrivate);
+         if (protocolResult.Failed)
+            return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(protocolResult.Error);
+
+         ProtocolVersion = protocolResult.Success;
+         _stream.Session.Properties.Set("MqttProtocolVersion", ProtocolVersion);
+      }
+      else if (packetType is MqttPacketType.Connect)
       {
          var protocolResult = ParseProtocolVersion(ref rawPacket, out _tryPrivate);
          if (protocolResult.Failed)
