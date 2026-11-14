@@ -203,6 +203,51 @@ public class MqttRetainedMessagesTests
       await Assert.That(children.Count).IsEqualTo(0);
    }
 
+   [Test]
+   [NotInParallel]
+   public async Task RetainedMessage_ExpiredBeforeClear_ShouldDecrementActiveRetainedMetric()
+   {
+      long retainedDelta = 0;
+      using var meterListener = new System.Diagnostics.Metrics.MeterListener();
+      meterListener.InstrumentPublished = (instrument, listener) =>
+      {
+         if (instrument.Meter.Name == Beskar.Mqtt.Common.Telemetry.MqttMetrics.MeterName &&
+             instrument.Name == "beskar.mqtt.retained_messages.active")
+         {
+            listener.EnableMeasurementEvents(instrument);
+         }
+      };
+      meterListener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
+      {
+         if (instrument.Name == "beskar.mqtt.retained_messages.active")
+         {
+            Interlocked.Add(ref retainedDelta, measurement);
+         }
+      });
+      meterListener.Start();
+
+      using var manager = new MqttRetainedMessages();
+      var expiringMsg = new MqttPublishMessage(new PublishPacket
+      {
+         Dup = false,
+         QualityOfService = QualityOfServiceType.AtMostOnce,
+         Retain = true,
+         TopicUtf8Bytes = new ReadOnlySequence<byte>("metrics/expiring"u8.ToArray()),
+         Payload = new ReadOnlySequence<byte>("1"u8.ToArray()),
+         MessageExpiryInterval = 1
+      });
+
+      manager.UpdateMessage("client1", expiringMsg);
+      await Assert.That(Volatile.Read(ref retainedDelta)).IsEqualTo(1L);
+
+      // Wait until retained message expires, then query and clear
+      await Task.Delay(1200);
+      _ = manager.GetMessages();
+      manager.Clear();
+
+      await Assert.That(Volatile.Read(ref retainedDelta)).IsEqualTo(0L);
+   }
+
    private static MqttPublishMessage CreatePublishMessage(string topic, byte[] payload)
    {
       return new MqttPublishMessage(new PublishPacket

@@ -13,6 +13,7 @@ using Beskar.Networking.Abstractions.Errors;
 using Beskar.Networking.Abstractions.Interfaces;
 using Beskar.Networking.Abstractions.Models;
 using Beskar.Networking.Abstractions.Threading;
+using Beskar.Networking.Transports.Tcp;
 using Beskar.Utilities.Tracing;
 
 namespace Beskar.Mqtt.Common.Tests.Internal;
@@ -147,7 +148,7 @@ public class MqttKeepAliveTests
 
       // Verify that the registry no longer contains the session
       var retrieveResult = await server.ClientSessions.GetOrCreateSession(client, connectOptions, CancellationToken.None);
-      
+
       // Since it expired and was cleaned up, the registry should have initialized a NEW session
       // rather than returning the existing one.
       await Assert.That(retrieveResult.IsSessionPresent).IsFalse();
@@ -228,5 +229,193 @@ public class MqttKeepAliveTests
 
       // 1 = Disconnected, 0 = Disconnecting (stuck in deadlock)
       await Assert.That(state).IsEqualTo(1);
+   }
+
+   [Test]
+   public async Task ServerOptionsBuilder_DefaultKeepAliveInterval_ShouldStartWithoutThrowing()
+   {
+      var options = new MqttServerOptionsBuilder().Build();
+      await Assert.That(options.KeepAlive.Interval).IsGreaterThan(TimeSpan.Zero);
+
+      await using var server = MqttServerFactory.CreateBuilder(options)
+         .UseTcp(0)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+   }
+
+   [Test]
+   public async Task KeepAliveTimeout_PartialNonPacketTransportBytes_ShouldDisconnectClient()
+   {
+      var options = new MqttServerOptions
+      {
+         KeepAlive = new MqttServerKeepAliveOptions
+         {
+            Interval = TimeSpan.FromMilliseconds(200)
+         }
+      };
+
+      var tcpListener = new TcpNetworkListener(new IPEndPoint(IPAddress.Loopback, 0), new TcpTransportOptions());
+      var trackingListener = new TransportReadTrackingListener(tcpListener);
+
+      await using var server = MqttServerFactory.CreateBuilder(options)
+         .Use(trackingListener)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
+      var disconnectedReasonTcs = new TaskCompletionSource<DisconnectReasonCode>(TaskCreationOptions.RunContinuationsAsynchronously);
+      server.Events.OnDisconnect.Add((ctx, _) =>
+      {
+         disconnectedReasonTcs.TrySetResult(ctx.Reason);
+         return ValueTask.CompletedTask;
+      });
+
+      using var tcpClient = new System.Net.Sockets.TcpClient { NoDelay = true };
+      await tcpClient.ConnectAsync(IPAddress.Loopback, port);
+      using var stream = tcpClient.GetStream();
+
+      // Send valid MQTT 5.0 CONNECT with KeepAlive = 1 second (1.5x timeout = 1.5s)
+      byte[] connectPacket =
+      [
+         0x10, 0x16,
+         0x00, 0x04, (byte)'M', (byte)'Q', (byte)'T', (byte)'T',
+         0x05, 0x02, 0x00, 0x01, 0x00,
+         0x00, 0x09,
+         (byte)'k', (byte)'a', (byte)'-', (byte)'p', (byte)'a', (byte)'r', (byte)'t', (byte)'i', (byte)'a'
+      ];
+      await stream.WriteAsync(connectPacket);
+      await stream.FlushAsync();
+
+      var connAckBuf = new byte[16];
+      var connAckRead = await stream.ReadAsync(connAckBuf);
+      await Assert.That(connAckRead).IsGreaterThanOrEqualTo(4);
+
+      // Send incomplete PUBLISH header chunks ([0x30, 0x7F] -> remaining length 127) every 350ms for ~2.45s.
+      // Per MQTT 5.0 3.1.2.10, keep-alive requires a complete Control Packet within 1.5s,
+      // not merely transport RX bytes updating stream activity timestamps.
+      byte[] partialHeader = [0x30, 0x7F];
+      for (var i = 0; i < 7 && !disconnectedReasonTcs.Task.IsCompleted; i++)
+      {
+         await Task.Delay(350);
+
+         try
+         {
+            await stream.WriteAsync(partialHeader);
+            await stream.FlushAsync();
+         }
+         catch (IOException)
+         {
+            break;
+         }
+      }
+
+      if (!disconnectedReasonTcs.Task.IsCompleted)
+      {
+         await Task.WhenAny(disconnectedReasonTcs.Task, Task.Delay(300));
+      }
+
+      var timedOutWaitingForDisconnect = !disconnectedReasonTcs.Task.IsCompleted;
+      await Assert.That(timedOutWaitingForDisconnect).IsFalse();
+      await Assert.That(await disconnectedReasonTcs.Task).IsEqualTo(DisconnectReasonCode.KeepAliveTimeout);
+   }
+
+   private sealed class TransportReadTrackingListener(INetworkListener inner) : INetworkListener
+   {
+      public EndPoint LocalAddress => inner.LocalAddress;
+      public bool IsBound => inner.IsBound;
+      public TransportKind Transport => inner.Transport;
+      public NetworkListenerStats Stats => inner.Stats;
+      public ValueTask<VoidResult<NetworkCodeError>> BindAsync(CancellationToken ct = default) => inner.BindAsync(ct);
+      public ValueTask<VoidResult<NetworkCodeError>> UnbindAsync(CancellationToken ct = default) => inner.UnbindAsync(ct);
+      public ValueTask DisposeAsync() => inner.DisposeAsync();
+
+      public async ValueTask<Result<INetworkSession, NetworkCodeError>> AcceptSessionAsync(CancellationToken ct = default)
+      {
+         var result = await inner.AcceptSessionAsync(ct);
+         return result.Failed
+            ? result
+            : new TransportReadTrackingSession(result.Success);
+      }
+   }
+
+   private sealed class TransportReadTrackingSession(INetworkSession inner) : INetworkSession
+   {
+      public Guid Id => inner.Id;
+      public EndPoint RemoteAddress => inner.RemoteAddress;
+      public EndPoint LocalAddress => inner.LocalAddress;
+      public bool IsSupportingMultiplexing => inner.IsSupportingMultiplexing;
+      public bool IsSupportingUnidirectional => inner.IsSupportingUnidirectional;
+      public CancellationToken SessionClosedToken => inner.SessionClosedToken;
+      public INetworkPropertyStore Properties => inner.Properties;
+      public NetworkStats Stats => inner.Stats;
+      public DateTimeOffset CreatedAt => inner.CreatedAt;
+      public TransportKind Transport => inner.Transport;
+      public NetworkSecurityInfo SecurityInfo => inner.SecurityInfo;
+      public NetworkSessionStats SessionStats => inner.SessionStats;
+      public IReadOnlyCollection<INetworkStream> ActiveStreams => inner.ActiveStreams;
+      public ValueTask<Result<INetworkStream, NetworkCodeError>> OpenStreamAsync(
+         NetworkStreamDirection direction = NetworkStreamDirection.Bidirectional, CancellationToken ct = default)
+         => inner.OpenStreamAsync(direction, ct);
+      public ValueTask DisposeAsync() => inner.DisposeAsync();
+
+      public async ValueTask<Result<INetworkStream, NetworkCodeError>> AcceptStreamAsync(CancellationToken ct = default)
+      {
+         var result = await inner.AcceptStreamAsync(ct);
+         return result.Failed
+            ? result
+            : new TransportReadTrackingStream(result.Success, this);
+      }
+   }
+
+   private sealed class TransportReadTrackingStream(INetworkStream inner, INetworkSession session) : INetworkStream
+   {
+      public long StreamId => inner.StreamId;
+      public INetworkSession Session { get; } = session;
+      public NetworkStreamDirection Direction => inner.Direction;
+      public IDuplexPipe Transport { get; } = new TransportReadTrackingDuplexPipe(inner.Transport, inner);
+      public NetworkStats Stats { get => inner.Stats; set => inner.Stats = value; }
+      public DateTimeOffset CreatedAt => inner.CreatedAt;
+      public ValueTask<LockReleaser> AcquireWriterLock(CancellationToken cancellationToken = default) => inner.AcquireWriterLock(cancellationToken);
+      public ValueTask DisposeAsync() => inner.DisposeAsync();
+   }
+
+   private sealed class TransportReadTrackingDuplexPipe(IDuplexPipe inner, INetworkStream statsTarget) : IDuplexPipe
+   {
+      public PipeReader Input { get; } = new TransportReadTrackingPipeReader(inner.Input, statsTarget);
+      public PipeWriter Output => inner.Output;
+   }
+
+   private sealed class TransportReadTrackingPipeReader(PipeReader inner, INetworkStream statsTarget) : PipeReader
+   {
+      public override void AdvanceTo(SequencePosition consumed) => inner.AdvanceTo(consumed);
+      public override void AdvanceTo(SequencePosition consumed, SequencePosition examined) => inner.AdvanceTo(consumed, examined);
+      public override void CancelPendingRead() => inner.CancelPendingRead();
+      public override void Complete(Exception? exception = null) => inner.Complete(exception);
+
+      public override bool TryRead(out ReadResult result)
+      {
+         var read = inner.TryRead(out result);
+         if (read && !result.Buffer.IsEmpty)
+         {
+            statsTarget.IncrementBytesReceived(result.Buffer.Length);
+         }
+         return read;
+      }
+
+      public override async ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default)
+      {
+         var result = await inner.ReadAsync(cancellationToken);
+         if (!result.Buffer.IsEmpty)
+         {
+            statsTarget.IncrementBytesReceived(result.Buffer.Length);
+         }
+         return result;
+      }
    }
 }
