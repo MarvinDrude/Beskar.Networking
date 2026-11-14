@@ -34,10 +34,21 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       OpenAndIndexLog();
    }
 
+   private FileStream ThrowIfDisposed()
+   {
+      if (Volatile.Read(ref _disposed) != 0 || _logFileStream == null)
+      {
+         throw new ObjectDisposedException(nameof(FileRaftLogStorage));
+      }
+
+      return _logFileStream;
+   }
+
    public ValueTask<ulong> GetCurrentTermAsync(CancellationToken ct = default)
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          return ValueTask.FromResult(_currentTerm);
       }
    }
@@ -46,6 +57,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          _currentTerm = term;
          WriteMetadata();
          return ValueTask.CompletedTask;
@@ -56,6 +68,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          return ValueTask.FromResult(_votedFor);
       }
    }
@@ -64,6 +77,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          _votedFor = candidateId;
          WriteMetadata();
          return ValueTask.CompletedTask;
@@ -74,6 +88,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          _currentTerm = term;
          _votedFor = candidateId;
          WriteMetadata();
@@ -85,6 +100,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          if (_entries.Count == 0)
          {
             return ValueTask.FromResult(_compactedUntilIndex);
@@ -98,6 +114,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          if (_entries.Count == 0)
          {
             return ValueTask.FromResult(_compactedUntilTerm);
@@ -111,24 +128,10 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
-         if (index == 0 || _entries.Count == 0)
-         {
-            return ValueTask.FromResult<RaftLogEntry?>(null);
-         }
-
-         var firstIndex = _entries[0].Index;
-         if (index < firstIndex)
-         {
-            return ValueTask.FromResult<RaftLogEntry?>(null);
-         }
-
-         var listIndex = (int)(index - firstIndex);
-         if (listIndex >= 0 && listIndex < _entries.Count && _entries[listIndex].Index == index)
-         {
-            return ValueTask.FromResult<RaftLogEntry?>(_entries[listIndex]);
-         }
-
-         return ValueTask.FromResult<RaftLogEntry?>(null);
+         ThrowIfDisposed();
+         return RaftLogStorageHelper.TryGetEntryOffset(index, _entries, out var listIndex)
+            ? ValueTask.FromResult<RaftLogEntry?>(_entries[listIndex])
+            : ValueTask.FromResult<RaftLogEntry?>(null);
       }
    }
 
@@ -136,31 +139,8 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
-         if (fromIndex == 0 || _entries.Count == 0 || maxCount <= 0)
-         {
-            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>([]);
-         }
-
-         var firstIndex = _entries[0].Index;
-         if (fromIndex < firstIndex)
-         {
-            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>([]);
-         }
-
-         var startListIndex = (int)(fromIndex - firstIndex);
-         if (startListIndex >= _entries.Count)
-         {
-            return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>([]);
-         }
-
-         var count = Math.Min(maxCount, _entries.Count - startListIndex);
-         var result = new List<RaftLogEntry>(count);
-         for (var i = 0; i < count; i++)
-         {
-            result.Add(_entries[startListIndex + i]);
-         }
-
-         return ValueTask.FromResult<IReadOnlyList<RaftLogEntry>>(result);
+         ThrowIfDisposed();
+         return ValueTask.FromResult(RaftLogStorageHelper.GetEntriesSlice(_entries, fromIndex, maxCount));
       }
    }
 
@@ -168,67 +148,42 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
-         if (_logFileStream == null)
-         {
-            throw new ObjectDisposedException(nameof(FileRaftLogStorage));
-         }
+         var logStream = ThrowIfDisposed();
 
-         _logFileStream.Seek(0, SeekOrigin.End);
+         logStream.Seek(0, SeekOrigin.End);
 
          Span<byte> header = stackalloc byte[20];
          for (var i = 0; i < entries.Count; i++)
          {
             var entry = entries[i];
-            if (entry.Index <= _compactedUntilIndex)
+            switch (RaftLogStorageHelper.ClassifyAppendEntry(entry, _entries, _compactedUntilIndex))
             {
-               continue;
+               case RaftLogStorageHelper.AppendEntryAction.Skip:
+                  continue;
+
+               case RaftLogStorageHelper.AppendEntryAction.TruncateAndAppend:
+                  // term conflict: Truncate from this index before overwriting
+                  TruncateInternal(entry.Index);
+                  logStream.Seek(0, SeekOrigin.End);
+                  break;
             }
 
-            if (_entries.Count > 0)
-            {
-               var firstIndex = _entries[0].Index;
-               if (entry.Index < firstIndex)
-               {
-                  continue;
-               }
-
-               var existingListIndex = (int)(entry.Index - firstIndex);
-               if (existingListIndex > _entries.Count)
-               {
-                  continue;
-               }
-
-               if (existingListIndex >= 0 && existingListIndex < _entries.Count)
-               {
-                  if (_entries[existingListIndex].Term != entry.Term)
-                  {
-                     // term conflict: Truncate from this index before overwriting
-                     TruncateInternal(entry.Index);
-                  }
-                  else
-                  {
-                     // same term: entry is already present in log, skip to avoid deleting tail entries
-                     continue;
-                  }
-               }
-            }
-
-            var offset = _logFileStream.Position;
+            var offset = logStream.Position;
             BinaryPrimitives.WriteUInt64LittleEndian(header[..8], entry.Term);
             BinaryPrimitives.WriteUInt64LittleEndian(header.Slice(8, 8), entry.Index);
             BinaryPrimitives.WriteInt32LittleEndian(header.Slice(16, 4), entry.Data.Length);
 
-            _logFileStream.Write(header);
+            logStream.Write(header);
             if (entry.Data.Length > 0)
             {
-               _logFileStream.Write(entry.Data.Span);
+               logStream.Write(entry.Data.Span);
             }
 
             _entries.Add(entry);
             _entryOffsets.Add(offset);
          }
 
-         _logFileStream.Flush(flushToDisk: true);
+         logStream.Flush(flushToDisk: true);
          return ValueTask.CompletedTask;
       }
    }
@@ -237,6 +192,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          TruncateInternal(fromIndex);
          return ValueTask.CompletedTask;
       }
@@ -244,13 +200,13 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
 
    private void TruncateInternal(ulong fromIndex)
    {
-      if (_entries.Count == 0 || fromIndex == 0 || _logFileStream == null)
+      if (_logFileStream == null ||
+          !RaftLogStorageHelper.TryGetTruncateAction(fromIndex, _entries, out var clearAll, out var startListIndex))
       {
          return;
       }
 
-      var firstIndex = _entries[0].Index;
-      if (fromIndex < firstIndex)
+      if (clearAll)
       {
          _entries.Clear();
          _entryOffsets.Clear();
@@ -260,23 +216,20 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
          return;
       }
 
-      var startListIndex = (int)(fromIndex - firstIndex);
-      if (startListIndex < _entries.Count)
-      {
-         var cutOffset = _entryOffsets[startListIndex];
+      var cutOffset = _entryOffsets[startListIndex];
 
-         _entries.RemoveRange(startListIndex, _entries.Count - startListIndex);
-         _entryOffsets.RemoveRange(startListIndex, _entryOffsets.Count - startListIndex);
+      _entries.RemoveRange(startListIndex, _entries.Count - startListIndex);
+      _entryOffsets.RemoveRange(startListIndex, _entryOffsets.Count - startListIndex);
 
-         _logFileStream.SetLength(cutOffset);
-         _logFileStream.Flush(flushToDisk: true);
-      }
+      _logFileStream.SetLength(cutOffset);
+      _logFileStream.Flush(flushToDisk: true);
    }
 
    public ValueTask CompactPrefixAsync(ulong untilIndex, ulong untilTerm = 0, CancellationToken ct = default)
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          CompactPrefixInternal(untilIndex, untilTerm);
          return ValueTask.CompletedTask;
       }
@@ -284,57 +237,42 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
 
    private void CompactPrefixInternal(ulong untilIndex, ulong untilTerm = 0)
    {
-      if (untilIndex == 0)
+      if (_logFileStream == null)
       {
          return;
       }
 
-      if (_entries.Count == 0 || _logFileStream == null)
+      var plan = RaftLogStorageHelper.PlanCompaction(
+         untilIndex,
+         untilTerm,
+         _entries,
+         _compactedUntilIndex,
+         _compactedUntilTerm);
+
+      if (!plan.ShouldUpdate)
       {
-         if (untilIndex >= _compactedUntilIndex)
-         {
-            _compactedUntilIndex = untilIndex;
-            if (untilTerm > 0)
-            {
-               _compactedUntilTerm = untilTerm;
-            }
-            WriteMetadata();
-         }
          return;
       }
 
-      var firstIndex = _entries[0].Index;
-      if (untilIndex < firstIndex)
-      {
-         if (untilIndex == _compactedUntilIndex && untilTerm > 0)
-         {
-            _compactedUntilTerm = untilTerm;
-            WriteMetadata();
-         }
-         return;
-      }
+      _compactedUntilIndex = plan.NewCompactedUntilIndex;
+      _compactedUntilTerm = plan.NewCompactedUntilTerm;
 
-      var removeCount = (int)(untilIndex - firstIndex + 1);
-      var targetEntry = _entries[Math.Min(removeCount - 1, _entries.Count - 1)];
-      _compactedUntilIndex = untilIndex;
-      _compactedUntilTerm = untilTerm > 0 ? untilTerm : targetEntry.Term;
+      // Persist compacted metadata before rewriting or truncating the log so a crash cannot leave old entries active.
+      WriteMetadata();
 
-      if (removeCount >= _entries.Count || (untilTerm > 0 && targetEntry.Term != untilTerm))
+      if (plan.ClearAllRemaining)
       {
          _entries.Clear();
          _entryOffsets.Clear();
          _logFileStream.SetLength(0);
          _logFileStream.Flush(flushToDisk: true);
       }
-      else
+      else if (plan.RemoveCount > 0)
       {
-         _entries.RemoveRange(0, removeCount);
-         _entryOffsets.RemoveRange(0, removeCount);
-
+         _entries.RemoveRange(0, plan.RemoveCount);
+         _entryOffsets.RemoveRange(0, plan.RemoveCount);
          RewriteLogFileInternal();
       }
-
-      WriteMetadata();
    }
 
    private void RewriteLogFileInternal()
@@ -390,11 +328,27 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       {
          _compactedUntilIndex = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(8, 8));
          _compactedUntilTerm = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(16, 8));
-         var votedForLen = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(24, 2));
+         var votedForLen = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(24, 2));
 
-         if (votedForLen > 0 && bytes.Length >= 26 + votedForLen)
+         if (bytes.Length == 26 && votedForLen == ushort.MaxValue)
+         {
+            _votedFor = null;
+         }
+         else if (votedForLen > 0 && bytes.Length >= 26 + votedForLen)
          {
             _votedFor = Encoding.UTF8.GetString(bytes, 26, votedForLen);
+         }
+         else if (votedForLen == 0 && bytes.Length >= 30)
+         {
+            var extendedLen = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(26, 4));
+            if (extendedLen > 0 && bytes.Length >= 30 + extendedLen)
+            {
+               _votedFor = Encoding.UTF8.GetString(bytes, 30, extendedLen);
+            }
+            else
+            {
+               _votedFor = null;
+            }
          }
          else
          {
@@ -429,23 +383,38 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       if (!string.IsNullOrEmpty(_votedFor))
       {
          votedForBytes = Encoding.UTF8.GetBytes(_votedFor);
-         BinaryPrimitives.WriteInt16LittleEndian(header.Slice(24, 2), (short)votedForBytes.Length);
+      }
+
+      byte[] buffer;
+      if (votedForBytes == null)
+      {
+         BinaryPrimitives.WriteInt16LittleEndian(header.Slice(24, 2), -1);
+         buffer = new byte[26];
+         header.CopyTo(buffer);
+      }
+      else if (votedForBytes.Length <= ushort.MaxValue)
+      {
+         BinaryPrimitives.WriteUInt16LittleEndian(header.Slice(24, 2), (ushort)votedForBytes.Length);
+         buffer = new byte[26 + votedForBytes.Length];
+         header.CopyTo(buffer);
+         votedForBytes.CopyTo(buffer, 26);
       }
       else
       {
-         BinaryPrimitives.WriteInt16LittleEndian(header.Slice(24, 2), -1);
-      }
-
-      var totalLen = 26 + (votedForBytes?.Length ?? 0);
-      var buffer = new byte[totalLen];
-      header.CopyTo(buffer);
-      if (votedForBytes != null)
-      {
-         votedForBytes.CopyTo(buffer, 26);
+         BinaryPrimitives.WriteUInt16LittleEndian(header.Slice(24, 2), 0);
+         buffer = new byte[30 + votedForBytes.Length];
+         header.CopyTo(buffer);
+         BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(26, 4), votedForBytes.Length);
+         votedForBytes.CopyTo(buffer, 30);
       }
 
       var tempPath = $"{_metadataPath}.tmp";
-      File.WriteAllBytes(tempPath, buffer);
+      using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+      {
+         fs.Write(buffer);
+         fs.Flush(flushToDisk: true);
+      }
+
       File.Move(tempPath, _metadataPath, overwrite: true);
    }
 
@@ -456,6 +425,9 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       _entries.Clear();
       _entryOffsets.Clear();
 
+      var needsTruncateFlush = false;
+      var hasSkippedCompacted = false;
+
       Span<byte> header = stackalloc byte[20];
       while (_logFileStream.Position + 20 <= _logFileStream.Length)
       {
@@ -464,6 +436,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
          if (readHeaderBytes < 20)
          {
             _logFileStream.SetLength(offset);
+            needsTruncateFlush = true;
             break;
          }
 
@@ -475,6 +448,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
          {
             // Corrupt trailing write, truncate to last valid offset
             _logFileStream.SetLength(offset);
+            needsTruncateFlush = true;
             break;
          }
 
@@ -484,6 +458,12 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
             _logFileStream.ReadExactly(data);
          }
 
+         if (index <= _compactedUntilIndex)
+         {
+            hasSkippedCompacted = true;
+            continue;
+         }
+
          _entries.Add(new RaftLogEntry(term, index, data));
          _entryOffsets.Add(offset);
       }
@@ -491,6 +471,15 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
       if (_logFileStream.Position < _logFileStream.Length)
       {
          _logFileStream.SetLength(_logFileStream.Position);
+         needsTruncateFlush = true;
+      }
+
+      if (hasSkippedCompacted)
+      {
+         RewriteLogFileInternal();
+      }
+      else if (needsTruncateFlush)
+      {
          _logFileStream.Flush(flushToDisk: true);
       }
    }
@@ -499,6 +488,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          return ValueTask.FromResult(_compactedUntilIndex);
       }
    }
@@ -507,6 +497,7 @@ public sealed class FileRaftLogStorage : IRaftLogStorage
    {
       lock (_lock)
       {
+         ThrowIfDisposed();
          return ValueTask.FromResult(_compactedUntilTerm);
       }
    }

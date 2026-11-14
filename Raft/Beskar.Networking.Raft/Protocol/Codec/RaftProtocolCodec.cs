@@ -140,13 +140,18 @@ public static class RaftProtocolCodec
 
       var entriesLength = 0;
       var entries = request.Entries;
+      int payloadLength;
 
-      for (var i = 0; i < entries.Count; i++)
+      checked
       {
-         entriesLength += 8 + 8 + 4 + entries[i].Data.Length;
+         for (var i = 0; i < entries.Count; i++)
+         {
+            entriesLength += 8 + 8 + 4 + entries[i].Data.Length;
+         }
+
+         payloadLength = 8 + 2 + leaderIdBytes.Length + 8 + 8 + 8 + 4 + entriesLength;
       }
 
-      var payloadLength = 8 + 2 + leaderIdBytes.Length + 8 + 8 + 8 + 4 + entriesLength;
       WriteHeader(writer, RaftMessageType.AppendEntries, payloadLength);
 
       var span = writer.GetSpan(payloadLength);
@@ -195,7 +200,7 @@ public static class RaftProtocolCodec
          throw new ArgumentOutOfRangeException(nameof(request.LeaderId), "LeaderId exceeds maximum allowed length of 65535 bytes.");
       }
 
-      var payloadLength = 8 + 2 + leaderIdBytes.Length + 8 + 8 + 4 + request.Data.Length;
+      var payloadLength = checked(8 + 2 + leaderIdBytes.Length + 8 + 8 + 4 + request.Data.Length);
       WriteHeader(writer, RaftMessageType.InstallSnapshot, payloadLength);
 
       var span = writer.GetSpan(payloadLength);
@@ -239,7 +244,7 @@ public static class RaftProtocolCodec
    {
       if (!reader.TryReadLittleEndian(out long termRaw) ||
           !reader.TryReadLittleEndian(out short candidateIdLengthRaw) ||
-          reader.Remaining < (ushort)candidateIdLengthRaw + 16)
+          reader.Remaining < (ushort)candidateIdLengthRaw + 17)
       {
          return null;
       }
@@ -253,16 +258,13 @@ public static class RaftProtocolCodec
       reader.Advance(candidateIdLength);
 
       if (!reader.TryReadLittleEndian(out long lastLogIndexRaw) ||
-          !reader.TryReadLittleEndian(out long lastLogTermRaw))
+          !reader.TryReadLittleEndian(out long lastLogTermRaw) ||
+          !reader.TryRead(out var preVoteByte))
       {
          return null;
       }
 
-      var isPreVote = false;
-      if (reader.TryRead(out var preVoteByte))
-      {
-         isPreVote = preVoteByte != 0;
-      }
+      var isPreVote = preVoteByte != 0;
 
       return new RequestVoteRequest
       {
@@ -309,7 +311,8 @@ public static class RaftProtocolCodec
           !reader.TryReadLittleEndian(out long prevLogTermRaw) ||
           !reader.TryReadLittleEndian(out long leaderCommitIndexRaw) ||
           !reader.TryReadLittleEndian(out int entriesCount) ||
-          entriesCount < 0)
+          entriesCount < 0 ||
+          (long)entriesCount * 20 > reader.Remaining)
       {
          return null;
       }
