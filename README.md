@@ -6,7 +6,7 @@
 </p>
 </h1>
 <p align="center">
-   Fast, <code>.NET 10</code> native, high-performance, low-allocation networking library.<br/>
+   Fast, <code>.NET 11</code> native, high-performance, low-allocation networking library.<br/>
    Built for modern <code>C#</code> includes TCP, WebSockets, QUIC, UDP, UDS, Named Pipes, Memory, and MQTT.<br/>
    No external runtime dependencies besides <b>Beskar</b>.<br/><br/>
    <a href="#about">About</a>
@@ -42,7 +42,7 @@
 Main reasons for why you should consider using `Beskar.Networking` for your next **Networking**, **IPC**, or **MQTT** use case:
 
 - Made with passion and love for the craft.
-- Built for modern **`.NET 10`** using `C#` and designed to be highly performant, low-allocation, and easy to use.
+- Built for modern **`.NET 11`** using `C#` and designed to be highly performant, low-allocation, and easy to use.
 - **Extreme Performance**: From **100,000** up to **12,700,000** messages/packets per second with zero/near-zero allocations via `System.IO.Pipelines`.
 - **Roslyn Incremental Source Generators**: Compile-time protocol framing and zero-allocation MQTT topic byte generation.
 - **Built-in Chaos Engineering**: Test network resiliency with built-in fault injection (latency jitter, packet drops, bandwidth caps, abrupt teardowns).
@@ -50,6 +50,7 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 - **Native OpenTelemetry & Metrics**: Built-in `System.Diagnostics.Metrics` meters across all transports, resilient protocol, and MQTT broker/client.
 - **Full MQTT v3.1.1 & v5.0 Support**: High-performance broker and client with retained message persistence, offline crash-safe queuing, and user properties.
 - **Distributed Raft Consensus**: Complete, low-allocation Raft consensus engine with quorum log replication, leader elections, and persistent WAL storage over any transport.
+- **Comprehensive Test Suite**: Covered by **863** automated tests across all 13 test projects (MQTT broker & client, core protocol, transports, Raft consensus, and distributed jobs).
 - **No external runtime dependencies** besides .NET and Beskar.
 
 ---
