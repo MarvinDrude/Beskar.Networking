@@ -95,6 +95,12 @@ public readonly ref partial struct PacketVersion5Encoder
                   propEncoder.WriteRequestResponseInformation(true);
                }
 
+               if (!packet.RequestProblemInfo
+                   && !HasProperty(connectMask, PropertyIdentifier.RequestProblemInformation))
+               {
+                  propEncoder.WriteRequestProblemInformation(false);
+               }
+
                if (!packet.AuthenticationMethodUtf8Bytes.IsEmpty
                    && !HasProperty(connectMask, PropertyIdentifier.AuthenticationMethod))
                {
@@ -242,6 +248,11 @@ public readonly ref partial struct PacketVersion5Encoder
       }
 
       if (packet.RequestResponseInfo && !HasProperty(existingMask, PropertyIdentifier.RequestResponseInformation))
+      {
+         len += 2;
+      }
+
+      if (!packet.RequestProblemInfo && !HasProperty(existingMask, PropertyIdentifier.RequestProblemInformation))
       {
          len += 2;
       }

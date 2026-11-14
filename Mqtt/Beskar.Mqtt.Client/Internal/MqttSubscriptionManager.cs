@@ -87,9 +87,10 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       QualityOfServiceType qos,
       CancellationToken ct)
    {
-      var reg = AddSinkToTopic(topicFilter, sink, qos, _client.IsConnected);
+      var isConnected = _client.IsConnected;
+      var reg = AddSinkToTopic(topicFilter, sink, qos, isConnected);
 
-      if (_client.IsConnected)
+      if (isConnected)
       {
          _ = CompleteStreamSubscribeAsync(topicFilter, reg, sink, channel.Writer, ct);
       }
@@ -148,9 +149,10 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       QualityOfServiceType qos,
       CancellationToken ct)
    {
-      var reg = AddSinkToTopic(topicFilter, sink, qos, _client.IsConnected);
+      var isConnected = _client.IsConnected;
+      var reg = AddSinkToTopic(topicFilter, sink, qos, isConnected);
 
-      if (_client.IsConnected)
+      if (isConnected)
       {
          var brokerResult = await EnsureBrokerSubscribedAsync(topicFilter, reg, ct).ConfigureAwait(false);
          if (brokerResult.Failed)
@@ -247,7 +249,14 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
    {
       if (!registration.NeedBrokerSubscribe)
       {
-         return await registration.WaitTask.WaitAsync(ct).ConfigureAwait(false);
+         try
+         {
+            return await registration.WaitTask.WaitAsync(ct).ConfigureAwait(false);
+         }
+         catch (OperationCanceledException ex)
+         {
+            return new StringError(ex.Message);
+         }
       }
 
       var ownedTcs = registration.OwnedSubscribeTcs!;

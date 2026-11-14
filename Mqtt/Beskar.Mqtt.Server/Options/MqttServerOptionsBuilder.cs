@@ -8,7 +8,7 @@ namespace Beskar.Mqtt.Server.Options;
 /// </summary>
 public sealed class MqttServerOptionsBuilder
 {
-   private TimeSpan _keepAliveInterval;
+   private TimeSpan _keepAliveInterval = TimeSpan.FromMilliseconds(1_000);
    private bool _supportPersistentSessions;
    private MessageOverflowBehavior _pendingMessageOverflowBehavior = MessageOverflowBehavior.DropOldest;
    private ushort _maxPendingMessagesPerConnection = 1024;
