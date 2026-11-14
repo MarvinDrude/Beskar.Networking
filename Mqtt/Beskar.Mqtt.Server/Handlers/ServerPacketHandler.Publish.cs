@@ -454,14 +454,9 @@ public sealed partial class ServerPacketHandler
                       || localSession.OfflineQueueCount > 0
                       || localSession.DeliverySemaphore.CurrentCount == 0)
                   {
-                     var queuedMessage = new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId);
-                     localSession.EnqueueOfflineMessage(queuedMessage);
-
-                     if (localSession.DeliverySemaphore.CurrentCount > 0
-                         && localSession.GetUnacknowledgedPublishCount() < localSession.ClientReceiveMaximum)
-                     {
-                        _ = Task.Run(() => MqttServer.DeliverNextQueuedMessagesAsync(localSession));
-                     }
+                     EnqueueOfflineAndScheduleDrain(
+                        localSession,
+                        new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId));
 
                      return;
                   }
@@ -480,8 +475,9 @@ public sealed partial class ServerPacketHandler
 
                   if (!localSession.TryAddUnacknowledgedPublish(pendingPublish))
                   {
-                     var queuedMessage = new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId);
-                     localSession.EnqueueOfflineMessage(queuedMessage);
+                     EnqueueOfflineAndScheduleDrain(
+                        localSession,
+                        new MqttQueuedMessage(localMsg, localQos, localRetainAsPublished, localSubId));
 
                      return;
                   }
@@ -519,6 +515,17 @@ public sealed partial class ServerPacketHandler
                session.EnqueueOfflineMessage(queuedMessage);
             }
          }
+      }
+   }
+
+   private static void EnqueueOfflineAndScheduleDrain(MqttSession session, MqttQueuedMessage queuedMessage)
+   {
+      session.EnqueueOfflineMessage(queuedMessage);
+
+      if (session.DeliverySemaphore.CurrentCount > 0
+          && session.GetUnacknowledgedPublishCount() < session.ClientReceiveMaximum)
+      {
+         _ = Task.Run(() => MqttServer.DeliverNextQueuedMessagesAsync(session));
       }
    }
 }
