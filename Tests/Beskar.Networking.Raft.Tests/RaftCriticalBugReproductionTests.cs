@@ -16,7 +16,8 @@ public class RaftCriticalBugReproductionTests
 {
    [Test]
    [Timeout(5000)]
-   public async Task Follower_ShouldNotCommitUnverifiedTailEntriesFromPreviousTerm_WhenLeaderSendsHeartbeat(CancellationToken ct)
+   public async Task Follower_ShouldNotCommitUnverifiedTailEntriesFromPreviousTerm_WhenLeaderSendsHeartbeat(
+      CancellationToken ct)
    {
       var memoryOptions = new MemoryTransportOptions();
       var ep = new MemoryEndPoint($"follower-safety-{Guid.NewGuid():N}");
@@ -74,7 +75,8 @@ public class RaftCriticalBugReproductionTests
 
    [Test]
    [Timeout(5000)]
-   public async Task StepDownAsync_WithStaleTerm_WhileLeaderOrCandidate_ShouldNeverRegressCurrentTerm(CancellationToken ct)
+   public async Task StepDownAsync_WithStaleTerm_WhileLeaderOrCandidate_ShouldNeverRegressCurrentTerm(
+      CancellationToken ct)
    {
       var memoryOptions = new MemoryTransportOptions();
       var ep = new MemoryEndPoint($"node-term-regress-{Guid.NewGuid():N}");
@@ -114,7 +116,9 @@ public class RaftCriticalBugReproductionTests
 
    [Test]
    [Timeout(5000)]
-   public async Task AdvanceCommitIndexAsync_ShouldNotCompletePendingProposalFromEarlierTerm_WhenNewLeaderCommitsDifferentEntryAtSameIndex(CancellationToken ct)
+   public async Task
+      AdvanceCommitIndexAsync_ShouldNotCompletePendingProposalFromEarlierTerm_WhenNewLeaderCommitsDifferentEntryAtSameIndex(
+         CancellationToken ct)
    {
       var memoryOptions = new MemoryTransportOptions();
       var ep = new MemoryEndPoint($"node-proposal-term-mismatch-{Guid.NewGuid():N}");
@@ -156,7 +160,8 @@ public class RaftCriticalBugReproductionTests
       }, ct);
 
       // Simulate a pending proposal TCS at index 1 that was created when node-1 was Leader in Term 1
-      var pendingField = typeof(RaftNode).GetField("_pendingProposals", BindingFlags.NonPublic | BindingFlags.Instance)!;
+      var pendingField =
+         typeof(RaftNode).GetField("_pendingProposals", BindingFlags.NonPublic | BindingFlags.Instance)!;
       var pendingObj = pendingField.GetValue(node)!;
       var tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
       var tryAddMethod = pendingObj.GetType().GetMethod("TryAdd")!;
@@ -184,7 +189,8 @@ public class RaftCriticalBugReproductionTests
 
    [Test]
    [Timeout(5000)]
-   public async Task HandleInstallSnapshotAsync_ShouldRecheckLastAppliedInsideApplyLock_AndNotRollbackStateMachine(CancellationToken ct)
+   public async Task HandleInstallSnapshotAsync_ShouldRecheckLastAppliedInsideApplyLock_AndNotRollbackStateMachine(
+      CancellationToken ct)
    {
       var memoryOptions = new MemoryTransportOptions();
       var ep = new MemoryEndPoint($"node-snap-race-{Guid.NewGuid():N}");
@@ -263,7 +269,9 @@ public class RaftCriticalBugReproductionTests
    }
 
    [Test]
-   public async Task FileRaftLogStorage_WhenLogEndsWithPartialCrashedHeader_ShouldTruncateCorruptTailBeforeAppendingNewEntries(CancellationToken ct)
+   public async Task
+      FileRaftLogStorage_WhenLogEndsWithPartialCrashedHeader_ShouldTruncateCorruptTailBeforeAppendingNewEntries(
+         CancellationToken ct)
    {
       var tempDir = Path.Combine(Path.GetTempPath(), $"raft_partial_hdr_{Guid.NewGuid():N}");
       Directory.CreateDirectory(tempDir);
@@ -307,10 +315,7 @@ public class RaftCriticalBugReproductionTests
       }
       finally
       {
-         if (Directory.Exists(tempDir))
-         {
-            Directory.Delete(tempDir, recursive: true);
-         }
+         if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
       }
    }
 }

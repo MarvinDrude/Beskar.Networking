@@ -195,7 +195,7 @@ public class RaftStorageExtendedTests
       }
       finally
       {
-         if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
       }
    }
 
@@ -209,18 +209,12 @@ public class RaftStorageExtendedTests
 
          // Append entries 1..10
          var initial = new List<RaftLogEntry>();
-         for (ulong i = 1; i <= 10; i++)
-         {
-            initial.Add(new RaftLogEntry(1, i, Encoding.UTF8.GetBytes($"entry_{i}")));
-         }
+         for (ulong i = 1; i <= 10; i++) initial.Add(new RaftLogEntry(1, i, Encoding.UTF8.GetBytes($"entry_{i}")));
          await storage.AppendEntriesAsync(initial);
 
          // Retransmit entries 5..7 with SAME term 1
          var retransmit = new List<RaftLogEntry>();
-         for (ulong i = 5; i <= 7; i++)
-         {
-            retransmit.Add(new RaftLogEntry(1, i, Encoding.UTF8.GetBytes($"entry_{i}")));
-         }
+         for (ulong i = 5; i <= 7; i++) retransmit.Add(new RaftLogEntry(1, i, Encoding.UTF8.GetBytes($"entry_{i}")));
          await storage.AppendEntriesAsync(retransmit);
 
          // Verified tail entries 8, 9, 10 must NOT have been truncated or deleted!
@@ -231,7 +225,7 @@ public class RaftStorageExtendedTests
       }
       finally
       {
-         if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
       }
    }
 
@@ -261,7 +255,7 @@ public class RaftStorageExtendedTests
       }
       finally
       {
-         if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
       }
    }
 
@@ -336,7 +330,7 @@ public class RaftStorageExtendedTests
       }
       finally
       {
-         if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
       }
    }
 
@@ -396,7 +390,288 @@ public class RaftStorageExtendedTests
       }
       finally
       {
-         if (Directory.Exists(testDir)) Directory.Delete(testDir, recursive: true);
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
       }
+   }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task FileStorage_LargeCandidateIdOver32KB_PersistsVotedForAcrossRestart(CancellationToken ct)
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+      var largeCandidateId = new string('c', 40_000);
+
+      try
+      {
+         await using (var storage = new FileRaftLogStorage(testDir))
+         {
+            await storage.SetTermAndVoteAsync(5, largeCandidateId, ct);
+            await Assert.That(await storage.GetVotedForAsync(ct)).IsEqualTo(largeCandidateId);
+         }
+
+         await using (var reloaded = new FileRaftLogStorage(testDir))
+         {
+            await Assert.That(await reloaded.GetCurrentTermAsync(ct)).IsEqualTo(5UL);
+            await Assert.That(await reloaded.GetVotedForAsync(ct)).IsEqualTo(largeCandidateId);
+         }
+      }
+      finally
+      {
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
+      }
+   }
+
+   [Test]
+   [Timeout(5000)]
+   [Arguments(true)]
+   [Arguments(false)]
+   public async Task Storage_HighIndexOffsetMultipleOf2Pow32_GetEntriesReturnsEmpty(
+      bool useFileStorage, CancellationToken ct)
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+      IRaftLogStorage storage = useFileStorage
+         ? new FileRaftLogStorage(testDir)
+         : new InMemoryRaftLogStorage();
+
+      try
+      {
+         await storage.AppendEntriesAsync([
+            new RaftLogEntry(1, 1, "e1"u8.ToArray()),
+            new RaftLogEntry(1, 2, "e2"u8.ToArray())
+         ], ct);
+
+         const ulong wrappedIndex = 1UL + (1UL << 32);
+
+         var highEntries = await storage.GetEntriesAsync(wrappedIndex, 10, ct);
+         await Assert.That(highEntries.Count).IsEqualTo(0);
+      }
+      finally
+      {
+         await storage.DisposeAsync();
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
+      }
+   }
+
+   [Test]
+   [Timeout(5000)]
+   [Arguments(true)]
+   [Arguments(false)]
+   public async Task Storage_HighIndexOffsetMultipleOf2Pow32_TruncateDoesNotDeleteLowIndices(
+      bool useFileStorage, CancellationToken ct)
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+      IRaftLogStorage storage = useFileStorage
+         ? new FileRaftLogStorage(testDir)
+         : new InMemoryRaftLogStorage();
+
+      try
+      {
+         await storage.AppendEntriesAsync([
+            new RaftLogEntry(1, 1, "e1"u8.ToArray()),
+            new RaftLogEntry(1, 2, "e2"u8.ToArray())
+         ], ct);
+
+         const ulong wrappedIndex = 1UL + (1UL << 32);
+
+         await storage.TruncateLogAsync(wrappedIndex, ct);
+         await Assert.That(await storage.GetLastLogIndexAsync(ct)).IsEqualTo(2UL);
+         var entry1 = await storage.GetEntryAsync(1, ct);
+         var entry2 = await storage.GetEntryAsync(2, ct);
+         await Assert.That(entry1.HasValue).IsTrue();
+         await Assert.That(entry2.HasValue).IsTrue();
+      }
+      finally
+      {
+         await storage.DisposeAsync();
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
+      }
+   }
+
+   [Test]
+   [Timeout(5000)]
+   [Arguments(true)]
+   [Arguments(false)]
+   public async Task Storage_HighIndexOffsetMultipleOf2Pow32_AppendDoesNotOverwriteLowIndex(
+      bool useFileStorage, CancellationToken ct)
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+      IRaftLogStorage storage = useFileStorage
+         ? new FileRaftLogStorage(testDir)
+         : new InMemoryRaftLogStorage();
+
+      try
+      {
+         await storage.AppendEntriesAsync([
+            new RaftLogEntry(1, 1, "e1"u8.ToArray()),
+            new RaftLogEntry(1, 2, "e2"u8.ToArray())
+         ], ct);
+
+         const ulong wrappedIndex = 1UL + (1UL << 32);
+
+         try
+         {
+            await storage.AppendEntriesAsync([new RaftLogEntry(2, wrappedIndex, "gap"u8.ToArray())], ct);
+         }
+         catch (Exception)
+         {
+            // Rejecting a non-contiguous append is acceptable
+         }
+
+         var entry1 = await storage.GetEntryAsync(1, ct);
+         await Assert.That(entry1.HasValue).IsTrue();
+         await Assert.That(entry1!.Value.Term).IsEqualTo(1UL);
+         await Assert.That(Encoding.UTF8.GetString(entry1.Value.Data.Span)).IsEqualTo("e1");
+      }
+      finally
+      {
+         await storage.DisposeAsync();
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
+      }
+   }
+
+   [Test]
+   [Timeout(5000)]
+   [Arguments(true)]
+   [Arguments(false)]
+   public async Task Storage_HighIndexOffsetMultipleOf2Pow32_CompactPrefixDoesNotOverflow(
+      bool useFileStorage, CancellationToken ct)
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+      IRaftLogStorage storage = useFileStorage
+         ? new FileRaftLogStorage(testDir)
+         : new InMemoryRaftLogStorage();
+
+      try
+      {
+         await storage.AppendEntriesAsync([
+            new RaftLogEntry(1, 1, "e1"u8.ToArray()),
+            new RaftLogEntry(1, 2, "e2"u8.ToArray())
+         ], ct);
+
+         await storage.CompactPrefixAsync(1UL << 32, 2, ct);
+         await Assert.That(await storage.GetCompactedUntilIndexAsync(ct)).IsEqualTo(1UL << 32);
+         await Assert.That(await storage.GetLastLogIndexAsync(ct)).IsEqualTo(1UL << 32);
+      }
+      finally
+      {
+         await storage.DisposeAsync();
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
+      }
+   }
+
+   [Test]
+   [Timeout(5000)]
+   [Arguments(true)]
+   [Arguments(false)]
+   public async Task Storage_EmptyLog_NonContiguousIndexAppend_DoesNotBlockLowerContiguousEntries(
+      bool useFileStorage, CancellationToken ct)
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+      IRaftLogStorage storage = useFileStorage
+         ? new FileRaftLogStorage(testDir)
+         : new InMemoryRaftLogStorage();
+
+      try
+      {
+         try
+         {
+            await storage.AppendEntriesAsync([new RaftLogEntry(1, 5, "gap"u8.ToArray())], ct);
+         }
+         catch (Exception)
+         {
+            // Rejecting a non-contiguous append is also acceptable
+         }
+
+         await storage.AppendEntriesAsync([new RaftLogEntry(1, 1, "e1"u8.ToArray())], ct);
+         var entry1 = await storage.GetEntryAsync(1, ct);
+         await Assert.That(entry1.HasValue).IsTrue();
+         await Assert.That(Encoding.UTF8.GetString(entry1!.Value.Data.Span)).IsEqualTo("e1");
+      }
+      finally
+      {
+         await storage.DisposeAsync();
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
+      }
+   }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task FileStorage_CompactedEntriesRemainingOnDisk_FilteredOnReload(CancellationToken ct)
+   {
+      var dirUncompacted = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+      var dirCompactedMeta = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+
+      try
+      {
+         await using (var s1 = new FileRaftLogStorage(dirUncompacted))
+         {
+            var entries = Enumerable.Range(1, 5)
+               .Select(i => new RaftLogEntry(2, (ulong)i, Encoding.UTF8.GetBytes($"e{i}")))
+               .ToList();
+            await s1.AppendEntriesAsync(entries, ct);
+         }
+
+         Directory.CreateDirectory(dirCompactedMeta);
+         foreach (var file in Directory.GetFiles(dirUncompacted))
+            File.Copy(file, Path.Combine(dirCompactedMeta, Path.GetFileName(file)), true);
+
+         await using (var s2 = new FileRaftLogStorage(dirCompactedMeta))
+         {
+            await s2.CompactPrefixAsync(3, 2, ct);
+         }
+
+         // Simulate crash after metadata persisted CompactedUntilIndex=3 while raft.log still retains entries 1..5
+         File.Copy(Path.Combine(dirCompactedMeta, "metadata.bin"), Path.Combine(dirUncompacted, "metadata.bin"), true);
+
+         await using (var recovered = new FileRaftLogStorage(dirUncompacted))
+         {
+            await Assert.That(await recovered.GetCompactedUntilIndexAsync(ct)).IsEqualTo(3UL);
+            await Assert.That(await recovered.GetEntryAsync(1, ct)).IsNull();
+            await Assert.That(await recovered.GetEntryAsync(3, ct)).IsNull();
+            await Assert.That(await recovered.GetEntryAsync(4, ct)).IsNotNull();
+            await Assert.That(await recovered.GetLastLogIndexAsync(ct)).IsEqualTo(5UL);
+         }
+      }
+      finally
+      {
+         if (Directory.Exists(dirUncompacted)) Directory.Delete(dirUncompacted, true);
+         if (Directory.Exists(dirCompactedMeta)) Directory.Delete(dirCompactedMeta, true);
+      }
+   }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task FileStorage_OperationsAfterDispose_ThrowObjectDisposedException(CancellationToken ct)
+   {
+      var testDir = Path.Combine(Path.GetTempPath(), $"raft_storage_test_{Guid.NewGuid():N}");
+
+      try
+      {
+         var storage = new FileRaftLogStorage(testDir);
+         await storage.AppendEntriesAsync([new RaftLogEntry(1, 1, "e1"u8.ToArray())], ct);
+         await storage.DisposeAsync();
+
+         await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+            await storage.CompactPrefixAsync(1, 1, ct));
+         await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+            await storage.TruncateLogAsync(1, ct));
+         await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+            await storage.SetTermAndVoteAsync(2, "n1", ct));
+      }
+      finally
+      {
+         if (Directory.Exists(testDir)) Directory.Delete(testDir, true);
+      }
+   }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task InMemoryStorage_CompactPrefixIndexZero_DoesNotMutateCompactedTerm(CancellationToken ct)
+   {
+      var storage = new InMemoryRaftLogStorage();
+      await storage.CompactPrefixAsync(0, 99, ct);
+
+      await Assert.That(await storage.GetCompactedUntilIndexAsync(ct)).IsEqualTo(0UL);
+      await Assert.That(await storage.GetCompactedUntilTermAsync(ct)).IsEqualTo(0UL);
    }
 }

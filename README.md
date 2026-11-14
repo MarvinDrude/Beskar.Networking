@@ -50,7 +50,7 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 - **Native OpenTelemetry & Metrics**: Built-in `System.Diagnostics.Metrics` meters across all transports, resilient protocol, and MQTT broker/client.
 - **Full MQTT v3.1.1 & v5.0 Support**: High-performance broker and client with retained message persistence, offline crash-safe queuing, and user properties.
 - **Distributed Raft Consensus**: Complete, low-allocation Raft consensus engine with quorum log replication, leader elections, and persistent WAL storage over any transport.
-- **Comprehensive Test Suite**: Covered by **943** automated tests across all 13 test projects (MQTT broker & client, core protocol, transports, Raft consensus, and distributed jobs).
+- **Comprehensive Test Suite**: Covered by **991** automated tests across all 13 test projects (MQTT broker & client, core protocol, transports, Raft consensus, and distributed jobs).
 - **No external runtime dependencies** besides .NET and Beskar.
 
 ---

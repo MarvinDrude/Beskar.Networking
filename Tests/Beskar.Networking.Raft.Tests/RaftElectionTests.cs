@@ -314,6 +314,359 @@ public class RaftElectionTests
 
       await Assert.That(roleTransitions.Any(t => t.NewRole == RaftRole.Follower && t.Term == 100UL)).IsTrue();
    }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task PreVote_AfterFailedPreVoteRound_GrantsPreVoteToEligiblePeer(CancellationToken ct)
+   {
+      var memoryOptions = new MemoryTransportOptions();
+      var nodeEndpoint = new MemoryEndPoint($"pv-failed-node-{Guid.NewGuid():N}");
+      var nodeListener = new MemoryNetworkListener(nodeEndpoint, memoryOptions);
+      var innerTransport = new RaftNetworkTransport(nodeListener, []);
+
+      var preVoteAttemptedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var transport = new ScriptedPreVoteRaftTransport(
+         innerTransport,
+         (peerId, req, _) =>
+         {
+            if (req.IsPreVote) preVoteAttemptedTcs.TrySetResult();
+
+            return Task.FromResult<RequestVoteResponse?>(null);
+         });
+
+      var options = new RaftNodeOptions
+      {
+         NodeId = "node-1",
+         Peers = ["peer-1", "peer-2"],
+         ElectionTimeoutMin = TimeSpan.FromMilliseconds(120),
+         ElectionTimeoutMax = TimeSpan.FromMilliseconds(180),
+         HeartbeatInterval = TimeSpan.FromMilliseconds(30),
+         EnablePreVote = true
+      };
+
+      await using var node = new RaftNode(options, new InMemoryRaftLogStorage(), new TestRaftStateMachine(), transport);
+
+      var clientListener =
+         new MemoryNetworkListener(new MemoryEndPoint($"pv-failed-client-{Guid.NewGuid():N}"), memoryOptions);
+      await using var clientTransport = new RaftNetworkTransport(
+         clientListener,
+         [new RaftPeerEndpoint("node-1", nodeEndpoint, () => new MemoryNetworkClient(memoryOptions))]);
+
+      await node.StartAsync(ct);
+
+      // Establish peer-1 as active leader at term 1
+      var hbResp = await clientTransport.AppendEntriesAsync("node-1", new AppendEntriesRequest
+      {
+         Term = 1,
+         LeaderId = "peer-1",
+         PrevLogIndex = 0,
+         PrevLogTerm = 0,
+         Entries = [],
+         LeaderCommitIndex = 0
+      }, ct);
+      await Assert.That(hbResp!.Success).IsTrue();
+
+      // Wait until peer-1 times out and node-1 executes a failed PreVote round
+      await preVoteAttemptedTcs.Task.WaitAsync(ct);
+      await Task.Delay(25, ct);
+
+      // peer-2 now asks node-1 for a PreVote; peer-1 is offline so there is no active leader
+      var preVoteResp = await clientTransport.RequestVoteAsync("node-1", new RequestVoteRequest
+      {
+         Term = 2,
+         CandidateId = "peer-2",
+         LastLogIndex = 0,
+         LastLogTerm = 0,
+         IsPreVote = true
+      }, ct);
+
+      await Assert.That(preVoteResp).IsNotNull();
+      await Assert.That(preVoteResp!.VoteGranted).IsTrue();
+   }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task PreVote_ValidHeartbeatReceivedDuringPreVote_StaysFollower(CancellationToken ct)
+   {
+      var memoryOptions = new MemoryTransportOptions();
+      var nodeEndpoint = new MemoryEndPoint($"pv-hb-node-{Guid.NewGuid():N}");
+      var nodeListener = new MemoryNetworkListener(nodeEndpoint, memoryOptions);
+      var innerTransport = new RaftNetworkTransport(nodeListener, []);
+
+      var preVoteStartedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var releasePreVoteTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      var transport = new ScriptedPreVoteRaftTransport(
+         innerTransport,
+         async (peerId, req, token) =>
+         {
+            if (req.IsPreVote && peerId == "peer-1")
+            {
+               preVoteStartedTcs.TrySetResult();
+               await releasePreVoteTcs.Task.WaitAsync(token);
+               return new RequestVoteResponse { Term = 1, VoteGranted = true };
+            }
+
+            return null;
+         });
+
+      var options = new RaftNodeOptions
+      {
+         NodeId = "node-1",
+         Peers = ["peer-1", "peer-2"],
+         ElectionTimeoutMin = TimeSpan.FromMilliseconds(60),
+         ElectionTimeoutMax = TimeSpan.FromMilliseconds(100),
+         HeartbeatInterval = TimeSpan.FromMilliseconds(20),
+         EnablePreVote = true
+      };
+
+      await using var node = new RaftNode(options, new InMemoryRaftLogStorage(), new TestRaftStateMachine(), transport);
+
+      var clientListener =
+         new MemoryNetworkListener(new MemoryEndPoint($"pv-hb-client-{Guid.NewGuid():N}"), memoryOptions);
+      await using var clientTransport = new RaftNetworkTransport(
+         clientListener,
+         [new RaftPeerEndpoint("node-1", nodeEndpoint, () => new MemoryNetworkClient(memoryOptions))]);
+
+      await node.StartAsync(ct);
+
+      // Establish peer-2 as leader in term 1
+      var initHb = await clientTransport.AppendEntriesAsync("node-1", new AppendEntriesRequest
+      {
+         Term = 1,
+         LeaderId = "peer-2",
+         Entries = []
+      }, ct);
+      await Assert.That(initHb!.Success).IsTrue();
+
+      // Wait until node-1 enters PreVote and blocks awaiting peer-1's reply
+      await preVoteStartedTcs.Task.WaitAsync(ct);
+
+      // Valid leader peer-2 sends a heartbeat in the current term 1 while PreVote is awaiting replies
+      var midPreVoteHb = await clientTransport.AppendEntriesAsync("node-1", new AppendEntriesRequest
+      {
+         Term = 1,
+         LeaderId = "peer-2",
+         Entries = []
+      }, ct);
+      await Assert.That(midPreVoteHb!.Success).IsTrue();
+
+      // Allow peer-1's PreVote reply to complete
+      releasePreVoteTcs.TrySetResult();
+      await Task.Delay(50, ct);
+
+      await Assert.That(node.Role).IsEqualTo(RaftRole.Follower);
+      await Assert.That(node.CurrentTerm).IsEqualTo(1UL);
+   }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task PreVote_TermMatchesCurrentTermWhenAlreadyVotedForOther_DeniesPreVote(CancellationToken ct)
+   {
+      var memoryOptions = new MemoryTransportOptions();
+      var nodeEndpoint = new MemoryEndPoint($"pv-voted-node-{Guid.NewGuid():N}");
+      var nodeListener = new MemoryNetworkListener(nodeEndpoint, memoryOptions);
+      var nodeTransport = new RaftNetworkTransport(nodeListener, []);
+
+      var options = new RaftNodeOptions
+      {
+         NodeId = "node-1",
+         Peers = ["peer-1", "peer-2"],
+         ElectionTimeoutMin = TimeSpan.FromSeconds(10),
+         ElectionTimeoutMax = TimeSpan.FromSeconds(15),
+         HeartbeatInterval = TimeSpan.FromSeconds(2),
+         EnablePreVote = true
+      };
+
+      await using var node =
+         new RaftNode(options, new InMemoryRaftLogStorage(), new TestRaftStateMachine(), nodeTransport);
+
+      var clientListener =
+         new MemoryNetworkListener(new MemoryEndPoint($"pv-voted-client-{Guid.NewGuid():N}"), memoryOptions);
+      await using var clientTransport = new RaftNetworkTransport(
+         clientListener,
+         [new RaftPeerEndpoint("node-1", nodeEndpoint, () => new MemoryNetworkClient(memoryOptions))]);
+
+      await node.StartAsync(ct);
+
+      // Grant real vote to peer-1 in term 5
+      var voteResp = await clientTransport.RequestVoteAsync("node-1", new RequestVoteRequest
+      {
+         Term = 5,
+         CandidateId = "peer-1",
+         LastLogIndex = 0,
+         LastLogTerm = 0,
+         IsPreVote = false
+      }, ct);
+      await Assert.That(voteResp!.VoteGranted).IsTrue();
+
+      // peer-2 sends a PreVote at the same term 5 (where node-1 already voted for peer-1)
+      var preVoteResp = await clientTransport.RequestVoteAsync("node-1", new RequestVoteRequest
+      {
+         Term = 5,
+         CandidateId = "peer-2",
+         LastLogIndex = 0,
+         LastLogTerm = 0,
+         IsPreVote = true
+      }, ct);
+
+      await Assert.That(preVoteResp).IsNotNull();
+      await Assert.That(preVoteResp!.VoteGranted).IsFalse();
+   }
+
+   [Test]
+   [Timeout(5000)]
+   public async Task RaftNode_TransientStorageExceptionInElectionLoop_RecoversOnSubsequentTick(CancellationToken ct)
+   {
+      var memoryOptions = new MemoryTransportOptions();
+      var nodeEndpoint = new MemoryEndPoint($"loop-recover-node-{Guid.NewGuid():N}");
+      var nodeListener = new MemoryNetworkListener(nodeEndpoint, memoryOptions);
+      var nodeTransport = new RaftNetworkTransport(nodeListener, []);
+
+      var faultyStorage = new OneShotFaultyTermStorage(new InMemoryRaftLogStorage());
+      var options = new RaftNodeOptions
+      {
+         NodeId = "node-1",
+         Peers = [],
+         ElectionTimeoutMin = TimeSpan.FromMilliseconds(40),
+         ElectionTimeoutMax = TimeSpan.FromMilliseconds(70),
+         HeartbeatInterval = TimeSpan.FromMilliseconds(20),
+         EnablePreVote = false
+      };
+
+      await using var node = new RaftNode(options, faultyStorage, new TestRaftStateMachine(), nodeTransport);
+      await node.StartAsync(ct);
+
+      await Task.Delay(350, ct);
+
+      await Assert.That(faultyStorage.FailedOnce).IsTrue();
+      await Assert.That(node.Role).IsEqualTo(RaftRole.Leader);
+   }
+}
+
+internal sealed class ScriptedPreVoteRaftTransport(
+   IRaftTransport inner,
+   Func<string, RequestVoteRequest, CancellationToken, Task<RequestVoteResponse?>> onRequestVote) : IRaftTransport
+{
+   public ValueTask StartAsync(Func<RaftRpcRequest, ValueTask<RaftRpcResponse>> rpcHandler,
+      CancellationToken ct = default)
+   {
+      return inner.StartAsync(rpcHandler, ct);
+   }
+
+   public ValueTask StopAsync(CancellationToken ct = default)
+   {
+      return inner.StopAsync(ct);
+   }
+
+   public async ValueTask<RequestVoteResponse?> RequestVoteAsync(
+      string peerId, RequestVoteRequest request, CancellationToken ct = default)
+   {
+      return await onRequestVote(peerId, request, ct);
+   }
+
+   public ValueTask<AppendEntriesResponse?> AppendEntriesAsync(
+      string peerId, AppendEntriesRequest request, CancellationToken ct = default)
+   {
+      return inner.AppendEntriesAsync(peerId, request, ct);
+   }
+
+   public ValueTask<InstallSnapshotResponse?> InstallSnapshotAsync(
+      string peerId, InstallSnapshotRequest request, CancellationToken ct = default)
+   {
+      return inner.InstallSnapshotAsync(peerId, request, ct);
+   }
+
+   public ValueTask DisposeAsync()
+   {
+      return inner.DisposeAsync();
+   }
+}
+
+internal sealed class OneShotFaultyTermStorage(IRaftLogStorage inner) : IRaftLogStorage
+{
+   private int _faulted;
+   public bool FailedOnce => Volatile.Read(ref _faulted) == 1;
+
+   public ValueTask<ulong> GetCurrentTermAsync(CancellationToken ct = default)
+   {
+      return inner.GetCurrentTermAsync(ct);
+   }
+
+   public ValueTask SetCurrentTermAsync(ulong term, CancellationToken ct = default)
+   {
+      if (Interlocked.Exchange(ref _faulted, 1) == 0) throw new IOException("Transient storage failure");
+
+      return inner.SetCurrentTermAsync(term, ct);
+   }
+
+   public ValueTask<string?> GetVotedForAsync(CancellationToken ct = default)
+   {
+      return inner.GetVotedForAsync(ct);
+   }
+
+   public ValueTask SetVotedForAsync(string? candidateId, CancellationToken ct = default)
+   {
+      return inner.SetVotedForAsync(candidateId, ct);
+   }
+
+   public ValueTask SetTermAndVoteAsync(ulong term, string? candidateId, CancellationToken ct = default)
+   {
+      if (Interlocked.Exchange(ref _faulted, 1) == 0) throw new IOException("Transient storage failure");
+
+      return inner.SetTermAndVoteAsync(term, candidateId, ct);
+   }
+
+   public ValueTask<ulong> GetLastLogIndexAsync(CancellationToken ct = default)
+   {
+      return inner.GetLastLogIndexAsync(ct);
+   }
+
+   public ValueTask<ulong> GetLastLogTermAsync(CancellationToken ct = default)
+   {
+      return inner.GetLastLogTermAsync(ct);
+   }
+
+   public ValueTask<RaftLogEntry?> GetEntryAsync(ulong index, CancellationToken ct = default)
+   {
+      return inner.GetEntryAsync(index, ct);
+   }
+
+   public ValueTask<IReadOnlyList<RaftLogEntry>> GetEntriesAsync(ulong fromIndex, int maxCount,
+      CancellationToken ct = default)
+   {
+      return inner.GetEntriesAsync(fromIndex, maxCount, ct);
+   }
+
+   public ValueTask AppendEntriesAsync(IReadOnlyList<RaftLogEntry> entries, CancellationToken ct = default)
+   {
+      return inner.AppendEntriesAsync(entries, ct);
+   }
+
+   public ValueTask TruncateLogAsync(ulong fromIndex, CancellationToken ct = default)
+   {
+      return inner.TruncateLogAsync(fromIndex, ct);
+   }
+
+   public ValueTask CompactPrefixAsync(ulong untilIndex, ulong untilTerm = 0, CancellationToken ct = default)
+   {
+      return inner.CompactPrefixAsync(untilIndex, untilTerm, ct);
+   }
+
+   public ValueTask<ulong> GetCompactedUntilIndexAsync(CancellationToken ct = default)
+   {
+      return inner.GetCompactedUntilIndexAsync(ct);
+   }
+
+   public ValueTask<ulong> GetCompactedUntilTermAsync(CancellationToken ct = default)
+   {
+      return inner.GetCompactedUntilTermAsync(ct);
+   }
+
+   public ValueTask DisposeAsync()
+   {
+      return inner.DisposeAsync();
+   }
 }
 
 internal sealed class TestRaftStateMachine : IRaftStateMachine

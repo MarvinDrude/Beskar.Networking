@@ -1,9 +1,5 @@
-using System.Collections.Concurrent;
-using System.Text;
 using Beskar.Networking.Raft.Enums;
 using Beskar.Networking.Raft.Options;
-using Beskar.Networking.Raft.Protocol.Enums;
-using Beskar.Networking.Raft.Protocol.Messages;
 using Beskar.Networking.Raft.Protocol.Models;
 using Beskar.Networking.Raft.StateMachine;
 using Beskar.Networking.Raft.Storage;
@@ -17,7 +13,8 @@ public class AuditRaftBugConfirmationTests
 {
    [Test]
    [Timeout(5000)]
-   public async Task FileRaftLogStorage_OutOfOrderOrConcurrentAppendEntries_ShouldNotCorruptO1IndexLookup(CancellationToken ct)
+   public async Task FileRaftLogStorage_OutOfOrderOrConcurrentAppendEntries_ShouldNotCorruptO1IndexLookup(
+      CancellationToken ct)
    {
       var tempDir = Path.Combine(Path.GetTempPath(), $"raft-bug7-{Guid.NewGuid():N}");
       try
@@ -28,23 +25,25 @@ public class AuditRaftBugConfirmationTests
          await storage.AppendEntriesAsync([new RaftLogEntry(1, 3, "entry-3"u8.ToArray())], ct);
 
          var entryAt2 = await storage.GetEntryAsync(2, ct);
-         if (entryAt2.HasValue)
-         {
-            await Assert.That(entryAt2.Value.Index).IsEqualTo(2UL);
-         }
+         if (entryAt2.HasValue) await Assert.That(entryAt2.Value.Index).IsEqualTo(2UL);
       }
       finally
       {
          if (Directory.Exists(tempDir))
-         {
-            try { Directory.Delete(tempDir, recursive: true); } catch { }
-         }
+            try
+            {
+               Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+            }
       }
    }
 
    [Test]
    [Timeout(5000)]
-   public async Task RaftNode_SingleUnresponsivePeerInThreeNodeCluster_ShouldElectLeaderAndCommitWithin600Ms(CancellationToken ct)
+   public async Task RaftNode_SingleUnresponsivePeerInThreeNodeCluster_ShouldElectLeaderAndCommitWithin600Ms(
+      CancellationToken ct)
    {
       var nodeIds = new[] { "node-1", "node-2", "node-3-hung" };
       var memoryOptions = new MemoryTransportOptions();
@@ -113,7 +112,8 @@ public class AuditRaftBugConfirmationTests
 
    [Test]
    [Timeout(5000)]
-   public async Task RaftLogStorage_OutOfOrderOrConcurrentAppendEntries_ShouldNotCorruptO1IndexLookup(CancellationToken ct)
+   public async Task RaftLogStorage_OutOfOrderOrConcurrentAppendEntries_ShouldNotCorruptO1IndexLookup(
+      CancellationToken ct)
    {
       await using var storage = new InMemoryRaftLogStorage();
 
@@ -121,15 +121,13 @@ public class AuditRaftBugConfirmationTests
       await storage.AppendEntriesAsync([new RaftLogEntry(1, 3, "entry-3"u8.ToArray())], ct);
 
       var entryAt2 = await storage.GetEntryAsync(2, ct);
-      if (entryAt2.HasValue)
-      {
-         await Assert.That(entryAt2.Value.Index).IsEqualTo(2UL);
-      }
+      if (entryAt2.HasValue) await Assert.That(entryAt2.Value.Index).IsEqualTo(2UL);
    }
 
    [Test]
    [Timeout(5000)]
-   public async Task RaftNode_BecomeLeaderInNewTerm_ShouldCommitPriorTermEntryViaNoOpWithoutNewClientProposals(CancellationToken ct)
+   public async Task RaftNode_BecomeLeaderInNewTerm_ShouldCommitPriorTermEntryViaNoOpWithoutNewClientProposals(
+      CancellationToken ct)
    {
       var nodeIds = new[] { "node-1", "node-2", "node-3" };
       var memoryOptions = new MemoryTransportOptions();
@@ -179,10 +177,7 @@ public class AuditRaftBugConfirmationTests
          foreach (var n in nodes) await n.StartAsync(ct);
 
          var deadline = Environment.TickCount64 + 600;
-         while (Environment.TickCount64 < deadline && nodes[0].CommitIndex < 1)
-         {
-            await Task.Delay(25, ct);
-         }
+         while (Environment.TickCount64 < deadline && nodes[0].CommitIndex < 1) await Task.Delay(25, ct);
 
          await Assert.That(nodes[0].Role).IsEqualTo(RaftRole.Leader);
          await Assert.That(nodes[0].CommitIndex).IsGreaterThanOrEqualTo(1UL);
@@ -195,7 +190,10 @@ public class AuditRaftBugConfirmationTests
 
    private sealed class NoOpStateMachine : IRaftStateMachine
    {
-      public ValueTask<ReadOnlyMemory<byte>> ApplyAsync(ReadOnlyMemory<byte> command, ulong logIndex, CancellationToken ct = default)
-         => ValueTask.FromResult(command);
+      public ValueTask<ReadOnlyMemory<byte>> ApplyAsync(ReadOnlyMemory<byte> command, ulong logIndex,
+         CancellationToken ct = default)
+      {
+         return ValueTask.FromResult(command);
+      }
    }
 }
