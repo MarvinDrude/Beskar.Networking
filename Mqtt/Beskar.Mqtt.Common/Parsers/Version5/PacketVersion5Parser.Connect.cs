@@ -63,6 +63,8 @@ public readonly ref partial struct PacketVersion5Parser
          return new StringError("Could not read properties.");
       }
 
+      packet.RequestProblemInfo = true;
+
       var propEnumerator = packet.GetProperties();
       byte foundFlags = 0;
 
@@ -108,6 +110,11 @@ public readonly ref partial struct PacketVersion5Parser
             default:
                return new StringError($"Invalid property identifier. ({identifier})");
          }
+      }
+
+      if (!propEnumerator.IsCompleted)
+      {
+         return MalformedPropertyError("CONNECT");
       }
 
       if (!rawPacket.Reader.TryReadRawString(out packet.ClientIdUtf8Bytes))
@@ -163,6 +170,11 @@ public readonly ref partial struct PacketVersion5Parser
                default:
                   return new StringError($"Invalid property identifier. ({identifier})");
             }
+         }
+
+         if (!enumerator.IsCompleted)
+         {
+            return MalformedPropertyError("CONNECT Will");
          }
 
          if (!rawPacket.Reader.TryReadRawString(out packet.WillTopicUtf8Bytes))

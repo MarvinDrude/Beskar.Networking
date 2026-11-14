@@ -139,11 +139,11 @@ public readonly ref partial struct PacketVersion5Parser
                default:
                   return new StringError($"Invalid property identifier. ({enumerator.Current.Identifier})");
             }
+         }
 
-            if (foundFlags == 0xFFFF)
-            {
-               break;
-            }
+         if (!enumerator.IsCompleted)
+         {
+            return MalformedPropertyError("CONNACK");
          }
       }
       else

@@ -37,26 +37,14 @@ public readonly ref partial struct PacketVersion5Parser
       packet.PropertiesBytes = propertiesSequence.ToArray();
 
       var enumerator = packet.GetProperties();
-      var foundReasonString = false;
-
-      while (enumerator.MoveNext())
+      if (TryParseReasonStringProperties(ref enumerator, "UNSUBACK", out var reasonStringBytes) is { } propError)
       {
-         switch (enumerator.Current.Identifier)
-         {
-            case PropertyIdentifier.ReasonString:
-               packet.ReasonStringUtf8Bytes = enumerator.Current.AsReasonString().ToArray();
-               foundReasonString = true;
-               break;
-            case PropertyIdentifier.UserProperty:
-               break;
-            default:
-               return new StringError($"Invalid property identifier. ({enumerator.Current.Identifier})");
-         }
+         return propError;
+      }
 
-         if (foundReasonString)
-         {
-            break;
-         }
+      if (reasonStringBytes is not null)
+      {
+         packet.ReasonStringUtf8Bytes = reasonStringBytes;
       }
 
       var consumedSoFar = rawPacket.Reader.Consumed - initialConsumed;
