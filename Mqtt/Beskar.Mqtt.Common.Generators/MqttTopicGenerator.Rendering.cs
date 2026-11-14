@@ -55,6 +55,7 @@ public partial class MqttTopicGenerator
             : $"var remaining = {firstParam.Name};");
 
          var segments = model.Pattern.Split('/');
+         EmitLeadingWildcardDollarGuard(ref writer, segments, isByteSpan);
          var totalSegments = segments.Length;
 
          for (var i = 0; i < totalSegments; i++)
@@ -339,8 +340,14 @@ public partial class MqttTopicGenerator
          {
             var isByteSpan = firstParamType.Contains("System.Span<byte>");
             var charsWrittenParam = model.Parameters.LastOrDefault(p => p.RefKind == "out" && p.Type.Contains("int"));
+            var writtenParamName = charsWrittenParam.Name;
+            var hasWrittenParam = writtenParamName is not null;
 
-            if (charsWrittenParam.Name is not null) writer.WriteLineInterpolated($"{charsWrittenParam.Name} = 0;");
+            if (writtenParamName is not null)
+            {
+               writer.WriteLineInterpolated($"{writtenParamName} = 0;");
+               writer.WriteLine("int totalWritten = 0;");
+            }
             writer.WriteLineInterpolated($"var remainingDest = {firstParam.Name};");
             writer.WriteLine();
 
@@ -367,20 +374,13 @@ public partial class MqttTopicGenerator
                         if (isByteSpan)
                         {
                            writer.WriteLine("// Convert string/span to UTF8 bytes");
-                           writer.WriteLineInterpolated(
-                              $"int {paramName}Bytes = Encoding.UTF8.GetBytes({argParam.Name}, remainingDest);");
-                           writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({paramName}Bytes);");
-                           if (charsWrittenParam.Name is not null)
-                              writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {paramName}Bytes;");
+                           EmitCheckedUtf8Bytes(ref writer, argParam.Name, $"{paramName}Bytes", hasWrittenParam);
                         }
                         else
                         {
                            var accessExpr = argType == "string" ? $"{argParam.Name}.AsSpan()" : argParam.Name;
                            writer.WriteLineInterpolated($"if (!{accessExpr}.TryCopyTo(remainingDest)) return false;");
-                           writer.WriteLineInterpolated(
-                              $"remainingDest = remainingDest.Slice({argParam.Name}.Length);");
-                           if (charsWrittenParam.Name is not null)
-                              writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {argParam.Name}.Length;");
+                           EmitAdvanceDest(ref writer, $"{argParam.Name}.Length", hasWrittenParam);
                         }
                      }
                      else if (argType.Contains("System.ReadOnlySpan<byte>"))
@@ -389,58 +389,40 @@ public partial class MqttTopicGenerator
                         {
                            writer.WriteLineInterpolated(
                               $"if (!{argParam.Name}.TryCopyTo(remainingDest)) return false;");
-                           writer.WriteLineInterpolated(
-                              $"remainingDest = remainingDest.Slice({argParam.Name}.Length);");
-                           if (charsWrittenParam.Name is not null)
-                              writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {argParam.Name}.Length;");
+                           EmitAdvanceDest(ref writer, $"{argParam.Name}.Length", hasWrittenParam);
                         }
                         else
                         {
                            writer.WriteLine("// Warning: converting ReadOnlySpan<byte> to chars in formatting");
                            writer.WriteLineInterpolated(
-                              $"int {paramName}Chars = Encoding.UTF8.GetChars({argParam.Name}, remainingDest);");
-                           writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({paramName}Chars);");
-                           if (charsWrittenParam.Name is not null)
-                              writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {paramName}Chars;");
+                              $"int {paramName}Chars = Encoding.UTF8.GetCharCount({argParam.Name});");
+                           writer.WriteLineInterpolated($"if ({paramName}Chars > remainingDest.Length) return false;");
+                           writer.WriteLineInterpolated(
+                              $"Encoding.UTF8.GetChars({argParam.Name}, remainingDest);");
+                           EmitAdvanceDest(ref writer, $"{paramName}Chars", hasWrittenParam);
                         }
                      }
                      else if (argParam.IsEnum)
                      {
                         if (isByteSpan)
                         {
-                           writer.WriteLineInterpolated(
-                              $"int {paramName}Bytes = System.Text.Encoding.UTF8.GetBytes({argParam.Name}.ToString(), remainingDest);");
-                           writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({paramName}Bytes);");
-                           if (charsWrittenParam.Name is not null)
-                              writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {paramName}Bytes;");
+                           writer.WriteLineInterpolated($"var {paramName}Str = {argParam.Name}.ToString();");
+                           EmitCheckedUtf8Bytes(ref writer, $"{paramName}Str", $"{paramName}Bytes", hasWrittenParam);
                         }
                         else
                         {
                            writer.WriteLineInterpolated(
                               $"if (!System.Enum.TryFormat({argParam.Name}, remainingDest, out int {paramName}Written)) return false;");
-                           writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({paramName}Written);");
-                           if (charsWrittenParam.Name is not null)
-                              writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {paramName}Written;");
+                           EmitAdvanceDest(ref writer, $"{paramName}Written", hasWrittenParam);
                         }
                      }
                      else
                      {
-                        if (isByteSpan)
-                        {
-                           writer.WriteLineInterpolated(
-                              $"if (!System.Buffers.Text.Utf8Formatter.TryFormat({argParam.Name}, remainingDest, out int {paramName}Written)) return false;");
-                           writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({paramName}Written);");
-                           if (charsWrittenParam.Name is not null)
-                              writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {paramName}Written;");
-                        }
-                        else
-                        {
-                           writer.WriteLineInterpolated(
-                              $"if (!{argParam.Name}.TryFormat(remainingDest, out int {paramName}Written)) return false;");
-                           writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({paramName}Written);");
-                           if (charsWrittenParam.Name is not null)
-                              writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {paramName}Written;");
-                        }
+                        var tryFormatCall = isByteSpan
+                           ? $"System.Buffers.Text.Utf8Formatter.TryFormat({argParam.Name}, remainingDest, out int {paramName}Written)"
+                           : $"{argParam.Name}.TryFormat(remainingDest, out int {paramName}Written)";
+                        writer.WriteLineInterpolated($"if (!{tryFormatCall}) return false;");
+                        EmitAdvanceDest(ref writer, $"{paramName}Written", hasWrittenParam);
                      }
                   }
                }
@@ -461,23 +443,19 @@ public partial class MqttTopicGenerator
                         $"if (!{escapedLiteralText}.AsSpan().TryCopyTo(remainingDest)) return false;");
                   }
 
-                  writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({literalLength});");
-
-                  if (charsWrittenParam.Name is not null)
-                     writer.WriteLineInterpolated($"{charsWrittenParam.Name} += {literalLength};");
+                  EmitAdvanceDest(ref writer, literalLength.ToString(), hasWrittenParam);
                }
 
                if (!isLast && segment.StartsWith("{") && segment.EndsWith("}"))
                {
                   writer.WriteLine("if (remainingDest.IsEmpty) return false;");
                   writer.WriteLine(isByteSpan ? "remainingDest[0] = (byte)'/';" : "remainingDest[0] = '/';");
-                  writer.WriteLine("remainingDest = remainingDest.Slice(1);");
-
-                  if (charsWrittenParam.Name is not null)
-                     writer.WriteLineInterpolated($"{charsWrittenParam.Name} += 1;");
+                  EmitAdvanceDest(ref writer, "1", hasWrittenParam);
                }
             }
 
+            if (writtenParamName is not null)
+               writer.WriteLineInterpolated($"{writtenParamName} = totalWritten;");
             writer.WriteLine("return true;");
          }
 
@@ -678,6 +656,32 @@ public partial class MqttTopicGenerator
       GenerateIsMatchBody(writer, helperMethodName, model.Pattern, isByteSpan: true, modifiers);
    }
 
+   private static void EmitLeadingWildcardDollarGuard(ref CodeTextWriter writer, string[] segments, bool isByteSpan)
+   {
+      if (segments.Length > 0 && segments[0] is "#" or "+")
+      {
+         // MQTT 5.0 §4.7.2: filters starting with '+' or '#' must not match topics starting with '$'
+         writer.WriteLine(isByteSpan
+            ? "if (remaining[0] == (byte)'$') return false;"
+            : "if (remaining[0] == '$') return false;");
+      }
+   }
+
+   private static void EmitCheckedUtf8Bytes(ref CodeTextWriter writer, string sourceExpr, string byteCountVar, bool hasWrittenParam)
+   {
+      writer.WriteLineInterpolated($"int {byteCountVar} = Encoding.UTF8.GetByteCount({sourceExpr});");
+      writer.WriteLineInterpolated($"if ({byteCountVar} > remainingDest.Length) return false;");
+      writer.WriteLineInterpolated($"Encoding.UTF8.GetBytes({sourceExpr}, remainingDest);");
+      EmitAdvanceDest(ref writer, byteCountVar, hasWrittenParam);
+   }
+
+   private static void EmitAdvanceDest(ref CodeTextWriter writer, string countExpr, bool hasWrittenParam)
+   {
+      writer.WriteLineInterpolated($"remainingDest = remainingDest.Slice({countExpr});");
+      if (hasWrittenParam)
+         writer.WriteLineInterpolated($"totalWritten += {countExpr};");
+   }
+
    private static void GenerateIsMatchBody(
       CodeTextWriter writer,
       string methodName,
@@ -694,6 +698,7 @@ public partial class MqttTopicGenerator
       writer.WriteLine();
 
       var segments = pattern.Split('/');
+      EmitLeadingWildcardDollarGuard(ref writer, segments, isByteSpan);
       var totalSegments = segments.Length;
 
       for (var i = 0; i < totalSegments; i++)
