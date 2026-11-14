@@ -70,13 +70,16 @@ public readonly ref partial struct PacketVersion5Encoder
       }
    }
 
-   private int CalculateLength(SubscribeOptions options)
+   private static int CalculateLength(SubscribeOptions options)
+      => CalculateSubscribePacketLength(options);
+
+   internal static int CalculateSubscribePacketLength(SubscribeOptions options)
    {
       var remainingLength = CalculateRemainingLength(options);
       return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
    }
 
-   private int CalculateRemainingLength(SubscribeOptions options)
+   private static int CalculateRemainingLength(SubscribeOptions options)
    {
       var propertiesLength = CalculatePropertiesLength(options);
       return 2 + PacketEncoder.GetVariableByteIntegerLength(propertiesLength) + propertiesLength + (int)options.TopicFilters.WrittenSequence.Length;

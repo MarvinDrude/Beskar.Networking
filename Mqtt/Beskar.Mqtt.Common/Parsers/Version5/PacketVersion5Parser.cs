@@ -1,6 +1,9 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
+using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Enumerators;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing;
 using Beskar.Mqtt.Protocol.Parsing.Results;
@@ -10,10 +13,14 @@ using Beskar.Networking.Abstractions.Interfaces;
 namespace Beskar.Mqtt.Common.Parsers.Version5;
 
 [StructLayout(LayoutKind.Auto)]
-public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, IPacketHandler handler)
+public readonly ref partial struct PacketVersion5Parser(
+   INetworkStream stream,
+   IPacketHandler handler,
+   Action? onValidPacketParsed = null)
 {
    private readonly INetworkStream _stream = stream;
    private readonly IPacketHandler _packetHandler = handler;
+   private readonly Action? _onValidPacketParsed = onValidPacketParsed;
 
    public ValueTask<PacketDispatchResult> TryDispatch(
       ref RawPacket rawPacket,
@@ -85,6 +92,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -100,6 +108,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -115,6 +124,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -130,6 +140,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -145,6 +156,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -160,6 +172,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -175,6 +188,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -190,6 +204,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -205,6 +220,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -213,6 +229,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
    {
       var packet = new PingReqPacket();
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -221,6 +238,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
    {
       var packet = new PingRespPacket();
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -236,6 +254,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -251,6 +270,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -266,6 +286,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -281,6 +302,7 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
          return ValueTask.FromResult(PacketDispatchResult.ProtocolError);
       }
 
+      _onValidPacketParsed?.Invoke();
       return AwaitHandler(_packetHandler.ExecuteAsync(_stream, in packet, cancellation));
    }
 
@@ -288,5 +310,39 @@ public readonly ref partial struct PacketVersion5Parser(INetworkStream stream, I
    {
       await task;
       return PacketDispatchResult.Success;
+   }
+
+   private static StringError MalformedPropertyError(string packetName)
+      => new($"Protocol Violation: Malformed or invalid property in {packetName} packet.");
+
+   private static StringError? TryParseReasonStringProperties(
+      ref MqttPropertyEnumerator enumerator,
+      string packetName,
+      out byte[]? reasonStringUtf8Bytes)
+   {
+      reasonStringUtf8Bytes = null;
+      var foundReasonString = false;
+
+      while (enumerator.MoveNext())
+      {
+         switch (enumerator.Current.Identifier)
+         {
+            case PropertyIdentifier.ReasonString:
+               if (foundReasonString)
+               {
+                  return new StringError("Protocol Violation: Reason String included more than once.");
+               }
+
+               reasonStringUtf8Bytes = enumerator.Current.AsReasonString().ToArray();
+               foundReasonString = true;
+               break;
+            case PropertyIdentifier.UserProperty:
+               break;
+            default:
+               return new StringError($"Invalid property identifier. ({enumerator.Current.Identifier})");
+         }
+      }
+
+      return enumerator.IsCompleted ? (StringError?)null : MalformedPropertyError(packetName);
    }
 }

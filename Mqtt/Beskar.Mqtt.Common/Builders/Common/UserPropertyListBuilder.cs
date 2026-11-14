@@ -136,6 +136,30 @@ public sealed class UserPropertyListBuilder(IBufferWriter<byte> writer)
       return this;
    }
 
+   internal void CopyFrom(UserPropertyListBuilder source)
+   {
+      if (source.Count == 0)
+      {
+         return;
+      }
+
+      if (source._writer is ArrayBufferWriter<byte> sourceBuffer)
+      {
+         var sourceSpan = sourceBuffer.WrittenSpan;
+         var targetSpan = _writer.GetSpan(sourceSpan.Length);
+         sourceSpan.CopyTo(targetSpan);
+         _writer.Advance(sourceSpan.Length);
+         Count += source.Count;
+         ByteCount += source.ByteCount;
+         return;
+      }
+
+      foreach (var prop in source)
+      {
+         Add(prop.KeyUtf8Bytes, prop.ValueBytes);
+      }
+   }
+
    public void Clear()
    {
       if (_writer is ArrayBufferWriter<byte> buffer)

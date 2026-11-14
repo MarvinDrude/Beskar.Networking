@@ -41,6 +41,7 @@ public sealed partial class MqttSession : IAsyncDisposable
 
    internal MqttServer Server { get; }
    internal SemaphoreSlim DeliverySemaphore { get; } = new(1, 1);
+   internal Lock OutboundOrderLock { get; } = new();
 
    private Dictionary<byte[], MqttSessionSubscription> Subscriptions { get; }
       = new(ByteArrayEqualityComparer.Instance);
@@ -127,13 +128,16 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   internal void RemoveQos2Packet(ushort packetIdentifier)
+   internal bool TryRemoveQos2Packet(ushort packetIdentifier)
    {
       lock (_incomingQos2PacketsLock)
       {
-         _incomingQos2Packets.Remove(packetIdentifier);
+         return _incomingQos2Packets.Remove(packetIdentifier);
       }
    }
+
+   internal void RemoveQos2Packet(ushort packetIdentifier)
+      => TryRemoveQos2Packet(packetIdentifier);
 
    internal int OfflineQueueCount
    {
@@ -178,6 +182,21 @@ public sealed partial class MqttSession : IAsyncDisposable
       {
          _unacknowledgedPublishes.Add(pendingPublish);
          MqttMetrics.RecordQosInflightChange(1);
+      }
+   }
+
+   internal bool TryAddUnacknowledgedPublish(MqttPendingPublish pendingPublish)
+   {
+      lock (_unacknowledgedPublishesLock)
+      {
+         if (_unacknowledgedPublishes.Count >= ClientReceiveMaximum)
+         {
+            return false;
+         }
+
+         _unacknowledgedPublishes.Add(pendingPublish);
+         MqttMetrics.RecordQosInflightChange(1);
+         return true;
       }
    }
 

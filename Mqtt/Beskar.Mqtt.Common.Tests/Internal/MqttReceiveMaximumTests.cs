@@ -718,4 +718,125 @@ public class MqttReceiveMaximumTests
       await subscriber.DisconnectAsync(new DisconnectOptions());
       await publisher.DisconnectAsync(new DisconnectOptions());
    }
+
+   [Test]
+   [NotInParallel]
+   public async Task Subscribe_InitialRetainedMessages_ShouldRespectClientReceiveMaximum()
+   {
+      await using var server = MqttServerFactory.CreateBuilder()
+         .UseTcp(0)
+         .WithDefaultClientIdGenerator()
+         .Build();
+
+      var startResult = await server.StartAsync();
+      await Assert.That(startResult.Failed).IsFalse();
+
+      var port = ((IPEndPoint)server.Listeners[0].LocalAddress).Port;
+
+      // Publish 4 QoS 1 retained messages first
+      var publisher = (MqttClient)MqttClientFactory.CreateTcp();
+      await publisher.ConnectAsync(new ConnectOptions
+      {
+         EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+         ProtocolVersion = MqttProtocolVersion.V50,
+         ClientIdUtf8Bytes = "retained-seed-pub"u8.ToArray()
+      });
+
+      for (var i = 1; i <= 4; i++)
+      {
+         var pubRes = await publisher.PublishAsync(new PublishOptionsBuilder()
+            .WithTopic($"rm/retained/{i}")
+            .WithPayload($"msg-{i}")
+            .WithQualityOfService(QualityOfServiceType.AtLeastOnce)
+            .WithRetain(true)
+            .Build());
+         await Assert.That(pubRes.Failed).IsFalse();
+      }
+
+      await publisher.DisconnectAsync(new DisconnectOptions());
+
+      // Connect raw MQTT 5.0 client advertising ReceiveMaximum = 2
+      using var tcpClient = new System.Net.Sockets.TcpClient();
+      await tcpClient.ConnectAsync(IPAddress.Loopback, port);
+      using var stream = tcpClient.GetStream();
+
+      // CONNECT V5 with ReceiveMaximum (0x21) = 2
+      byte[] connectPacket =
+      [
+         0x10, 0x17,
+         0x00, 0x04, (byte)'M', (byte)'Q', (byte)'T', (byte)'T',
+         0x05, 0x02, 0x00, 0x3C,
+         0x03, 0x21, 0x00, 0x02, // Properties: len=3, ReceiveMaximum=2
+         0x00, 0x07, (byte)'r', (byte)'m', (byte)'-', (byte)'s', (byte)'u', (byte)'b', (byte)'1'
+      ];
+      await stream.WriteAsync(connectPacket);
+      await stream.FlushAsync();
+
+      var readBuf = new byte[4096];
+      var connAckRead = await stream.ReadAsync(readBuf);
+      await Assert.That(connAckRead).IsGreaterThanOrEqualTo(4);
+
+      // SUBSCRIBE to "rm/retained/+" at QoS 1
+      var filter = "rm/retained/+"u8.ToArray();
+      var subRemainingLen = 2 + 1 + 2 + filter.Length + 1;
+      var subPacket = new byte[2 + subRemainingLen];
+      subPacket[0] = 0x82;
+      subPacket[1] = (byte)subRemainingLen;
+      subPacket[2] = 0x00;
+      subPacket[3] = 0x01; // PacketId = 1
+      subPacket[4] = 0x00; // Props len = 0
+      subPacket[5] = (byte)(filter.Length >> 8);
+      subPacket[6] = (byte)filter.Length;
+      filter.CopyTo(subPacket.AsSpan(7));
+      subPacket[^1] = 0x01; // QoS 1
+
+      await stream.WriteAsync(subPacket);
+      await stream.FlushAsync();
+
+      // Drain SUBACK and all initially delivered PUBLISH packets without sending any PUBACK
+      var receivedBytes = new List<byte>();
+      var readDeadline = DateTimeOffset.UtcNow.AddMilliseconds(500);
+      while (DateTimeOffset.UtcNow < readDeadline)
+      {
+         using var readCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
+         try
+         {
+            var n = await stream.ReadAsync(readBuf, readCts.Token);
+            if (n <= 0) break;
+            receivedBytes.AddRange(readBuf.AsSpan(0, n).ToArray());
+         }
+         catch (OperationCanceledException)
+         {
+            break;
+         }
+      }
+
+      // Parse packet headers in receivedBytes: expect 1 SUBACK and at most 2 PUBLISH packets while unacknowledged
+      var publishCount = 0;
+      var offset = 0;
+      var span = receivedBytes.ToArray().AsSpan();
+      while (offset < span.Length)
+      {
+         var packetType = (MqttPacketType)(span[offset++] >> 4);
+         var len = 0;
+         var mult = 1;
+         byte b;
+         do
+         {
+            b = span[offset++];
+            len += (b & 0x7F) * mult;
+            mult *= 128;
+         }
+         while ((b & 0x80) != 0);
+
+         if (packetType == MqttPacketType.Publish)
+         {
+            publishCount++;
+         }
+
+         offset += len;
+      }
+
+      await Assert.That(publishCount).IsLessThanOrEqualTo(2);
+   }
 }

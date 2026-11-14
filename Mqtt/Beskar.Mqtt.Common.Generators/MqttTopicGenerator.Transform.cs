@@ -19,7 +19,7 @@ public partial class MqttTopicGenerator
       if (attributeData is null || attributeData.ConstructorArguments.Length == 0) return null;
 
       var patternValue = attributeData.ConstructorArguments[0].Value as string;
-      if (string.IsNullOrEmpty(patternValue)) return null;
+      if (patternValue is null) return null;
 
       var containingType = methodSymbol.ContainingType;
       if (containingType is null) return null;
@@ -45,8 +45,18 @@ public partial class MqttTopicGenerator
 
       while (currentType is not null)
       {
-         var typeKind = currentType.IsRecord ? "record" : currentType.IsValueType ? "struct" : "class";
-         nestingTypes.Add(new NestingModel(currentType.Name, typeKind));
+         var typeKind = currentType.IsRecord
+            ? (currentType.IsValueType ? "record struct" : "record")
+            : currentType.TypeKind switch
+            {
+               TypeKind.Interface => "interface",
+               TypeKind.Struct => "struct",
+               _ => "class"
+            };
+         var typeName = currentType.TypeParameters.Length > 0
+            ? $"{currentType.Name}<{string.Join(", ", currentType.TypeParameters.Select(tp => tp.Name))}>"
+            : currentType.Name;
+         nestingTypes.Add(new NestingModel(typeName, typeKind));
          currentType = currentType.ContainingType;
       }
 
@@ -120,8 +130,8 @@ public partial class MqttTopicGenerator
          writer.WriteLine("using System;");
          writer.WriteLine("using System.Text;");
          writer.WriteLine("using System.Buffers.Text;");
-         writer.WriteLine("using Beskar.Memory.Code;");
-         writer.WriteLine("using Beskar.Memory.Writers;");
+         if (model.IsFormatter)
+            writer.WriteLine("using Beskar.Memory.Writers;");
          writer.WriteLine();
 
          var hasNamespace = !string.IsNullOrEmpty(model.NamespaceName);
@@ -158,12 +168,23 @@ public partial class MqttTopicGenerator
 
    private static bool ValidatePattern(SourceProductionContext spc, LocationModel location, string pattern)
    {
+      if (string.IsNullOrEmpty(pattern))
+      {
+         spc.ReportDiagnostic(Diagnostic.Create(
+            InvalidTopicPattern,
+            location.ToLocation(),
+            pattern,
+            "Topic pattern cannot be empty."));
+         return false;
+      }
+
       var segments = pattern.Split('/');
 
       for (var i = 0; i < segments.Length; i++)
       {
          var seg = segments[i];
          if (seg.Contains('#'))
+         {
             // Multi-level wildcard must be the last segment and be exactly '#'
             if (seg != "#" || i != segments.Length - 1)
             {
@@ -172,8 +193,10 @@ public partial class MqttTopicGenerator
                   location.ToLocation()));
                return false;
             }
+         }
 
          if (seg.Contains('+'))
+         {
             // Single-level wildcard must stand alone
             if (seg != "+")
             {
@@ -182,6 +205,38 @@ public partial class MqttTopicGenerator
                   location.ToLocation()));
                return false;
             }
+         }
+
+         if (seg.Contains('{') || seg.Contains('}'))
+         {
+            var isFullPlaceholder = seg.Length > 2
+                                    && seg[0] == '{'
+                                    && seg[^1] == '}'
+                                    && seg.IndexOf('{', 1) < 0
+                                    && seg.IndexOf('}', 0, seg.Length - 1) < 0;
+            if (!isFullPlaceholder)
+            {
+               spc.ReportDiagnostic(Diagnostic.Create(
+                  InvalidTopicPattern,
+                  location.ToLocation(),
+                  pattern,
+                  $"Segment '{seg}' contains a malformed parameter placeholder."));
+               return false;
+            }
+
+            var inner = seg.Substring(1, seg.Length - 2);
+            var colonIndex = inner.IndexOf(':');
+            var paramName = colonIndex >= 0 ? inner.Substring(0, colonIndex) : inner;
+            if (string.IsNullOrWhiteSpace(paramName))
+            {
+               spc.ReportDiagnostic(Diagnostic.Create(
+                  InvalidTopicPattern,
+                  location.ToLocation(),
+                  pattern,
+                  $"Segment '{seg}' is missing a parameter name."));
+               return false;
+            }
+         }
       }
 
       return true;

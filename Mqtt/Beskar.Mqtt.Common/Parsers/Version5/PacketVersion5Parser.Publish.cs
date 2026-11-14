@@ -87,6 +87,11 @@ public readonly ref partial struct PacketVersion5Parser
          }
       }
 
+      if (!enumerator.IsCompleted)
+      {
+         return MalformedPropertyError("PUBLISH");
+      }
+
       var consumedSoFar = rawPacket.Reader.Consumed - initialConsumed;
       var payloadLength = rawPacket.BodyLength - consumedSoFar;
 

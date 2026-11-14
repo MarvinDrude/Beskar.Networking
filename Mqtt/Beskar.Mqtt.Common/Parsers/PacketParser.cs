@@ -17,13 +17,17 @@ namespace Beskar.Mqtt.Common.Parsers;
 public ref struct PacketParser(
    INetworkStream stream,
    IPacketHandler handler,
-   MqttProtocolVersion protocolVersion)
+   MqttProtocolVersion protocolVersion,
+   uint maximumPacketSize = 0,
+   Action? onValidPacketParsed = null)
 {
    public MqttProtocolVersion ProtocolVersion { get; private set; } = protocolVersion;
    public bool TryPrivate => _tryPrivate;
 
    private readonly INetworkStream _stream = stream;
    private readonly IPacketHandler _packetHandler = handler;
+   private readonly uint _maximumPacketSize = maximumPacketSize;
+   private readonly Action? _onValidPacketParsed = onValidPacketParsed;
    private bool _tryPrivate;
 
    public ValueTask<Result<PacketDispatchResult, StringError>> TryDispatch(
@@ -39,7 +43,9 @@ public ref struct PacketParser(
          return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.NotEnoughData);
       }
 
-      if (TryParseBodyLength(ref reader, out var fixedHeader,
+      var copyReader = reader;
+
+      if (TryParseBodyLength(ref copyReader, out var fixedHeader,
              out var headerLength, out var bodyLength)
           is not PacketDispatchResult.Success and var res)
       {
@@ -47,11 +53,18 @@ public ref struct PacketParser(
          return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(res);
       }
 
-      if (reader.Remaining < bodyLength)
+      if (_maximumPacketSize > 0 && (ulong)(headerLength + bodyLength) > _maximumPacketSize)
+      {
+         return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.PacketTooLarge);
+      }
+
+      if (copyReader.Remaining < bodyLength)
       {
          // enough data for the entire body not provided
          return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.NotEnoughData);
       }
+
+      reader = copyReader;
 
       var rawPacket = new RawPacket(fixedHeader, headerLength + bodyLength, bodyLength)
       {
@@ -59,7 +72,22 @@ public ref struct PacketParser(
       };
 
       var packetType = (MqttPacketType)(rawPacket.FixedHeader >> 4);
-      if (ProtocolVersion is MqttProtocolVersion.Unknown || packetType is MqttPacketType.Connect)
+      if (ProtocolVersion is MqttProtocolVersion.Unknown)
+      {
+         if (packetType is not MqttPacketType.Connect)
+         {
+            // MQTT §3.1.0: the first packet sent from Client to Server MUST be CONNECT.
+            return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(PacketDispatchResult.ProtocolError);
+         }
+
+         var protocolResult = ParseProtocolVersion(ref rawPacket, out _tryPrivate);
+         if (protocolResult.Failed)
+            return ValueTask.FromResult<Result<PacketDispatchResult, StringError>>(protocolResult.Error);
+
+         ProtocolVersion = protocolResult.Success;
+         _stream.Session.Properties.Set("MqttProtocolVersion", ProtocolVersion);
+      }
+      else if (packetType is MqttPacketType.Connect)
       {
          var protocolResult = ParseProtocolVersion(ref rawPacket, out _tryPrivate);
          if (protocolResult.Failed)
@@ -72,9 +100,9 @@ public ref struct PacketParser(
       var innerConsumed = 0;
       var dispatchTask = ProtocolVersion switch
       {
-         MqttProtocolVersion.V50 => new PacketVersion5Parser(_stream, _packetHandler)
+         MqttProtocolVersion.V50 => new PacketVersion5Parser(_stream, _packetHandler, _onValidPacketParsed)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
-         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_stream, _packetHandler, ProtocolVersion)
+         MqttProtocolVersion.V311 or MqttProtocolVersion.V31 => new PacketVersion3Parser(_stream, _packetHandler, ProtocolVersion, _onValidPacketParsed)
             .TryDispatch(ref rawPacket, out innerConsumed, cancellation),
          _ => ValueTask.FromResult(PacketDispatchResult.ProtocolError)
       };
@@ -180,9 +208,10 @@ public ref struct PacketParser(
          return new StringError("Could not read protocol code.");
       }
 
-      // Remove the mosquitto try_private flag (MQTT 3.1.1 Bridge)
-      tryPrivate = (protocolCode & 0x80) > 0;
-      protocolCode &= 0x7F;
+      // The Mosquitto try_private bit (0x80) only applies to MQTT 3.1 / 3.1.1 bridges.
+      // MQTT 5.0 strictly requires Protocol Level 5 without the high bit set.
+      var hasTryPrivateFlag = (protocolCode & 0x80) != 0;
+      var strippedProtocolCode = (byte)(protocolCode & 0x7F);
 
       if (utf8Bytes.SequenceEqual("MQTT"u8))
       {
@@ -191,8 +220,9 @@ public ref struct PacketParser(
             return MqttProtocolVersion.V50;
          }
 
-         if (protocolCode == 4)
+         if (strippedProtocolCode == 4)
          {
+            tryPrivate = hasTryPrivateFlag;
             return MqttProtocolVersion.V311;
          }
 
@@ -201,8 +231,9 @@ public ref struct PacketParser(
 
       if (utf8Bytes.SequenceEqual("MQIsdp"u8))
       {
-         if (protocolCode == 3)
+         if (strippedProtocolCode == 3)
          {
+            tryPrivate = hasTryPrivateFlag;
             return MqttProtocolVersion.V31;
          }
 

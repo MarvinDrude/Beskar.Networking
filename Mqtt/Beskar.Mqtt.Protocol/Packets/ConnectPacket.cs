@@ -11,6 +11,10 @@ namespace Beskar.Mqtt.Protocol.Packets;
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
 public struct ConnectPacket : IRawMqttPacket
 {
+   public ConnectPacket()
+   {
+   }
+
    public bool IsCleanSession;
    public ushort KeepAliveInterval;
 
@@ -25,7 +29,7 @@ public struct ConnectPacket : IRawMqttPacket
    public uint MaximumPacketSize;
 
    public bool RequestResponseInfo;
-   public bool RequestProblemInfo;
+   public bool RequestProblemInfo = true;
 
    public bool HasWill;
    public QualityOfServiceType WillQualityOfService;

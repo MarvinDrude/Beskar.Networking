@@ -63,13 +63,16 @@ public readonly ref partial struct PacketVersion5Encoder
       }
    }
 
-   private int CalculateLength(UnsubscribeOptions options)
+   private static int CalculateLength(UnsubscribeOptions options)
+      => CalculateUnsubscribePacketLength(options);
+
+   internal static int CalculateUnsubscribePacketLength(UnsubscribeOptions options)
    {
       var remainingLength = CalculateRemainingLength(options);
       return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
    }
 
-   private int CalculateRemainingLength(UnsubscribeOptions options)
+   private static int CalculateRemainingLength(UnsubscribeOptions options)
    {
       var propertiesLength = CalculatePropertiesLength(options);
 

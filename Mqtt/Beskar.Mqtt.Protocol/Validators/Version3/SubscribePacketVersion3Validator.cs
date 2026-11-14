@@ -1,45 +1,12 @@
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
-using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Packets;
+using Beskar.Mqtt.Protocol.Validators.Common;
 
 namespace Beskar.Mqtt.Protocol.Validators.Version3;
 
 public static class SubscribePacketVersion3Validator
 {
    public static VoidResult<StringError> Validate(ref SubscribePacket packet)
-   {
-      if (packet.PacketIdentifier == 0)
-      {
-         return new StringError("Protocol Violation: Packet Identifier cannot be 0.");
-      }
-
-      var enumerator = packet.GetFilters();
-      if (!enumerator.MoveNext())
-      {
-         return new StringError("Protocol Violation: SUBSCRIBE packet payload must contain at least one topic filter.");
-      }
-
-      do
-      {
-         var filter = enumerator.Current;
-         if (filter.TopicUtf8Bytes.IsEmpty)
-         {
-            return new StringError("Protocol Violation: Topic filter in SUBSCRIBE packet cannot be empty.");
-         }
-
-         if (filter.QualityOfService is < 0 or > QualityOfServiceType.ExactlyOnce)
-         {
-            return new StringError("Protocol Violation: Invalid QoS level in SUBSCRIBE packet.");
-         }
-
-         if (filter.NoLocal || filter.RetainAsPublished || filter.RetainHandling != RetainHandlingType.SendAtSubscription)
-         {
-            return new StringError("Protocol Violation: Reserved bits in SUBSCRIBE packet options byte must be 0 under MQTT v3.1.1.");
-         }
-      }
-      while (enumerator.MoveNext());
-
-      return true;
-   }
+      => PacketFilterValidator.ValidateSubscribe(ref packet, isVersion3: true);
 }

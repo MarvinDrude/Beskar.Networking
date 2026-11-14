@@ -20,6 +20,11 @@ namespace Beskar.Mqtt.Server.Internal;
 /// </summary>
 public sealed class MqttServerClient
 {
+   private int _handshakeCompleted;
+   private int _connectReceived;
+   private int _isFenced;
+   private int _connectedMetricRecorded;
+
    /// <summary>
    /// Gets a value indicating whether the client is currently connected to the server.
    /// </summary>
@@ -28,18 +33,36 @@ public sealed class MqttServerClient
       nameof(Session), nameof(_session),
       nameof(Stream), nameof(_stream),
       nameof(_serverOptions), nameof(_controlPacketChannel))]
-   public bool IsConnected => _session is not null && !_isDisconnecting;
+   public bool IsConnected => _session is not null && Volatile.Read(ref _disconnectingState) == 0;
+
+   internal bool IsHandshakeCompleted => Volatile.Read(ref _handshakeCompleted) == 1;
+   internal bool IsFenced => Volatile.Read(ref _isFenced) == 1;
+
+   internal void MarkHandshakeCompleted()
+      => Interlocked.Exchange(ref _handshakeCompleted, 1);
+
+   internal bool TryMarkConnectReceived()
+      => Interlocked.CompareExchange(ref _connectReceived, 1, 0) == 0;
+
+   internal void MarkFenced()
+      => Interlocked.Exchange(ref _isFenced, 1);
+
+   internal void MarkConnectedMetricRecorded()
+      => Interlocked.Exchange(ref _connectedMetricRecorded, 1);
+
+   internal bool TryConsumeConnectedMetric()
+      => Interlocked.Exchange(ref _connectedMetricRecorded, 0) == 1;
 
    /// <summary>
    /// Gets the network listener that accepted the client connection.
    /// </summary>
    public INetworkListener Listener => _listener ?? throw new InvalidOperationException("Listener has not been initialized.");
-   
+
    /// <summary>
    /// Gets the underlying network session for the client connection.
    /// </summary>
    public INetworkSession Session => _session ?? throw new InvalidOperationException("Session has not been initialized.");
-   
+
    /// <summary>
    /// Gets the main network stream associated with the client.
    /// </summary>
@@ -54,7 +77,7 @@ public sealed class MqttServerClient
    /// Gets a token that is canceled when the client connection is disconnected.
    /// </summary>
    public CancellationToken CancellationToken => _cancellationTokenSource?.Token ?? CancellationToken.None;
-   
+
    /// <summary>
    /// Gets the MQTT protocol version used by the client.
    /// </summary>
@@ -83,11 +106,28 @@ public sealed class MqttServerClient
    private readonly Lock _topicAliasesLock = new();
 
    private Channel<IHeapMqttOptions>? _controlPacketChannel;
-   private Channel<PublishPacket>? _outgoingPublishChannel;
+   private Channel<OutgoingWorkItem>? _outgoingPublishChannel;
+   private int _outgoingChannelCapacity;
+   private readonly Lock _outgoingCapacityLock = new();
+   private TaskCompletionSource? _outgoingSlotFreedTcs;
+   private bool _outgoingWorkerStopped;
    private Task? _outgoingPublishTask;
 
-   private bool _isDisconnecting;
+   private int _disconnectingState;
    private int _disconnectEventFired;
+   private long _lastPacketReceivedTicks;
+
+   internal DateTimeOffset? LastPacketReceivedTimestamp
+   {
+      get
+      {
+         var ticks = Interlocked.Read(ref _lastPacketReceivedTicks);
+         return ticks > 0 ? new DateTimeOffset(ticks, TimeSpan.Zero) : null;
+      }
+   }
+
+   internal void UpdateLastPacketReceivedTimestamp()
+      => Interlocked.Exchange(ref _lastPacketReceivedTicks, DateTimeOffset.UtcNow.UtcTicks);
 
    internal bool TryMarkDisconnectEventFired()
       => Interlocked.CompareExchange(ref _disconnectEventFired, 1, 0) == 0;
@@ -117,23 +157,24 @@ public sealed class MqttServerClient
       var limit = serverOptions.MaxPendingMessagesPerConnection > 0
           ? serverOptions.MaxPendingMessagesPerConnection
           : 1024;
+      _outgoingChannelCapacity = limit;
+      _outgoingWorkerStopped = false;
 
-      _outgoingPublishChannel = Channel.CreateBounded<PublishPacket>(new BoundedChannelOptions(limit)
+      _outgoingPublishChannel = Channel.CreateBounded<OutgoingWorkItem>(new BoundedChannelOptions(limit)
       {
          SingleWriter = false,
          SingleReader = true,
          FullMode = serverOptions.PendingMessageOverflowBehavior is MessageOverflowBehavior.DropNewest
             ? BoundedChannelFullMode.DropNewest
             : BoundedChannelFullMode.DropOldest
-      });
+      }, OnOutgoingItemDropped);
 
       _outgoingPublishTask = Task.Run(ProcessOutgoingPublishesAsync, CancellationToken);
    }
 
    internal async Task DisconnectAsync(DisconnectOptions? options = null)
    {
-      if (_isDisconnecting || !IsConnected) return;
-      _isDisconnecting = true;
+      if (!IsConnected || Interlocked.CompareExchange(ref _disconnectingState, 1, 0) != 0) return;
 
       if (options is not null)
       {
@@ -214,9 +255,106 @@ public sealed class MqttServerClient
       return _controlPacketChannel?.Writer.TryWrite(packet) ?? false;
    }
 
-   internal void QueueOutgoingPublish(in PublishPacket packet)
+   internal bool QueueOutgoingPublish(in PublishPacket packet)
    {
-      _outgoingPublishChannel?.Writer.TryWrite(packet);
+      var channel = _outgoingPublishChannel;
+      var item = OutgoingWorkItem.ForPublish(packet);
+      lock (_outgoingCapacityLock)
+      {
+         if (channel is null || _outgoingWorkerStopped || !channel.Writer.TryWrite(item))
+         {
+            OnOutgoingItemDropped(item);
+            return false;
+         }
+      }
+
+      return true;
+   }
+
+   internal Task SendViaOutgoingQueueAsync(in PublishPacket packet, CancellationToken ct)
+      => SendWorkItemViaOutgoingQueueAsync(OutgoingWorkItem.ForPublish(packet), ct);
+
+   internal Task SendViaOutgoingPubRelAsync(in PubRelPacket packet, CancellationToken ct)
+      => SendWorkItemViaOutgoingQueueAsync(OutgoingWorkItem.ForPubRel(packet), ct);
+
+   private async Task SendWorkItemViaOutgoingQueueAsync(OutgoingWorkItem item, CancellationToken ct)
+   {
+      var channel = _outgoingPublishChannel ?? throw new InvalidOperationException("Client has not been initialized.");
+
+      TaskCompletionSource? sendTcs;
+      while (true)
+      {
+         ct.ThrowIfCancellationRequested();
+
+         Task? waitForSlotTask;
+         lock (_outgoingCapacityLock)
+         {
+            if (_outgoingWorkerStopped || !IsConnected)
+            {
+               throw new OperationCanceledException(ct);
+            }
+
+            if (channel.Reader.Count < _outgoingChannelCapacity)
+            {
+               sendTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+               var queuedItem = item.WithCompletion(sendTcs);
+               if (!channel.Writer.TryWrite(queuedItem))
+               {
+                  throw new OperationCanceledException(ct);
+               }
+
+               break;
+            }
+
+            _outgoingSlotFreedTcs ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            waitForSlotTask = _outgoingSlotFreedTcs.Task;
+         }
+
+         await waitForSlotTask.WaitAsync(ct).ConfigureAwait(false);
+      }
+
+      await sendTcs.Task.WaitAsync(ct).ConfigureAwait(false);
+   }
+
+   private void SignalOutgoingSlotFreed(bool workerStopped = false)
+   {
+      TaskCompletionSource? tcs;
+      lock (_outgoingCapacityLock)
+      {
+         if (workerStopped)
+         {
+            _outgoingWorkerStopped = true;
+         }
+
+         tcs = _outgoingSlotFreedTcs;
+         _outgoingSlotFreedTcs = null;
+      }
+
+      tcs?.TrySetResult();
+   }
+
+   private void OnOutgoingItemDropped(OutgoingWorkItem droppedItem)
+   {
+      droppedItem.Completion?.TrySetResult();
+      if (droppedItem.Kind is not OutgoingItemKind.Publish)
+      {
+         return;
+      }
+
+      var droppedPacket = droppedItem.Publish;
+      if (droppedPacket.QualityOfService > QualityOfServiceType.AtMostOnce && droppedPacket.PacketIdentifier != 0)
+      {
+         var session = MqttSession;
+         if (session is null)
+         {
+            return;
+         }
+
+         if (session.AcknowledgePublish(droppedPacket.PacketIdentifier) is not null && session.OfflineQueueCount > 0)
+         {
+            _ = Task.Run(() => MqttServer.DeliverNextQueuedMessagesAsync(session));
+         }
+      }
    }
 
    private async Task ProcessOutgoingPublishesAsync()
@@ -230,10 +368,41 @@ public sealed class MqttServerClient
          var reader = channel.Reader;
          while (await reader.WaitToReadAsync(token))
          {
-            while (reader.TryRead(out var packet))
+            while (reader.TryRead(out var item))
             {
-               if (_stream is null) break;
-               await _stream.Send(in packet, ProtocolVersion, token);
+               SignalOutgoingSlotFreed();
+               try
+               {
+                  if (_stream is null)
+                  {
+                     item.Completion?.TrySetCanceled(token);
+                     break;
+                  }
+
+                  switch (item.Kind)
+                  {
+                     case OutgoingItemKind.Publish:
+                        var publish = item.Publish;
+                        await _stream.Send(in publish, ProtocolVersion, token);
+                        break;
+                     case OutgoingItemKind.PubRel:
+                        var pubRel = item.PubRel;
+                        await _stream.Send(in pubRel, ProtocolVersion, token);
+                        break;
+                  }
+
+                  item.Completion?.TrySetResult();
+               }
+               catch (OperationCanceledException oce)
+               {
+                  item.Completion?.TrySetCanceled(oce.CancellationToken);
+                  throw;
+               }
+               catch (Exception ex)
+               {
+                  item.Completion?.TrySetException(ex);
+                  throw;
+               }
             }
          }
       }
@@ -245,5 +414,43 @@ public sealed class MqttServerClient
       {
          TraceLogger.LogServerError("MqttServerClient: Error in outgoing publish worker: {0}", ex.Message);
       }
+      finally
+      {
+         channel.Writer.TryComplete();
+         while (channel.Reader.TryRead(out var remaining))
+         {
+            remaining.Completion?.TrySetCanceled(token);
+         }
+
+         SignalOutgoingSlotFreed(workerStopped: true);
+      }
+   }
+
+   private enum OutgoingItemKind : byte
+   {
+      Publish,
+      PubRel
+   }
+
+   private readonly struct OutgoingWorkItem
+   {
+      public OutgoingItemKind Kind { get; private init; }
+      public PublishPacket Publish { get; private init; }
+      public PubRelPacket PubRel { get; private init; }
+      public TaskCompletionSource? Completion { get; private init; }
+
+      public static OutgoingWorkItem ForPublish(in PublishPacket packet) => new()
+      {
+         Kind = OutgoingItemKind.Publish,
+         Publish = packet
+      };
+
+      public static OutgoingWorkItem ForPubRel(in PubRelPacket packet) => new()
+      {
+         Kind = OutgoingItemKind.PubRel,
+         PubRel = packet
+      };
+
+      public OutgoingWorkItem WithCompletion(TaskCompletionSource completion) => this with { Completion = completion };
    }
 }

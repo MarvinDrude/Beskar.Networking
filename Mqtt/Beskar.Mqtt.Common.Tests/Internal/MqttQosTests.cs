@@ -1142,7 +1142,10 @@ public class MqttQosTests
    [Test]
    public async Task WillMessage_WithWillDelay_UngracefulDisconnect_ShouldDelayAndCancelOnReconnect()
    {
-      await using var server = MqttServerFactory.CreateBuilder()
+      await using var server = MqttServerFactory.CreateBuilder(new MqttServerOptions
+         {
+            SupportPersistentSessions = true
+         })
          .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
@@ -1172,6 +1175,7 @@ public class MqttQosTests
       var connectOptionsA = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
          .WithClientId("client-a-will-delay")
          .WithCleanSession(false)
+         .WithSessionExpiryInterval(60)
          .WithWill("will/test/delayed", "WillDelayPayload"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false)
          .WithWillDelayInterval(30)
          .Build();
@@ -1200,7 +1204,10 @@ public class MqttQosTests
    [Test]
    public async Task WillMessage_WithWillDelay_UngracefulDisconnect_ShouldPublishAfterDelay()
    {
-      await using var server = MqttServerFactory.CreateBuilder()
+      await using var server = MqttServerFactory.CreateBuilder(new MqttServerOptions
+         {
+            SupportPersistentSessions = true
+         })
          .UseTcp(0)
          .WithDefaultClientIdGenerator()
          .Build();
@@ -1229,6 +1236,7 @@ public class MqttQosTests
       var clientA = MqttClientFactory.CreateTcp();
       var connectOptionsA = new ConnectOptionsBuilder(new IPEndPoint(IPAddress.Loopback, port))
          .WithClientId("client-a-will-delay-trigger")
+         .WithSessionExpiryInterval(30)
          .WithWill("will/test/delayed-trigger", "WillTriggerPayload"u8.ToArray(), QualityOfServiceType.AtLeastOnce, false)
          .WithWillDelayInterval(1)
          .Build();

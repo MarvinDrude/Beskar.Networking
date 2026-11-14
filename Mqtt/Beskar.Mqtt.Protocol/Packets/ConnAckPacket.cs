@@ -9,19 +9,19 @@ namespace Beskar.Mqtt.Protocol.Packets;
 
 [StructLayout(LayoutKind.Auto)]
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
-public struct ConnAckPacket : IRawMqttPacket
+public struct ConnAckPacket() : IRawMqttPacket
 {
    public bool IsSessionPresent;
    public ConnectReturnCode ReturnCode;
    public ConnectReasonCode ReasonCode;
    public ReadOnlySequence<byte> ReasonStringUtf8Bytes;
 
-   public bool IsRetainAvailable;
-   public bool IsSharedSubscriptionAvailable;
-   public bool IsSubscriptionIdentifierAvailable;
-   public bool IsWildcardSubscriptionAvailable;
+   public bool IsRetainAvailable = true;
+   public bool IsSharedSubscriptionAvailable = true;
+   public bool IsSubscriptionIdentifierAvailable = true;
+   public bool IsWildcardSubscriptionAvailable = true;
 
-   public QualityOfServiceType MaximumQualityOfService;
+   public QualityOfServiceType MaximumQualityOfService = QualityOfServiceType.ExactlyOnce;
 
    public uint SessionExpiryInterval;
    public ushort ServerKeepAlive;

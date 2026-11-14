@@ -19,6 +19,7 @@
 
    <ItemGroup>
      <InternalsVisibleTo Include="Beskar.Mqtt.Client" />
+     <InternalsVisibleTo Include="Beskar.Mqtt.Server" />
      <InternalsVisibleTo Include="Beskar.Mqtt.Common.Tests" />
    </ItemGroup>
 

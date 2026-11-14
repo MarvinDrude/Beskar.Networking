@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Beskar.Memory.Writers;
 using Beskar.Mqtt.Common.Builders.Connecting;
 using Beskar.Mqtt.Common.Builders.Publishing;
 using Beskar.Mqtt.Common.Builders.Subscribing;
@@ -19,23 +20,83 @@ public readonly ref partial struct PacketVersion5Encoder(IBufferWriter<byte> wri
 {
    private readonly IBufferWriter<byte> _writer = writer;
 
-   private static bool HasReasonStringProperty(ReadOnlyMemory<byte> propertiesBytes)
+   private static ulong CollectPresentProperties(ReadOnlySequence<byte> propertiesBytes)
    {
       if (propertiesBytes.IsEmpty)
       {
-         return false;
+         return 0UL;
       }
 
-      var enumerator = new MqttPropertyEnumerator(new ReadOnlySequence<byte>(propertiesBytes));
+      ulong mask = 0;
+      var enumerator = new MqttPropertyEnumerator(propertiesBytes);
       while (enumerator.MoveNext())
       {
-         if (enumerator.Current.Identifier == PropertyIdentifier.ReasonString)
+         var bit = (int)enumerator.Current.Identifier;
+         if (bit < 64)
          {
-            return true;
+            mask |= 1UL << bit;
          }
       }
 
-      return false;
+      return mask;
+   }
+
+   private static ulong CollectPresentProperties(ReadOnlyMemory<byte> propertiesBytes)
+   {
+      return CollectPresentProperties(new ReadOnlySequence<byte>(propertiesBytes));
+   }
+
+   [MethodImpl(MethodImplOptions.AggressiveInlining)]
+   private static bool HasProperty(ulong mask, PropertyIdentifier identifier)
+   {
+      return (mask & (1UL << (int)identifier)) != 0;
+   }
+
+   private static int CalculateReasonPropertiesDataLength(
+      ReadOnlyMemory<byte> reasonStringUtf8Bytes,
+      ReadOnlyMemory<byte> propertiesBytes)
+   {
+      var length = propertiesBytes.Length;
+      if (!reasonStringUtf8Bytes.IsEmpty &&
+          !HasProperty(CollectPresentProperties(propertiesBytes), PropertyIdentifier.ReasonString))
+      {
+         length += 1 + 2 + reasonStringUtf8Bytes.Length;
+      }
+
+      return length;
+   }
+
+   private static void WriteReasonProperties(
+      ref ByteWriter writer,
+      ReadOnlyMemory<byte> reasonStringUtf8Bytes,
+      ReadOnlyMemory<byte> propertiesBytes,
+      int propsDataLen)
+   {
+      PacketEncoder.WriteVariableByteInteger(ref writer, (uint)propsDataLen);
+
+      if (propsDataLen == 0)
+      {
+         return;
+      }
+
+      if (!reasonStringUtf8Bytes.IsEmpty &&
+          !HasProperty(CollectPresentProperties(propertiesBytes), PropertyIdentifier.ReasonString))
+      {
+         var propEncoder = new PacketPropertyEncoder(writer);
+         try
+         {
+            propEncoder.Write(PropertyIdentifier.ReasonString, reasonStringUtf8Bytes.Span);
+         }
+         finally
+         {
+            writer = propEncoder.Writer;
+         }
+      }
+
+      if (!propertiesBytes.IsEmpty)
+      {
+         writer.WriteBytes(propertiesBytes.Span);
+      }
    }
 
    public void Write<TPacket>(in TPacket packet)
@@ -138,6 +199,97 @@ public readonly ref partial struct PacketVersion5Encoder(IBufferWriter<byte> wri
       else
       {
          throw new NotSupportedException($"Options type {typeof(TOptions).Name} is not supported by PacketVersion5Encoder.");
+      }
+   }
+
+   internal static int CalculatePacketLength<TOptions>(TOptions options)
+      where TOptions : class, IHeapMqttOptions
+   {
+      if (typeof(TOptions) == typeof(PublishOptions))
+      {
+         return CalculatePublishPacketLength(Unsafe.As<TOptions, PublishOptions>(ref options));
+      }
+
+      if (typeof(TOptions) == typeof(SubscribeOptions))
+      {
+         return CalculateSubscribePacketLength(Unsafe.As<TOptions, SubscribeOptions>(ref options));
+      }
+
+      if (typeof(TOptions) == typeof(UnsubscribeOptions))
+      {
+         return CalculateUnsubscribePacketLength(Unsafe.As<TOptions, UnsubscribeOptions>(ref options));
+      }
+
+      if (typeof(TOptions) == typeof(DisconnectOptions))
+      {
+         return CalculateDisconnectPacketLength(Unsafe.As<TOptions, DisconnectOptions>(ref options));
+      }
+
+      if (typeof(TOptions) == typeof(AuthPacketOptions))
+      {
+         return CalculateAuthPacketLength(Unsafe.As<TOptions, AuthPacketOptions>(ref options));
+      }
+
+      if (typeof(TOptions) == typeof(ConnectOptions))
+      {
+         return 0;
+      }
+
+      throw new NotSupportedException($"Options type {typeof(TOptions).Name} is not supported by PacketVersion5Encoder.");
+   }
+
+   internal static int MeasurePacketLength<TPacket>(in TPacket packet)
+      where TPacket : IRawMqttPacket
+   {
+      if (typeof(TPacket) == typeof(PublishPacket))
+      {
+         return CalculatePublishPacketLength(in Unsafe.As<TPacket, PublishPacket>(ref Unsafe.AsRef(in packet)));
+      }
+
+      var countingWriter = new PooledCountingBufferWriter();
+      try
+      {
+         new PacketVersion5Encoder(countingWriter).Write(in packet);
+         return countingWriter.BytesWritten;
+      }
+      finally
+      {
+         countingWriter.ReturnBuffer();
+      }
+   }
+
+   private sealed class PooledCountingBufferWriter : IBufferWriter<byte>
+   {
+      private byte[]? _buffer;
+
+      public int BytesWritten { get; private set; }
+
+      public void Advance(int count) => BytesWritten += count;
+
+      public Memory<byte> GetMemory(int sizeHint = 0) => EnsureBuffer(sizeHint);
+
+      public Span<byte> GetSpan(int sizeHint = 0) => EnsureBuffer(sizeHint);
+
+      private byte[] EnsureBuffer(int sizeHint)
+      {
+         var needed = Math.Max(sizeHint, 256);
+         if (_buffer is not null && _buffer.Length >= needed)
+         {
+            return _buffer;
+         }
+
+         ReturnBuffer();
+         _buffer = ArrayPool<byte>.Shared.Rent(needed);
+         return _buffer;
+      }
+
+      public void ReturnBuffer()
+      {
+         if (_buffer is { } buf)
+         {
+            _buffer = null;
+            ArrayPool<byte>.Shared.Return(buf);
+         }
       }
    }
 }

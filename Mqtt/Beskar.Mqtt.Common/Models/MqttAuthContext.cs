@@ -58,16 +58,18 @@ public sealed class MqttAuthContext
    /// <returns>The next AuthPacketResult, or null if connection completed (CONNACK received) or failed.</returns>
    public async Task<AuthPacketResult?> AwaitNextAuthPacketAsync(CancellationToken ct = default)
    {
-      if (Broker is null || ConnAckTask is null || ReceiveTask is null || AuthTask is null)
+      if (Broker is null || ReceiveTask is null)
       {
          throw new InvalidOperationException("Awaiting auth packets is not supported in this context.");
       }
 
-      if (!_authTaskConsumed)
+      if (AuthTask is not null && !_authTaskConsumed)
       {
          _authTaskConsumed = true;
 
-         var completed = await Task.WhenAny(AuthTask, ConnAckTask, ReceiveTask).WaitAsync(ct);
+         var completed = ConnAckTask is not null
+            ? await Task.WhenAny(AuthTask, ConnAckTask, ReceiveTask).WaitAsync(ct)
+            : await Task.WhenAny(AuthTask, ReceiveTask).WaitAsync(ct);
          if (completed == AuthTask)
          {
             return await AuthTask;
@@ -77,12 +79,15 @@ public sealed class MqttAuthContext
       }
       else
       {
+         _authTaskConsumed = true;
          using var iterationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
          using var authAwaiter = Broker.AddAwaitable<AuthPacketResult>(0);
 
          var authTask = authAwaiter.WaitOneAsync(iterationCts.Token).AsTask();
 
-         var completed = await Task.WhenAny(authTask, ConnAckTask, ReceiveTask);
+         var completed = ConnAckTask is not null
+            ? await Task.WhenAny(authTask, ConnAckTask, ReceiveTask)
+            : await Task.WhenAny(authTask, ReceiveTask);
          if (completed == authTask)
          {
             return await authTask;

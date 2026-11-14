@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Beskar.Memory.Results;
+using Beskar.Memory.Results.Errors;
 using Beskar.Mqtt.Common.Builders.Subscribing;
 using Beskar.Mqtt.Common.Builders.Unsubscribing;
 using Beskar.Mqtt.Common.Handlers.Contexts;
@@ -19,7 +21,8 @@ namespace Beskar.Mqtt.Client.Internal;
 internal sealed class MqttSubscriptionManager : IAsyncDisposable
 {
    private readonly MqttClient _client;
-   private readonly ConcurrentDictionary<string, TopicSubscriptionEntry> _subscriptions = new();
+   private readonly ConcurrentDictionary<string, TopicSubscriptionEntry> _subscriptions = new(StringComparer.Ordinal);
+   private readonly ConcurrentDictionary<string, TopicBrokerGate> _topicBrokerLocks = new(StringComparer.Ordinal);
 
    private readonly IDisposable _receiveHandlerToken;
    private readonly IDisposable _connectedHandlerToken;
@@ -44,22 +47,10 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       ArgumentException.ThrowIfNullOrWhiteSpace(topicFilter);
 
       var effectiveOptions = options ?? StreamSubscriptionOptions.Default;
-      var channel = Channel.CreateBounded<MqttPublishMessage>(new BoundedChannelOptions(effectiveOptions.BoundedCapacity)
-      {
-         FullMode = effectiveOptions.FullMode,
-         SingleReader = true,
-         SingleWriter = false
-      });
-
+      var channel = CreateStreamChannel<MqttPublishMessage>(effectiveOptions);
       var sink = new RawChannelSubscriptionSink(channel.Writer, effectiveOptions.FullMode, qos, effectiveOptions.MaxPendingWaitWrites);
-      var (entry, isFirst, qosUpgraded) = AddSinkToTopic(topicFilter, sink, qos);
 
-      if ((isFirst || qosUpgraded) && _client.IsConnected)
-      {
-         _ = TrySubscribeBrokerAsync(topicFilter, entry.MaxQos, ct);
-      }
-
-      return new MqttMessageStream<MqttPublishMessage>(channel, () => RemoveSinkAsync(topicFilter, sink), ct);
+      return SubscribeStreamCore(topicFilter, sink, channel, qos, ct);
    }
 
    public IAsyncEnumerable<T> SubscribeStream<T>(
@@ -74,25 +65,55 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       ArgumentNullException.ThrowIfNull(decoder);
 
       var effectiveOptions = options ?? StreamSubscriptionOptions.Default;
-      var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(effectiveOptions.BoundedCapacity)
+      var channel = CreateStreamChannel<T>(effectiveOptions);
+      var sink = new ChannelSubscriptionSink<T>(channel.Writer, decoder, effectiveOptions.FullMode, qos, effectiveOptions.MaxPendingWaitWrites);
+      return SubscribeStreamCore(topicFilter, sink, channel, qos, ct);
+   }
+
+   private static Channel<T> CreateStreamChannel<T>(StreamSubscriptionOptions effectiveOptions)
+   {
+      return Channel.CreateBounded<T>(new BoundedChannelOptions(effectiveOptions.BoundedCapacity)
       {
          FullMode = effectiveOptions.FullMode,
          SingleReader = true,
          SingleWriter = false
       });
+   }
 
-      var sink = new ChannelSubscriptionSink<T>(channel.Writer, decoder, effectiveOptions.FullMode, qos, effectiveOptions.MaxPendingWaitWrites);
-      var (entry, isFirst, qosUpgraded) = AddSinkToTopic(topicFilter, sink, qos);
+   private IAsyncEnumerable<T> SubscribeStreamCore<T>(
+      string topicFilter,
+      ISubscriptionSink sink,
+      Channel<T> channel,
+      QualityOfServiceType qos,
+      CancellationToken ct)
+   {
+      var isConnected = _client.IsConnected;
+      var reg = AddSinkToTopic(topicFilter, sink, qos, isConnected);
 
-      if ((isFirst || qosUpgraded) && _client.IsConnected)
+      if (isConnected)
       {
-         _ = TrySubscribeBrokerAsync(topicFilter, entry.MaxQos, ct);
+         _ = CompleteStreamSubscribeAsync(topicFilter, reg, sink, channel.Writer, ct);
       }
 
       return new MqttMessageStream<T>(channel, () => RemoveSinkAsync(topicFilter, sink), ct);
    }
 
-   public async Task<IAsyncDisposable> SubscribeTopicAsync<T>(
+   private async Task CompleteStreamSubscribeAsync<T>(
+      string topicFilter,
+      SinkRegistration reg,
+      ISubscriptionSink sink,
+      ChannelWriter<T> writer,
+      CancellationToken ct)
+   {
+      var brokerResult = await EnsureBrokerSubscribedAsync(topicFilter, reg, ct).ConfigureAwait(false);
+      if (brokerResult.Failed)
+      {
+         RollbackFailedSink(topicFilter, reg.Entry, sink);
+         writer.TryComplete(new InvalidOperationException(brokerResult.Error.Detail));
+      }
+   }
+
+   public Task<IAsyncDisposable> SubscribeTopicAsync<T>(
       string topicFilter,
       Func<T, MessageReceiveContext, CancellationToken, ValueTask> handler,
       IMqttPayloadDecoder<T> decoder,
@@ -105,17 +126,10 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       ArgumentNullException.ThrowIfNull(decoder);
 
       var sink = new CallbackSubscriptionSink<T>(handler, decoder, qos);
-      var (entry, isFirst, qosUpgraded) = AddSinkToTopic(topicFilter, sink, qos);
-
-      if ((isFirst || qosUpgraded) && _client.IsConnected)
-      {
-         await TrySubscribeBrokerAsync(topicFilter, entry.MaxQos, ct).ConfigureAwait(false);
-      }
-
-      return new SubscriptionDisposable(() => RemoveSinkAsync(topicFilter, sink));
+      return SubscribeTopicCoreAsync(topicFilter, sink, qos, ct);
    }
 
-   public async Task<IAsyncDisposable> SubscribeTopicAsync(
+   public Task<IAsyncDisposable> SubscribeTopicAsync(
       string topicFilter,
       Func<MessageReceiveContext, CancellationToken, ValueTask> handler,
       QualityOfServiceType qos = QualityOfServiceType.AtLeastOnce,
@@ -126,11 +140,26 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       ArgumentNullException.ThrowIfNull(handler);
 
       var sink = new RawCallbackSubscriptionSink(handler, qos);
-      var (entry, isFirst, qosUpgraded) = AddSinkToTopic(topicFilter, sink, qos);
+      return SubscribeTopicCoreAsync(topicFilter, sink, qos, ct);
+   }
 
-      if ((isFirst || qosUpgraded) && _client.IsConnected)
+   private async Task<IAsyncDisposable> SubscribeTopicCoreAsync(
+      string topicFilter,
+      ISubscriptionSink sink,
+      QualityOfServiceType qos,
+      CancellationToken ct)
+   {
+      var isConnected = _client.IsConnected;
+      var reg = AddSinkToTopic(topicFilter, sink, qos, isConnected);
+
+      if (isConnected)
       {
-         await TrySubscribeBrokerAsync(topicFilter, entry.MaxQos, ct).ConfigureAwait(false);
+         var brokerResult = await EnsureBrokerSubscribedAsync(topicFilter, reg, ct).ConfigureAwait(false);
+         if (brokerResult.Failed)
+         {
+            RollbackFailedSink(topicFilter, reg.Entry, sink);
+            throw new InvalidOperationException(brokerResult.Error.Detail);
+         }
       }
 
       return new SubscriptionDisposable(() => RemoveSinkAsync(topicFilter, sink));
@@ -182,10 +211,42 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       }
    }
 
-   private (TopicSubscriptionEntry Entry, bool IsFirst, bool QosUpgraded) AddSinkToTopic(
+   private readonly record struct SinkRegistration(
+      TopicSubscriptionEntry Entry,
+      bool NeedBrokerSubscribe,
+      QualityOfServiceType TargetQos,
+      Task<VoidResult<StringError>> WaitTask,
+      TaskCompletionSource<VoidResult<StringError>>? OwnedSubscribeTcs);
+
+   private TopicBrokerGate AcquireTopicBrokerGate(string topicFilter)
+   {
+      while (true)
+      {
+         var gate = _topicBrokerLocks.GetOrAdd(topicFilter, static _ => new TopicBrokerGate());
+         if (gate.TryAddRef())
+         {
+            return gate;
+         }
+
+         ((ICollection<KeyValuePair<string, TopicBrokerGate>>)_topicBrokerLocks)
+            .Remove(new KeyValuePair<string, TopicBrokerGate>(topicFilter, gate));
+      }
+   }
+
+   private void ReleaseTopicBrokerGate(string topicFilter, TopicBrokerGate gate)
+   {
+      if (gate.ReleaseRefAndTryMarkRemoved())
+      {
+         ((ICollection<KeyValuePair<string, TopicBrokerGate>>)_topicBrokerLocks)
+            .Remove(new KeyValuePair<string, TopicBrokerGate>(topicFilter, gate));
+      }
+   }
+
+   private SinkRegistration AddSinkToTopic(
       string topicFilter,
       ISubscriptionSink sink,
-      QualityOfServiceType qos)
+      QualityOfServiceType qos,
+      bool isConnected)
    {
       while (true)
       {
@@ -197,29 +258,98 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
                continue;
             }
 
-            var (isFirst, qosUpgraded) = entry.AddSink(sink, qos);
-            return (entry, isFirst, qosUpgraded);
+            return entry.AddSink(sink, qos, isConnected);
          }
       }
    }
 
-   private async ValueTask TrySubscribeBrokerAsync(string topicFilter, QualityOfServiceType qos, CancellationToken ct)
+   private async Task<VoidResult<StringError>> EnsureBrokerSubscribedAsync(
+      string topicFilter,
+      SinkRegistration registration,
+      CancellationToken ct)
    {
+      if (!registration.NeedBrokerSubscribe)
+      {
+         try
+         {
+            return await registration.WaitTask.WaitAsync(ct).ConfigureAwait(false);
+         }
+         catch (OperationCanceledException ex)
+         {
+            return new StringError(ex.Message);
+         }
+      }
+
+      var ownedTcs = registration.OwnedSubscribeTcs!;
+      var gate = AcquireTopicBrokerGate(topicFilter);
+      var lockAcquired = false;
+      VoidResult<StringError> outcome = true;
       try
       {
+         await gate.Semaphore.WaitAsync(ct).ConfigureAwait(false);
+         lockAcquired = true;
+
+         if (!registration.Entry.TryGetSubscribeQos(out var currentTargetQos))
+         {
+            outcome = new StringError($"Subscription for topic '{topicFilter}' was removed before subscribing.");
+            return outcome;
+         }
+
          var options = SubscribeOptions.Create()
-            .WithTopicFilter(topicFilter, qos)
+            .WithTopicFilter(topicFilter, currentTargetQos)
             .Build();
 
          var result = await _client.SubscribeAsync(options, ct).ConfigureAwait(false);
          if (result.Failed)
          {
             TraceLogger.LogClientError("MqttSubscriptionManager: Broker subscribe failed for topic '{0}': {1}", topicFilter, result.Error.Detail);
+            outcome = result.Error;
+         }
+         else
+         {
+            foreach (var sub in result.Success.Subscriptions)
+            {
+               if (sub.ReasonCode >= SubscribeReasonCode.UnspecifiedError)
+               {
+                  TraceLogger.LogClientError(
+                     "MqttSubscriptionManager: Broker rejected subscription for topic '{0}' with ReasonCode {1}.",
+                     topicFilter, sub.ReasonCode);
+                  outcome = new StringError($"Subscription rejected by broker for '{topicFilter}': {sub.ReasonCode}");
+                  break;
+               }
+            }
          }
       }
       catch (Exception ex)
       {
          TraceLogger.LogClientError("MqttSubscriptionManager: Error subscribing to topic '{0}': {1}", topicFilter, ex.Message);
+         outcome = new StringError(ex.Message);
+      }
+      finally
+      {
+         // Publish outcome before releasing lock/gate so concurrent waiters never hang on client disposal.
+         ownedTcs.TrySetResult(outcome);
+         if (lockAcquired)
+         {
+            gate.Semaphore.Release();
+         }
+
+         ReleaseTopicBrokerGate(topicFilter, gate);
+      }
+
+      return outcome;
+   }
+
+   private void RollbackFailedSink(string topicFilter, TopicSubscriptionEntry entry, ISubscriptionSink sink)
+   {
+      lock (entry.SyncRoot)
+      {
+         if (entry.RemoveSink(sink))
+         {
+            entry.IsRemoved = true;
+            ((ICollection<KeyValuePair<string, TopicSubscriptionEntry>>)_subscriptions)
+               .Remove(new KeyValuePair<string, TopicSubscriptionEntry>(topicFilter, entry));
+         }
       }
    }
 
@@ -233,6 +363,11 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       var shouldUnsubscribeBroker = false;
       lock (entry.SyncRoot)
       {
+         if (entry.IsRemoved)
+         {
+            return;
+         }
+
          if (entry.RemoveSink(sink))
          {
             entry.IsRemoved = true;
@@ -244,13 +379,15 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
 
       if (shouldUnsubscribeBroker && _client.IsConnected)
       {
-         if (_subscriptions.ContainsKey(topicFilter))
-         {
-            return;
-         }
-
+         var gate = AcquireTopicBrokerGate(topicFilter);
+         await gate.Semaphore.WaitAsync().ConfigureAwait(false);
          try
          {
+            if (_subscriptions.ContainsKey(topicFilter) || !_client.IsConnected)
+            {
+               return;
+            }
+
             var unsub = UnsubscribeOptions.Create()
                .WithTopicFilter(topicFilter)
                .Build();
@@ -261,6 +398,11 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
          catch (Exception ex)
          {
             TraceLogger.LogClientError("MqttSubscriptionManager: Error unsubscribing from topic '{0}': {1}", topicFilter, ex.Message);
+         }
+         finally
+         {
+            gate.Semaphore.Release();
+            ReleaseTopicBrokerGate(topicFilter, gate);
          }
       }
    }
@@ -336,7 +478,46 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
       }
 
       _subscriptions.Clear();
+      // In-flight operations may still await or release these semaphores (which have no native wait handles).
+      _topicBrokerLocks.Clear();
       return ValueTask.CompletedTask;
+   }
+
+   private sealed class TopicBrokerGate
+   {
+      private readonly Lock _sync = new();
+      private int _refCount;
+      private bool _removed;
+
+      public SemaphoreSlim Semaphore { get; } = new(1, 1);
+
+      public bool TryAddRef()
+      {
+         lock (_sync)
+         {
+            if (_removed)
+            {
+               return false;
+            }
+
+            _refCount++;
+            return true;
+         }
+      }
+
+      public bool ReleaseRefAndTryMarkRemoved()
+      {
+         lock (_sync)
+         {
+            if (--_refCount == 0 && !_removed)
+            {
+               _removed = true;
+               return true;
+            }
+
+            return false;
+         }
+      }
    }
 
    private sealed class SubscriptionDisposable(Func<ValueTask> onDispose) : IAsyncDisposable
@@ -373,8 +554,9 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
 
       private readonly Lock _lock = new();
       private readonly List<ISubscriptionSink> _sinks = [];
+      private Task<VoidResult<StringError>>? _activeSubscribeTask;
 
-      public (bool IsFirst, bool QosUpgraded) AddSink(ISubscriptionSink sink, QualityOfServiceType qos)
+      public SinkRegistration AddSink(ISubscriptionSink sink, QualityOfServiceType qos, bool isConnected)
       {
          lock (_lock)
          {
@@ -385,7 +567,52 @@ internal sealed class MqttSubscriptionManager : IAsyncDisposable
             {
                MaxQos = qos;
             }
-            return (isFirst, qosUpgraded);
+
+            if (!isConnected)
+            {
+               return new SinkRegistration(
+                  this,
+                  NeedBrokerSubscribe: false,
+                  MaxQos,
+                  Task.FromResult<VoidResult<StringError>>(true),
+                  OwnedSubscribeTcs: null);
+            }
+
+            var existingTask = _activeSubscribeTask;
+            var needsFreshSubscribe =
+               isFirst ||
+               qosUpgraded ||
+               existingTask is null ||
+               (existingTask.IsCompletedSuccessfully && existingTask.Result.Failed);
+
+            if (needsFreshSubscribe)
+            {
+               var tcs = new TaskCompletionSource<VoidResult<StringError>>(TaskCreationOptions.RunContinuationsAsynchronously);
+               _activeSubscribeTask = tcs.Task;
+               return new SinkRegistration(this, NeedBrokerSubscribe: true, MaxQos, tcs.Task, tcs);
+            }
+
+            return new SinkRegistration(
+               this,
+               NeedBrokerSubscribe: false,
+               MaxQos,
+               existingTask!,
+               OwnedSubscribeTcs: null);
+         }
+      }
+
+      public bool TryGetSubscribeQos(out QualityOfServiceType qos)
+      {
+         lock (_lock)
+         {
+            if (IsRemoved || _sinks.Count == 0)
+            {
+               qos = default;
+               return false;
+            }
+
+            qos = MaxQos;
+            return true;
          }
       }
 

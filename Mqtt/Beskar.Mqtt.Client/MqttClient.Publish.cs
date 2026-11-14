@@ -23,6 +23,9 @@ public sealed partial class MqttClient
       var clientResult = ValidateClient();
       if (!clientResult.IsSuccess) return clientResult.Error;
 
+      var capabilityError = ValidateServerPublishCapabilities(options);
+      if (capabilityError.Failed) return capabilityError.Error;
+
       if (_controlStream is not { } stream)
       {
          return new StringError("Invalid control stream.");
@@ -31,38 +34,69 @@ public sealed partial class MqttClient
       MqttMetrics.RecordPublished(isInbound: false, qos: (int)options.QualityOfService, isRetained: options.Retain);
       TraceLogger.LogClientInfo("MqttClient.PublishAsync: Publishing to topic '{0}' (QoS: {1}).", Encoding.UTF8.GetString(options.TopicUtf8Bytes.Span), options.QualityOfService);
 
+      var clientToken = GetClientToken();
+      using var linkedCts = ct.CanBeCanceled
+         ? CancellationTokenSource.CreateLinkedTokenSource(ct, clientToken)
+         : null;
+      var effectiveToken = linkedCts?.Token ?? clientToken;
+
       if (options.QualityOfService is QualityOfServiceType.AtMostOnce)
       {
-         return await PublishAtMostOnceAsync(options, stream, ct);
+         return await PublishAtMostOnceAsync(options, stream, effectiveToken);
       }
 
-      var semaphore = _inFlightSemaphore;
-      if (semaphore is not null)
-      {
-         await semaphore.WaitAsync(ct);
-      }
-
-      MqttMetrics.RecordQosInflightChange(1);
+      var semaphore = Volatile.Read(ref _inFlightSemaphore);
+      var acquired = false;
 
       try
       {
-         return options.QualityOfService switch
+         if (semaphore is not null)
          {
-            QualityOfServiceType.ExactlyOnce => await PublishExactlyOnceAsync(options, stream, ct),
-            QualityOfServiceType.AtLeastOnce => await PublishAtLeastOnceAsync(options, stream, ct),
-            _ => new StringError("Invalid quality of service.")
-         };
+            await semaphore.WaitAsync(effectiveToken).ConfigureAwait(false);
+            acquired = true;
+         }
+
+         if (clientToken.IsCancellationRequested || !IsConnected)
+         {
+            return new StringError("Client is disconnected.");
+         }
+
+         MqttMetrics.RecordQosInflightChange(1);
+
+         try
+         {
+            return options.QualityOfService switch
+            {
+               QualityOfServiceType.ExactlyOnce => await PublishExactlyOnceAsync(options, stream, effectiveToken),
+               QualityOfServiceType.AtLeastOnce => await PublishAtLeastOnceAsync(options, stream, effectiveToken),
+               _ => new StringError("Invalid quality of service.")
+            };
+         }
+         finally
+         {
+            MqttMetrics.RecordQosInflightChange(-1);
+         }
+      }
+      catch (OperationCanceledException) when (clientToken.IsCancellationRequested || !ct.IsCancellationRequested)
+      {
+         return new StringError("Client disconnected while publishing.");
+      }
+      catch (ObjectDisposedException)
+      {
+         return new StringError("Client disconnected while publishing.");
       }
       finally
       {
-         MqttMetrics.RecordQosInflightChange(-1);
-         try
+         if (acquired)
          {
-            semaphore?.Release();
-         }
-         catch (ObjectDisposedException)
-         {
-            // Ignored
+            try
+            {
+               semaphore?.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+               // Ignored
+            }
          }
       }
    }

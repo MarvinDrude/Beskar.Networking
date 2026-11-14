@@ -6,6 +6,7 @@ using Beskar.Mqtt.Protocol.Models;
 using Beskar.Mqtt.Server.Contexts;
 using Beskar.Memory.Threading;
 using Beskar.Mqtt.Server.Enumerators;
+using Beskar.Mqtt.Server.Extensions;
 using Beskar.Mqtt.Server.Internal;
 
 namespace Beskar.Mqtt.Server;
@@ -86,56 +87,95 @@ public sealed partial class MqttServer
             if (matched.Count > 0 && session.Client is { IsConnected: true } client)
             {
                var subId = subscriptionIdentifier;
-               var localRetainAsPublished = filter.RetainAsPublished;
                _ = Task.Run(async () =>
                {
+                  var semaphoreAcquired = false;
                   try
                   {
+                     await session.DeliverySemaphore.WaitAsync(client.CancellationToken);
+                     semaphoreAcquired = true;
+
                      var propertiesBuffer = new byte[128];
                      foreach (var message in matched)
                      {
-                        if (!client.IsConnected) break;
+                        if (!client.IsConnected || client.IsFenced || !session.IsActiveClient(client)) break;
 
-                        if (message.MessageExpiryInterval > 0)
+                        var targetQos = (QualityOfServiceType)Math.Min((int)qos, (int)message.QualityOfService);
+                        var tentativeId = targetQos > 0 ? (ushort)1 : (ushort)0;
+
+                        // per MQTT §3.3.1.3
+                        if (!TryCreateOutgoingPublishPacket(
+                               client,
+                               message,
+                               targetQos,
+                               retain: true,
+                               subId,
+                               tentativeId,
+                               dup: false,
+                               propertiesBuffer,
+                               out var publishPacket))
                         {
-                           var timeSpent = (uint)(DateTimeOffset.UtcNow - message.CreatedAt).TotalSeconds;
-                           if (timeSpent >= message.MessageExpiryInterval)
+                           continue;
+                        }
+
+                        var enqueuedOffline = false;
+                        lock (session.OutboundOrderLock)
+                        {
+                           if (!client.IsConnected || client.IsFenced || !session.IsActiveClient(client)) break;
+
+                           if (session.OfflineQueueCount > 0
+                               || (targetQos > 0 && session.GetUnacknowledgedPublishCount() >= session.ClientReceiveMaximum))
                            {
-                              continue;
+                              session.EnqueueOfflineMessage(new MqttQueuedMessage(
+                                 message,
+                                 targetQos,
+                                 retainAsPublished: true,
+                                 subId));
+                              enqueuedOffline = true;
+                           }
+                           else if (targetQos > 0)
+                           {
+                              var packetId = session.GenerateNextPacketIdentifier();
+                              publishPacket.PacketIdentifier = packetId;
+                              var pending = new MqttPendingPublish
+                              {
+                                 PacketIdentifier = packetId,
+                                 Message = message,
+                                 QualityOfService = targetQos,
+                                 RetainAsPublished = true,
+                                 SubscriptionIdentifier = subId
+                              };
+
+                              if (!session.TryAddUnacknowledgedPublish(pending))
+                              {
+                                 session.EnqueueOfflineMessage(new MqttQueuedMessage(
+                                    message,
+                                    targetQos,
+                                    retainAsPublished: true,
+                                    subId));
+                                 enqueuedOffline = true;
+                              }
                            }
                         }
 
-                        var targetQos = (QualityOfServiceType)Math.Min((int)qos, (int)message.QualityOfService);
-                        var packetId = targetQos > 0 ? session.GenerateNextPacketIdentifier() : (ushort)0;
-
-                        if (targetQos > 0)
+                        if (enqueuedOffline)
                         {
-                           session.AddUnacknowledgedPublish(new MqttPendingPublish
-                           {
-                              PacketIdentifier = packetId,
-                              Message = message,
-                              QualityOfService = targetQos,
-                              RetainAsPublished = localRetainAsPublished,
-                              SubscriptionIdentifier = subId
-                           });
+                           continue;
                         }
 
-                        var retainAsPublished = client.ProtocolVersion is not MqttProtocolVersion.V50 || localRetainAsPublished;
-                        await SendPublishMessageAsync(
-                           client,
-                           message,
-                           targetQos,
-                           retainAsPublished,
-                           subId,
-                           packetId,
-                           dup: false,
-                           propertiesBuffer,
-                           CancellationToken.None);
+                        await client.SendViaOutgoingQueueAsync(in publishPacket, client.CancellationToken);
                      }
                   }
                   catch (Exception)
                   {
                      // ignored
+                  }
+                  finally
+                  {
+                     if (semaphoreAcquired)
+                     {
+                        ReleaseDeliverySemaphoreAndScheduleNext(session, client);
+                     }
                   }
                });
             }

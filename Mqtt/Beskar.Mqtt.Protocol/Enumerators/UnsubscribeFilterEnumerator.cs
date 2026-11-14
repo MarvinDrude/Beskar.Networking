@@ -11,6 +11,17 @@ public ref struct UnsubscribeFilterEnumerator(ReadOnlySequence<byte> sequence)
 
    public ReadOnlySequence<byte> Current { get; private set; } = default;
 
+   public bool IsMalformed { get; private set; }
+   public string? ErrorMessage { get; private set; }
+
+   private bool Fail(string message)
+   {
+      IsMalformed = true;
+      ErrorMessage = message;
+
+      return false;
+   }
+
    public bool MoveNext()
    {
       if (_reader.End)
@@ -20,13 +31,13 @@ public ref struct UnsubscribeFilterEnumerator(ReadOnlySequence<byte> sequence)
 
       if (!_reader.TryReadBigEndian(out short topicLengthShort))
       {
-         return false;
+         return Fail("Malformed packet: Could not read topic filter length.");
       }
 
       var topicLength = (ushort)topicLengthShort;
       if (_reader.Remaining < topicLength)
       {
-         return false;
+         return Fail("Malformed packet: Truncated topic filter.");
       }
 
       Current = _reader.Sequence.Slice(_reader.Position, topicLength);

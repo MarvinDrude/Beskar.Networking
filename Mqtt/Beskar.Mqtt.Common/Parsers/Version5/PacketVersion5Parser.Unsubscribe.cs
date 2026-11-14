@@ -1,6 +1,7 @@
 using System.Buffers;
 using Beskar.Memory.Results;
 using Beskar.Memory.Results.Errors;
+using Beskar.Mqtt.Protocol.Enums;
 using Beskar.Mqtt.Protocol.Extensions;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Parsing;
@@ -33,6 +34,20 @@ public readonly ref partial struct PacketVersion5Parser
       if (!rawPacket.Reader.TryReadProperties(out packet.PropertiesBytes))
       {
          return new StringError("Could not read properties.");
+      }
+
+      var propEnumerator = packet.GetProperties();
+      while (propEnumerator.MoveNext())
+      {
+         if (propEnumerator.Current.Identifier != PropertyIdentifier.UserProperty)
+         {
+            return new StringError($"Invalid property identifier. ({propEnumerator.Current.Identifier})");
+         }
+      }
+
+      if (!propEnumerator.IsCompleted)
+      {
+         return MalformedPropertyError("UNSUBSCRIBE");
       }
 
       var consumedSoFar = rawPacket.Reader.Consumed - initialConsumed;

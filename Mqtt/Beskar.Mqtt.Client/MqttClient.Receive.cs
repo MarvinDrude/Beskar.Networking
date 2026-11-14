@@ -12,6 +12,7 @@ public sealed partial class MqttClient
    private async Task RunMessageReceive(INetworkStream networkStream, CancellationToken ct = default)
    {
       TraceLogger.LogClientInfo("MqttClient: Starting message receiver loop...");
+      _inReceiveLoop.Value = true;
       try
       {
          // duplex input for reading incoming messages
@@ -49,10 +50,18 @@ public sealed partial class MqttClient
 
                consumed = buffer.GetPosition(parsedBytes);
                buffer = buffer.Slice(consumed);
+
+               if (ct.IsCancellationRequested)
+               {
+                  break;
+               }
             }
 
             reader.AdvanceTo(consumed, examined);
-            if (result.IsCompleted) break;
+            if (result.IsCompleted || ct.IsCancellationRequested)
+            {
+               break;
+            }
          }
       }
       catch (OperationCanceledException)
@@ -65,6 +74,7 @@ public sealed partial class MqttClient
       }
       finally
       {
+         _inReceiveLoop.Value = false;
          TraceLogger.LogClientInfo("MqttClient: Message receiver loop finished.");
          await DisconnectInternalAsync(awaitReceiveTask: false);
       }

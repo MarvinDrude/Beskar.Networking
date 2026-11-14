@@ -97,19 +97,19 @@ internal sealed class MqttKeepAliveService(
    {
       if (!client.IsConnected) return;
 
-      if (client.ConnectOptions is not { KeepAlivePeriod: > 0 }
-          || client.Session is not { Stats: { } stats })
+      if (client.ConnectOptions is not { KeepAlivePeriod: > 0 })
       {
          return;
       }
 
-      if (stats.LastReceivedTimestamp is not { } receivedLast)
+      var receivedLast = client.LastPacketReceivedTimestamp ?? client.Session.Stats.LastReceivedTimestamp;
+      if (receivedLast is null)
       {
          return;
       }
 
       var maxSecondsAllowed = client.ConnectOptions.KeepAlivePeriod * 1.5f;
-      var difference = (now - receivedLast).TotalSeconds;
+      var difference = (now - receivedLast.Value).TotalSeconds;
 
       if (difference < maxSecondsAllowed)
       {

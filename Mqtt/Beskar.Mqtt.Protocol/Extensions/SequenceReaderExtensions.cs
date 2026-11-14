@@ -49,7 +49,7 @@ public static class SequenceReaderExtensions
 
       public VariableByteIntegerResult TryReadVariableByteInteger(out uint value)
       {
-         var multiplier = 1;
+         var multiplier = 1U;
          value = 0U;
          byte encodedByte;
 
@@ -63,14 +63,15 @@ public static class SequenceReaderExtensions
                return VariableByteIntegerResult.NotEnoughData;
             }
 
-            value += (uint)((encodedByte & 127) * multiplier);
-
-            if (multiplier > 2097152)
+            var isContinuation = (encodedByte & 128) != 0;
+            if (isContinuation && multiplier >= 2097152U)
             {
+               value = 0U;
                return VariableByteIntegerResult.ExceedMaxValue;
             }
 
-            multiplier *= 128;
+            value += (uint)(encodedByte & 127) * multiplier;
+            multiplier *= 128U;
          }
          while ((encodedByte & 128) != 0);
 

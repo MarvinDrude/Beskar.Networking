@@ -39,7 +39,6 @@ public readonly ref partial struct PacketVersion5Parser
             }
 
             var enumerator = packet.GetProperties();
-            byte foundFlags = 0;
 
             while (enumerator.MoveNext())
             {
@@ -47,26 +46,23 @@ public readonly ref partial struct PacketVersion5Parser
                {
                   case PropertyIdentifier.AuthenticationMethod:
                      packet.AuthenticationMethodUtf8Bytes = enumerator.Current.AsAuthenticationMethod();
-                     foundFlags |= 0b001;
                      break;
                   case PropertyIdentifier.AuthenticationData:
                      packet.AuthenticationDataBytes = enumerator.Current.AsAuthenticationData();
-                     foundFlags |= 0b010;
                      break;
                   case PropertyIdentifier.ReasonString:
                      packet.ReasonUtf8Bytes = enumerator.Current.AsReasonString();
-                     foundFlags |= 0b100;
                      break;
                   case PropertyIdentifier.UserProperty:
                      break;
                   default:
                      return new StringError($"Invalid property identifier. ({enumerator.Current.Identifier})");
                }
+            }
 
-               if (foundFlags == 0b111)
-               {
-                  break;
-               }
+            if (!enumerator.IsCompleted)
+            {
+               return MalformedPropertyError("AUTH");
             }
          }
          else

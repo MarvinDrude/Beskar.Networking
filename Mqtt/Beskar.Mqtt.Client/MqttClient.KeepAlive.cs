@@ -8,7 +8,7 @@ public sealed partial class MqttClient
    [MethodImpl(MethodImplOptions.AggressiveInlining)]
    private void ResetKeepAliveTimestamp()
    {
-      _lastKeepAliveTimestamp = DateTimeOffset.UtcNow;
+      Interlocked.Exchange(ref _lastKeepAliveUtcTicks, DateTimeOffset.UtcNow.UtcTicks);
    }
 
    private async Task RunKeepAliveTask(TimeSpan keepAliveInterval, CancellationToken ct)
@@ -16,11 +16,12 @@ public sealed partial class MqttClient
       try
       {
          TraceLogger.LogClientInfo("MqttClient: Keep-alive task started (Interval: {0}ms).", keepAliveInterval.TotalMilliseconds);
-         _lastKeepAliveTimestamp = DateTimeOffset.UtcNow;
+         ResetKeepAliveTimestamp();
 
          while (!ct.IsCancellationRequested)
          {
-            var diff = DateTimeOffset.UtcNow - _lastKeepAliveTimestamp;
+            var lastTicks = Volatile.Read(ref _lastKeepAliveUtcTicks);
+            var diff = TimeSpan.FromTicks(DateTimeOffset.UtcNow.UtcTicks - lastTicks);
             if (diff < keepAliveInterval)
             {
                await Task.Delay(200, ct);

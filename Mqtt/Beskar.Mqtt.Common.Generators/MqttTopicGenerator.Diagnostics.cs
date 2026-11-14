@@ -30,4 +30,13 @@ public partial class MqttTopicGenerator
       DiagnosticSeverity.Error,
       true
    );
+
+   private static readonly DiagnosticDescriptor InvalidTopicPattern = new(
+      "MQTTGEN004",
+      "Invalid MQTT Topic Pattern",
+      "The MQTT topic pattern '{0}' is malformed: {1}",
+      "Design",
+      DiagnosticSeverity.Error,
+      true
+   );
 }

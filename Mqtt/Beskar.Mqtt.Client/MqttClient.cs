@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -8,6 +9,11 @@ using Beskar.Memory.Threading;
 using Beskar.Mqtt.Client.Handlers;
 using Beskar.Mqtt.Client.States;
 using Beskar.Mqtt.Common.Builders.Connecting;
+using Beskar.Mqtt.Common.Builders.Disconnecting;
+using Beskar.Mqtt.Common.Builders.Publishing;
+using Beskar.Mqtt.Common.Builders.Subscribing;
+using Beskar.Mqtt.Common.Builders.Unsubscribing;
+using Beskar.Mqtt.Common.Encoders.Version5;
 using Beskar.Mqtt.Common.Generators;
 using Beskar.Mqtt.Common.Handlers;
 using Beskar.Mqtt.Common.Handlers.Client;
@@ -16,6 +22,7 @@ using Beskar.Mqtt.Common.Interfaces;
 using Beskar.Mqtt.Common.Models;
 using Beskar.Mqtt.Protocol.Collections;
 using Beskar.Mqtt.Protocol.Enums;
+using Beskar.Mqtt.Protocol.Interfaces;
 using Beskar.Mqtt.Protocol.Packets;
 using Beskar.Mqtt.Protocol.Results;
 using Beskar.Networking.Abstractions.Enums;
@@ -69,16 +76,23 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    private Task? _receiveTask;
    private Task? _keepAliveTask;
-   private DateTimeOffset _lastKeepAliveTimestamp;
 
    private ConnectOptions _connectOptions = new() { EndPoint = new IPEndPoint(0, 0) };
 
    private readonly Dictionary<ushort, byte[]> _topicAliases = new(16);
    private readonly HashSet<ushort> _incomingQos2Packets = [];
    private readonly Lock _topicAliasesLock = new();
+   private readonly Lock _ctsLock = new();
 
+   private long _lastKeepAliveUtcTicks;
    private SemaphoreSlim? _inFlightSemaphore;
    private int _incomingInFlightCount;
+
+   private volatile QualityOfServiceType _serverMaximumQualityOfService = QualityOfServiceType.ExactlyOnce;
+   private volatile bool _serverIsRetainAvailable = true;
+   private volatile bool _serverIsWildcardSubscriptionAvailable = true;
+   private volatile bool _serverIsSubscriptionIdentifierAvailable = true;
+   private uint? _serverMaximumPacketSize;
 
    private readonly Lock _reconnectLock = new();
    private Task? _reconnectTask;
@@ -87,6 +101,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    private readonly AsyncLocal<bool> _inReconnectLoop = new();
    private readonly AsyncLocal<bool> _inConnectingCallback = new();
+   private readonly AsyncLocal<bool> _inReceiveLoop = new();
 
    /// <summary>
    /// Initializes a new instance of the <see cref="MqttClient"/> class using the specified network client transport.
@@ -147,18 +162,22 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
       try
       {
-         _connectOptions = options;
-         _protocolVersion = options.ProtocolVersion;
-         _topicAliases.Clear();
+         _connectOptions = ReferenceEquals(options, _connectOptions) ? options : options.Clone();
+         _protocolVersion = _connectOptions.ProtocolVersion;
+         ResetServerCapabilities();
 
-         _clientTokenSource.Dispose();
-         _clientTokenSource = new CancellationTokenSource();
+         lock (_topicAliasesLock)
+         {
+            _topicAliases.Clear();
+         }
+
+         var clientCts = SwapClientTokenSource();
 
          if (Events.OnClientConnecting.Count > 0)
          {
             var ctx = new ClientConnectingContext()
             {
-               ConnectOptions = options
+               ConnectOptions = _connectOptions
             };
 
             _inConnectingCallback.Value = true;
@@ -171,9 +190,11 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             {
                _inConnectingCallback.Value = false;
             }
+
+            _protocolVersion = _connectOptions.ProtocolVersion;
          }
 
-         if (ct.IsCancellationRequested || _clientTokenSource.IsCancellationRequested ||
+         if (ct.IsCancellationRequested || clientCts.IsCancellationRequested ||
              (MqttClientConnectionState)_state != MqttClientConnectionState.Connecting)
          {
             CompareExchangeState(MqttClientConnectionState.Disconnected, MqttClientConnectionState.Connecting);
@@ -205,7 +226,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
             result = await ConnectInternalAsync(timed.Token);
          }
 
-         if (result.Failed || _clientTokenSource.IsCancellationRequested ||
+         if (result.Failed || clientCts.IsCancellationRequested ||
              (MqttClientConnectionState)_state != MqttClientConnectionState.Connecting)
          {
             TraceLogger.LogClientError("MqttClient.ConnectAsync: Connection attempt failed: {0}",
@@ -218,6 +239,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          }
 
          var connectResult = result.Success;
+         ApplyServerCapabilities(connectResult);
          StartKeepAliveOnDemand(connectResult);
 
          var receiveMax = connectResult.ReceiveMaximum ?? 65535;
@@ -227,14 +249,14 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
          lock (_topicAliasesLock)
          {
             _incomingInFlightCount = 0;
-            if (options.CleanSession || !connectResult.IsSessionPresent)
+            if (_connectOptions.CleanSession || !connectResult.IsSessionPresent)
             {
                _incomingQos2Packets.Clear();
             }
          }
 
          TraceLogger.LogClientInfo("MqttClient.ConnectAsync: Successfully connected. Assigned KeepAlive: {0}s",
-            connectResult.ServerKeepAlive > 0 ? connectResult.ServerKeepAlive : _connectOptions.KeepAlivePeriod);
+            connectResult.ServerKeepAlive ?? _connectOptions.KeepAlivePeriod);
 
          if (CompareExchangeState(MqttClientConnectionState.Connected, MqttClientConnectionState.Connecting) !=
              MqttClientConnectionState.Connecting)
@@ -336,7 +358,8 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    private async Task<Result<ClientConnectResult, StringError>> ConnectInternalAsync(CancellationToken ct = default)
    {
-      using var combined = CancellationTokenSource.CreateLinkedTokenSource(ct, _clientTokenSource.Token);
+      var clientToken = GetClientToken();
+      using var combined = CancellationTokenSource.CreateLinkedTokenSource(ct, clientToken);
       var connectRes = await _networkClient.ConnectAsync(_connectOptions.EndPoint, combined.Token);
 
       if (connectRes.Failed)
@@ -357,7 +380,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       _controlStream = streamRes.Success;
       TraceLogger.LogClientInfo("MqttClient.ConnectInternalAsync: Opened bidirectional control stream (StreamId: {0}).",
          _controlStream.StreamId);
-      _receiveTask = RunMessageReceive(_controlStream, _clientTokenSource.Token);
+      _receiveTask = RunMessageReceive(_controlStream, clientToken);
 
       if (_connectOptions.CredentialsProvider is { } credProvider)
       {
@@ -451,7 +474,22 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
                   connAckResult.ReasonCode);
                if (connAckResult.ReasonCode is not ConnectReasonCode.Success)
                {
-                  return new StringError($"Connection refused: {connAckResult.ReasonCode}");
+                  var errorMsg = $"Connection refused: {connAckResult.ReasonCode}";
+                  if (!string.IsNullOrEmpty(connAckResult.ServerReference))
+                  {
+                     errorMsg += $" (ServerReference: {connAckResult.ServerReference})";
+                  }
+                  if (!string.IsNullOrEmpty(connAckResult.ReasonString))
+                  {
+                     errorMsg += $" ({connAckResult.ReasonString})";
+                  }
+
+                  return new StringError(errorMsg);
+               }
+
+               if (!string.IsNullOrEmpty(connAckResult.AssignedClientIdentifier))
+               {
+                  _connectOptions.ClientIdUtf8Bytes = Encoding.UTF8.GetBytes(connAckResult.AssignedClientIdentifier);
                }
             }
             else
@@ -487,19 +525,137 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
    }
 
-   internal ValueTask HandleDisconnect(DisconnectPacket packet, CancellationToken ct = default)
+   internal async ValueTask HandleDisconnect(DisconnectPacket packet, CancellationToken ct = default)
    {
       TraceLogger.LogClientWarning("MqttClient: Received DISCONNECT from server (ReasonCode: {0}).", packet.ReasonCode);
       _disconnectReason = new MqttClientDisconnectReason(false, (int)packet.ReasonCode);
 
-      return DisconnectInternalAsync(false);
+      if (_inReceiveLoop.Value)
+      {
+         await CancelClientTokenSourceAsync();
+         return;
+      }
+
+      await DisconnectInternalAsync(false);
+   }
+
+   internal async ValueTask HandleUnsolicitedAuthAsync(AuthPacketResult authResult, CancellationToken ct = default)
+   {
+      if (_protocolVersion is not MqttProtocolVersion.V50 ||
+          _connectOptions.AuthenticationMethodUtf8Bytes.IsEmpty ||
+          _connectOptions.AuthenticationHandler is not { } handler)
+      {
+         TraceLogger.LogClientWarning(
+            "MqttClient: Received unexpected mid-session AUTH packet (ReasonCode: {0}). Disconnecting with ProtocolError.",
+            authResult.ReasonCode);
+         await DisconnectFromReceiveLoopAsync(
+            new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError }, ct);
+         return;
+      }
+
+      if (!string.IsNullOrEmpty(authResult.AuthenticationMethod))
+      {
+         var configuredMethod = Encoding.UTF8.GetString(_connectOptions.AuthenticationMethodUtf8Bytes.Span);
+         if (!string.Equals(configuredMethod, authResult.AuthenticationMethod, StringComparison.Ordinal))
+         {
+            TraceLogger.LogClientWarning(
+               "MqttClient: Received AUTH packet with mismatched AuthenticationMethod '{0}'. Disconnecting with ProtocolError.",
+               authResult.AuthenticationMethod);
+            await DisconnectFromReceiveLoopAsync(
+               new DisconnectOptions { ReasonCode = DisconnectReasonCode.ProtocolError }, ct);
+            return;
+         }
+      }
+
+      var clientToken = GetClientToken();
+      var iterationCts = CancellationTokenSource.CreateLinkedTokenSource(clientToken);
+      var nextAuthAwaiter = _signalBroker.AddAwaitable<AuthPacketResult>(0);
+      var nextAuthTask = nextAuthAwaiter.WaitOneAsync(iterationCts.Token).AsTask();
+      var receiveTask = _receiveTask ?? Task.CompletedTask;
+
+      _ = RunMidSessionAuthHandlerAsync(
+         handler,
+         authResult,
+         nextAuthAwaiter,
+         nextAuthTask,
+         iterationCts,
+         receiveTask,
+         clientToken);
+   }
+
+   private async Task RunMidSessionAuthHandlerAsync(
+      IMqttAuthenticationHandler handler,
+      AuthPacketResult authResult,
+      SignalAwaiter<AuthPacketResult> nextAuthAwaiter,
+      Task<AuthPacketResult> nextAuthTask,
+      CancellationTokenSource iterationCts,
+      Task receiveTask,
+      CancellationToken clientToken)
+   {
+      using (iterationCts)
+      using (nextAuthAwaiter)
+      {
+         try
+         {
+            var context = new MqttAuthContext
+            {
+               AuthPacket = authResult,
+               PacketSender = this,
+               Broker = _signalBroker,
+               ReceiveTask = receiveTask,
+               AuthTask = nextAuthTask
+            };
+
+            var authTaskResult = await handler.ExecuteAsync(context, clientToken).ConfigureAwait(false);
+
+            if (authTaskResult.Failed && !clientToken.IsCancellationRequested)
+            {
+               TraceLogger.LogClientWarning(
+                  "MqttClient: Mid-session AUTH handler failed: {0}. Disconnecting.",
+                  authTaskResult.Error.Detail);
+               await DisconnectWithReasonAsync(
+                  new DisconnectOptions { ReasonCode = DisconnectReasonCode.NotAuthorized },
+                  awaitReceiveTask: true,
+                  clientToken).ConfigureAwait(false);
+            }
+         }
+         catch (OperationCanceledException) when (clientToken.IsCancellationRequested)
+         {
+            // Normal shutdown while mid-session AUTH was in flight
+         }
+         catch (Exception ex)
+         {
+            TraceLogger.LogClientWarning(
+               "MqttClient: Mid-session AUTH handler threw exception: {0}. Disconnecting.",
+               ex.Message);
+            if (!clientToken.IsCancellationRequested)
+            {
+               await DisconnectWithReasonAsync(
+                  new DisconnectOptions { ReasonCode = DisconnectReasonCode.NotAuthorized },
+                  awaitReceiveTask: true,
+                  clientToken).ConfigureAwait(false);
+            }
+         }
+         finally
+         {
+            await iterationCts.CancelAsync().ConfigureAwait(false);
+            try
+            {
+               await nextAuthTask.ConfigureAwait(false);
+            }
+            catch
+            {
+               /* ignored */
+            }
+         }
+      }
    }
 
    private void StartKeepAliveOnDemand(ClientConnectResult connectResult)
    {
       var keepAliveInterval = _connectOptions.KeepAlivePeriod;
 
-      if (connectResult.ServerKeepAlive is > 0 and var serverKeepAlive)
+      if (connectResult.ServerKeepAlive is { } serverKeepAlive)
       {
          keepAliveInterval = serverKeepAlive;
       }
@@ -507,8 +663,184 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       var timeSpan = TimeSpan.FromSeconds(keepAliveInterval);
       if (timeSpan.TotalSeconds > 0)
       {
-         _keepAliveTask = RunKeepAliveTask(timeSpan, _clientTokenSource.Token);
+         var clientToken = GetClientToken();
+         if (!clientToken.IsCancellationRequested)
+         {
+            _keepAliveTask = RunKeepAliveTask(timeSpan, clientToken);
+         }
       }
+   }
+
+   private void ApplyServerCapabilities(ClientConnectResult connectResult)
+   {
+      _serverMaximumQualityOfService = connectResult.MaximumQualityOfService ?? QualityOfServiceType.ExactlyOnce;
+      _serverIsRetainAvailable = connectResult.IsRetainAvailable ?? true;
+      _serverIsWildcardSubscriptionAvailable = connectResult.IsWildcardSubscriptionAvailable ?? true;
+      _serverIsSubscriptionIdentifierAvailable = connectResult.IsSubscriptionIdentifierAvailable ?? true;
+      _serverMaximumPacketSize = connectResult.MaximumPacketSize;
+   }
+
+   private void ResetServerCapabilities()
+   {
+      _serverMaximumQualityOfService = QualityOfServiceType.ExactlyOnce;
+      _serverIsRetainAvailable = true;
+      _serverIsWildcardSubscriptionAvailable = true;
+      _serverIsSubscriptionIdentifierAvailable = true;
+      _serverMaximumPacketSize = null;
+   }
+
+   private VoidResult<StringError> ValidateServerPublishCapabilities(PublishOptions options)
+   {
+      if (options.Retain && !_serverIsRetainAvailable)
+      {
+         return new StringError("Retained messages are not supported by the server.");
+      }
+
+      if (options.QualityOfService > _serverMaximumQualityOfService)
+      {
+         return new StringError($"QoS {options.QualityOfService} exceeds server MaximumQoS {_serverMaximumQualityOfService}.");
+      }
+
+      return ValidateServerMaximumPacketSize(PacketVersion5Encoder.CalculatePublishPacketLength(options), "PUBLISH");
+   }
+
+   private VoidResult<StringError> ValidateServerSubscribeCapabilities(SubscribeOptions options)
+   {
+      if (_protocolVersion is not MqttProtocolVersion.V50)
+      {
+         return true;
+      }
+
+      if (options.SubscriptionIdentifier != 0 && !_serverIsSubscriptionIdentifierAvailable)
+      {
+         return new StringError("Subscription identifiers are not supported by the server.");
+      }
+
+      if (!_serverIsWildcardSubscriptionAvailable)
+      {
+         var enumerator = options.TopicFilters.GetEnumerator();
+         while (enumerator.MoveNext())
+         {
+            var topic = enumerator.Current.TopicUtf8Bytes;
+            if (topic.PositionOf((byte)'+') is not null || topic.PositionOf((byte)'#') is not null)
+            {
+               return new StringError("Wildcard subscriptions are not supported by the server.");
+            }
+         }
+      }
+
+      return ValidateServerMaximumPacketSize(PacketVersion5Encoder.CalculateSubscribePacketLength(options), "SUBSCRIBE");
+   }
+
+   private VoidResult<StringError> ValidateServerUnsubscribeCapabilities(UnsubscribeOptions options)
+   {
+      if (_protocolVersion is not MqttProtocolVersion.V50)
+      {
+         return true;
+      }
+
+      return ValidateServerMaximumPacketSize(PacketVersion5Encoder.CalculateUnsubscribePacketLength(options), "UNSUBSCRIBE");
+   }
+
+   private VoidResult<StringError> ValidateServerMaximumPacketSize(int encodedLength, string packetName)
+   {
+      if (_protocolVersion is MqttProtocolVersion.V50 &&
+          _serverMaximumPacketSize is > 0 and var maxPacketSize &&
+          encodedLength > maxPacketSize)
+      {
+         return new StringError(
+            $"{packetName} packet size ({encodedLength} bytes) exceeds server MaximumPacketSize ({maxPacketSize} bytes).");
+      }
+
+      return true;
+   }
+
+   private VoidResult<StringError> ValidateServerMaximumPacketSize<TOptions>(TOptions options)
+      where TOptions : class, IHeapMqttOptions
+   {
+      if (_protocolVersion is not MqttProtocolVersion.V50 ||
+          _serverMaximumPacketSize is not > 0 ||
+          options is ConnectOptions)
+      {
+         return true;
+      }
+
+      var encodedLength = PacketVersion5Encoder.CalculatePacketLength(options);
+      return ValidateServerMaximumPacketSize(encodedLength, typeof(TOptions).Name);
+   }
+
+   private VoidResult<StringError> ValidateServerMaximumPacketSize<TPacket>(in TPacket packet)
+      where TPacket : IRawMqttPacket
+   {
+      if (_protocolVersion is not MqttProtocolVersion.V50 ||
+          _serverMaximumPacketSize is not > 0 ||
+          typeof(TPacket) == typeof(ConnectPacket))
+      {
+         return true;
+      }
+
+      var encodedLength = PacketVersion5Encoder.MeasurePacketLength(in packet);
+      return ValidateServerMaximumPacketSize(encodedLength, typeof(TPacket).Name);
+   }
+
+   private CancellationTokenSource SwapClientTokenSource()
+   {
+      var fresh = new CancellationTokenSource();
+      CancellationTokenSource old;
+      lock (_ctsLock)
+      {
+         old = _clientTokenSource;
+         _clientTokenSource = fresh;
+      }
+
+      try { old.Cancel(); } catch (ObjectDisposedException) { }
+      old.Dispose();
+      return fresh;
+   }
+
+   private CancellationToken GetClientToken()
+   {
+      lock (_ctsLock)
+      {
+         try
+         {
+            return _clientTokenSource.Token;
+         }
+         catch (ObjectDisposedException)
+         {
+            return new CancellationToken(true);
+         }
+      }
+   }
+
+   private async ValueTask CancelClientTokenSourceAsync()
+   {
+      CancellationTokenSource cts;
+      lock (_ctsLock)
+      {
+         cts = _clientTokenSource;
+      }
+
+      try
+      {
+         await cts.CancelAsync().ConfigureAwait(false);
+      }
+      catch (ObjectDisposedException)
+      {
+         // Ignored if swapped or disposed concurrently
+      }
+   }
+
+   private void DisposeClientTokenSource()
+   {
+      CancellationTokenSource cts;
+      lock (_ctsLock)
+      {
+         cts = _clientTokenSource;
+      }
+
+      try { cts.Cancel(); } catch (ObjectDisposedException) { }
+      cts.Dispose();
    }
 
    private VoidResult<StringError> ValidateClient()
@@ -697,7 +1029,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
 
       _signalBroker.Dispose();
-      _clientTokenSource.Dispose();
+      DisposeClientTokenSource();
 
       await _subscriptionManager.DisposeAsync();
       await _networkClient.DisposeAsync();

@@ -44,4 +44,16 @@ public sealed class MqttServerOptions
    /// Defaults to 32.
    /// </summary>
    public ushort TopicAliasMaximum { get; set; } = 32;
+
+   /// <summary>
+   /// Gets or sets the maximum number of concurrent client connections allowed by the server.
+   /// A value of <c>0</c> allows unlimited concurrent connections.
+   /// </summary>
+   public int MaxConnections { get; set; }
+
+   /// <summary>
+   /// Gets or sets the maximum MQTT packet size in bytes accepted by the server.
+   /// A value of <c>0</c> imposes no protocol limit.
+   /// </summary>
+   public uint MaximumPacketSize { get; set; }
 }

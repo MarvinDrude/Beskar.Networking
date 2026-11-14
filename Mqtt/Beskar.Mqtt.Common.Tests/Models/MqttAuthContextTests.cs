@@ -168,4 +168,33 @@ public class MqttAuthContextTests
       await Assert.That(result).IsNotNull();
       await Assert.That(ReferenceEquals(result, expectedAuth)).IsTrue();
    }
+
+   [Test]
+   public async Task AwaitNextAuthPacketAsync_MidSessionWithoutConnAckTask_ShouldAwaitAuthAndDispatchSubsequentPackets()
+   {
+      using var broker = new SignalBroker();
+      var receiveTcs = new TaskCompletionSource();
+      var authTcs = new TaskCompletionSource<AuthPacketResult>();
+
+      var context = new MqttAuthContext
+      {
+         AuthPacket = AuthPacketResult.Create(new AuthPacket()),
+         PacketSender = null!,
+         Broker = broker,
+         ConnAckTask = null,
+         ReceiveTask = receiveTcs.Task,
+         AuthTask = authTcs.Task
+      };
+
+      var firstExpected = AuthPacketResult.Create(new AuthPacket());
+      authTcs.SetResult(firstExpected);
+      var firstResult = await context.AwaitNextAuthPacketAsync();
+      await Assert.That(ReferenceEquals(firstResult, firstExpected)).IsTrue();
+
+      var secondExpected = AuthPacketResult.Create(new AuthPacket());
+      var secondTask = context.AwaitNextAuthPacketAsync();
+      broker.TryDispatch(secondExpected, 0);
+      var secondResult = await secondTask;
+      await Assert.That(ReferenceEquals(secondResult, secondExpected)).IsTrue();
+   }
 }
