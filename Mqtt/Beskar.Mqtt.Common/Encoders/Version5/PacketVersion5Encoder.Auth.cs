@@ -119,6 +119,9 @@ public readonly ref partial struct PacketVersion5Encoder
    }
 
    private static int CalculateLength(AuthPacketOptions options)
+      => CalculateAuthPacketLength(options);
+
+   internal static int CalculateAuthPacketLength(AuthPacketOptions options)
    {
       var remainingLength = CalculateRemainingLength(options);
       return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;

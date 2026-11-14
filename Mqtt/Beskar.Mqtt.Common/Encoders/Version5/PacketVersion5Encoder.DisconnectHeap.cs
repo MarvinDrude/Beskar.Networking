@@ -76,13 +76,16 @@ public readonly ref partial struct PacketVersion5Encoder
       }
    }
 
-   private int CalculateLength(DisconnectOptions options)
+   private static int CalculateLength(DisconnectOptions options)
+      => CalculateDisconnectPacketLength(options);
+
+   internal static int CalculateDisconnectPacketLength(DisconnectOptions options)
    {
       var remainingLength = CalculateRemainingLength(options);
       return PacketEncoder.CalculateFixedHeaderLength(remainingLength) + remainingLength;
    }
 
-   private int CalculateRemainingLength(DisconnectOptions options)
+   private static int CalculateRemainingLength(DisconnectOptions options)
    {
       var propertiesLength = CalculatePropertiesLength(options);
 
