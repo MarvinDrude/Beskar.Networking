@@ -20,6 +20,11 @@ namespace Beskar.Mqtt.Server.Internal;
 /// </summary>
 public sealed class MqttServerClient
 {
+   private int _handshakeCompleted;
+   private int _connectReceived;
+   private int _isFenced;
+   private int _connectedMetricRecorded;
+
    /// <summary>
    /// Gets a value indicating whether the client is currently connected to the server.
    /// </summary>
@@ -28,18 +33,36 @@ public sealed class MqttServerClient
       nameof(Session), nameof(_session),
       nameof(Stream), nameof(_stream),
       nameof(_serverOptions), nameof(_controlPacketChannel))]
-   public bool IsConnected => _session is not null && !_isDisconnecting;
+   public bool IsConnected => _session is not null && Volatile.Read(ref _disconnectingState) == 0;
+
+   internal bool IsHandshakeCompleted => Volatile.Read(ref _handshakeCompleted) == 1;
+   internal bool IsFenced => Volatile.Read(ref _isFenced) == 1;
+
+   internal void MarkHandshakeCompleted()
+      => Interlocked.Exchange(ref _handshakeCompleted, 1);
+
+   internal bool TryMarkConnectReceived()
+      => Interlocked.CompareExchange(ref _connectReceived, 1, 0) == 0;
+
+   internal void MarkFenced()
+      => Interlocked.Exchange(ref _isFenced, 1);
+
+   internal void MarkConnectedMetricRecorded()
+      => Interlocked.Exchange(ref _connectedMetricRecorded, 1);
+
+   internal bool TryConsumeConnectedMetric()
+      => Interlocked.Exchange(ref _connectedMetricRecorded, 0) == 1;
 
    /// <summary>
    /// Gets the network listener that accepted the client connection.
    /// </summary>
    public INetworkListener Listener => _listener ?? throw new InvalidOperationException("Listener has not been initialized.");
-   
+
    /// <summary>
    /// Gets the underlying network session for the client connection.
    /// </summary>
    public INetworkSession Session => _session ?? throw new InvalidOperationException("Session has not been initialized.");
-   
+
    /// <summary>
    /// Gets the main network stream associated with the client.
    /// </summary>
@@ -54,7 +77,7 @@ public sealed class MqttServerClient
    /// Gets a token that is canceled when the client connection is disconnected.
    /// </summary>
    public CancellationToken CancellationToken => _cancellationTokenSource?.Token ?? CancellationToken.None;
-   
+
    /// <summary>
    /// Gets the MQTT protocol version used by the client.
    /// </summary>
@@ -86,7 +109,7 @@ public sealed class MqttServerClient
    private Channel<PublishPacket>? _outgoingPublishChannel;
    private Task? _outgoingPublishTask;
 
-   private bool _isDisconnecting;
+   private int _disconnectingState;
    private int _disconnectEventFired;
    private long _lastPacketReceivedTicks;
 
@@ -138,15 +161,14 @@ public sealed class MqttServerClient
          FullMode = serverOptions.PendingMessageOverflowBehavior is MessageOverflowBehavior.DropNewest
             ? BoundedChannelFullMode.DropNewest
             : BoundedChannelFullMode.DropOldest
-      });
+      }, OnOutgoingPublishDropped);
 
       _outgoingPublishTask = Task.Run(ProcessOutgoingPublishesAsync, CancellationToken);
    }
 
    internal async Task DisconnectAsync(DisconnectOptions? options = null)
    {
-      if (_isDisconnecting || !IsConnected) return;
-      _isDisconnecting = true;
+      if (!IsConnected || Interlocked.CompareExchange(ref _disconnectingState, 1, 0) != 0) return;
 
       if (options is not null)
       {
@@ -227,9 +249,33 @@ public sealed class MqttServerClient
       return _controlPacketChannel?.Writer.TryWrite(packet) ?? false;
    }
 
-   internal void QueueOutgoingPublish(in PublishPacket packet)
+   internal bool QueueOutgoingPublish(in PublishPacket packet)
    {
-      _outgoingPublishChannel?.Writer.TryWrite(packet);
+      var channel = _outgoingPublishChannel;
+      if (channel is null || !channel.Writer.TryWrite(packet))
+      {
+         OnOutgoingPublishDropped(packet);
+         return false;
+      }
+
+      return true;
+   }
+
+   private void OnOutgoingPublishDropped(PublishPacket droppedPacket)
+   {
+      if (droppedPacket.QualityOfService > QualityOfServiceType.AtMostOnce && droppedPacket.PacketIdentifier != 0)
+      {
+         var session = MqttSession;
+         if (session is null)
+         {
+            return;
+         }
+
+         if (session.AcknowledgePublish(droppedPacket.PacketIdentifier) is not null && session.OfflineQueueCount > 0)
+         {
+            _ = Task.Run(() => MqttServer.DeliverNextQueuedMessagesAsync(session));
+         }
+      }
    }
 
    private async Task ProcessOutgoingPublishesAsync()

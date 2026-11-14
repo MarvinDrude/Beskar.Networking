@@ -32,9 +32,12 @@ public sealed partial class MqttSession
    /// </remarks>
    public MqttServerClient? Client
    {
-      get => _serverClient;
-      internal set => _serverClient = value;
+      get => Volatile.Read(ref _serverClient);
+      internal set => Volatile.Write(ref _serverClient, value);
    }
+
+   internal bool IsActiveClient(MqttServerClient client)
+      => ReferenceEquals(Volatile.Read(ref _serverClient), client);
 
    internal MqttSession(
       MqttServer server,

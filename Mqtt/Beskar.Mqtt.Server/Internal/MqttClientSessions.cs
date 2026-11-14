@@ -70,23 +70,29 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
 
          if (previousSession is not null)
          {
+            previousSession.Client?.MarkFenced();
             previousSession.Client = null;
             previousSession.IsConnected = false;
             _server.SubscriptionRouter.UnsubscribeAll(previousSession);
+            MqttMetrics.RecordActiveSessionChange(-1);
          }
 
+         var replacedExisting = false;
          if (existing is not null)
          {
             if (cleanSession)
             {
+               existing.Client?.MarkFenced();
                existing.Client = null;
                existing.IsConnected = false;
 
                _server.SubscriptionRouter.UnsubscribeAll(existing);
                session = InitializeNewSession(serverClient, connectOptions);
+               replacedExisting = true;
             }
             else
             {
+               existing.Client?.MarkFenced();
                session = existing;
                existing = null;
 
@@ -114,8 +120,9 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
          serverClient.MqttSession = session;
          session.Client = serverClient;
 
+         serverClient.MarkConnectedMetricRecorded();
          MqttMetrics.RecordClientConnectedChange(1);
-         if (!isSessionPresent)
+         if (!isSessionPresent && !replacedExisting)
          {
             MqttMetrics.RecordActiveSessionChange(1);
          }
@@ -161,6 +168,7 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
             if (alternateLookup.TryGetValue(serverClient.ClientIdUtf8Bytes.Span, out takenOverClient))
             {
                hasTakeOver = true;
+               takenOverClient.MarkFenced();
             }
 
             alternateLookup[serverClient.ClientIdUtf8Bytes.Span] = serverClient;
@@ -271,13 +279,16 @@ public sealed partial class MqttClientSessions(MqttServer server) : IAsyncDispos
             }
          }
 
-         if (session.Client != client)
+         if (client.TryConsumeConnectedMetric())
+         {
+            MqttMetrics.RecordClientConnectedChange(-1);
+         }
+
+         if (!session.IsActiveClient(client))
          {
             // already taken over
             return;
          }
-
-         MqttMetrics.RecordClientConnectedChange(-1);
 
          if (client.DisconnectOptions is not null && _server.Options.SupportPersistentSessions)
          {

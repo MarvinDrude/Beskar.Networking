@@ -127,13 +127,16 @@ public sealed partial class MqttSession : IAsyncDisposable
       }
    }
 
-   internal void RemoveQos2Packet(ushort packetIdentifier)
+   internal bool TryRemoveQos2Packet(ushort packetIdentifier)
    {
       lock (_incomingQos2PacketsLock)
       {
-         _incomingQos2Packets.Remove(packetIdentifier);
+         return _incomingQos2Packets.Remove(packetIdentifier);
       }
    }
+
+   internal void RemoveQos2Packet(ushort packetIdentifier)
+      => TryRemoveQos2Packet(packetIdentifier);
 
    internal int OfflineQueueCount
    {
