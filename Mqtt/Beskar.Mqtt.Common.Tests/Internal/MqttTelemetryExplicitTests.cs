@@ -10,6 +10,7 @@ using Beskar.Mqtt.Server.Options;
 
 namespace Beskar.Mqtt.Common.Tests.Internal;
 
+[NotInParallel]
 public class MqttTelemetryExplicitTests
 {
    [Test]

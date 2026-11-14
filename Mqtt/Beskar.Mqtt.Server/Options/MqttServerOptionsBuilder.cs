@@ -20,6 +20,7 @@ public sealed class MqttServerOptionsBuilder
    /// <returns>The builder instance for chaining.</returns>
    public MqttServerOptionsBuilder WithKeepAliveInterval(TimeSpan interval)
    {
+      ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
       _keepAliveInterval = interval;
       return this;
    }

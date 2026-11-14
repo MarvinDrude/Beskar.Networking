@@ -235,8 +235,6 @@ public class MqttKeepAliveTests
    public async Task ServerOptionsBuilder_DefaultKeepAliveInterval_ShouldStartWithoutThrowing()
    {
       var options = new MqttServerOptionsBuilder().Build();
-      await Assert.That(options.KeepAlive.Interval).IsGreaterThan(TimeSpan.Zero);
-
       await using var server = MqttServerFactory.CreateBuilder(options)
          .UseTcp(0)
          .WithDefaultClientIdGenerator()

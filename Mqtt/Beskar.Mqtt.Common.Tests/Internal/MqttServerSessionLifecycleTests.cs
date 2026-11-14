@@ -435,6 +435,7 @@ public class MqttServerSessionLifecycleTests
 
       var ackTopics = new List<string>();
       var noSubTopics = new List<string>();
+      var noSubDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
       server.Events.OnAcknowledgePub.Add((ctx, _) =>
       {
@@ -443,7 +444,14 @@ public class MqttServerSessionLifecycleTests
       });
       server.Events.OnNoSubscriberMessage.Add((ctx, _) =>
       {
-         noSubTopics.Add(ctx.PublishMessage.Topic);
+         lock (noSubTopics)
+         {
+            noSubTopics.Add(ctx.PublishMessage.Topic);
+            if (noSubTopics.Count >= 2)
+            {
+               noSubDone.TrySetResult();
+            }
+         }
          return ValueTask.CompletedTask;
       });
 
@@ -471,6 +479,8 @@ public class MqttServerSessionLifecycleTests
          PropertiesBytes = ReadOnlySequence<byte>.Empty
       };
       await handler.ExecuteAsync(stream, in secondPacket);
+
+      await noSubDone.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
       await Assert.That(ackTopics).Count().IsEqualTo(2);
       await Assert.That(ackTopics[1]).IsEqualTo("sensors/alias");
