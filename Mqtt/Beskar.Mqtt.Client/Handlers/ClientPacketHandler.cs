@@ -332,19 +332,30 @@ public sealed class ClientPacketHandler(MqttClient client) : IPacketHandler
          "ClientPacketHandler: Received PUBREL packet (PacketId: {0}, ReasonCode: {1}). Replying with PUBCOMP...",
          packet.PacketIdentifier, packet.ReasonCode);
 
-      _client.RemoveIncomingQos2Packet(packet.PacketIdentifier);
+      var wasTracked = _client.RemoveIncomingQos2Packet(packet.PacketIdentifier);
       _client.TryDispatch(in packet, packet.PacketIdentifier);
 
-      return Awaited(packet);
+      return Awaited(_client, packet, wasTracked, ct);
 
-      async ValueTask Awaited(PubRelPacket packet)
+      static async ValueTask Awaited(MqttClient client, PubRelPacket packet, bool wasTracked, CancellationToken ct)
       {
          var pubComp = new PubCompPacket
          {
             PacketIdentifier = packet.PacketIdentifier,
-            ReasonCode = PubCompReasonCode.Success
+            ReasonCode = wasTracked ? PubCompReasonCode.Success : PubCompReasonCode.PacketIdentifierNotFound
          };
-         await _client.SendAsync(pubComp, ct);
+
+         try
+         {
+            await client.SendAsync(in pubComp, ct);
+         }
+         finally
+         {
+            if (wasTracked && client.ProtocolVersion is MqttProtocolVersion.V50)
+            {
+               client.DecrementIncomingInFlight();
+            }
+         }
       }
    }
 

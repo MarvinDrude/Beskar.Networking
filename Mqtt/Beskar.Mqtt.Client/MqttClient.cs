@@ -87,6 +87,7 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
 
    private readonly AsyncLocal<bool> _inReconnectLoop = new();
    private readonly AsyncLocal<bool> _inConnectingCallback = new();
+   private readonly AsyncLocal<bool> _inReceiveLoop = new();
 
    /// <summary>
    /// Initializes a new instance of the <see cref="MqttClient"/> class using the specified network client transport.
@@ -487,12 +488,25 @@ public sealed partial class MqttClient : IMqttClient, IMqttPacketSender
       }
    }
 
-   internal ValueTask HandleDisconnect(DisconnectPacket packet, CancellationToken ct = default)
+   internal async ValueTask HandleDisconnect(DisconnectPacket packet, CancellationToken ct = default)
    {
       TraceLogger.LogClientWarning("MqttClient: Received DISCONNECT from server (ReasonCode: {0}).", packet.ReasonCode);
       _disconnectReason = new MqttClientDisconnectReason(false, (int)packet.ReasonCode);
 
-      return DisconnectInternalAsync(false);
+      if (_inReceiveLoop.Value)
+      {
+         try
+         {
+            await _clientTokenSource.CancelAsync();
+         }
+         catch (ObjectDisposedException)
+         {
+            // ignored
+         }
+         return;
+      }
+
+      await DisconnectInternalAsync(false);
    }
 
    private void StartKeepAliveOnDemand(ClientConnectResult connectResult)

@@ -243,6 +243,17 @@ public sealed partial class MqttClient
          }
 
          CancelPendingRequestsOnDisconnect();
+         if (Volatile.Read(ref _disposedState) == 0)
+         {
+            try
+            {
+               _signalBroker.Reset();
+            }
+            catch (ObjectDisposedException)
+            {
+               // Ignored if broker was disposed concurrently
+            }
+         }
 
          try
          {
@@ -300,7 +311,8 @@ public sealed partial class MqttClient
       {
          // Already in the desired states -> just return
          if (status is MqttClientConnectionState.Disconnected
-             or MqttClientConnectionState.Disconnecting)
+             or MqttClientConnectionState.Disconnecting
+             or MqttClientConnectionState.Reconnecting)
          {
             TraceLogger.LogClientInfo("MqttClient: Disconnect already in progress or completed (Current state: {0}).", status);
             return true;
