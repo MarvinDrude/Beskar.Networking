@@ -20,7 +20,13 @@
   <Folder Name="/Common/Generators/">
     <Project Path="Common/Beskar.Networking.Protocol.Generators/Beskar.Networking.Protocol.Generators.csproj" />
   </Folder>
+  <Folder Name="/Datagram/">
+    <Project Path="Datagram/Beskar.Networking.Datagram/Beskar.Networking.Datagram.csproj" />
+  </Folder>
   <Folder Name="/Documentation/" />
+  <Folder Name="/Documentation/Datagram/">
+    <File Path="Documentation/Datagram/Overview.md" />
+  </Folder>
   <Folder Name="/Documentation/Basics/">
     <File Path="Documentation/Basics/Abstractions.md" />
     <File Path="Documentation/Basics/Transports.md" />
@@ -73,6 +79,9 @@
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Client/Beskar.Adv.Chat.Client.csproj" />
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Common/Beskar.Adv.Chat.Common.csproj" />
     <Project Path="Examples/Advanced/Beskar.Adv.Chat.Server/Beskar.Adv.Chat.Server.csproj" />
+  </Folder>
+  <Folder Name="/Examples/Datagram/">
+    <Project Path="Examples/Datagram/Beskar.Datagram.Example.MultiPeerServer/Beskar.Datagram.Example.MultiPeerServer.csproj" />
   </Folder>
   <Folder Name="/Examples/Jobs/">
     <Project Path="Examples/Jobs/Beskar.Jobs.Example.QuickStart/Beskar.Jobs.Example.QuickStart.csproj" />
@@ -132,6 +141,7 @@
     <Project Path="Experiments/Beskar.Mqtt.Benchmark/Beskar.Mqtt.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Tcp.Benchmark/Beskar.Tcp.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Udp.Benchmark/Beskar.Udp.Benchmark.csproj" />
+    <Project Path="Experiments/Beskar.Datagram.Benchmark/Beskar.Datagram.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Ws.Benchmark/Beskar.Ws.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Ws.OnMessage.Benchmark/Beskar.Ws.OnMessage.Benchmark.csproj" />
     <Project Path="Experiments/Beskar.Quic.Benchmark/Beskar.Quic.Benchmark.csproj" />
@@ -190,6 +200,7 @@
     <Project Path="Tests/Beskar.Networking.Protocol.Tests/Beskar.Networking.Protocol.Tests.csproj" />
     <Project Path="Tests/Beskar.Networking.Raft.Tests/Beskar.Networking.Raft.Tests.csproj" />
     <Project Path="Tests/Beskar.Jobs.Tests/Beskar.Jobs.Tests.csproj" />
+    <Project Path="Tests/Beskar.Networking.Datagram.Tests/Beskar.Networking.Datagram.Tests.csproj" />
   </Folder>
   <Folder Name="/Raft/">
     <Project Path="Raft/Beskar.Networking.Raft/Beskar.Networking.Raft.csproj" />
