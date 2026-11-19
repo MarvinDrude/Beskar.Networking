@@ -74,6 +74,7 @@ Main reasons for why you should consider using `Beskar.Networking` for your next
 | **Beskar.Jobs.Scheduler** | Distributed job coordinator with zero-allocation Cron scheduling, DAG continuations, load-balanced worker routing, and LWT crash recovery over MQTT. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Jobs.Scheduler.svg)](https://www.nuget.org/packages/Beskar.Jobs.Scheduler/) |
 | **Beskar.Jobs.Worker** | Distributed job execution node supporting source-generated `[GeneratedJobHandler]` handlers, bounded concurrency, and live progress reporting. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Jobs.Worker.svg)](https://www.nuget.org/packages/Beskar.Jobs.Worker/) |
 | **Beskar.Jobs.Client** | High-level job producer client for enqueuing jobs, chaining continuations, registering Cron schedules, and streaming real-time progress over MQTT. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Jobs.Client.svg)](https://www.nuget.org/packages/Beskar.Jobs.Client/) |
+| **Beskar.Networking.Datagram** | Standalone, specialized multi-channel reliable/unreliable UDP engine with AEAD protection, congestion control, multi-peer routing, and NAT hole punching. | [![NuGet Version](https://img.shields.io/nuget/v/Beskar.Networking.Datagram.svg)](https://www.nuget.org/packages/Beskar.Networking.Datagram/) |
 
 ---
 
@@ -310,6 +311,12 @@ Swap underlying transports dynamically without altering high-level business logi
 | **UDP** | Manual | LAN / Virtual | High-frequency datagram messaging & virtual session multiplexing |
 | **Memory** | N/A | In-Process | Ultra-fast unit testing, mocking, and in-process communication |
 
+> [!CAUTION]
+> **Security Warning — Do Not Send Confidential Data Over UDP (`Transports.Udp` / `Beskar.Networking.Datagram`)**
+>
+> Never transmit confidential information, passwords, auth credentials, financial/payment data, or sensitive personal data (PII) over `Beskar.Networking.Transports.Udp` or `Beskar.Networking.Datagram`.
+> Raw UDP is unencrypted, and `Beskar.Networking.Datagram`'s built-in AEAD/ECDH handshake is designed for real-time game/telemetry traffic (anti-tampering, casual sniffing, anti-amplification) rather than formally audited TLS/DTLS PKI security. For confidential or regulated data, always use **TCP with TLS**, **WSS**, or **QUIC**.
+
 ---
 
 ## Examples
@@ -352,6 +359,8 @@ All examples: [**Root Folder**](https://github.com/MarvinDrude/Beskar.Networking
   - [**Leader Failover & Reinstallation**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.LeaderFailoverRejoin): Highlights a leader crash, automatic quorum election of a new leader, log commitments during partitions, revival of the crashed node, and automatic catch-up reinstallation.
   - [**Log Compaction & Snapshotting**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Raft/Beskar.Raft.Example.SnapshotCompaction): Demonstrates state machine snapshotting (`TakeSnapshotAsync`/`RestoreSnapshotAsync`), log truncation, and restoring key-value state directly from snapshot blobs.
 - [**Telemetry & OpenTelemetry Console**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Telemetry/Beskar.Example.Telemetry): Demonstrates how to subscribe to all native telemetry meters using `MeterListener` or OpenTelemetry exporters, showing real-time event streaming and a live metrics summary dashboard as operations occur.
+- [**Datagram (Reliable UDP & Multi-Channel) Example**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Datagram):
+  - [**Multi-Peer Server & Channels**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Datagram/Beskar.Datagram.Example.MultiPeerServer): Demonstrates a multi-peer `DatagramHost` accepting multiple clients with handshake metadata validation, per-peer tags, mixed reliable/unreliable channels, and filtered broadcasting.
 - [**Distributed Job Scheduling & Execution Examples**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Jobs): A set of projects demonstrating distributed background job orchestration, Cron scheduling, DAG continuations, and real-time progress streaming over MQTT:
   - [**QuickStart (In-Process Cluster)**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Jobs/Beskar.Jobs.Example.QuickStart): Demonstrates spinning up an MQTT broker, `JobScheduler`, `JobWorker`, and `JobClient`, registering a source-generated `[GeneratedJobHandler]` class, and streaming real-time progress updates (`WatchJobStatusAsync`) and typed results.
   - [**Source-Generated Handlers & Chained Continuations**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Examples/Jobs/Beskar.Jobs.Example.GeneratedContinuations): Showcases chaining multiple `[GeneratedJobHandler]` classes (`EnqueueGeneratedWithResultAsync` -> `EnqueueGeneratedContinuationWithResultAsync` -> `EnqueueGeneratedContinuationAsync`) across multiple specialized workers without string literals.
@@ -395,6 +404,9 @@ You can find detailed documentation for `Beskar.Networking` [here](https://githu
   - [Unix Domain Sockets (UDS) Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Uds.md)
   - [Named Pipes Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/NamedPipes.md)
   - [In-Memory Transport Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Transports/Memory.md)
+- [**Datagram (Specialized Real-Time UDP & Channels) Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Datagram):
+  - [Datagram Overview & Quick Start](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Datagram/Overview.md)
+  - [Delivery & Reliability Modes Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Datagram/DeliveryModes.md)
 - [**Distributed Job Scheduling & Execution Guides**](https://github.com/MarvinDrude/Beskar.Networking/tree/master/Documentation/Jobs):
     - [Distributed Jobs Overview & Architecture](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Jobs/Overview.md)
     - [Job Handlers, Source Generator & Progress Streaming](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Jobs/HandlersAndSourceGenerator.md)

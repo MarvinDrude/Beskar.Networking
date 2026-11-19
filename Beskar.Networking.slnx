@@ -26,6 +26,7 @@
   <Folder Name="/Documentation/" />
   <Folder Name="/Documentation/Datagram/">
     <File Path="Documentation/Datagram/Overview.md" />
+    <File Path="Documentation/Datagram/DeliveryModes.md" />
   </Folder>
   <Folder Name="/Documentation/Basics/">
     <File Path="Documentation/Basics/Abstractions.md" />
