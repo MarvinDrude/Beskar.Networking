@@ -660,12 +660,15 @@ public sealed partial class DatagramHost : IAsyncDisposable
          }
       }
 
-      foreach (var peer in _peersById.Values)
+      foreach (var peerId in _peersById.Keys)
       {
-         DatagramMetrics.PeersActive.Add(-1);
-         peer.Dispose();
+         if (_peersById.TryRemove(peerId, out var peer))
+         {
+            _peersBySessionToken.TryRemove(peer.SessionToken, out _);
+            DatagramMetrics.PeersActive.Add(-1);
+            peer.Dispose();
+         }
       }
-      _peersById.Clear();
       _peersBySessionToken.Clear();
 
       while (_pollQueue.TryDequeue(out var evt))
