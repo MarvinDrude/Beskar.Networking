@@ -1,4 +1,4 @@
-# `Beskar.Networking.Datagram` — Delivery & Reliability Modes
+# `Beskar.Networking.Datagram` - Delivery & Reliability Modes
 
 `Beskar.Networking.Datagram` multiplexes up to **64 independent logical channels (`0..63`)** into shared, MTU-safe UDP datagrams (`MaxDatagramSize`, default `1200` bytes). Each channel is configured with one of **5 delivery modes** (`DatagramDeliveryMode`), allowing unreliable high-frequency telemetry and strictly ordered commands to share the same connection **without blocking each other**.
 
@@ -41,7 +41,7 @@ options.AddChannel(
 - **How it works:** Each message carries a 16-bit wrap-safe `ChannelSeq`. No retransmissions occur. The receiver tracks the newest sequence delivered so far; any older packet arriving late is **silently dropped** so stale state never overwrites fresh state.
 - **Scenario (`1, 2, 3` sent; `2` arrives after `3`):** Receiver gets `1`, then `3`, and drops `2`. If `3` drops and no `4` is sent, `3` is not retransmitted.
 - **When to use it:**
-  - **Multiplayer games:** High-frequency entity transforms (20–60 Hz positions/rotations/velocities), physics ragdolls, projectile updates, countdown timers, and client input streams (especially paired with redundant recent-tick input packing).
+  - **Multiplayer games:** High-frequency entity transforms (20-60 Hz positions/rotations/velocities), physics ragdolls, projectile updates, countdown timers, and client input streams (especially paired with redundant recent-tick input packing).
   - **Robotics / Telemetry / Streaming:** Live GPS/IMU coordinates, drone attitude updates, live dashboard gauges, or real-time control stick feeds where a 100 ms old value is worse than a dropped packet.
 
 ```csharp
@@ -55,10 +55,10 @@ options.AddChannel(
 ---
 
 ### 3. `ReliableUnordered` (Guaranteed Delivery, Zero Ordering Stalls)
-- **How it works:** Every message is tracked in the sender's sliding window and retransmitted (via piggybacked ACKs, RTO backoff, and fast retransmit) until acknowledged. The receiver uses a sliding deduplication bitset and delivers each message **immediately on first arrival**—never stalling waiting for an earlier dropped message.
+- **How it works:** Every message is tracked in the sender's sliding window and retransmitted (via piggybacked ACKs, RTO backoff, and fast retransmit) until acknowledged. The receiver uses a sliding deduplication bitset and delivers each message **immediately on first arrival** - never stalling waiting for an earlier dropped message.
 - **Scenario (`1, 2, 3` sent; `2` drops initially):** Receiver immediately delivers `1`, then immediately delivers `3` without waiting, then delivers `2` once its retransmission arrives. Duplicates are ignored.
 - **When to use it:**
-  - **Multiplayer games:** Independent gameplay events where order between unrelated items does not matter—coin/key pickups, individual player damage/elimination notifications, crate breaks, independent score deltas, achievement triggers.
+  - **Multiplayer games:** Independent gameplay events where order between unrelated items does not matter - coin/key pickups, individual player damage/elimination notifications, crate breaks, independent score deltas, achievement triggers.
   - **Distributed / Telemetry apps:** Independent device fault alerts, fire-and-confirm sensor readings, or parallel RPC responses keyed by their own correlation ID.
 
 ```csharp
@@ -92,7 +92,7 @@ options.AddChannel(
 ---
 
 ### 5. `ReliableSequenced` (Guaranteed Latest-Only State Convergence)
-- **How it works:** Combines reliability with latest-only superseding. When a newer message is queued on the sender before an older message is acknowledged, the older unacked message is **discarded and never retransmitted**—only the newest message keeps retrying until acknowledged. On the receiver, stale out-of-order arrivals (`seq <= latest`) are dropped immediately.
+- **How it works:** Combines reliability with latest-only superseding. When a newer message is queued on the sender before an older message is acknowledged, the older unacked message is **discarded and never retransmitted** - only the newest message keeps retrying until acknowledged. On the receiver, stale out-of-order arrivals (`seq <= latest`) are dropped immediately.
 - **Scenario (`1 ("HP=100")`, `2 ("HP=80")`, `3 ("HP=60")` sent; `2` drops):** Receiver delivers `1`, then delivers `3` immediately (skipping `2`). If `3` also drops and no `4` is ever sent, the sender keeps retransmitting `3` until the receiver converges on `"HP=60"`.
 - **How it differs from `ReliableOrdered` and `UnreliableSequenced`:**
   - Unlike **`ReliableOrdered`**, it does not waste bandwidth retransmitting obsolete intermediate states and never head-of-line blocks on them.
@@ -138,6 +138,6 @@ var options = new DatagramOptions
 ```
 
 ### Practical Guidelines
-1. **Keep `allowFragmentation: false` on unreliable channels** unless payloads strictly require it—losing 1 of 4 fragments over UDP wastes all 4 fragments. Fragmentation shines on `ReliableOrdered`, `ReliableUnordered`, and `ReliableSequenced` (e.g., initial full-state sync blobs or lobby thumbnails).
+1. **Keep `allowFragmentation: false` on unreliable channels** unless payloads strictly require it - losing 1 of 4 fragments over UDP wastes all 4 fragments. Fragmentation shines on `ReliableOrdered`, `ReliableUnordered`, and `ReliableSequenced` (e.g., initial full-state sync blobs or lobby thumbnails).
 2. **Isolate unrelated ordered streams onto separate `ReliableOrdered` channels** so packet loss in low-priority traffic (like chat) never delays critical gameplay/control messages.
 3. **Match `DatagramOptions.Channels` on both peers:** During the handshake, `ChannelConfigHash` is verified automatically so mismatched channel layouts fail fast instead of silently misinterpreting frames.

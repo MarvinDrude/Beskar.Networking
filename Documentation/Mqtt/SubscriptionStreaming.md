@@ -75,7 +75,7 @@ JobStatusUpdate finalResult = await client.WaitForJsonMessageAsync<JobStatusUpda
 
 One of the most powerful features of the managed subscription layer is **transparent reconnection survival**:
 
-1. Subscriptions can be created **at any time**—even before `client.ConnectAsync()` is called or while the client is temporarily offline.
+1. Subscriptions can be created **at any time** - even before `client.ConnectAsync()` is called or while the client is temporarily offline.
 2. The internal `MqttSubscriptionManager` tracks all active topic filters and their highest requested QoS.
 3. When the network drops and the client reconnects (either via built-in `AutoReconnect` or a manual `ConnectAsync`), the client's `OnClientConnected` event triggers an automatic, batched `SUBSCRIBE` packet to the broker containing all active filters.
 4. **Your `await foreach` loop does NOT throw or abort!** It stays alive waiting on its channel, and new messages resume flowing as soon as the broker reconnects.

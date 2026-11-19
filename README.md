@@ -312,7 +312,7 @@ Swap underlying transports dynamically without altering high-level business logi
 | **Memory** | N/A | In-Process | Ultra-fast unit testing, mocking, and in-process communication |
 
 > [!CAUTION]
-> **Security Warning — Do Not Send Confidential Data Over UDP (`Transports.Udp` / `Beskar.Networking.Datagram`)**
+> **Security Warning - Do Not Send Confidential Data Over UDP (`Transports.Udp` / `Beskar.Networking.Datagram`)**
 >
 > Never transmit confidential information, passwords, auth credentials, financial/payment data, or sensitive personal data (PII) over `Beskar.Networking.Transports.Udp` or `Beskar.Networking.Datagram`.
 > Raw UDP is unencrypted, and `Beskar.Networking.Datagram`'s built-in AEAD/ECDH handshake is designed for real-time game/telemetry traffic (anti-tampering, casual sniffing, anti-amplification) rather than formally audited TLS/DTLS PKI security. For confidential or regulated data, always use **TCP with TLS**, **WSS**, or **QUIC**.

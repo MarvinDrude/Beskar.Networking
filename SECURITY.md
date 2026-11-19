@@ -13,7 +13,7 @@ We take the security of our code generation tools seriously. If you discover a p
     * A description of the issue.
     * Potential impact.
     * Steps to reproduce or a Proof of Concept (PoC).
-3. **Response Time:** You can expect an acknowledgment of your report within 48–72 hours.
+3. **Response Time:** You can expect an acknowledgment of your report within 48-72 hours.
 
 ## Our Approach to Security Changes
 

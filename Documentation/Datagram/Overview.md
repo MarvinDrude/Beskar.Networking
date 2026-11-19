@@ -17,7 +17,7 @@
 
 ## 1. Key Capabilities
 
-- **5 Channel Delivery Modes (`0..63`)** multiplexed into shared MTU-safe datagrams (`MaxDatagramSize`, default `1200` bytes) — see the full [Delivery & Reliability Modes Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Datagram/DeliveryModes.md):
+- **5 Channel Delivery Modes (`0..63`)** multiplexed into shared MTU-safe datagrams (`MaxDatagramSize`, default `1200` bytes) - see the full [Delivery & Reliability Modes Guide](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Datagram/DeliveryModes.md):
   - `UnreliableUnordered`: Fire-and-forget, zero sequence overhead.
   - `UnreliableSequenced`: Drops stale out-of-order arrivals; zero retransmission.
   - `ReliableUnordered`: Guaranteed delivery without head-of-line ordering stalls, with sliding-bitset deduplication.
