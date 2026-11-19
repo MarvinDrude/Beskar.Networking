@@ -1,3 +1,5 @@
+using Beskar.Networking.Datagram.Options;
+
 namespace Beskar.Networking.Datagram.Enums;
 
 /// <summary>

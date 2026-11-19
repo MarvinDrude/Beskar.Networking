@@ -8,6 +8,7 @@ using Beskar.Networking.Datagram.Enums;
 using Beskar.Networking.Datagram.Nat;
 using Beskar.Networking.Datagram.Options;
 using Beskar.Networking.Datagram.Protocol;
+using Beskar.Networking.Datagram.Reliability;
 using Beskar.Networking.Datagram.Security;
 using Beskar.Networking.Datagram.Telemetry;
 using Beskar.Networking.Datagram.Transport;

@@ -1,5 +1,6 @@
 using System.Net;
 using Beskar.Networking.Datagram.Enums;
+using Beskar.Networking.Datagram.Reliability;
 
 namespace Beskar.Networking.Datagram;
 
