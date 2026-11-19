@@ -70,8 +70,13 @@ internal sealed class FragmentReassembler(int maxInFlightGroups, int maxFragment
          return false;
       }
 
-      var copy = ArrayPool<byte>.Shared.Rent(chunk.Length);
-      chunk.CopyTo(copy);
+      byte[]? copy = null;
+      if (!chunk.IsEmpty)
+      {
+         copy = ArrayPool<byte>.Shared.Rent(chunk.Length);
+         chunk.CopyTo(copy);
+      }
+
       group.Fragments[fragIndex] = copy;
       group.Lengths[fragIndex] = chunk.Length;
       group.Received[fragIndex] = true;
@@ -88,11 +93,14 @@ internal sealed class FragmentReassembler(int maxInFlightGroups, int maxFragment
 
       for (var i = 0; i < group.FragCount; i++)
       {
-         var fragBuf = group.Fragments[i]!;
+         var fragBuf = group.Fragments[i];
          var fragLen = group.Lengths[i];
 
-         fragBuf.AsSpan(0, fragLen).CopyTo(combined.AsSpan(offset, fragLen));
-         offset += fragLen;
+         if (fragBuf is not null && fragLen > 0)
+         {
+            fragBuf.AsSpan(0, fragLen).CopyTo(combined.AsSpan(offset, fragLen));
+            offset += fragLen;
+         }
       }
 
       ReturnGroupBuffers(group);

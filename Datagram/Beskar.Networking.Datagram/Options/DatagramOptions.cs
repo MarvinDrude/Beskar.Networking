@@ -156,6 +156,11 @@ public sealed class DatagramOptions
          throw new ArgumentOutOfRangeException(nameof(MaxDatagramSize), "MaxDatagramSize must be between 256 and 65000 bytes.");
       }
 
+      if (MaxBytesPerSecondPerPeer is <= 0)
+      {
+         throw new ArgumentOutOfRangeException(nameof(MaxBytesPerSecondPerPeer), "MaxBytesPerSecondPerPeer must be null or positive.");
+      }
+
       if (Channels.Count == 0)
       {
          AddChannel(0, DatagramDeliveryMode.ReliableOrdered);

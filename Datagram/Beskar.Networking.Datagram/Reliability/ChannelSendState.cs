@@ -46,6 +46,27 @@ internal sealed class ChannelSendState : IDisposable
    public DatagramChannelConfig Config => _config;
    public long UnackedCount => _inFlightCount + _pendingQueue.Count;
    public long TotalRetransmitted { get; private set; }
+
+   public bool HasExpiredReliableMessage(long nowTimestamp, long maxRetryDurationTicks)
+   {
+      if (!_isReliable || _inFlightOrder.Count == 0)
+      {
+         return false;
+      }
+
+      for (var i = 0; i < _inFlightOrder.Count; i++)
+      {
+         var seq = _inFlightOrder[i];
+         var slot = _inFlightSlots[seq & _slotMask];
+         if (slot is not null && slot.ChannelSeq == seq && nowTimestamp - slot.EnqueuedTimestamp > maxRetryDurationTicks)
+         {
+            return true;
+         }
+      }
+
+      return false;
+   }
+
    public bool HasPendingOrReadyData(long nowTimestamp)
    {
       if (_pendingQueue.Count > 0)
@@ -355,7 +376,8 @@ internal sealed class ChannelSendState : IDisposable
 
       _inFlightOrder.Clear();
       _inFlightCount = 0;
-      _sendBase = _nextToFlySeq;
+      _sendBase = _nextChannelSeq;
+      _nextToFlySeq = _nextChannelSeq;
    }
 
    private void WriteEntry(Span<byte> dest, OutgoingEntry entry)

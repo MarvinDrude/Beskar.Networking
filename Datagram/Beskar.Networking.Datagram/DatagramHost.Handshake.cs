@@ -193,14 +193,26 @@ public sealed partial class DatagramHost
 
       if (isAead)
       {
-         Span<byte> plainTail = stackalloc byte[tailLen];
-         buf.AsSpan(tailOffset, tailLen).CopyTo(plainTail);
-         pending.DerivedCrypto!.Encrypt(
-            packetSeq: 1,
-            aad: buf.AsSpan(0, tailOffset),
-            plaintext: plainTail,
-            ciphertext: buf.AsSpan(tailOffset, tailLen),
-            tag16: buf.AsSpan(tailOffset + tailLen, DatagramCryptoSession.TagSize));
+         byte[]? rentedPlain = tailLen > 1024 ? ArrayPool<byte>.Shared.Rent(tailLen) : null;
+         Span<byte> plainTail = rentedPlain is not null ? rentedPlain.AsSpan(0, tailLen) : stackalloc byte[tailLen];
+
+         try
+         {
+            buf.AsSpan(tailOffset, tailLen).CopyTo(plainTail);
+            pending.DerivedCrypto!.Encrypt(
+               packetSeq: 1,
+               aad: buf.AsSpan(0, tailOffset),
+               plaintext: plainTail,
+               ciphertext: buf.AsSpan(tailOffset, tailLen),
+               tag16: buf.AsSpan(tailOffset + tailLen, DatagramCryptoSession.TagSize));
+         }
+         finally
+         {
+            if (rentedPlain is not null)
+            {
+               ArrayPool<byte>.Shared.Return(rentedPlain);
+            }
+         }
       }
       else if (mode == DatagramSecurityMode.Crc32C)
       {
@@ -229,7 +241,7 @@ public sealed partial class DatagramHost
          return;
       }
 
-      if (reqMode != _options.Security.Mode || configHash != _channelConfigHash)
+      if (reqMode != _options.Security.Mode)
       {
          return;
       }
@@ -393,7 +405,7 @@ public sealed partial class DatagramHost
       }
 
       var senderEp = MaterializeEndPoint(remoteSa);
-      var saltKey = Convert.ToHexString(clientSalt16);
+      var saltKey = $"{senderEp}|{Convert.ToHexString(clientSalt16)}";
 
       if (_recentHandshakeAcks.TryGetValue(saltKey, out var cachedAck))
       {
@@ -614,6 +626,12 @@ public sealed partial class DatagramHost
       }
 
       var bodyLen = rawPacket.Length - DatagramWireHeader.Size - trailerLen;
+      if (bodyLen > 2048)
+      {
+         DatagramMetrics.SecurityRejections.Add(1);
+         return;
+      }
+
       Span<byte> plainBody = stackalloc byte[bodyLen];
 
       if (mode == DatagramSecurityMode.Aead)

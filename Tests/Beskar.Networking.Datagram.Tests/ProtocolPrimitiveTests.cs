@@ -110,4 +110,52 @@ public class ProtocolPrimitiveTests
       await Assert.That(m2Cnt).IsEqualTo((ushort)5);
       await Assert.That(m2Payload).IsEquivalentTo(payload);
    }
+
+   [Test]
+   public async Task VarInt_WireHeader_AckTracker_AndMessageCodec_RejectMalformedAndBoundaryInputs()
+   {
+      // VarInt round-trip across 1, 2, 3, 4, 5-byte boundary values
+      var testValues = new[] { 0, 1, 127, 128, 16383, 16384, 2097151, 2097152, int.MaxValue };
+      var buf = new byte[8];
+      foreach (var expected in testValues)
+      {
+         var written = DatagramVarInt.Write(buf, expected);
+         await Assert.That(written).IsEqualTo(DatagramVarInt.GetEncodedSize(expected));
+         var ok = DatagramVarInt.TryRead(buf.AsSpan(0, written), out var decoded, out var read);
+         await Assert.That(ok).IsTrue();
+         await Assert.That(decoded).IsEqualTo(expected);
+         await Assert.That(read).IsEqualTo(written);
+      }
+
+      // Truncated/unterminated varint fails
+      await Assert.That(DatagramVarInt.TryRead([0x80, 0x80], out _, out _)).IsFalse();
+
+      // WireHeader rejects short buffer, wrong protocol version, and undefined PacketKind (15)
+      await Assert.That(DatagramWireHeader.TryRead(new byte[DatagramWireHeader.Size - 1], out _)).IsFalse();
+      var badVer = new byte[DatagramWireHeader.Size];
+      badVer[0] = (byte)((byte)DatagramPacketKind.Data | (2 << 4)); // version 2 invalid
+      await Assert.That(DatagramWireHeader.TryRead(badVer, out _)).IsFalse();
+
+      var badKind = new byte[DatagramWireHeader.Size];
+      badKind[0] = (byte)(15 | (1 << 4)); // kind 15 undefined
+      await Assert.That(DatagramWireHeader.TryRead(badKind, out _)).IsFalse();
+
+      // AckTracker rejects seq=0, jumps >1024 cleanly, and rejects seq older than 1024-packet replay window
+      var tracker = new AckTracker();
+      await Assert.That(tracker.TryRecordReceivedPacket(0)).IsFalse();
+      await Assert.That(tracker.TryRecordReceivedPacket(10)).IsTrue();
+      await Assert.That(tracker.TryRecordReceivedPacket(2000)).IsTrue();
+      await Assert.That(tracker.OutgoingAckBitfield).IsEqualTo(0UL); // jump > 64 clears ack bitfield
+      await Assert.That(tracker.TryRecordReceivedPacket(900)).IsFalse(); // age 1100 >= 1024 -> rejected!
+      await Assert.That(tracker.TryRecordReceivedPacket(1999)).IsTrue(); // age 1 -> accepted!
+      await Assert.That(tracker.TryRecordReceivedPacket(1999)).IsFalse(); // duplicate -> rejected!
+
+      // MessageCodec rejects truncated buffers, unregistered channel, and invalid fragment metadata
+      var opts = new DatagramOptions().AddChannel(0, DatagramDeliveryMode.ReliableOrdered);
+      var table = opts.BuildValidatedChannelTable(out _, out _);
+      await Assert.That(DatagramMessageCodec.TryRead([0x00], table, out _, out _)).IsFalse(); // too short
+      await Assert.That(DatagramMessageCodec.TryRead([0x05, 0x00, 0x00, 0x00], table, out _, out _)).IsFalse(); // ch 5 unregistered
+      // ch 0, IsFragment=1, seq=1, fragGroup=1, fragIndex=2, fragCount=2 (index >= count invalid!)
+      await Assert.That(DatagramMessageCodec.TryRead([0x40, 0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00], table, out _, out _)).IsFalse();
+   }
 }

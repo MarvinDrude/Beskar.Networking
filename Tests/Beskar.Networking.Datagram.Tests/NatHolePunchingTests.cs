@@ -89,4 +89,65 @@ public class NatHolePunchingTests
       await Assert.That(result.NeedsRelayFallback).IsTrue();
       await Assert.That(result.ResolvedEndPoint).IsNull();
    }
+
+   [Test]
+   public async Task PunchAsync_AsymmetricStartupUnder30PercentLoss_BothPeersStillSucceed()
+   {
+      var hub = new Beskar.Networking.Datagram.Transport.SimulatedNetworkHub(
+         seed: 808,
+         chaos: new Beskar.Networking.Datagram.Transport.SimulatedChaosProfile
+         {
+            PacketDropRate = 0.30,
+            MinLatency = TimeSpan.FromMilliseconds(10),
+            MaxLatency = TimeSpan.FromMilliseconds(35)
+         });
+
+      var epA = new IPEndPoint(IPAddress.Loopback, 52001);
+      var epB = new IPEndPoint(IPAddress.Loopback, 52002);
+
+      DatagramOptions MakeOpts() => new DatagramOptions
+      {
+         ManualTick = true,
+         DispatchMode = DatagramEventDispatchMode.Poll,
+         TimeSyncInterval = TimeSpan.Zero
+      }.AddChannel(0, DatagramDeliveryMode.ReliableOrdered);
+
+      await using var hostA = new DatagramHost(epA, MakeOpts(), hub.CreateTransport(), hub.Time);
+      await using var hostB = new DatagramHost(epB, MakeOpts(), hub.CreateTransport(), hub.Time);
+      hostA.Start();
+      hostB.Start();
+
+      const ulong token = 0x1122_3344_5566_7788UL;
+      var punchOpts = new DatagramPunchOptions
+      {
+         ProbeInterval = TimeSpan.FromMilliseconds(40),
+         Timeout = TimeSpan.FromSeconds(4)
+      };
+
+      // Peer A starts punching 160ms BEFORE Peer B even begins!
+      var punchA = hostA.PunchAsync(epB, null, token, punchOpts).AsTask();
+      for (var i = 0; i < 8; i++)
+      {
+         hostA.Tick();
+         hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(20));
+         hostB.Tick();
+      }
+
+      // Now Peer B begins punching under 30% packet loss
+      var punchB = hostB.PunchAsync(epA, null, token, punchOpts).AsTask();
+      for (var i = 0; i < 120 && (!punchA.IsCompleted || !punchB.IsCompleted); i++)
+      {
+         hostA.Tick();
+         hostB.Tick();
+         hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(25));
+      }
+
+      var resA = await punchA;
+      var resB = await punchB;
+
+      await Assert.That(resA.Succeeded).IsTrue();
+      await Assert.That(resB.Succeeded).IsTrue();
+      await Assert.That(resA.ResolvedEndPoint).IsEqualTo(epB);
+      await Assert.That(resB.ResolvedEndPoint).IsEqualTo(epA);
+   }
 }

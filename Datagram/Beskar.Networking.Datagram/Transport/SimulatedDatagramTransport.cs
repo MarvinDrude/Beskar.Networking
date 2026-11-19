@@ -71,7 +71,38 @@ public sealed class SimulatedNetworkHub(
    public SimulatedTimeProvider Time { get; } = time ?? new SimulatedTimeProvider();
    public SimulatedChaosProfile Chaos { get; set; } = chaos ?? new SimulatedChaosProfile();
 
+   /// <summary>
+   /// Optional interceptor invoked for every sent packet before chaos rules run.
+   /// Return <c>false</c> to deterministically drop the packet, or <c>true</c> to allow it (with any in-place mutations).
+   /// </summary>
+   public Func<IPEndPoint, IPEndPoint, byte[], bool>? OnPacketSending { get; set; }
+
    public SimulatedDatagramTransport CreateTransport() => new(this);
+
+   /// <summary>
+   /// Directly injects a raw datagram from an arbitrary source endpoint (for replay, spoofing, or reordering tests).
+   /// </summary>
+   public void InjectRawPacket(IPEndPoint fakeSource, IPEndPoint destination, byte[] rawPayload, TimeSpan? delay = null)
+   {
+      var copy = (byte[])rawPayload.Clone();
+      var delayTicks = delay?.Ticks ?? 0;
+
+      if (delayTicks <= 0)
+      {
+         if (_nodes.TryGetValue(destination, out var target))
+         {
+            target.EnqueueIncoming(fakeSource, copy);
+         }
+         return;
+      }
+
+      lock (_queueLock)
+      {
+         var deliverAt = Time.GetTimestamp() + delayTicks;
+         var order = ++_nextSequence;
+         _inFlight.Enqueue(new QueuedPacket(deliverAt, order, fakeSource, destination, copy), (deliverAt, order));
+      }
+   }
 
    internal IPEndPoint Register(SimulatedDatagramTransport transport, IPEndPoint requestedEndPoint)
    {
@@ -123,15 +154,22 @@ public sealed class SimulatedNetworkHub(
    internal void Send(IPEndPoint source, IPEndPoint destination, ReadOnlySpan<byte> datagram)
    {
       SimulatedDatagramTransport? directTarget = null;
+      byte[]? directCopy = null;
 
       lock (_queueLock)
       {
+         var copy = datagram.ToArray();
+
+         if (OnPacketSending is not null && !OnPacketSending(source, destination, copy))
+         {
+            return;
+         }
+
          if (Chaos.PacketDropRate > 0 && _rng.NextDouble() < Chaos.PacketDropRate)
          {
             return;
          }
 
-         var copy = datagram.ToArray();
          if (Chaos.DataCorruptionRate > 0 && copy.Length > 0 && _rng.NextDouble() < Chaos.DataCorruptionRate)
          {
             copy[_rng.Next(copy.Length)] ^= (byte)(1 << _rng.Next(8));
@@ -140,28 +178,33 @@ public sealed class SimulatedNetworkHub(
          var delayTicks = ComputeDelayTicks();
          if (delayTicks == 0 && (Chaos.PacketDuplicateRate <= 0 || _rng.NextDouble() >= Chaos.PacketDuplicateRate))
          {
-            _nodes.TryGetValue(destination, out directTarget);
+            if (_nodes.TryGetValue(destination, out directTarget))
+            {
+               directCopy = copy;
+            }
          }
 
-         if (directTarget is not null)
+         if (directTarget is null)
          {
-            directTarget.EnqueueIncoming(source, copy);
-            return;
+            var deliverAt = Time.GetTimestamp() + delayTicks;
+            var order = ++_nextSequence;
+            _inFlight.Enqueue(new QueuedPacket(deliverAt, order, source, destination, copy), (deliverAt, order));
+
+            if (Chaos.PacketDuplicateRate > 0 && _rng.NextDouble() < Chaos.PacketDuplicateRate)
+            {
+               var dupExtra = TimeSpan.FromMilliseconds(_rng.Next(1, 15)).Ticks;
+               var dupDeliver = deliverAt + dupExtra;
+               var dupOrder = ++_nextSequence;
+               var dupCopy = (byte[])copy.Clone();
+
+               _inFlight.Enqueue(new QueuedPacket(dupDeliver, dupOrder, source, destination, dupCopy), (dupDeliver, dupOrder));
+            }
          }
+      }
 
-         var deliverAt = Time.GetTimestamp() + delayTicks;
-         var order = ++_nextSequence;
-         _inFlight.Enqueue(new QueuedPacket(deliverAt, order, source, destination, copy), (deliverAt, order));
-
-         if (Chaos.PacketDuplicateRate > 0 && _rng.NextDouble() < Chaos.PacketDuplicateRate)
-         {
-            var dupExtra = TimeSpan.FromMilliseconds(_rng.Next(1, 15)).Ticks;
-            var dupDeliver = deliverAt + dupExtra;
-            var dupOrder = ++_nextSequence;
-            var dupCopy = (byte[])copy.Clone();
-
-            _inFlight.Enqueue(new QueuedPacket(dupDeliver, dupOrder, source, destination, dupCopy), (dupDeliver, dupOrder));
-         }
+      if (directTarget is not null && directCopy is not null)
+      {
+         directTarget.EnqueueIncoming(source, directCopy);
       }
    }
 

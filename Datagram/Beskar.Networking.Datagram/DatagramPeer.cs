@@ -25,6 +25,7 @@ public sealed class DatagramPeer : IDisposable
    private readonly ChannelReceiveState?[] _receiveChannels = new ChannelReceiveState[64];
    private readonly AckTracker _ackTracker = new();
    private readonly SentPacketLedger _ledger = new();
+   private readonly List<SentMessageRef> _scratchLedgerMessages = new(32);
    private readonly RttEstimator _rtt;
    private readonly TokenBucketPacer _pacer;
    private readonly Lock _lock = new();
@@ -466,10 +467,27 @@ public sealed class DatagramPeer : IDisposable
             return;
          }
 
+         if (_nextPacketSeq >= uint.MaxValue - 1024)
+         {
+            _state = DatagramPeerState.Disconnected;
+            disconnectTrigger = DatagramDisconnectReason.GracefulLocal;
+            return;
+         }
+
          var rtoTicks = _rtt.GetCurrentRtoTicks(_timeProvider);
          var maxRtoTicks = (long)(_options.MaxRtoMs * _timeProvider.TimestampFrequency / 1000.0);
          var lossCutoffTicks = Math.Max(rtoTicks * 3 / 2, _timeProvider.TimestampFrequency / 4);
          var maxRetryDurationTicks = _options.MaxReliableRetryDuration.Ticks * _timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond;
+
+         foreach (var ch in _priorityChannels)
+         {
+            if (_sendChannels[ch.ChannelId]!.HasExpiredReliableMessage(nowTimestamp, maxRetryDurationTicks))
+            {
+               _state = DatagramPeerState.Disconnected;
+               disconnectTrigger = DatagramDisconnectReason.MaxRetriesExceeded;
+               return;
+            }
+         }
 
          _ledger.DetectLossesAndFastRetransmits(
             _nextPacketSeq - 1,
@@ -481,63 +499,84 @@ public sealed class DatagramPeer : IDisposable
 
          _rtt.UpdateLossWindow(nowTimestamp, _timeProvider);
 
-         Span<byte> bodyScratch = stackalloc byte[_maxBodySize];
-         var maxDatagramsPerTick = 32;
+         var rentedScratch = _maxBodySize > 2048 ? ArrayPool<byte>.Shared.Rent(_maxBodySize) : null;
+         var bodyScratch = rentedScratch is not null
+            ? rentedScratch.AsSpan(0, _maxBodySize)
+            : stackalloc byte[_maxBodySize];
 
-         for (var d = 0; d < maxDatagramsPerTick; d++)
+         try
          {
-            if (!HasAnyReadyChannelData(nowTimestamp))
+            var maxDatagramsPerTick = 32;
+
+            for (var d = 0; d < maxDatagramsPerTick; d++)
             {
-               break;
-            }
-
-            if (!_pacer.CanSend(_options.MaxDatagramSize, nowTimestamp, _timeProvider))
-            {
-               break;
-            }
-
-            var packetSeq = _nextPacketSeq++;
-            _ledger.BeginRecord(packetSeq, nowTimestamp, out var ledgerMessages);
-
-            var bodyOffset = 0;
-            foreach (var ch in _priorityChannels)
-            {
-               var sendState = _sendChannels[ch.ChannelId]!;
-               sendState.PackIntoDatagram(
-                  bodyScratch,
-                  ref bodyOffset,
-                  _maxBodySize,
-                  nowTimestamp,
-                  rtoTicks,
-                  maxRtoTicks,
-                  maxRetryDurationTicks,
-                  _timeProvider,
-                  _rtt,
-                  ledgerMessages,
-                  out var maxRetriesExceeded);
-
-               if (maxRetriesExceeded)
+               if (!HasAnyReadyChannelData(nowTimestamp))
                {
-                  _state = DatagramPeerState.Disconnected;
-                  disconnectTrigger = DatagramDisconnectReason.MaxRetriesExceeded;
-                  return;
+                  break;
                }
-            }
 
-            if (bodyOffset == 0)
+               if (!_pacer.CanSend(_options.MaxDatagramSize, nowTimestamp, _timeProvider))
+               {
+                  break;
+               }
+
+               _scratchLedgerMessages.Clear();
+               var bodyOffset = 0;
+
+               foreach (var ch in _priorityChannels)
+               {
+                  var sendState = _sendChannels[ch.ChannelId]!;
+                  sendState.PackIntoDatagram(
+                     bodyScratch,
+                     ref bodyOffset,
+                     _maxBodySize,
+                     nowTimestamp,
+                     rtoTicks,
+                     maxRtoTicks,
+                     maxRetryDurationTicks,
+                     _timeProvider,
+                     _rtt,
+                     _scratchLedgerMessages,
+                     out var maxRetriesExceeded);
+
+                  if (maxRetriesExceeded)
+                  {
+                     _state = DatagramPeerState.Disconnected;
+                     disconnectTrigger = DatagramDisconnectReason.MaxRetriesExceeded;
+                     return;
+                  }
+               }
+
+               if (bodyOffset == 0)
+               {
+                  break;
+               }
+
+               var packetSeq = _nextPacketSeq++;
+               _ledger.BeginRecord(packetSeq, nowTimestamp, out var ledgerMessages);
+
+               for (var m = 0; m < _scratchLedgerMessages.Count; m++)
+               {
+                  ledgerMessages.Add(_scratchLedgerMessages[m]);
+               }
+
+               var pkt = BuildProtectedPacketWithSeqLocked(
+                  DatagramPacketKind.Data,
+                  packetSeq,
+                  bodyScratch[0..bodyOffset],
+                  nowTimestamp,
+                  out var totalLen);
+
+               _pacer.Consume(totalLen, nowTimestamp, _timeProvider);
+               outgoingBatch.Add((pkt, totalLen, _remoteSocketAddress));
+            }
+         }
+         finally
+         {
+            if (rentedScratch is not null)
             {
-               break;
+               ArrayPool<byte>.Shared.Return(rentedScratch);
             }
-
-            var pkt = BuildProtectedPacketWithSeqLocked(
-               DatagramPacketKind.Data,
-               packetSeq,
-               bodyScratch[0..bodyOffset],
-               nowTimestamp,
-               out var totalLen);
-
-            _pacer.Consume(totalLen, nowTimestamp, _timeProvider);
-            outgoingBatch.Add((pkt, totalLen, _remoteSocketAddress));
          }
 
          // immediate ACK after 2+ incoming Data packets (RFC 1122), delayed ACK (~15ms), or KeepAlive

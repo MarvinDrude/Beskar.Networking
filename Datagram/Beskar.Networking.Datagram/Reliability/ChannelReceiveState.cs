@@ -32,6 +32,7 @@ internal sealed class ChannelReceiveState : IDisposable
    private ushort _recvBase;
    private ushort _latestSequenced;
    private bool _hasReceivedSequenced;
+   private bool _latestSequencedCompleted;
 
    public ChannelReceiveState(DatagramChannelConfig config)
    {
@@ -79,8 +80,15 @@ internal sealed class ChannelReceiveState : IDisposable
             {
                if (msg.IsFragment && logicalSeq == _latestSequenced)
                {
-                  // Additional fragment belonging to the currently active sequenced fragment group
-                  DeliverOrReassemble(msg, onDelivered);
+                  if (_latestSequencedCompleted)
+                  {
+                     return; // already reassembled and delivered this fragment group
+                  }
+
+                  if (DeliverOrReassemble(msg, onDelivered))
+                  {
+                     _latestSequencedCompleted = true;
+                  }
                   break;
                }
 
@@ -94,7 +102,7 @@ internal sealed class ChannelReceiveState : IDisposable
 
             _hasReceivedSequenced = true;
             _latestSequenced = logicalSeq;
-            DeliverOrReassemble(msg, onDelivered);
+            _latestSequencedCompleted = DeliverOrReassemble(msg, onDelivered);
             break;
          }
 
@@ -234,12 +242,12 @@ internal sealed class ChannelReceiveState : IDisposable
       }
    }
 
-   private void DeliverOrReassemble(in DecodedChannelMessage msg, Action<byte, DatagramPayloadLease> onDelivered)
+   private bool DeliverOrReassemble(in DecodedChannelMessage msg, Action<byte, DatagramPayloadLease> onDelivered)
    {
       if (!msg.IsFragment)
       {
          onDelivered(_config.ChannelId, DatagramPayloadLease.CopyFrom(msg.Payload));
-         return;
+         return true;
       }
 
       if (_reassembler.TryAddFragment(
@@ -250,7 +258,10 @@ internal sealed class ChannelReceiveState : IDisposable
          out var assembled))
       {
          onDelivered(_config.ChannelId, assembled);
+         return true;
       }
+
+      return false;
    }
 
    public void Dispose()
