@@ -151,7 +151,7 @@ internal sealed class DatagramServerHandshakeCrypto : IDisposable
 
             return true;
          }
-         catch (CryptographicException)
+         catch (Exception ex) when (ex is CryptographicException or ArgumentException or ObjectDisposedException)
          {
             return false;
          }
@@ -321,6 +321,9 @@ internal sealed class DatagramCryptoSession : IDisposable
    private readonly AesGcm? _rxAes;
    private readonly ChaCha20Poly1305? _txChaCha;
    private readonly ChaCha20Poly1305? _rxChaCha;
+   private readonly Lock _txLock = new();
+   private readonly Lock _rxLock = new();
+   private int _disposed;
 
    public uint SessionToken => _sessionToken;
 
@@ -418,13 +421,18 @@ internal sealed class DatagramCryptoSession : IDisposable
       Span<byte> nonce = stackalloc byte[12];
       BuildNonce(nonce, _txDirectionBit, _sessionToken, _keyEpoch, packetSeq);
 
-      if (_txAes is not null)
+      lock (_txLock)
       {
-         _txAes.Encrypt(nonce, plaintext, ciphertext, tag16, aad);
-      }
-      else
-      {
-         _txChaCha!.Encrypt(nonce, plaintext, ciphertext, tag16, aad);
+         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+
+         if (_txAes is not null)
+         {
+            _txAes.Encrypt(nonce, plaintext, ciphertext, tag16, aad);
+         }
+         else
+         {
+            _txChaCha!.Encrypt(nonce, plaintext, ciphertext, tag16, aad);
+         }
       }
    }
 
@@ -435,25 +443,38 @@ internal sealed class DatagramCryptoSession : IDisposable
       ReadOnlySpan<byte> tag16,
       Span<byte> plaintext)
    {
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         return false;
+      }
+
       Span<byte> nonce = stackalloc byte[12];
       BuildNonce(nonce, _rxDirectionBit, _sessionToken, _keyEpoch, packetSeq);
 
-      try
+      lock (_rxLock)
       {
-         if (_rxAes is not null)
+         if (Volatile.Read(ref _disposed) == 1)
          {
-            _rxAes.Decrypt(nonce, ciphertext, tag16, plaintext, aad);
-         }
-         else
-         {
-            _rxChaCha!.Decrypt(nonce, ciphertext, tag16, plaintext, aad);
+            return false;
          }
 
-         return true;
-      }
-      catch (CryptographicException)
-      {
-         return false;
+         try
+         {
+            if (_rxAes is not null)
+            {
+               _rxAes.Decrypt(nonce, ciphertext, tag16, plaintext, aad);
+            }
+            else
+            {
+               _rxChaCha!.Decrypt(nonce, ciphertext, tag16, plaintext, aad);
+            }
+
+            return true;
+         }
+         catch (Exception ex) when (ex is CryptographicException or ObjectDisposedException)
+         {
+            return false;
+         }
       }
    }
 
@@ -476,13 +497,23 @@ internal sealed class DatagramCryptoSession : IDisposable
 
    public void Dispose()
    {
-      _txAes?.Dispose();
-      _rxAes?.Dispose();
+      if (Interlocked.Exchange(ref _disposed, 1) == 1)
+      {
+         return;
+      }
 
-      _txChaCha?.Dispose();
-      _rxChaCha?.Dispose();
+      lock (_txLock)
+      {
+         _txAes?.Dispose();
+         _txChaCha?.Dispose();
+         CryptographicOperations.ZeroMemory(_txKey);
+      }
 
-      CryptographicOperations.ZeroMemory(_txKey);
-      CryptographicOperations.ZeroMemory(_rxKey);
+      lock (_rxLock)
+      {
+         _rxAes?.Dispose();
+         _rxChaCha?.Dispose();
+         CryptographicOperations.ZeroMemory(_rxKey);
+      }
    }
 }

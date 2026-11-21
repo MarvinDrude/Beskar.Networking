@@ -20,6 +20,7 @@ public sealed partial class DatagramHost
 
    private sealed class PendingClientHandshake : IDisposable
    {
+      public readonly Lock SyncLock = new();
       public required IPEndPoint RemoteEndPoint { get; init; }
       public required SocketAddress RemoteSocketAddress { get; init; }
       public required byte[] ClientSalt { get; init; }
@@ -37,6 +38,14 @@ public sealed partial class DatagramHost
       public int Completed;
 
       public void Dispose()
+      {
+         lock (SyncLock)
+         {
+            DisposeCryptoLocked();
+         }
+      }
+
+      public void DisposeCryptoLocked()
       {
          ClientEcdh?.Dispose();
          ClientEcdh = null;
@@ -112,10 +121,19 @@ public sealed partial class DatagramHost
       {
          if (_pendingClientHandshakes.TryRemove(remoteEndPoint, out var removed))
          {
-            if (Interlocked.Exchange(ref removed.Completed, 1) == 0)
+            var shouldCancel = false;
+            lock (removed.SyncLock)
+            {
+               if (Interlocked.Exchange(ref removed.Completed, 1) == 0)
+               {
+                  removed.DisposeCryptoLocked();
+                  shouldCancel = true;
+               }
+            }
+
+            if (shouldCancel)
             {
                removed.CompletionSource.TrySetCanceled(ct);
-               removed.Dispose();
             }
          }
       });
@@ -327,40 +345,59 @@ public sealed partial class DatagramHost
          return;
       }
 
-      if (challengeMode == DatagramSecurityMode.Aead)
+      byte[]? acceptBuf;
+      int acceptLen;
+      SocketAddress targetAddr;
+
+      lock (pending.SyncLock)
       {
-         try
+         if (Volatile.Read(ref pending.Completed) != 0 || pending.Stage != ClientHandshakeStage.SendingRequest)
          {
-            using var serverPub = DatagramServerHandshakeCrypto.ImportUncompressedPoint(serverPub64);
-            var sharedSecret = pending.ClientEcdh!.DeriveRawSecretAgreement(serverPub.PublicKey);
-            var psk = _options.Security.PreSharedKey ?? ReadOnlySpan<byte>.Empty;
-
-            pending.DerivedCrypto = DatagramCryptoSession.DeriveFromHandshake(
-               _options.Security.AeadCipher,
-               sharedSecret,
-               pending.ClientSalt,
-               serverSalt16,
-               psk,
-               isClient: true,
-               out var derivedToken);
-
-            CryptographicOperations.ZeroMemory(sharedSecret);
-            pending.DerivedSessionToken = derivedToken;
-         }
-         catch (CryptographicException)
-         {
-            DatagramMetrics.SecurityRejections.Add(1);
             return;
          }
+
+         if (challengeMode == DatagramSecurityMode.Aead)
+         {
+            if (pending.ClientEcdh is null)
+            {
+               return;
+            }
+
+            try
+            {
+               using var serverPub = DatagramServerHandshakeCrypto.ImportUncompressedPoint(serverPub64);
+               var sharedSecret = pending.ClientEcdh.DeriveRawSecretAgreement(serverPub.PublicKey);
+               var psk = _options.Security.PreSharedKey ?? ReadOnlySpan<byte>.Empty;
+
+               pending.DerivedCrypto = DatagramCryptoSession.DeriveFromHandshake(
+                  _options.Security.AeadCipher,
+                  sharedSecret,
+                  pending.ClientSalt,
+                  serverSalt16,
+                  psk,
+                  isClient: true,
+                  out var derivedToken);
+
+               CryptographicOperations.ZeroMemory(sharedSecret);
+               pending.DerivedSessionToken = derivedToken;
+            }
+            catch (Exception ex) when (ex is CryptographicException or ArgumentException or ObjectDisposedException)
+            {
+               DatagramMetrics.SecurityRejections.Add(1);
+               return;
+            }
+         }
+
+         pending.Cookie80 = cookie80.ToArray();
+         pending.Stage = ClientHandshakeStage.SendingAccept;
+         var retryIntervalTicks = _options.HandshakeRetryInterval.Ticks * _timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond;
+         pending.NextRetryTimestamp = _timeProvider.GetTimestamp() + retryIntervalTicks;
+
+         (acceptBuf, acceptLen) = BuildConnectAcceptPacket(pending);
+         targetAddr = pending.RemoteSocketAddress;
       }
 
-      pending.Cookie80 = cookie80.ToArray();
-      pending.Stage = ClientHandshakeStage.SendingAccept;
-      var retryIntervalTicks = _options.HandshakeRetryInterval.Ticks * _timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond;
-      pending.NextRetryTimestamp = _timeProvider.GetTimestamp() + retryIntervalTicks;
-
-      var (acceptBuf, acceptLen) = BuildConnectAcceptPacket(pending);
-      DispatchSendAndReturnBuffer(acceptBuf, acceptLen, pending.RemoteSocketAddress);
+      DispatchSendAndReturnBuffer(acceptBuf, acceptLen, targetAddr);
    }
 
    private ValueTask HandleConnectAcceptAsync(ReadOnlyMemory<byte> rawMemory, SocketAddress remoteSa, CancellationToken ct)
@@ -510,103 +547,109 @@ public sealed partial class DatagramHost
       uint sessionToken,
       uint remotePacketSeq)
    {
-      var accepted = true;
-      byte[]? rejectReason = null;
-      object? initialTag = null;
+      var cryptoTransferred = false;
 
-      if (configHash != _channelConfigHash)
+      try
       {
-         accepted = false;
-         rejectReason = "Channel configuration mismatch."u8.ToArray();
-      }
-      else if (_peersById.Count >= _options.MaxPeers)
-      {
-         accepted = false;
-         rejectReason = "Host peer limit reached."u8.ToArray();
-      }
-      else if (Events.ValidateConnection is not null)
-      {
-         var ctx = new DatagramConnectionRequestContext
+         var accepted = true;
+         byte[]? rejectReason = null;
+         object? initialTag = null;
+
+         if (configHash != _channelConfigHash)
          {
-            RemoteEndPoint = senderEp,
-            ConnectMetadata = metadataBytes,
-            ChannelConfigHash = configHash
-         };
+            accepted = false;
+            rejectReason = "Channel configuration mismatch."u8.ToArray();
+         }
+         else if (_peersById.Count >= _options.MaxPeers)
+         {
+            accepted = false;
+            rejectReason = "Host peer limit reached."u8.ToArray();
+         }
+         else if (Events.ValidateConnection is not null)
+         {
+            var ctx = new DatagramConnectionRequestContext
+            {
+               RemoteEndPoint = senderEp,
+               ConnectMetadata = metadataBytes,
+               ChannelConfigHash = configHash
+            };
 
-         await Events.ValidateConnection(ctx);
-         accepted = ctx.Accepted;
-         rejectReason = ctx.RejectReason;
-         initialTag = ctx.PeerTag;
+            await Events.ValidateConnection(ctx);
+            accepted = ctx.Accepted;
+            rejectReason = ctx.RejectReason;
+            initialTag = ctx.PeerTag;
+         }
+
+         var now = _timeProvider.GetTimestamp();
+
+         if (!accepted)
+         {
+            var rejLen = 11 + (rejectReason?.Length ?? 0);
+            Span<byte> rejBody = stackalloc byte[rejLen];
+            DatagramHandshakeCodec.WriteConnectAck(rejBody, accepted: false, 0, 0, rejectReason ?? ReadOnlySpan<byte>.Empty);
+
+            var (rejPkt, rejPktLen) = BuildStandaloneControlPacket(DatagramPacketKind.ConnectAck, sessionToken, 1, rejBody, crypto);
+            DispatchSendAndReturnBuffer(rejPkt, rejPktLen, senderEp.Serialize());
+            return;
+         }
+
+         if (_peersBySessionToken.ContainsKey(sessionToken))
+         {
+            return;
+         }
+
+         var peerId = Interlocked.Increment(ref _nextPeerId);
+         var peer = new DatagramPeer(
+            peerId,
+            sessionToken,
+            isOutboundInitiator: false,
+            senderEp,
+            metadataBytes,
+            _options,
+            _channelTable,
+            _priorityChannels,
+            crypto,
+            _timeProvider,
+            initialTag);
+
+         cryptoTransferred = true;
+         peer.InitializeHandshakeSeqs(lastRemotePacketSeq: remotePacketSeq, nextLocalPacketSeq: 1);
+
+         if (!_peersBySessionToken.TryAdd(sessionToken, peer) || !_peersById.TryAdd(peerId, peer))
+         {
+            _peersBySessionToken.TryRemove(sessionToken, out _);
+            _peersById.TryRemove(peerId, out _);
+            peer.Dispose();
+            return;
+         }
+
+         Span<byte> ackBody = stackalloc byte[11];
+         DatagramHandshakeCodec.WriteConnectAck(ackBody, accepted: true, peerId, sessionToken, ReadOnlySpan<byte>.Empty);
+         var ackPacket = peer.BuildRawPacketSnapshot(DatagramPacketKind.ConnectAck, ackBody, now, out var ackLen);
+
+         var ackCopy = ackPacket.AsSpan(0, ackLen).ToArray();
+         var cacheExpiry = now + (_options.Security.ChallengeCookieLifetime.Ticks * _timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond);
+         _recentHandshakeAcks[saltKey] = new CachedConnectAck(ackCopy, cacheExpiry);
+
+         DispatchSendAndReturnBuffer(ackPacket, ackLen, senderEp.Serialize());
+
+         DatagramMetrics.PeersActive.Add(1);
+         DatagramMetrics.PeersConnected.Add(1);
+         EmitEvent(DatagramEvent.PeerConnected(peer));
       }
-
-      var now = _timeProvider.GetTimestamp();
-
-      if (!accepted)
+      finally
       {
-         var rejLen = 11 + (rejectReason?.Length ?? 0);
-         Span<byte> rejBody = stackalloc byte[rejLen];
-         DatagramHandshakeCodec.WriteConnectAck(rejBody, accepted: false, 0, 0, rejectReason ?? ReadOnlySpan<byte>.Empty);
-
-         var (rejPkt, rejPktLen) = BuildStandaloneControlPacket(DatagramPacketKind.ConnectAck, sessionToken, 1, rejBody, crypto);
-         crypto?.Dispose();
-         DispatchSendAndReturnBuffer(rejPkt, rejPktLen, senderEp.Serialize());
-         return;
+         if (!cryptoTransferred)
+         {
+            crypto?.Dispose();
+         }
       }
-
-      if (_peersBySessionToken.ContainsKey(sessionToken))
-      {
-         crypto?.Dispose();
-         return;
-      }
-
-      var peerId = Interlocked.Increment(ref _nextPeerId);
-      var peer = new DatagramPeer(
-         peerId,
-         sessionToken,
-         isOutboundInitiator: false,
-         senderEp,
-         metadataBytes,
-         _options,
-         _channelTable,
-         _priorityChannels,
-         crypto,
-         _timeProvider,
-         initialTag);
-
-      peer.InitializeHandshakeSeqs(lastRemotePacketSeq: remotePacketSeq, nextLocalPacketSeq: 1);
-
-      if (!_peersBySessionToken.TryAdd(sessionToken, peer) || !_peersById.TryAdd(peerId, peer))
-      {
-         _peersBySessionToken.TryRemove(sessionToken, out _);
-         _peersById.TryRemove(peerId, out _);
-         peer.Dispose();
-         return;
-      }
-
-      Span<byte> ackBody = stackalloc byte[11];
-      DatagramHandshakeCodec.WriteConnectAck(ackBody, accepted: true, peerId, sessionToken, ReadOnlySpan<byte>.Empty);
-      var ackPacket = peer.BuildRawPacketSnapshot(DatagramPacketKind.ConnectAck, ackBody, now, out var ackLen);
-
-      var ackCopy = ackPacket.AsSpan(0, ackLen).ToArray();
-      var cacheExpiry = now + (_options.Security.ChallengeCookieLifetime.Ticks * _timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond);
-      _recentHandshakeAcks[saltKey] = new CachedConnectAck(ackCopy, cacheExpiry);
-
-      DispatchSendAndReturnBuffer(ackPacket, ackLen, senderEp.Serialize());
-
-      DatagramMetrics.PeersActive.Add(1);
-      DatagramMetrics.PeersConnected.Add(1);
-      EmitEvent(DatagramEvent.PeerConnected(peer));
    }
 
    private void HandleConnectAck(in DatagramWireHeader header, ReadOnlySpan<byte> rawPacket, SocketAddress remoteSa)
    {
       var senderEp = MaterializeEndPoint(remoteSa);
       if (!_pendingClientHandshakes.TryGetValue(senderEp, out var pending))
-      {
-         return;
-      }
-
-      if (pending.Stage != ClientHandshakeStage.SendingAccept)
       {
          return;
       }
@@ -632,80 +675,100 @@ public sealed partial class DatagramHost
          return;
       }
 
-      Span<byte> plainBody = stackalloc byte[bodyLen];
+      bool accepted;
+      uint assignedSessionToken;
+      byte[]? rejectReasonBytes = null;
+      DatagramCryptoSession? crypto = null;
+      byte[] connectMetadata;
 
-      if (mode == DatagramSecurityMode.Aead)
+      lock (pending.SyncLock)
       {
-         if (pending.DerivedCrypto is null || !pending.DerivedCrypto.TryDecrypt(
-                header.PacketSeq,
-                rawPacket[0..DatagramWireHeader.Size],
-                rawPacket.Slice(DatagramWireHeader.Size, bodyLen),
-                rawPacket.Slice(DatagramWireHeader.Size + bodyLen, DatagramCryptoSession.TagSize),
-                plainBody))
+         if (Volatile.Read(ref pending.Completed) != 0 || pending.Stage != ClientHandshakeStage.SendingAccept)
          {
-            DatagramMetrics.SecurityRejections.Add(1);
             return;
          }
-      }
-      else
-      {
-         if (mode == DatagramSecurityMode.Crc32C)
+
+         Span<byte> plainBody = stackalloc byte[bodyLen];
+
+         if (mode == DatagramSecurityMode.Aead)
          {
-            var computed = Crc32C.Compute(rawPacket[0..(DatagramWireHeader.Size + bodyLen)]);
-            var wireCrc = BinaryPrimitives.ReadUInt32LittleEndian(rawPacket.Slice(DatagramWireHeader.Size + bodyLen, Crc32C.Size));
-            if (computed != wireCrc)
+            if (pending.DerivedCrypto is null || !pending.DerivedCrypto.TryDecrypt(
+                   header.PacketSeq,
+                   rawPacket[0..DatagramWireHeader.Size],
+                   rawPacket.Slice(DatagramWireHeader.Size, bodyLen),
+                   rawPacket.Slice(DatagramWireHeader.Size + bodyLen, DatagramCryptoSession.TagSize),
+                   plainBody))
             {
                DatagramMetrics.SecurityRejections.Add(1);
                return;
             }
          }
-         rawPacket.Slice(DatagramWireHeader.Size, bodyLen).CopyTo(plainBody);
-      }
+         else
+         {
+            if (mode == DatagramSecurityMode.Crc32C)
+            {
+               var computed = Crc32C.Compute(rawPacket[0..(DatagramWireHeader.Size + bodyLen)]);
+               var wireCrc = BinaryPrimitives.ReadUInt32LittleEndian(rawPacket.Slice(DatagramWireHeader.Size + bodyLen, Crc32C.Size));
+               if (computed != wireCrc)
+               {
+                  DatagramMetrics.SecurityRejections.Add(1);
+                  return;
+               }
+            }
+            rawPacket.Slice(DatagramWireHeader.Size, bodyLen).CopyTo(plainBody);
+         }
 
-      if (!DatagramHandshakeCodec.TryReadConnectAck(
-             plainBody,
-             out var accepted,
-             out _,
-             out var assignedSessionToken,
-             out var rejectReason))
-      {
-         return;
-      }
+         if (!DatagramHandshakeCodec.TryReadConnectAck(
+                plainBody,
+                out accepted,
+                out _,
+                out assignedSessionToken,
+                out var rejectReason))
+         {
+            return;
+         }
 
-      if (!_pendingClientHandshakes.TryRemove(senderEp, out _))
-      {
-         return;
-      }
+         if (!_pendingClientHandshakes.TryRemove(senderEp, out _)
+             || Interlocked.Exchange(ref pending.Completed, 1) == 1)
+         {
+            return;
+         }
 
-      if (Interlocked.Exchange(ref pending.Completed, 1) == 1)
-      {
-         return;
+         pending.ClientEcdh?.Dispose();
+         pending.ClientEcdh = null;
+         connectMetadata = pending.ConnectMetadata;
+
+         if (!accepted)
+         {
+            rejectReasonBytes = rejectReason.IsEmpty ? [] : rejectReason.ToArray();
+            pending.DerivedCrypto?.Dispose();
+            pending.DerivedCrypto = null;
+         }
+         else
+         {
+            crypto = pending.DerivedCrypto;
+            pending.DerivedCrypto = null; // Transferred to peer
+         }
       }
 
       if (!accepted)
       {
-         var msg = rejectReason.IsEmpty
+         var msg = rejectReasonBytes!.Length == 0
             ? "Connection rejected by remote host."
-            : System.Text.Encoding.UTF8.GetString(rejectReason);
+            : System.Text.Encoding.UTF8.GetString(rejectReasonBytes);
 
-         pending.CompletionSource.TrySetException(new DatagramConnectionRejectedException(msg, rejectReason.ToArray()));
-         pending.Dispose();
+         pending.CompletionSource.TrySetException(new DatagramConnectionRejectedException(msg, rejectReasonBytes));
          return;
       }
 
       var peerId = Interlocked.Increment(ref _nextPeerId);
-      var crypto = pending.DerivedCrypto;
-
-      pending.DerivedCrypto = null; // Transferred to peer
-      pending.ClientEcdh?.Dispose();
-      pending.ClientEcdh = null;
 
       var peer = new DatagramPeer(
          peerId,
          assignedSessionToken,
          isOutboundInitiator: true,
          senderEp,
-         pending.ConnectMetadata,
+         connectMetadata,
          _options,
          _channelTable,
          _priorityChannels,
@@ -736,23 +799,41 @@ public sealed partial class DatagramHost
 
       foreach (var (key, pending) in _pendingClientHandshakes)
       {
-         if (nowTimestamp - pending.StartedTimestamp >= timeoutTicks)
+         var timedOut = false;
+         (byte[] Buffer, int Length, SocketAddress Address)? retryPacket = null;
+
+         lock (pending.SyncLock)
          {
-            if (_pendingClientHandshakes.TryRemove(key, out _) && Interlocked.Exchange(ref pending.Completed, 1) == 0)
+            if (Volatile.Read(ref pending.Completed) != 0)
             {
-               pending.CompletionSource.TrySetException(new TimeoutException($"Datagram handshake to {key} timed out."));
-               pending.Dispose();
+               continue;
             }
-            continue;
+
+            if (nowTimestamp - pending.StartedTimestamp >= timeoutTicks)
+            {
+               if (_pendingClientHandshakes.TryRemove(key, out _) && Interlocked.Exchange(ref pending.Completed, 1) == 0)
+               {
+                  pending.DisposeCryptoLocked();
+                  timedOut = true;
+               }
+            }
+            else if (nowTimestamp >= pending.NextRetryTimestamp)
+            {
+               pending.NextRetryTimestamp = nowTimestamp + retryIntervalTicks;
+               var (buf, len) = pending.Stage == ClientHandshakeStage.SendingRequest
+                  ? BuildConnectRequestPacket(pending)
+                  : BuildConnectAcceptPacket(pending);
+               retryPacket = (buf, len, pending.RemoteSocketAddress);
+            }
          }
 
-         if (nowTimestamp >= pending.NextRetryTimestamp)
+         if (timedOut)
          {
-            pending.NextRetryTimestamp = nowTimestamp + retryIntervalTicks;
-            var (buf, len) = pending.Stage == ClientHandshakeStage.SendingRequest
-               ? BuildConnectRequestPacket(pending)
-               : BuildConnectAcceptPacket(pending);
-            outgoingBatch.Add((buf, len, pending.RemoteSocketAddress));
+            pending.CompletionSource.TrySetException(new TimeoutException($"Datagram handshake to {key} timed out."));
+         }
+         else if (retryPacket.HasValue)
+         {
+            outgoingBatch.Add(retryPacket.Value);
          }
       }
    }
@@ -772,11 +853,22 @@ public sealed partial class DatagramHost
    {
       foreach (var kvp in _pendingClientHandshakes)
       {
-         if (_pendingClientHandshakes.TryRemove(kvp.Key, out var pending)
-             && Interlocked.Exchange(ref pending.Completed, 1) == 0)
+         if (_pendingClientHandshakes.TryRemove(kvp.Key, out var pending))
          {
-            pending.CompletionSource.TrySetCanceled();
-            pending.Dispose();
+            var shouldCancel = false;
+            lock (pending.SyncLock)
+            {
+               if (Interlocked.Exchange(ref pending.Completed, 1) == 0)
+               {
+                  pending.DisposeCryptoLocked();
+                  shouldCancel = true;
+               }
+            }
+
+            if (shouldCancel)
+            {
+               pending.CompletionSource.TrySetCanceled();
+            }
          }
       }
    }

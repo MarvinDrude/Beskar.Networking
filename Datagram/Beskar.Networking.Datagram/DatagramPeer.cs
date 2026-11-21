@@ -260,6 +260,11 @@ public sealed class DatagramPeer : IDisposable
    {
       bodyLength = 0;
 
+      if (_state == DatagramPeerState.Disconnected || Volatile.Read(ref _disposed) == 1)
+      {
+         return false;
+      }
+
       if (_options.Security.Mode == DatagramSecurityMode.Aead)
       {
          if (!header.IsEncrypted || rawDatagram.Length < DatagramWireHeader.Size + DatagramCryptoSession.TagSize)
@@ -273,10 +278,18 @@ public sealed class DatagramPeer : IDisposable
          var cipherText = rawDatagram.Slice(DatagramWireHeader.Size, bodyLength);
          var tag = rawDatagram.Slice(DatagramWireHeader.Size + bodyLength, DatagramCryptoSession.TagSize);
 
-         if (_crypto is null || !_crypto.TryDecrypt(header.PacketSeq, aad, cipherText, tag, plaintextBodyDest[0..bodyLength]))
+         lock (_lock)
          {
-            DatagramMetrics.SecurityRejections.Add(1);
-            return false;
+            if (_state == DatagramPeerState.Disconnected || Volatile.Read(ref _disposed) == 1)
+            {
+               return false;
+            }
+
+            if (_crypto is null || !_crypto.TryDecrypt(header.PacketSeq, aad, cipherText, tag, plaintextBodyDest[0..bodyLength]))
+            {
+               DatagramMetrics.SecurityRejections.Add(1);
+               return false;
+            }
          }
 
          return true;

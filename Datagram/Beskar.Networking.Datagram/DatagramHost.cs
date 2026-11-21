@@ -315,7 +315,7 @@ public sealed partial class DatagramHost : IAsyncDisposable
 
       try
       {
-         while (!ct.IsCancellationRequested)
+         while (!ct.IsCancellationRequested && Volatile.Read(ref _disposed) == 0)
          {
             int received;
             try
@@ -326,13 +326,36 @@ public sealed partial class DatagramHost : IAsyncDisposable
             {
                continue;
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested || Volatile.Read(ref _disposed) == 1)
+            {
+               break;
+            }
+            catch (ObjectDisposedException) when (ct.IsCancellationRequested || Volatile.Read(ref _disposed) == 1)
+            {
+               break;
+            }
+            catch (ChannelClosedException)
+            {
+               break;
+            }
 
             if (received <= 0)
             {
                continue;
             }
 
-            await ProcessRawDatagramAsync(buffer.AsMemory(0, received), remoteSa, ct);
+            try
+            {
+               await ProcessRawDatagramAsync(buffer.AsMemory(0, received), remoteSa, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested || Volatile.Read(ref _disposed) == 1)
+            {
+               break;
+            }
+            catch (Exception ex)
+            {
+               TraceLogger.LogNeutralError("DatagramHost failed processing incoming datagram: {0}", ex.Message);
+            }
          }
       }
       catch (OperationCanceledException)
@@ -358,7 +381,18 @@ public sealed partial class DatagramHost : IAsyncDisposable
       {
          while (await timer.WaitForNextTickAsync(ct))
          {
-            Tick();
+            try
+            {
+               Tick();
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested || Volatile.Read(ref _disposed) == 1)
+            {
+               break;
+            }
+            catch (Exception ex)
+            {
+               TraceLogger.LogNeutralError("DatagramHost tick failed: {0}", ex.Message);
+            }
          }
       }
       catch (OperationCanceledException)
@@ -666,6 +700,7 @@ public sealed partial class DatagramHost : IAsyncDisposable
          {
             _peersBySessionToken.TryRemove(peer.SessionToken, out _);
             DatagramMetrics.PeersActive.Add(-1);
+            DatagramMetrics.PeersDisconnected.Add(1);
             peer.Dispose();
          }
       }

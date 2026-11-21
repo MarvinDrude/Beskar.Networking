@@ -864,4 +864,197 @@ public class ProductionStressAndEdgeCaseTests
 
       await Assert.That(activeDelta).IsEqualTo(0L);
    }
+
+   [Test]
+   public async Task AsyncReceiveLoop_ConcurrentPeerDisconnectAndIncomingAeadPackets_ServerReceiveLoopNeverDies()
+   {
+      // Regression test: concurrent peer.Dispose() on BackgroundTickLoopAsync while ReceiveLoopAsync
+      // is calling peer.TryVerifyAndDecrypt() must never throw ObjectDisposedException out of ReceiveLoopAsync.
+      var chaos = new SimulatedChaosProfile
+      {
+         PacketDropRate = 0.15,
+         ReorderRate = 0.25,
+         PacketDuplicateRate = 0.15,
+         DataCorruptionRate = 0.02,
+         MinLatency = TimeSpan.FromMilliseconds(5),
+         MaxLatency = TimeSpan.FromMilliseconds(25),
+         ReorderExtraDelay = TimeSpan.FromMilliseconds(20)
+      };
+      var hub = new SimulatedNetworkHub(seed: 4242, chaos: chaos);
+      var serverEp = new IPEndPoint(IPAddress.Loopback, 49100);
+
+      DatagramOptions MakeAsyncOpts() => new DatagramOptions
+      {
+         ManualTick = false,
+         DispatchMode = DatagramEventDispatchMode.Async,
+         TickInterval = TimeSpan.FromMilliseconds(5),
+         ConnectTimeout = TimeSpan.FromMilliseconds(600),
+         HandshakeRetryInterval = TimeSpan.FromMilliseconds(60),
+         PeerTimeout = TimeSpan.FromMilliseconds(350),
+         KeepAliveInterval = TimeSpan.FromMilliseconds(100),
+         Security = new DatagramSecurityOptions { Mode = DatagramSecurityMode.Aead }
+      }.AddChannel(0, DatagramDeliveryMode.ReliableOrdered)
+       .AddChannel(1, DatagramDeliveryMode.UnreliableUnordered);
+
+      await using var server = new DatagramHost(serverEp, MakeAsyncOpts(), hub.CreateTransport(), hub.Time);
+      var serverRecvCount = 0;
+      server.Events.MessageReceived = (_, _, _, _, _) =>
+      {
+         Interlocked.Increment(ref serverRecvCount);
+         return ValueTask.CompletedTask;
+      };
+      server.Start();
+
+      using var clockCts = new CancellationTokenSource();
+      var clockTask = Task.Run(async () =>
+      {
+         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(4));
+         var sw = System.Diagnostics.Stopwatch.StartNew();
+         var last = sw.Elapsed;
+         try
+         {
+            while (await timer.WaitForNextTickAsync(clockCts.Token))
+            {
+               var now = sw.Elapsed;
+               var delta = now - last;
+               last = now;
+               if (delta > TimeSpan.Zero)
+                  hub.AdvanceAndDeliver(delta);
+            }
+         }
+         catch (OperationCanceledException) { }
+      });
+
+      try
+      {
+         // Spawn 16 concurrent flaky AEAD clients churning through connects, bursts, graceful disconnects,
+         // and abrupt timeouts simultaneously to maximize TryVerifyAndDecrypt vs peer.Dispose() overlap.
+         var workers = new Task[16];
+         for (var w = 0; w < workers.Length; w++)
+         {
+            var idx = w;
+            workers[w] = Task.Run(async () =>
+            {
+               for (var round = 0; round < 3; round++)
+               {
+                  await using var client = new DatagramHost(new IPEndPoint(IPAddress.Loopback, 0), MakeAsyncOpts(), hub.CreateTransport(), hub.Time);
+                  client.Start();
+                  try
+                  {
+                     var peer = await client.ConnectAsync(serverEp, BitConverter.GetBytes(idx));
+                     for (var s = 0; s < 12; s++)
+                     {
+                        peer.TrySend(1, BitConverter.GetBytes(s));
+                        peer.TrySend(0, BitConverter.GetBytes(s));
+                     }
+                     await Task.Delay(idx % 2 == 0 ? 40 : 120);
+                     if ((idx + round) % 2 == 0)
+                     {
+                        peer.Disconnect();
+                     }
+                     // Abruptly dispose while packets are still in-flight to collide with server timeout/disconnect!
+                  }
+                  catch (TimeoutException) { }
+               }
+            });
+         }
+
+         await Task.WhenAll(workers);
+
+         // Wait for any timed-out peers to finish cleaning up on the server, then disable chaos and verify server is 100% alive!
+         hub.Chaos = SimulatedChaosProfile.Clean;
+         await Task.Delay(150);
+
+         var canaryTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+         server.Events.MessageReceived = (_, _, _, payload, _) =>
+         {
+            var text = Encoding.UTF8.GetString(payload.Span);
+            if (text == "server-still-alive")
+               canaryTcs.TrySetResult(text);
+            return ValueTask.CompletedTask;
+         };
+
+         await using var canary = new DatagramHost(new IPEndPoint(IPAddress.Loopback, 0), MakeAsyncOpts(), hub.CreateTransport(), hub.Time);
+         canary.Start();
+         var canaryPeer = await canary.ConnectAsync(serverEp, "canary"u8.ToArray());
+         canaryPeer.TrySend(0, "server-still-alive"u8);
+
+         var result = await canaryTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+         await Assert.That(result).IsEqualTo("server-still-alive");
+         await Assert.That(Volatile.Read(ref serverRecvCount)).IsGreaterThan(0);
+      }
+      finally
+      {
+         await clockCts.CancelAsync();
+         await clockTask;
+      }
+   }
+
+   [Test]
+   public async Task AsyncReceiveLoop_ThrowingValidateConnectionCallback_ServerReceiveLoopSurvives()
+   {
+      var hub = new SimulatedNetworkHub(seed: 4243);
+      var serverEp = new IPEndPoint(IPAddress.Loopback, 49200);
+
+      DatagramOptions MakeAsyncOpts() => new DatagramOptions
+      {
+         ManualTick = false,
+         DispatchMode = DatagramEventDispatchMode.Async,
+         TickInterval = TimeSpan.FromMilliseconds(5),
+         ConnectTimeout = TimeSpan.FromMilliseconds(300),
+         HandshakeRetryInterval = TimeSpan.FromMilliseconds(50),
+         Security = new DatagramSecurityOptions { Mode = DatagramSecurityMode.Aead }
+      }.AddChannel(0, DatagramDeliveryMode.ReliableOrdered);
+
+      await using var server = new DatagramHost(serverEp, MakeAsyncOpts(), hub.CreateTransport(), hub.Time);
+      server.Events.ValidateConnection = ctx =>
+      {
+         if (Encoding.UTF8.GetString(ctx.ConnectMetadata.Span) == "throw-me")
+         {
+            throw new InvalidOperationException("Simulated callback bug");
+         }
+         return ValueTask.CompletedTask;
+      };
+      server.Start();
+
+      using var clockCts = new CancellationTokenSource();
+      var clockTask = Task.Run(async () =>
+      {
+         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(5));
+         var sw = System.Diagnostics.Stopwatch.StartNew();
+         var last = sw.Elapsed;
+         try
+         {
+            while (await timer.WaitForNextTickAsync(clockCts.Token))
+            {
+               var now = sw.Elapsed;
+               var delta = now - last;
+               last = now;
+               if (delta > TimeSpan.Zero)
+                  hub.AdvanceAndDeliver(delta);
+            }
+         }
+         catch (OperationCanceledException) { }
+      });
+
+      try
+      {
+         // First client triggers an unhandled exception inside user ValidateConnection
+         await using var badClient = new DatagramHost(new IPEndPoint(IPAddress.Loopback, 0), MakeAsyncOpts(), hub.CreateTransport(), hub.Time);
+         badClient.Start();
+         await Assert.That(async () => { await badClient.ConnectAsync(serverEp, "throw-me"u8.ToArray()); }).Throws<TimeoutException>();
+
+         // Server receive loop must still be alive and accept a healthy client immediately
+         await using var goodClient = new DatagramHost(new IPEndPoint(IPAddress.Loopback, 0), MakeAsyncOpts(), hub.CreateTransport(), hub.Time);
+         goodClient.Start();
+         var peer = await goodClient.ConnectAsync(serverEp, "healthy"u8.ToArray());
+         await Assert.That(peer.State).IsEqualTo(DatagramPeerState.Connected);
+         await Assert.That(server.PeerCount).IsEqualTo(1);
+      }
+      finally
+      {
+         await clockCts.CancelAsync();
+         await clockTask;
+      }
+   }
 }

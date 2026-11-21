@@ -109,11 +109,23 @@ public sealed class SimulatedNetworkHub(
       var ep = requestedEndPoint;
       if (ep.Port == 0)
       {
-         var port = Interlocked.Increment(ref _nextEphemeralPort);
          var addr = ep.Address.Equals(IPAddress.Any) ? IPAddress.Loopback : ep.Address;
-         ep = new IPEndPoint(addr, port);
+         for (var attempt = 0; attempt < 55_000; attempt++)
+         {
+            var raw = Interlocked.Increment(ref _nextEphemeralPort);
+            var port = 10_000 + (int)((uint)raw % 55_000u);
+            var candidate = new IPEndPoint(addr, port);
+
+            if (_nodes.TryAdd(candidate, transport))
+            {
+               return candidate;
+            }
+         }
+
+         throw new InvalidOperationException("SimulatedNetworkHub exhausted ephemeral ports.");
       }
-      else if (ep.Address.Equals(IPAddress.Any))
+
+      if (ep.Address.Equals(IPAddress.Any))
       {
          ep = new IPEndPoint(IPAddress.Loopback, ep.Port);
       }
