@@ -83,6 +83,7 @@
   </Folder>
   <Folder Name="/Examples/Datagram/">
     <Project Path="Examples/Datagram/Beskar.Datagram.Example.MultiPeerServer/Beskar.Datagram.Example.MultiPeerServer.csproj" />
+    <Project Path="Examples/Datagram/Beskar.Datagram.Example.ArenaGame/Beskar.Datagram.Example.ArenaGame.csproj" />
   </Folder>
   <Folder Name="/Examples/Jobs/">
     <Project Path="Examples/Jobs/Beskar.Jobs.Example.QuickStart/Beskar.Jobs.Example.QuickStart.csproj" />
