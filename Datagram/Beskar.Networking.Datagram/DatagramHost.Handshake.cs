@@ -58,6 +58,23 @@ public sealed partial class DatagramHost
 
    private readonly ConcurrentDictionary<IPEndPoint, PendingClientHandshake> _pendingClientHandshakes = new();
    private readonly ConcurrentDictionary<string, CachedConnectAck> _recentHandshakeAcks = new(StringComparer.Ordinal);
+   private readonly ConcurrentDictionary<string, byte> _inFlightServerAccepts = new(StringComparer.Ordinal);
+
+   private int GetMaxConnectMetadataBytesForMtu()
+   {
+      var mode = _options.Security.Mode;
+      var ecPointLen = mode == DatagramSecurityMode.Aead ? DatagramHandshakeCodec.EcPointSize : 0;
+      var fixedOverhead = DatagramWireHeader.Size
+         + DatagramHandshakeCodec.CookieSize
+         + DatagramHandshakeCodec.SaltSize
+         + 8 // channelConfigHash
+         + 1 // securityMode
+         + ecPointLen
+         + 2 // metadata length prefix
+         + _trailerSize;
+
+      return Math.Max(0, _options.MaxDatagramSize - fixedOverhead);
+   }
 
    /// <summary>
    /// Initiates a 4-step authenticated UDP handshake to <paramref name="remoteEndPoint"/>.
@@ -73,10 +90,11 @@ public sealed partial class DatagramHost
          throw new ObjectDisposedException(nameof(DatagramHost));
       }
 
-      if (connectMetadata.Length > _options.MaxConnectMetadataBytes)
+      var effectiveMaxMetadata = Math.Min(_options.MaxConnectMetadataBytes, GetMaxConnectMetadataBytesForMtu());
+      if (connectMetadata.Length > effectiveMaxMetadata)
       {
          throw new ArgumentOutOfRangeException(nameof(connectMetadata),
-            $"ConnectMetadata exceeds MaxConnectMetadataBytes ({_options.MaxConnectMetadataBytes}).");
+            $"ConnectMetadata length ({connectMetadata.Length}) exceeds maximum allowed ({effectiveMaxMetadata} bytes for MaxDatagramSize={_options.MaxDatagramSize}).");
       }
 
       if (Volatile.Read(ref _started) == 0)
@@ -186,7 +204,17 @@ public sealed partial class DatagramHost
          _ => 0
       };
 
-      var buf = ArrayPool<byte>.Shared.Rent(_options.MaxDatagramSize + 64);
+      var requiredSize = DatagramWireHeader.Size
+         + DatagramHandshakeCodec.CookieSize
+         + DatagramHandshakeCodec.SaltSize
+         + 8
+         + 1
+         + (isAead ? DatagramHandshakeCodec.EcPointSize : 0)
+         + 2
+         + pending.ConnectMetadata.Length
+         + trailerLen;
+
+      var buf = ArrayPool<byte>.Shared.Rent(Math.Max(_options.MaxDatagramSize + 64, requiredSize));
       var header = new DatagramWireHeader(
          DatagramPacketKind.ConnectAccept,
          DatagramWireHeader.CurrentVersion,
@@ -435,7 +463,9 @@ public sealed partial class DatagramHost
          return ValueTask.CompletedTask;
       }
 
-      if (reqMode != mode || header.IsEncrypted != (mode == DatagramSecurityMode.Aead))
+      if (reqMode != mode
+          || header.IsEncrypted != (mode == DatagramSecurityMode.Aead)
+          || header.PacketSeq != 1)
       {
          DatagramMetrics.SecurityRejections.Add(1);
          return ValueTask.CompletedTask;
@@ -452,90 +482,108 @@ public sealed partial class DatagramHost
          return ValueTask.CompletedTask;
       }
 
-      var scratchArr = new byte[52];
-      if (!_serverHandshakeCrypto!.TryValidateCookie(
-             cookie80,
-             senderEp,
-             _options.Security.ChallengeCookieLifetime,
-             out var cookieClientSalt,
-             out var cookieServerSalt,
-             out var serverKeyId,
-             scratchArr)
-          || !cookieClientSalt.SequenceEqual(clientSalt16))
+      if (!_inFlightServerAccepts.TryAdd(saltKey, 0))
       {
-         DatagramMetrics.SecurityRejections.Add(1);
-         return ValueTask.CompletedTask;
+         return ValueTask.CompletedTask; // Duplicate retry while ValidateConnection is already running
       }
 
-      var tailOffset = DatagramWireHeader.Size + prefixLen;
-      var tailLen = bodyAndPrefix.Length - prefixLen;
-      if (tailLen < 2)
+      var handedOffToAsync = false;
+      try
       {
-         return ValueTask.CompletedTask;
-      }
-
-      DatagramCryptoSession? crypto = null;
-      uint sessionToken;
-      var plainTailCopy = new byte[tailLen];
-
-      if (mode == DatagramSecurityMode.Aead)
-      {
-         if (!_serverHandshakeCrypto.TryDeriveSharedSecret(serverKeyId, clientPub64, out var sharedSecret))
+         var scratchArr = new byte[52];
+         if (!_serverHandshakeCrypto!.TryValidateCookie(
+                cookie80,
+                senderEp,
+                _options.Security.ChallengeCookieLifetime,
+                out var cookieClientSalt,
+                out var cookieServerSalt,
+                out var serverKeyId,
+                scratchArr)
+             || !cookieClientSalt.SequenceEqual(clientSalt16))
          {
             DatagramMetrics.SecurityRejections.Add(1);
             return ValueTask.CompletedTask;
          }
 
-         var psk = _options.Security.PreSharedKey ?? ReadOnlySpan<byte>.Empty;
-         crypto = DatagramCryptoSession.DeriveFromHandshake(
-            _options.Security.AeadCipher,
-            sharedSecret,
-            clientSalt16,
-            cookieServerSalt,
-            psk,
-            isClient: false,
-            out sessionToken);
-         CryptographicOperations.ZeroMemory(sharedSecret);
+         var tailOffset = DatagramWireHeader.Size + prefixLen;
+         var tailLen = bodyAndPrefix.Length - prefixLen;
 
-         var aad = rawSpan[0..tailOffset];
-         var cipherTail = rawSpan.Slice(tailOffset, tailLen);
-         var tag = rawSpan.Slice(tailOffset + tailLen, DatagramCryptoSession.TagSize);
-
-         if (!crypto.TryDecrypt(header.PacketSeq, aad, cipherTail, tag, plainTailCopy))
+         if (tailLen < 2)
          {
-            crypto.Dispose();
-            DatagramMetrics.SecurityRejections.Add(1);
             return ValueTask.CompletedTask;
          }
-      }
-      else
-      {
-         if (mode == DatagramSecurityMode.Crc32C)
+
+         DatagramCryptoSession? crypto = null;
+         uint sessionToken;
+         var plainTailCopy = new byte[tailLen];
+
+         if (mode == DatagramSecurityMode.Aead)
          {
-            var computed = Crc32C.Compute(rawSpan[0..(tailOffset + tailLen)]);
-            var wireCrc = BinaryPrimitives.ReadUInt32LittleEndian(rawSpan.Slice(tailOffset + tailLen, Crc32C.Size));
-            if (computed != wireCrc)
+            if (!_serverHandshakeCrypto.TryDeriveSharedSecret(serverKeyId, clientPub64, out var sharedSecret))
             {
                DatagramMetrics.SecurityRejections.Add(1);
                return ValueTask.CompletedTask;
             }
+
+            var psk = _options.Security.PreSharedKey ?? ReadOnlySpan<byte>.Empty;
+            crypto = DatagramCryptoSession.DeriveFromHandshake(
+               _options.Security.AeadCipher,
+               sharedSecret,
+               clientSalt16,
+               cookieServerSalt,
+               psk,
+               isClient: false,
+               out sessionToken);
+            CryptographicOperations.ZeroMemory(sharedSecret);
+
+            var aad = rawSpan[0..tailOffset];
+            var cipherTail = rawSpan.Slice(tailOffset, tailLen);
+            var tag = rawSpan.Slice(tailOffset + tailLen, DatagramCryptoSession.TagSize);
+
+            if (!crypto.TryDecrypt(header.PacketSeq, aad, cipherTail, tag, plainTailCopy))
+            {
+               crypto.Dispose();
+               DatagramMetrics.SecurityRejections.Add(1);
+               return ValueTask.CompletedTask;
+            }
+         }
+         else
+         {
+            if (mode == DatagramSecurityMode.Crc32C)
+            {
+               var computed = Crc32C.Compute(rawSpan[0..(tailOffset + tailLen)]);
+               var wireCrc = BinaryPrimitives.ReadUInt32LittleEndian(rawSpan.Slice(tailOffset + tailLen, Crc32C.Size));
+               if (computed != wireCrc)
+               {
+                  DatagramMetrics.SecurityRejections.Add(1);
+                  return ValueTask.CompletedTask;
+               }
+            }
+
+            rawSpan.Slice(tailOffset, tailLen).CopyTo(plainTailCopy);
+            sessionToken = AllocateUniqueSessionToken();
          }
 
-         rawSpan.Slice(tailOffset, tailLen).CopyTo(plainTailCopy);
-         sessionToken = AllocateUniqueSessionToken();
-      }
+         if (!DatagramHandshakeCodec.TryReadConnectAcceptTail(plainTailCopy, out var metadataSpan)
+             || metadataSpan.Length > _options.MaxConnectMetadataBytes)
+         {
+            crypto?.Dispose();
+            return ValueTask.CompletedTask;
+         }
 
-      if (!DatagramHandshakeCodec.TryReadConnectAcceptTail(plainTailCopy, out var metadataSpan)
-          || metadataSpan.Length > _options.MaxConnectMetadataBytes)
+         var metadataBytes = metadataSpan.ToArray();
+         var packetSeq = header.PacketSeq;
+
+         handedOffToAsync = true;
+         return FinishConnectAcceptAsync(senderEp, saltKey, configHash, metadataBytes, crypto, sessionToken, packetSeq);
+      }
+      finally
       {
-         crypto?.Dispose();
-         return ValueTask.CompletedTask;
+         if (!handedOffToAsync)
+         {
+            _inFlightServerAccepts.TryRemove(saltKey, out _);
+         }
       }
-
-      var metadataBytes = metadataSpan.ToArray();
-      var packetSeq = header.PacketSeq;
-
-      return FinishConnectAcceptAsync(senderEp, saltKey, configHash, metadataBytes, crypto, sessionToken, packetSeq);
    }
 
    private async ValueTask FinishConnectAcceptAsync(
@@ -580,16 +628,38 @@ public sealed partial class DatagramHost
             initialTag = ctx.PeerTag;
          }
 
+         if (Volatile.Read(ref _disposed) == 1)
+         {
+            return;
+         }
+
          var now = _timeProvider.GetTimestamp();
 
          if (!accepted)
          {
-            var rejLen = 11 + (rejectReason?.Length ?? 0);
-            Span<byte> rejBody = stackalloc byte[rejLen];
-            DatagramHandshakeCodec.WriteConnectAck(rejBody, accepted: false, 0, 0, rejectReason ?? ReadOnlySpan<byte>.Empty);
+            var maxRejectBytes = Math.Max(0, Math.Min(2048 - 11, _options.MaxDatagramSize - DatagramWireHeader.Size - _trailerSize - 11));
+            var reasonSpan = rejectReason is null
+               ? ReadOnlySpan<byte>.Empty
+               : rejectReason.AsSpan(0, Math.Min(rejectReason.Length, maxRejectBytes));
 
-            var (rejPkt, rejPktLen) = BuildStandaloneControlPacket(DatagramPacketKind.ConnectAck, sessionToken, 1, rejBody, crypto);
-            DispatchSendAndReturnBuffer(rejPkt, rejPktLen, senderEp.Serialize());
+            var rejLen = 11 + reasonSpan.Length;
+            var rentedRejBody = rejLen > 512 ? ArrayPool<byte>.Shared.Rent(rejLen) : null;
+            var rejBody = rentedRejBody is not null ? rentedRejBody.AsSpan(0, rejLen) : stackalloc byte[rejLen];
+
+            try
+            {
+               DatagramHandshakeCodec.WriteConnectAck(rejBody, accepted: false, 0, 0, reasonSpan);
+
+               var (rejPkt, rejPktLen) = BuildStandaloneControlPacket(DatagramPacketKind.ConnectAck, sessionToken, 1, rejBody, crypto);
+               DispatchSendAndReturnBuffer(rejPkt, rejPktLen, senderEp.Serialize());
+            }
+            finally
+            {
+               if (rentedRejBody is not null)
+               {
+                  ArrayPool<byte>.Shared.Return(rentedRejBody);
+               }
+            }
             return;
          }
 
@@ -615,10 +685,12 @@ public sealed partial class DatagramHost
          cryptoTransferred = true;
          peer.InitializeHandshakeSeqs(lastRemotePacketSeq: remotePacketSeq, nextLocalPacketSeq: 1);
 
-         if (!_peersBySessionToken.TryAdd(sessionToken, peer) || !_peersById.TryAdd(peerId, peer))
+         if (Volatile.Read(ref _disposed) == 1
+             || !_peersBySessionToken.TryAdd(sessionToken, peer)
+             || !_peersById.TryAdd(peerId, peer))
          {
-            _peersBySessionToken.TryRemove(sessionToken, out _);
-            _peersById.TryRemove(peerId, out _);
+            _peersBySessionToken.TryRemove(KeyValuePair.Create(sessionToken, peer));
+            _peersById.TryRemove(KeyValuePair.Create(peerId, peer));
             peer.Dispose();
             return;
          }
@@ -639,6 +711,7 @@ public sealed partial class DatagramHost
       }
       finally
       {
+         _inFlightServerAccepts.TryRemove(saltKey, out _);
          if (!cryptoTransferred)
          {
             crypto?.Dispose();
@@ -728,6 +801,12 @@ public sealed partial class DatagramHost
             return;
          }
 
+         if (accepted && (assignedSessionToken == 0 || (mode == DatagramSecurityMode.Aead && assignedSessionToken != pending.DerivedSessionToken)))
+         {
+            DatagramMetrics.SecurityRejections.Add(1);
+            return;
+         }
+
          if (!_pendingClientHandshakes.TryRemove(senderEp, out _)
              || Interlocked.Exchange(ref pending.Completed, 1) == 1)
          {
@@ -761,6 +840,13 @@ public sealed partial class DatagramHost
          return;
       }
 
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         crypto?.Dispose();
+         pending.CompletionSource.TrySetCanceled();
+         return;
+      }
+
       var peerId = Interlocked.Increment(ref _nextPeerId);
 
       var peer = new DatagramPeer(
@@ -777,8 +863,25 @@ public sealed partial class DatagramHost
 
       peer.InitializeHandshakeSeqs(lastRemotePacketSeq: header.PacketSeq, nextLocalPacketSeq: 2);
 
-      _peersBySessionToken[assignedSessionToken] = peer;
-      _peersById[peerId] = peer;
+      if (Volatile.Read(ref _disposed) == 1)
+      {
+         peer.Dispose();
+         pending.CompletionSource.TrySetCanceled();
+         return;
+      }
+
+      if (!_peersBySessionToken.TryAdd(assignedSessionToken, peer)
+          || !_peersById.TryAdd(peerId, peer))
+      {
+         _peersBySessionToken.TryRemove(KeyValuePair.Create(assignedSessionToken, peer));
+         _peersById.TryRemove(KeyValuePair.Create(peerId, peer));
+
+         peer.Dispose();
+         pending.CompletionSource.TrySetException(
+            new InvalidOperationException($"Session token collision ({assignedSessionToken}) while registering peer."));
+
+         return;
+      }
 
       DatagramMetrics.PeersActive.Add(1);
       DatagramMetrics.PeersConnected.Add(1);

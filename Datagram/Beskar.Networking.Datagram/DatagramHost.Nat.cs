@@ -5,6 +5,7 @@ using System.Net;
 using Beskar.Networking.Datagram.Enums;
 using Beskar.Networking.Datagram.Nat;
 using Beskar.Networking.Datagram.Protocol;
+using Beskar.Utilities.Tracing;
 
 namespace Beskar.Networking.Datagram;
 
@@ -47,6 +48,8 @@ public sealed partial class DatagramHost
       TimeSpan? timeout = null,
       CancellationToken ct = default)
    {
+      ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+
       if (nodeId.IsEmpty || nodeId.Length > 64)
       {
          throw new ArgumentOutOfRangeException(nameof(nodeId), "NodeId must be 1..64 bytes.");
@@ -93,6 +96,18 @@ public sealed partial class DatagramHost
       ReadOnlySpan<byte> targetNodeId,
       ulong punchToken)
    {
+      ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+
+      if (myNodeId.IsEmpty || myNodeId.Length > 64)
+      {
+         throw new ArgumentOutOfRangeException(nameof(myNodeId), "NodeId must be 1..64 bytes.");
+      }
+
+      if (targetNodeId.IsEmpty || targetNodeId.Length > 64)
+      {
+         throw new ArgumentOutOfRangeException(nameof(targetNodeId), "NodeId must be 1..64 bytes.");
+      }
+
       if (Volatile.Read(ref _started) == 0)
       {
          Start();
@@ -116,6 +131,8 @@ public sealed partial class DatagramHost
       DatagramPunchOptions? options = null,
       CancellationToken ct = default)
    {
+      ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+
       if (Volatile.Read(ref _started) == 0)
       {
          Start();
@@ -257,10 +274,28 @@ public sealed partial class DatagramHost
       if (header.Kind == DatagramPacketKind.RendezvousIntroduce
           && DatagramRendezvousCodec.TryReadIntroduceNotify(body, out var peerNodeId, out var punchToken, out var peerPublicEp, out var peerLanEp)
           && peerPublicEp is not null
-          && Events.PunchIntroduced is not null)
+          && Events.PunchIntroduced is { } handler)
       {
          var intro = new DatagramPunchIntroduction(peerNodeId.ToArray(), punchToken, peerPublicEp, peerLanEp);
-         _ = Events.PunchIntroduced(intro, _cts?.Token ?? CancellationToken.None);
+         _ = InvokePunchIntroducedAsync(handler, intro, _cts?.Token ?? CancellationToken.None);
+      }
+   }
+
+   private static async Task InvokePunchIntroducedAsync(
+      Func<DatagramPunchIntroduction, CancellationToken, ValueTask> handler,
+      DatagramPunchIntroduction intro,
+      CancellationToken ct)
+   {
+      try
+      {
+         await handler(intro, ct);
+      }
+      catch (OperationCanceledException) when (ct.IsCancellationRequested)
+      {
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogNeutralError("DatagramHost PunchIntroduced handler threw exception: {0}", ex.Message);
       }
    }
 

@@ -188,7 +188,8 @@ public sealed class SimulatedNetworkHub(
          }
 
          var delayTicks = ComputeDelayTicks();
-         if (delayTicks == 0 && (Chaos.PacketDuplicateRate <= 0 || _rng.NextDouble() >= Chaos.PacketDuplicateRate))
+         var shouldDuplicate = Chaos.PacketDuplicateRate > 0 && _rng.NextDouble() < Chaos.PacketDuplicateRate;
+         if (delayTicks == 0 && !shouldDuplicate)
          {
             if (_nodes.TryGetValue(destination, out directTarget))
             {
@@ -202,7 +203,7 @@ public sealed class SimulatedNetworkHub(
             var order = ++_nextSequence;
             _inFlight.Enqueue(new QueuedPacket(deliverAt, order, source, destination, copy), (deliverAt, order));
 
-            if (Chaos.PacketDuplicateRate > 0 && _rng.NextDouble() < Chaos.PacketDuplicateRate)
+            if (shouldDuplicate)
             {
                var dupExtra = TimeSpan.FromMilliseconds(_rng.Next(1, 15)).Ticks;
                var dupDeliver = deliverAt + dupExtra;
@@ -283,7 +284,7 @@ public sealed class SimulatedDatagramTransport : IDatagramTransport
 
    private readonly SimulatedNetworkHub _hub;
    private readonly Channel<IncomingDatagram> _inbox = Channel.CreateUnbounded<IncomingDatagram>(
-      new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+      new UnboundedChannelOptions { SingleReader = false, SingleWriter = false });
 
    private IPEndPoint? _localEndPoint;
    private int _disposed;

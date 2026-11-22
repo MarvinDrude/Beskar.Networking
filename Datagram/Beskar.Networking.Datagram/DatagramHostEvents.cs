@@ -3,8 +3,8 @@ using Beskar.Networking.Datagram.Enums;
 namespace Beskar.Networking.Datagram;
 
 /// <summary>
-/// Delegate callbacks invoked by <see cref="DatagramHost"/> when running in <see cref="DatagramEventDispatchMode.Async"/>
-/// or when calling <see cref="DatagramHost.PollEvents(Action{DatagramEvent})"/>.
+/// Delegate callbacks invoked by <see cref="DatagramHost"/> when running in <see cref="DatagramEventDispatchMode.Async"/>.
+/// Register lifecycle and message callbacks before calling <see cref="DatagramHost.Start"/> or <see cref="DatagramHost.ConnectAsync"/>.
 /// </summary>
 public sealed class DatagramHostEvents
 {
@@ -35,7 +35,7 @@ public sealed class DatagramHostEvents
    public Func<DatagramPeer, System.Net.IPEndPoint, System.Net.IPEndPoint, CancellationToken, ValueTask>? PeerMigrated { get; set; }
 
    /// <summary>
-   /// Invoked when a rendezvous server introduces two peers for NAT hole punching (Phase 7).
+   /// Invoked when a rendezvous server introduces two peers for NAT hole punching.
    /// </summary>
    public Func<Nat.DatagramPunchIntroduction, CancellationToken, ValueTask>? PunchIntroduced { get; set; }
 }

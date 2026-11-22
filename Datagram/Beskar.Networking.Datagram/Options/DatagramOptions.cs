@@ -156,20 +156,84 @@ public sealed class DatagramOptions
          throw new ArgumentOutOfRangeException(nameof(MaxDatagramSize), "MaxDatagramSize must be between 256 and 65000 bytes.");
       }
 
+      if (MaxPeers < 1)
+      {
+         throw new ArgumentOutOfRangeException(nameof(MaxPeers), "MaxPeers must be at least 1.");
+      }
+
+      if (MaxQueuedEvents < 1)
+      {
+         throw new ArgumentOutOfRangeException(nameof(MaxQueuedEvents), "MaxQueuedEvents must be at least 1.");
+      }
+
+      if (MaxConnectMetadataBytes < 0)
+      {
+         throw new ArgumentOutOfRangeException(nameof(MaxConnectMetadataBytes), "MaxConnectMetadataBytes must be non-negative.");
+      }
+
+      if (TickInterval <= TimeSpan.Zero)
+      {
+         throw new ArgumentOutOfRangeException(nameof(TickInterval), "TickInterval must be positive.");
+      }
+
+      if (HandshakeRetryInterval <= TimeSpan.Zero)
+      {
+         throw new ArgumentOutOfRangeException(nameof(HandshakeRetryInterval), "HandshakeRetryInterval must be positive.");
+      }
+
+      if (ConnectTimeout <= TimeSpan.Zero)
+      {
+         throw new ArgumentOutOfRangeException(nameof(ConnectTimeout), "ConnectTimeout must be positive.");
+      }
+
+      if (KeepAliveInterval <= TimeSpan.Zero)
+      {
+         throw new ArgumentOutOfRangeException(nameof(KeepAliveInterval), "KeepAliveInterval must be positive.");
+      }
+
+      if (PeerTimeout <= TimeSpan.Zero)
+      {
+         throw new ArgumentOutOfRangeException(nameof(PeerTimeout), "PeerTimeout must be positive.");
+      }
+
+      if (MaxReliableRetryDuration <= TimeSpan.Zero)
+      {
+         throw new ArgumentOutOfRangeException(nameof(MaxReliableRetryDuration), "MaxReliableRetryDuration must be positive.");
+      }
+
+      if (TimeSyncInterval < TimeSpan.Zero)
+      {
+         throw new ArgumentOutOfRangeException(nameof(TimeSyncInterval), "TimeSyncInterval must be non-negative.");
+      }
+
+      if (MinRtoMs <= 0.0 || double.IsNaN(MinRtoMs) || double.IsInfinity(MinRtoMs))
+      {
+         throw new ArgumentOutOfRangeException(nameof(MinRtoMs), "MinRtoMs must be positive and finite.");
+      }
+
+      if (MaxRtoMs < MinRtoMs || double.IsNaN(MaxRtoMs) || double.IsInfinity(MaxRtoMs))
+      {
+         throw new ArgumentOutOfRangeException(nameof(MaxRtoMs), "MaxRtoMs must be greater than or equal to MinRtoMs.");
+      }
+
       if (MaxBytesPerSecondPerPeer is <= 0)
       {
          throw new ArgumentOutOfRangeException(nameof(MaxBytesPerSecondPerPeer), "MaxBytesPerSecondPerPeer must be null or positive.");
       }
 
-      if (Channels.Count == 0)
+      if (PacingBurstBytes < 0)
       {
-         AddChannel(0, DatagramDeliveryMode.ReliableOrdered);
+         throw new ArgumentOutOfRangeException(nameof(PacingBurstBytes), "PacingBurstBytes must be non-negative.");
       }
 
-      var table = new DatagramChannelConfig?[64];
-      var list = new List<DatagramChannelConfig>(Channels.Count);
+      IReadOnlyList<DatagramChannelConfig> configuredChannels = Channels.Count > 0
+         ? Channels
+         : [new DatagramChannelConfig { ChannelId = 0, DeliveryMode = DatagramDeliveryMode.ReliableOrdered }];
 
-      foreach (var channel in Channels)
+      var table = new DatagramChannelConfig?[64];
+      var list = new List<DatagramChannelConfig>(configuredChannels.Count);
+
+      foreach (var channel in configuredChannels)
       {
          if (channel.ChannelId >= 64)
          {
@@ -181,9 +245,19 @@ public sealed class DatagramOptions
             throw new ArgumentOutOfRangeException(nameof(channel.WindowSize), "WindowSize must be in range 1..16384.");
          }
 
+         if (channel.MaxSendQueueDepth < 1)
+         {
+            throw new ArgumentOutOfRangeException(nameof(channel.MaxSendQueueDepth), "MaxSendQueueDepth must be at least 1.");
+         }
+
          if (channel.MaxFragmentCount is < 1 or > 4096)
          {
             throw new ArgumentOutOfRangeException(nameof(channel.MaxFragmentCount), "MaxFragmentCount must be in range 1..4096.");
+         }
+
+         if (channel.MaxInFlightFragmentGroups < 1)
+         {
+            throw new ArgumentOutOfRangeException(nameof(channel.MaxInFlightFragmentGroups), "MaxInFlightFragmentGroups must be at least 1.");
          }
 
          if (table[channel.ChannelId] is not null)

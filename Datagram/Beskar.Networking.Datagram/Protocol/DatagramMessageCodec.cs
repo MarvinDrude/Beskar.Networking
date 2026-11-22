@@ -101,7 +101,7 @@ internal static class DatagramMessageCodec
       var isFragment = (headerByte & 0x40) != 0;
 
       var config = channels[channelId];
-      if (config is null)
+      if (config is null || (isFragment && !config.AllowFragmentation))
       {
          return false;
       }

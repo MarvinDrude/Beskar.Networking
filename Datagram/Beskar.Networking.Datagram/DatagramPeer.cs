@@ -212,7 +212,17 @@ public sealed class DatagramPeer : IDisposable
 
          _state = DatagramPeerState.Disconnecting;
          _disconnectReason = DatagramDisconnectReason.GracefulLocal;
-         _pendingDisconnectReason = reason.IsEmpty ? null : reason.ToArray();
+
+         if (reason.IsEmpty)
+         {
+            _pendingDisconnectReason = null;
+         }
+         else
+         {
+            var clampedLen = Math.Min(reason.Length, _maxBodySize);
+            _pendingDisconnectReason = [.. reason[..clampedLen]];
+         }
+
          _disconnectPacketsRemaining = 3;
       }
    }
@@ -535,6 +545,7 @@ public sealed class DatagramPeer : IDisposable
 
                _scratchLedgerMessages.Clear();
                var bodyOffset = 0;
+               var rtoLossRecordedForDatagram = false;
 
                foreach (var ch in _priorityChannels)
                {
@@ -550,6 +561,7 @@ public sealed class DatagramPeer : IDisposable
                      _timeProvider,
                      _rtt,
                      _scratchLedgerMessages,
+                     ref rtoLossRecordedForDatagram,
                      out var maxRetriesExceeded);
 
                   if (maxRetriesExceeded)

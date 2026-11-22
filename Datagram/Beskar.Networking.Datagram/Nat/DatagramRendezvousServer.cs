@@ -36,12 +36,20 @@ public sealed class DatagramRendezvousServer(
    private readonly CancellationTokenSource _cts = new();
 
    private Task? _receiveTask;
+   private int _started;
    private int _disposed;
 
    public IPEndPoint? LocalEndPoint => _transport.LocalEndPoint;
 
    public void Start()
    {
+      ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+
+      if (Interlocked.CompareExchange(ref _started, 1, 0) != 0)
+      {
+         return;
+      }
+
       _transport.Bind(_bindEndPoint, _options);
       _receiveTask = Task.Run(() => ReceiveLoopAsync(_cts.Token));
       TraceLogger.LogServerInfo("DatagramRendezvousServer started on {0}", _transport.LocalEndPoint);
@@ -54,9 +62,18 @@ public sealed class DatagramRendezvousServer(
 
       try
       {
-         while (!ct.IsCancellationRequested)
+         while (!ct.IsCancellationRequested && Volatile.Read(ref _disposed) == 0)
          {
-            var received = await _transport.ReceiveFromAsync(buf, remoteSa, ct);
+            int received;
+            try
+            {
+               received = await _transport.ReceiveFromAsync(buf, remoteSa, ct);
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode is SocketError.ConnectionReset or SocketError.MessageSize)
+            {
+               continue;
+            }
+
             if (received < DatagramWireHeader.Size)
             {
                continue;

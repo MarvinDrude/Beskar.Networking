@@ -104,6 +104,7 @@ internal sealed class SentPacketLedger
          var entry = _entries[(int)(_oldestUnackedHint & (Capacity - 1))];
          if (!entry.Occupied || entry.PacketSeq != _oldestUnackedHint || entry.Acked)
          {
+            if (_oldestUnackedHint == uint.MaxValue) break;
             _oldestUnackedHint++;
             continue;
          }
@@ -132,6 +133,7 @@ internal sealed class SentPacketLedger
 
          if (entry is { CountedAsLost: true, FastRetransmitTriggered: true })
          {
+            if (_oldestUnackedHint == uint.MaxValue) break;
             _oldestUnackedHint++;
          }
          else

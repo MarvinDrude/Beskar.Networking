@@ -44,7 +44,7 @@ internal sealed class ChannelSendState : IDisposable
    private int _inFlightCount;
 
    public DatagramChannelConfig Config => _config;
-   public long UnackedCount => _inFlightCount + _pendingQueue.Count;
+   public long UnackedCount => _isReliable ? _inFlightCount + _pendingQueue.Count : 0;
    public long TotalRetransmitted { get; private set; }
 
    public bool HasExpiredReliableMessage(long nowTimestamp, long maxRetryDurationTicks)
@@ -158,7 +158,7 @@ internal sealed class ChannelSendState : IDisposable
       }
 
       var fragCount = (payload.Length + _chunkPayloadSize - 1) / _chunkPayloadSize;
-      if (fragCount > _config.MaxFragmentCount || fragCount > _config.WindowSize)
+      if (fragCount > _config.MaxFragmentCount || (_isReliable && fragCount > _config.WindowSize))
       {
          return DatagramSendResult.PayloadTooLarge;
       }
@@ -216,6 +216,7 @@ internal sealed class ChannelSendState : IDisposable
       TimeProvider timeProvider,
       RttEstimator rtt,
       List<SentMessageRef> ledgerMessages,
+      ref bool rtoLossRecordedForDatagram,
       out bool maxRetriesExceeded)
    {
       maxRetriesExceeded = false;
@@ -255,9 +256,10 @@ internal sealed class ChannelSendState : IDisposable
             WriteEntry(bodyDest[bodyOffset..], entry);
             bodyOffset += encodedSize;
 
-            if (!entry.NeedsFastRetransmit)
+            if (!entry.NeedsFastRetransmit && !rtoLossRecordedForDatagram)
             {
                rtt.RecordPacketLost(nowTimestamp, timeProvider);
+               rtoLossRecordedForDatagram = true;
             }
 
             entry.NeedsFastRetransmit = false;

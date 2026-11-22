@@ -1,8 +1,10 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Threading.Channels;
 using Beskar.Networking.Datagram.Enums;
 using Beskar.Networking.Datagram.Nat;
@@ -54,7 +56,6 @@ public sealed partial class DatagramHost : IAsyncDisposable
    private Task? _asyncDispatchTask;
 
    private uint _nextPeerId;
-   private uint _nextLocalTokenSeed = 100;
    private int _started;
    private int _disposed;
    private int _queuedPollCount;
@@ -108,6 +109,8 @@ public sealed partial class DatagramHost : IAsyncDisposable
    /// </summary>
    public void Start()
    {
+      ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+
       if (Interlocked.CompareExchange(ref _started, 1, 0) != 0)
       {
          return;
@@ -346,7 +349,11 @@ public sealed partial class DatagramHost : IAsyncDisposable
 
             try
             {
-               await ProcessRawDatagramAsync(buffer.AsMemory(0, received), remoteSa, ct);
+               var vt = ProcessRawDatagramAsync(buffer.AsMemory(0, received), remoteSa, ct);
+               if (!vt.IsCompletedSuccessfully)
+               {
+                  _ = ObserveAsyncDatagramProcessing(vt, ct);
+               }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested || Volatile.Read(ref _disposed) == 1)
             {
@@ -473,7 +480,7 @@ public sealed partial class DatagramHost : IAsyncDisposable
             return ValueTask.CompletedTask;
          }
 
-         if (endpointMismatch && isNewHighestPacketSeq)
+         if (!disconnectTrigger.HasValue && endpointMismatch && isNewHighestPacketSeq)
          {
             var newEp = MaterializeEndPoint(remoteSa);
             var migrated = peer.MigrateEndPoint(newEp);
@@ -639,11 +646,28 @@ public sealed partial class DatagramHost : IAsyncDisposable
       return (IPEndPoint)template.Create(sa);
    }
 
+   private static async Task ObserveAsyncDatagramProcessing(ValueTask pending, CancellationToken ct)
+   {
+      try
+      {
+         await pending;
+      }
+      catch (OperationCanceledException) when (ct.IsCancellationRequested)
+      {
+      }
+      catch (Exception ex)
+      {
+         TraceLogger.LogNeutralError("DatagramHost failed processing incoming datagram: {0}", ex.Message);
+      }
+   }
+
    private uint AllocateUniqueSessionToken()
    {
+      Span<byte> raw = stackalloc byte[4];
       while (true)
       {
-         var token = Interlocked.Increment(ref _nextLocalTokenSeed);
+         RandomNumberGenerator.Fill(raw);
+         var token = BinaryPrimitives.ReadUInt32LittleEndian(raw);
          if (token != 0 && !_peersBySessionToken.ContainsKey(token))
          {
             return token;

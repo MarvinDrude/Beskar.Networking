@@ -42,9 +42,9 @@ internal sealed class AckTracker
          }
          else
          {
-            for (var s = HighestReceivedSeq + 1; s <= packetSeq; s++)
+            for (uint i = 1; i <= delta; i++)
             {
-               ClearReplayBit(s);
+               ClearReplayBit(HighestReceivedSeq + i);
             }
          }
 

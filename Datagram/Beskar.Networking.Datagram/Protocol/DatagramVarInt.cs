@@ -46,6 +46,11 @@ internal static class DatagramVarInt
       while (bytesRead < source.Length && shift <= 28)
       {
          var b = source[bytesRead++];
+         if (shift == 28 && b > 0x07)
+         {
+            return false;
+         }
+
          result |= (uint)(b & 0x7F) << shift;
 
          if ((b & 0x80) == 0)

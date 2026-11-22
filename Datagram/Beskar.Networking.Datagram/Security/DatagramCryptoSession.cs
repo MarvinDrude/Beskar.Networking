@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Net;
 using System.Security.Cryptography;
@@ -20,7 +21,6 @@ internal sealed class DatagramServerHandshakeCrypto : IDisposable
    private byte[] _currentPubPoint; // 64 bytes: X(32) || Y(32)
    private uint _previousKeyId;
    private ECDiffieHellman? _previousKey;
-   private byte[]? _previousPubPoint;
    private long _lastRotationTimestamp;
    private readonly long _rotationIntervalTicks;
 
@@ -53,12 +53,12 @@ internal sealed class DatagramServerHandshakeCrypto : IDisposable
       ReadOnlySpan<byte> clientSalt16,
       ReadOnlySpan<byte> serverSalt16,
       uint serverKeyId,
-      long issuedUtcTicks)
+      long issuedTimestamp)
    {
-      // Plaintext: EndPointHash(8) + IssuedTicks(8) + ServerKeyId(4) + ClientSalt(16) + ServerSalt(16) = 52 bytes
+      // Plaintext: EndPointHash(8) + IssuedTimestamp(8) + ServerKeyId(4) + ClientSalt(16) + ServerSalt(16) = 52 bytes
       Span<byte> plain = stackalloc byte[52];
       BinaryPrimitives.WriteUInt64LittleEndian(plain[0..8], ComputeEndPointHash(clientEndPoint));
-      BinaryPrimitives.WriteInt64LittleEndian(plain[8..16], issuedUtcTicks);
+      BinaryPrimitives.WriteInt64LittleEndian(plain[8..16], issuedTimestamp);
       BinaryPrimitives.WriteUInt32LittleEndian(plain[16..20], serverKeyId);
       clientSalt16.CopyTo(plain[20..36]);
       serverSalt16.CopyTo(plain[36..52]);
@@ -175,7 +175,6 @@ internal sealed class DatagramServerHandshakeCrypto : IDisposable
 
          _previousKey?.Dispose();
          _previousKey = _currentKey;
-         _previousPubPoint = _currentPubPoint;
          _previousKeyId = _currentKeyId;
 
          _currentKeyId++;
@@ -383,32 +382,46 @@ internal sealed class DatagramCryptoSession : IDisposable
       clientSalt.CopyTo(salt);
       serverSalt.CopyTo(salt[clientSalt.Length..]);
 
-      Span<byte> ikm = stackalloc byte[ecdhSharedSecret.Length + preSharedKey.Length];
-      ecdhSharedSecret.CopyTo(ikm);
-      if (!preSharedKey.IsEmpty)
-      {
-         preSharedKey.CopyTo(ikm[ecdhSharedSecret.Length..]);
-      }
-
+      var ikmLen = ecdhSharedSecret.Length + preSharedKey.Length;
+      var rentedIkm = ikmLen > 512
+         ? ArrayPool<byte>.Shared.Rent(ikmLen) : null;
+      var ikm = rentedIkm is not null
+         ? rentedIkm.AsSpan(0, ikmLen) : stackalloc byte[ikmLen];
       Span<byte> okm = stackalloc byte[68];
-      HKDF.DeriveKey(HashAlgorithmName.SHA256, ikm, okm, salt, "Beskar.Networking.Datagram.v1"u8);
 
-      var c2SKey = okm[..32].ToArray();
-      var s2CKey = okm[32..64].ToArray();
-      derivedSessionToken = BinaryPrimitives.ReadUInt32LittleEndian(okm[64..68]);
-
-      if (derivedSessionToken == 0)
+      try
       {
-         derivedSessionToken = 1;
+         ecdhSharedSecret.CopyTo(ikm);
+         if (!preSharedKey.IsEmpty)
+         {
+            preSharedKey.CopyTo(ikm[ecdhSharedSecret.Length..]);
+         }
+
+         HKDF.DeriveKey(HashAlgorithmName.SHA256, ikm, okm, salt, "Beskar.Networking.Datagram.v1"u8);
+
+         var c2SKey = okm[..32].ToArray();
+         var s2CKey = okm[32..64].ToArray();
+         derivedSessionToken = BinaryPrimitives.ReadUInt32LittleEndian(okm[64..68]);
+
+         if (derivedSessionToken == 0)
+         {
+            derivedSessionToken = 1;
+         }
+
+         var txKey = isClient ? c2SKey : s2CKey;
+         var rxKey = isClient ? s2CKey : c2SKey;
+
+         return new DatagramCryptoSession(cipher, txKey, rxKey, isClient, derivedSessionToken);
       }
-
-      CryptographicOperations.ZeroMemory(ikm);
-      CryptographicOperations.ZeroMemory(okm);
-
-      var txKey = isClient ? c2SKey : s2CKey;
-      var rxKey = isClient ? s2CKey : c2SKey;
-
-      return new DatagramCryptoSession(cipher, txKey, rxKey, isClient, derivedSessionToken);
+      finally
+      {
+         CryptographicOperations.ZeroMemory(ikm);
+         CryptographicOperations.ZeroMemory(okm);
+         if (rentedIkm is not null)
+         {
+            ArrayPool<byte>.Shared.Return(rentedIkm);
+         }
+      }
    }
 
    public void Encrypt(
