@@ -390,6 +390,7 @@ public sealed class DatagramPeer : IDisposable
          _ledger.ProcessAcks(
             header.AckSeq,
             header.AckBitfield,
+            _nextPacketSeq - 1,
             nowTimestamp,
             _timeProvider,
             _rtt,

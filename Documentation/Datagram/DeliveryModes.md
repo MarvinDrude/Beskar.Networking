@@ -138,6 +138,6 @@ var options = new DatagramOptions
 ```
 
 ### Practical Guidelines
-1. **Keep `allowFragmentation: false` on unreliable channels** unless payloads strictly require it - losing 1 of 4 fragments over UDP wastes all 4 fragments. Fragmentation shines on `ReliableOrdered`, `ReliableUnordered`, and `ReliableSequenced` (e.g., initial full-state sync blobs or lobby thumbnails).
+1. **Keep `allowFragmentation: false` on unreliable channels** unless payloads strictly require it - losing 1 of 4 fragments over UDP wastes all 4 fragments. Fragmentation shines on `ReliableOrdered`, `ReliableUnordered`, and `ReliableSequenced` (e.g., initial full-state sync blobs or lobby thumbnails). Disabling fragmentation is enforced on both the sender (`PayloadTooLarge`) and the wire decoder (rejecting unexpected fragmented frames).
 2. **Isolate unrelated ordered streams onto separate `ReliableOrdered` channels** so packet loss in low-priority traffic (like chat) never delays critical gameplay/control messages.
-3. **Match `DatagramOptions.Channels` on both peers:** During the handshake, `ChannelConfigHash` is verified automatically so mismatched channel layouts fail fast instead of silently misinterpreting frames.
+3. **Match `DatagramOptions.Channels` on both peers:** During the handshake, `ChannelConfigHash` (computed over each channel's `ChannelId`, `DeliveryMode`, and `AllowFragmentation`) is verified automatically so mismatched channel layouts fail fast with `DatagramConnectionRejectedException`. Peers may independently tune `Priority`, `WindowSize`, and `MaxSendQueueDepth`.

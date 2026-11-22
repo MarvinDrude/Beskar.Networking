@@ -60,6 +60,8 @@ public sealed partial class DatagramHost
          Start();
       }
 
+      rendezvousServer = NormalizeTargetEndPoint(rendezvousServer);
+
       var key = Convert.ToHexString(nodeId.Span);
       var pending = new PendingDiscovery
       {
@@ -113,6 +115,8 @@ public sealed partial class DatagramHost
          Start();
       }
 
+      rendezvousServer = NormalizeTargetEndPoint(rendezvousServer);
+
       Span<byte> body = stackalloc byte[160];
       var bodyLen = DatagramRendezvousCodec.WriteIntroduceRequest(body, myNodeId, targetNodeId, punchToken);
       var (pkt, len) = BuildUnencryptedControlPacket(DatagramPacketKind.RendezvousIntroduce, body[..bodyLen]);
@@ -139,6 +143,11 @@ public sealed partial class DatagramHost
       }
 
       options ??= new DatagramPunchOptions();
+      peerPublicEndPoint = NormalizeTargetEndPoint(peerPublicEndPoint);
+      if (peerLanEndPoint is not null)
+      {
+         peerLanEndPoint = NormalizeTargetEndPoint(peerLanEndPoint);
+      }
 
       var now = _timeProvider.GetTimestamp();
       var intervalTicks = Math.Max(1, options.ProbeInterval.Ticks * _timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond);

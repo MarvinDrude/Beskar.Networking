@@ -387,6 +387,7 @@ internal sealed class DatagramCryptoSession : IDisposable
          ? ArrayPool<byte>.Shared.Rent(ikmLen) : null;
       var ikm = rentedIkm is not null
          ? rentedIkm.AsSpan(0, ikmLen) : stackalloc byte[ikmLen];
+      Span<byte> prk = stackalloc byte[32];
       Span<byte> okm = stackalloc byte[68];
 
       try
@@ -397,7 +398,10 @@ internal sealed class DatagramCryptoSession : IDisposable
             preSharedKey.CopyTo(ikm[ecdhSharedSecret.Length..]);
          }
 
-         HKDF.DeriveKey(HashAlgorithmName.SHA256, ikm, okm, salt, "Beskar.Networking.Datagram.v1"u8);
+         // RFC 5869 HKDF-Extract + HKDF-Expand: identical to HKDF.DeriveKey while avoiding
+         // Windows CNG's IKM length cap when a large PreSharedKey is supplied.
+         HMACSHA256.HashData(salt, ikm, prk);
+         HKDF.Expand(HashAlgorithmName.SHA256, prk, okm, "Beskar.Networking.Datagram.v1"u8);
 
          var c2SKey = okm[..32].ToArray();
          var s2CKey = okm[32..64].ToArray();
@@ -416,6 +420,7 @@ internal sealed class DatagramCryptoSession : IDisposable
       finally
       {
          CryptographicOperations.ZeroMemory(ikm);
+         CryptographicOperations.ZeroMemory(prk);
          CryptographicOperations.ZeroMemory(okm);
          if (rentedIkm is not null)
          {

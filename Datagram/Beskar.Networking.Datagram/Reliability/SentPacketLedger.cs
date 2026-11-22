@@ -51,12 +51,13 @@ internal sealed class SentPacketLedger
    public void ProcessAcks(
       uint ackSeq,
       ulong ackBitfield,
+      uint latestSentPacketSeq,
       long nowTimestamp,
       TimeProvider timeProvider,
       RttEstimator rtt,
       Action<byte, ushort> onMessageAcked)
    {
-      if (ackSeq == 0)
+      if (ackSeq == 0 || ackSeq > latestSentPacketSeq)
       {
          return;
       }
@@ -99,7 +100,17 @@ internal sealed class SentPacketLedger
          return;
       }
 
-      while (_oldestUnackedHint <= latestSentPacketSeq && _oldestUnackedHint <= _highestAckedSeq)
+      if (latestSentPacketSeq >= Capacity)
+      {
+         var minTrackable = latestSentPacketSeq - (uint)Capacity + 1;
+         if (_oldestUnackedHint < minTrackable)
+         {
+            _oldestUnackedHint = minTrackable;
+         }
+      }
+
+      var upperBound = Math.Min(latestSentPacketSeq, _highestAckedSeq);
+      while (_oldestUnackedHint <= upperBound)
       {
          var entry = _entries[(int)(_oldestUnackedHint & (Capacity - 1))];
          if (!entry.Occupied || entry.PacketSeq != _oldestUnackedHint || entry.Acked)

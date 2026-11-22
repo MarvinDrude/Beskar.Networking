@@ -102,6 +102,8 @@ public sealed partial class DatagramHost
          Start();
       }
 
+      remoteEndPoint = NormalizeTargetEndPoint(remoteEndPoint);
+
       var clientSalt = new byte[DatagramHandshakeCodec.SaltSize];
       RandomNumberGenerator.Fill(clientSalt);
 

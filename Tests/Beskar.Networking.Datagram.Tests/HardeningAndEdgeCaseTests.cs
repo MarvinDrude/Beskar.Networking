@@ -69,11 +69,13 @@ public class HardeningAndEdgeCaseTests
       msgs.Add(new SentMessageRef(0, 1));
 
       var acked = 0;
-      ledger.ProcessAcks(uint.MaxValue, 0UL, time.GetTimestamp(), time, rtt, (_, _) => acked++);
+      ledger.ProcessAcks(uint.MaxValue, 0UL, uint.MaxValue, time.GetTimestamp(), time, rtt, (_, _) => acked++);
       await Assert.That(acked).IsEqualTo(1);
 
-      // Must complete immediately even when _oldestUnackedHint advances across uint.MaxValue
-      ledger.ProcessAcks(uint.MaxValue, 0UL, time.GetTimestamp(), time, rtt, (_, _) => { });
+      // Forged future AckSeq (> latestSentPacketSeq) is ignored cleanly
+      ledger.ProcessAcks(uint.MaxValue, 0UL, uint.MaxValue - 1, time.GetTimestamp(), time, rtt, (_, _) => { });
+
+      // Must complete in O(Capacity) even when jumping to uint.MaxValue without wrapping forever
       ledger.DetectLossesAndFastRetransmits(uint.MaxValue, time.GetTimestamp(), TimeSpan.FromSeconds(1).Ticks, time, rtt, (_, _) => { });
    }
 
@@ -264,7 +266,7 @@ public class HardeningAndEdgeCaseTests
       var hub = new SimulatedNetworkHub(seed: 5002);
       var serverEp = new IPEndPoint(IPAddress.Loopback, 10200);
 
-      // 4 KB PSK exercises pooled heap path instead of stackalloc in DatagramCryptoSession.DeriveFromHandshake
+      // 4 KB PSK exercises pooled heap path and RFC 5869 HKDF-Extract/Expand without Windows CNG IKM limit failures
       var largePsk = new byte[4096];
       new Random(99).NextBytes(largePsk);
 
@@ -299,7 +301,7 @@ public class HardeningAndEdgeCaseTests
       }
 
       DatagramConnectionRejectedException? rejEx = null;
-      try { await rejTask; } catch (DatagramConnectionRejectedException ex) { rejEx = ex; }
+      try { await rejTask.WaitAsync(TimeSpan.FromSeconds(1)); } catch (DatagramConnectionRejectedException ex) { rejEx = ex; }
       await Assert.That(rejEx).IsNotNull();
       await Assert.That(rejEx!.RejectReason.Length).IsGreaterThan(0);
       await Assert.That(rejEx.RejectReason.Length).IsLessThanOrEqualTo(256);
@@ -311,7 +313,7 @@ public class HardeningAndEdgeCaseTests
          client.Tick(); hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(20));
          server.Tick(); hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(20));
       }
-      var peer = await okTask;
+      var peer = await okTask.WaitAsync(TimeSpan.FromSeconds(1));
       server.PollEvents(_ => { });
 
       // Oversized Disconnect reason (4000 bytes on 256B MTU) clamps safely and disconnects cleanly
@@ -556,5 +558,217 @@ public class HardeningAndEdgeCaseTests
 
       await Assert.That(await serverMsgTcs.Task.WaitAsync(TimeSpan.FromSeconds(3))).IsEqualTo("dual-mode-ping");
       await Assert.That(await clientMsgTcs.Task.WaitAsync(TimeSpan.FromSeconds(3))).IsEqualTo("dual-mode-pong");
+   }
+
+   [Test]
+   [NotInParallel]
+   public async Task RealUdpDualModeIpv6Client_ConnectsToIpv4ServerCleanly()
+   {
+      if (!Socket.OSSupportsIPv6)
+      {
+         return;
+      }
+
+      DatagramOptions MakeOpts() => new DatagramOptions
+      {
+         DispatchMode = DatagramEventDispatchMode.Async,
+         ManualTick = false,
+         TickInterval = TimeSpan.FromMilliseconds(10),
+         Security = new DatagramSecurityOptions { Mode = DatagramSecurityMode.Aead }
+      }.AddChannel(0, DatagramDeliveryMode.ReliableOrdered);
+
+      await using var server = new DatagramHost(new IPEndPoint(IPAddress.Loopback, 0), MakeOpts());
+      var serverMsgTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+      server.Events.MessageReceived = (peer, _, _, payload, _) =>
+      {
+         serverMsgTcs.TrySetResult(Encoding.UTF8.GetString(payload.Span));
+         peer.TrySend(0, "v4-server-reply"u8);
+         return ValueTask.CompletedTask;
+      };
+      server.Start();
+
+      // Client explicitly binds IPv6Any (DualMode = true) and dials an IPv4 endpoint!
+      await using var client = new DatagramHost(new IPEndPoint(IPAddress.IPv6Any, 0), MakeOpts());
+      var clientMsgTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+      client.Events.MessageReceived = (_, _, _, payload, _) =>
+      {
+         clientMsgTcs.TrySetResult(Encoding.UTF8.GetString(payload.Span));
+         return ValueTask.CompletedTask;
+      };
+      client.Start();
+
+      var peer = await client.ConnectAsync(server.LocalEndPoint!);
+      peer.TrySend(0, "v6-dual-client-hi"u8);
+
+      await Assert.That(await serverMsgTcs.Task.WaitAsync(TimeSpan.FromSeconds(3))).IsEqualTo("v6-dual-client-hi");
+      await Assert.That(await clientMsgTcs.Task.WaitAsync(TimeSpan.FromSeconds(3))).IsEqualTo("v4-server-reply");
+   }
+
+   [Test]
+   public async Task HkdfDeriveSession_MatchesRfc5869HkdfDeriveKeyBitForBit()
+   {
+      var sharedSecret = new byte[32];
+      var clientSalt = new byte[16];
+      var serverSalt = new byte[16];
+      var psk = "rfc5869-compat-psk"u8.ToArray();
+      new Random(77).NextBytes(sharedSecret);
+      new Random(78).NextBytes(clientSalt);
+      new Random(79).NextBytes(serverSalt);
+
+      // Compute expected session token via standard HKDF.DeriveKey
+      var salt = new byte[32];
+      clientSalt.CopyTo(salt, 0);
+      serverSalt.CopyTo(salt, 16);
+      var ikm = new byte[sharedSecret.Length + psk.Length];
+      sharedSecret.CopyTo(ikm, 0);
+      psk.CopyTo(ikm, sharedSecret.Length);
+      var expectedOkm = new byte[68];
+      System.Security.Cryptography.HKDF.DeriveKey(
+         System.Security.Cryptography.HashAlgorithmName.SHA256,
+         ikm,
+         expectedOkm,
+         salt,
+         "Beskar.Networking.Datagram.v1"u8);
+      var expectedToken = BinaryPrimitives.ReadUInt32LittleEndian(expectedOkm.AsSpan(64, 4));
+      if (expectedToken == 0) expectedToken = 1;
+
+      using var clientCrypto = Beskar.Networking.Datagram.Security.DatagramCryptoSession.DeriveFromHandshake(
+         DatagramAeadCipher.AesGcm, sharedSecret, clientSalt, serverSalt, psk, isClient: true, out var clientToken);
+      using var serverCrypto = Beskar.Networking.Datagram.Security.DatagramCryptoSession.DeriveFromHandshake(
+         DatagramAeadCipher.AesGcm, sharedSecret, clientSalt, serverSalt, psk, isClient: false, out var serverToken);
+
+      await Assert.That(clientToken).IsEqualTo(expectedToken);
+      await Assert.That(serverToken).IsEqualTo(expectedToken);
+
+      // Cross-verify encrypt/decrypt with reference key derived by HKDF.DeriveKey
+      var plain = "rfc5869-verified"u8.ToArray();
+      var aad = "header-aad"u8.ToArray();
+      var cipher = new byte[plain.Length];
+      var tag = new byte[16];
+      var decrypted = new byte[plain.Length];
+
+      clientCrypto.Encrypt(packetSeq: 7, aad, plain, cipher, tag);
+      await Assert.That(serverCrypto.TryDecrypt(packetSeq: 7, aad, cipher, tag, decrypted)).IsTrue();
+      await Assert.That(decrypted).IsEquivalentTo(plain);
+   }
+
+   [Test]
+   public async Task CoalescedRtoRetransmit_CountsSingleDatagramLossInsteadOfPerMessageLoss()
+   {
+      var hub = new SimulatedNetworkHub(seed: 5010);
+      var serverEp = new IPEndPoint(IPAddress.Loopback, 10220);
+
+      var opts = CreateManualOptions(DatagramSecurityMode.Crc32C);
+      opts.MinRtoMs = 60;
+      opts.MaxRtoMs = 200;
+
+      await using var server = new DatagramHost(serverEp, opts, hub.CreateTransport(), hub.Time);
+      await using var client = new DatagramHost(new IPEndPoint(IPAddress.Loopback, 0), opts, hub.CreateTransport(), hub.Time);
+      server.Start();
+      client.Start();
+
+      var ct = client.ConnectAsync(serverEp);
+      for (var i = 0; i < 20 && !ct.IsCompleted; i++)
+      {
+         client.Tick(); hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(15));
+         server.Tick(); hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(15));
+      }
+      var peer = await ct;
+      server.PollEvents(_ => { });
+
+      // Send 20 clean individual datagrams so window has 20 acked packets
+      for (var i = 0; i < 20; i++)
+      {
+         peer.TrySend(0, BitConverter.GetBytes(i));
+         client.Tick(); hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(20));
+         server.Tick(); hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(20));
+         server.PollEvents(_ => { });
+      }
+
+      // Now queue 12 small reliable messages into ONE coalesced datagram and drop ONLY that 1 datagram!
+      var droppedOne = false;
+      hub.OnPacketSending = (src, _, raw) =>
+      {
+         if (!droppedOne && src.Equals(client.LocalEndPoint)
+             && DatagramWireHeader.TryRead(raw, out var hdr) && hdr.Kind == DatagramPacketKind.Data)
+         {
+            droppedOne = true;
+            return false;
+         }
+         return true;
+      };
+
+      for (var i = 100; i < 112; i++)
+      {
+         peer.TrySend(0, BitConverter.GetBytes(i));
+      }
+      client.Tick(); // Sends 1 coalesced datagram -> dropped!
+      await Assert.That(droppedOne).IsTrue();
+
+      // Advance past RTO so all 12 coalesced messages retransmit in 1 datagram, then roll 1s loss window
+      var deliveredAfterDrop = 0;
+      for (var t = 0; t < 40; t++)
+      {
+         client.Tick(); hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(40));
+         server.Tick(); hub.AdvanceAndDeliver(TimeSpan.FromMilliseconds(40));
+         server.PollEvents(evt =>
+         {
+            if (evt.Type == DatagramEventType.MessageReceived) deliveredAfterDrop++;
+         });
+         client.PollEvents(_ => { });
+      }
+
+      await Assert.That(deliveredAfterDrop).IsEqualTo(12);
+      // 1 lost datagram out of ~21 acked packets -> EWMA loss rate must stay low (far below the ~0.28+ spike if 12 messages counted individually)
+      await Assert.That(peer.Stats.PacketLossRate).IsLessThan(0.08);
+      await Assert.That(peer.Stats.MessagesRetransmitted).IsEqualTo(12L);
+   }
+
+   [Test]
+   [NotInParallel]
+   public async Task ThrowingPunchIntroducedHandler_DoesNotKillHostReceiveLoop()
+   {
+      var rdvOpts = new DatagramOptions { Security = new DatagramSecurityOptions { Mode = DatagramSecurityMode.Crc32C } };
+      await using var rdv = new DatagramRendezvousServer(new IPEndPoint(IPAddress.Loopback, 0), options: rdvOpts);
+      rdv.Start();
+
+      var optsA = new DatagramOptions { DispatchMode = DatagramEventDispatchMode.Async }
+         .AddChannel(0, DatagramDeliveryMode.ReliableOrdered);
+      var optsB = new DatagramOptions { DispatchMode = DatagramEventDispatchMode.Async }
+         .AddChannel(0, DatagramDeliveryMode.ReliableOrdered);
+
+      await using var hostA = new DatagramHost(new IPEndPoint(IPAddress.Loopback, 0), optsA);
+      await using var hostB = new DatagramHost(new IPEndPoint(IPAddress.Loopback, 0), optsB);
+
+      var threwOnce = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      var msgOnB = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      hostB.Events.PunchIntroduced = async (_, _) =>
+      {
+         await Task.Yield();
+         threwOnce.TrySetResult();
+         throw new InvalidOperationException("Simulated user handler bug in PunchIntroduced");
+      };
+      hostB.Events.MessageReceived = (_, _, _, payload, _) =>
+      {
+         msgOnB.TrySetResult(Encoding.UTF8.GetString(payload.Span));
+         return ValueTask.CompletedTask;
+      };
+
+      hostA.Start();
+      hostB.Start();
+
+      await hostA.DiscoverPublicEndPointAsync(rdv.LocalEndPoint!, "node-a"u8.ToArray());
+      await hostB.DiscoverPublicEndPointAsync(rdv.LocalEndPoint!, "node-b"u8.ToArray());
+      hostA.RequestIntroduction(rdv.LocalEndPoint!, "node-a"u8, "node-b"u8, 0x5555UL);
+
+      await threwOnce.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+      // HostB receive loop must still be alive and accept normal AEAD connections!
+      var peer = await hostA.ConnectAsync(hostB.LocalEndPoint!);
+      peer.TrySend(0, "still-healthy"u8);
+
+      var got = await msgOnB.Task.WaitAsync(TimeSpan.FromSeconds(3));
+      await Assert.That(got).IsEqualTo("still-healthy");
    }
 }

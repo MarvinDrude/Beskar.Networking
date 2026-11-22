@@ -68,3 +68,4 @@ On Windows, `SIO_UDP_CONNRESET` socket control is handled internally to prevent 
 ## 4. Security & Resiliency Recommendations
 
 - **Connectionless Nature**: UDP does not provide cryptographic handshakes by default. Use `Beskar.Networking.Resilient` wrappers for HMAC challenge-response authentication, sequence numbers, and ping-pong heartbeats over UDP.
+- **Real-Time Gaming & Multi-Channel Reliability**: If you need selective per-channel reliability/ordering (`ReliableOrdered`, `ReliableUnordered`, `ReliableSequenced`, `UnreliableSequenced`, `UnreliableUnordered`), built-in AEAD/ECDH packet protection, congestion pacing, endpoint migration, and NAT hole punching without `IDuplexPipe` stream framing, use the standalone [**`Beskar.Networking.Datagram`**](https://github.com/MarvinDrude/Beskar.Networking/blob/master/Documentation/Datagram/Overview.md) package instead.

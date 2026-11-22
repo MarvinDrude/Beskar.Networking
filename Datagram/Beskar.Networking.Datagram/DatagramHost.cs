@@ -646,6 +646,17 @@ public sealed partial class DatagramHost : IAsyncDisposable
       return (IPEndPoint)template.Create(sa);
    }
 
+   private IPEndPoint NormalizeTargetEndPoint(IPEndPoint target)
+   {
+      if (_transport.LocalEndPoint?.AddressFamily == AddressFamily.InterNetworkV6
+          && target.AddressFamily == AddressFamily.InterNetwork)
+      {
+         return new IPEndPoint(target.Address.MapToIPv6(), target.Port);
+      }
+
+      return target;
+   }
+
    private static async Task ObserveAsyncDatagramProcessing(ValueTask pending, CancellationToken ct)
    {
       try
