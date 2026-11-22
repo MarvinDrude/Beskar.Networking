@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>WinExe</OutputType>
+      <TargetFramework>net11.0-windows</TargetFramework>
+      <UseWindowsForms>true</UseWindowsForms>
+      <EnableWindowsTargeting>true</EnableWindowsTargeting>
+      <EnableWindowsTargeting>true</EnableWindowsTargeting>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\..\Datagram\Beskar.Networking.Datagram\Beskar.Networking.Datagram.csproj" />
+   </ItemGroup>
+
+</Project>

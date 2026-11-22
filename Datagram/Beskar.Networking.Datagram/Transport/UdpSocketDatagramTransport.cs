@@ -7,7 +7,7 @@ namespace Beskar.Networking.Datagram.Transport;
 /// <summary>
 /// High-performance OS UDP socket transport utilizing allocation-free <see cref="SocketAddress"/> I/O.
 /// </summary>
-internal sealed class UdpSocketDatagramTransport : IDatagramTransport
+public sealed class UdpSocketDatagramTransport : IDatagramTransport
 {
    private Socket? _socket;
    private IPEndPoint? _localEndPoint;
