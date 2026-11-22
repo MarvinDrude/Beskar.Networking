@@ -12,8 +12,9 @@ using Beskar.Utilities.Tracing;
 namespace Beskar.Networking.Datagram.Nat;
 
 /// <summary>
-/// Lightweight UDP rendezvous & endpoint-discovery server for NAT hole punching.
-/// Stores observed public IP:Port mappings per node ID and coordinates simultaneous peer introductions.
+/// Lightweight UDP rendezvous and endpoint-discovery server for NAT hole punching.
+/// Stores observed public IP:Port mappings per node ID with TTL expiry and bounded capacity,
+/// and coordinates simultaneous peer introductions.
 /// </summary>
 public sealed class DatagramRendezvousServer(
    IPEndPoint bindEndPoint,
@@ -33,14 +34,67 @@ public sealed class DatagramRendezvousServer(
    private readonly DatagramOptions _options = options ?? new DatagramOptions();
    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
    private readonly ConcurrentDictionary<string, PeerRegistration> _registrations = new(StringComparer.Ordinal);
+
+   private readonly Lock _evictionLock = new();
    private readonly CancellationTokenSource _cts = new();
+
+   private int _maxRegistrations = 16_384;
+   private TimeSpan _registrationTtl = TimeSpan.FromMinutes(2);
+   private int _registerOpsSincePurge;
 
    private Task? _receiveTask;
    private int _started;
    private int _disposed;
 
+   /// <summary>
+   /// Gets the bound local endpoint once <see cref="Start"/> has been called.
+   /// </summary>
    public IPEndPoint? LocalEndPoint => _transport.LocalEndPoint;
 
+   /// <summary>
+   /// Gets the current number of active peer registrations held in memory.
+   /// </summary>
+   public int RegistrationCount => _registrations.Count;
+
+   /// <summary>
+   /// Maximum number of concurrent node registrations retained in memory before evicting expired or oldest entries.
+   /// Defaults to <c>16384</c>.
+   /// </summary>
+   public int MaxRegistrations
+   {
+      get => Volatile.Read(ref _maxRegistrations);
+      set
+      {
+         if (value < 1)
+         {
+            throw new ArgumentOutOfRangeException(nameof(value), "MaxRegistrations must be at least 1.");
+         }
+
+         Volatile.Write(ref _maxRegistrations, value);
+      }
+   }
+
+   /// <summary>
+   /// Maximum age of an idle peer registration before it is considered expired and evicted.
+   /// Defaults to 2 minutes.
+   /// </summary>
+   public TimeSpan RegistrationTtl
+   {
+      get => _registrationTtl;
+      set
+      {
+         if (value <= TimeSpan.Zero)
+         {
+            throw new ArgumentOutOfRangeException(nameof(value), "RegistrationTtl must be positive.");
+         }
+
+         _registrationTtl = value;
+      }
+   }
+
+   /// <summary>
+   /// Binds the underlying UDP transport and starts processing rendezvous packets. Safe to call multiple times.
+   /// </summary>
    public void Start()
    {
       ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
@@ -53,6 +107,27 @@ public sealed class DatagramRendezvousServer(
       _transport.Bind(_bindEndPoint, _options);
       _receiveTask = Task.Run(() => ReceiveLoopAsync(_cts.Token));
       TraceLogger.LogServerInfo("DatagramRendezvousServer started on {0}", _transport.LocalEndPoint);
+   }
+
+   /// <summary>
+   /// Removes all peer registrations older than <see cref="RegistrationTtl"/> and returns the number purged.
+   /// </summary>
+   public int PurgeExpiredRegistrations()
+   {
+      var now = _timeProvider.GetTimestamp();
+      var ttlTicks = GetRegistrationTtlTicks();
+      var removed = 0;
+
+      foreach (var kvp in _registrations)
+      {
+         if (now - kvp.Value.LastSeenTimestamp >= ttlTicks
+             && _registrations.TryRemove(kvp))
+         {
+            removed++;
+         }
+      }
+
+      return removed;
    }
 
    private async Task ReceiveLoopAsync(CancellationToken ct)
@@ -153,7 +228,33 @@ public sealed class DatagramRendezvousServer(
 
       var key = Convert.ToHexString(nodeIdSpan);
       var nodeIdCopy = nodeIdSpan.ToArray();
-      _registrations[key] = new PeerRegistration(nodeIdCopy, senderEp, lanHint, _timeProvider.GetTimestamp());
+      var now = _timeProvider.GetTimestamp();
+
+      if ((Interlocked.Increment(ref _registerOpsSincePurge) & 63) == 0)
+      {
+         PurgeExpiredRegistrations();
+      }
+
+      var maxRegs = Volatile.Read(ref _maxRegistrations);
+      if (!_registrations.ContainsKey(key) && _registrations.Count >= maxRegs)
+      {
+         lock (_evictionLock)
+         {
+            if (!_registrations.ContainsKey(key) && _registrations.Count >= maxRegs)
+            {
+               PurgeExpiredRegistrations();
+               while (_registrations.Count >= maxRegs)
+               {
+                  if (!EvictOldestRegistration())
+                  {
+                     break;
+                  }
+               }
+            }
+         }
+      }
+
+      _registrations[key] = new PeerRegistration(nodeIdCopy, senderEp, lanHint, now);
 
       Span<byte> respBody = stackalloc byte[128];
       var bodyLen = DatagramRendezvousCodec.WriteMapped(respBody, nodeIdCopy, senderEp);
@@ -171,8 +272,31 @@ public sealed class DatagramRendezvousServer(
          return false;
       }
 
-      if (!_registrations.TryGetValue(Convert.ToHexString(reqId), out var reqReg)
-          || !_registrations.TryGetValue(Convert.ToHexString(tgtId), out var tgtReg))
+      var reqKey = Convert.ToHexString(reqId);
+      var tgtKey = Convert.ToHexString(tgtId);
+      if (!_registrations.TryGetValue(reqKey, out var reqReg)
+          || !_registrations.TryGetValue(tgtKey, out var tgtReg))
+      {
+         return false;
+      }
+
+      var now = _timeProvider.GetTimestamp();
+      var ttlTicks = GetRegistrationTtlTicks();
+      var anyExpired = false;
+
+      if (now - reqReg.LastSeenTimestamp >= ttlTicks)
+      {
+         _registrations.TryRemove(KeyValuePair.Create(reqKey, reqReg));
+         anyExpired = true;
+      }
+
+      if (now - tgtReg.LastSeenTimestamp >= ttlTicks)
+      {
+         _registrations.TryRemove(KeyValuePair.Create(tgtKey, tgtReg));
+         anyExpired = true;
+      }
+
+      if (anyExpired)
       {
          return false;
       }
@@ -188,6 +312,33 @@ public sealed class DatagramRendezvousServer(
       send1 = BuildControlPacket(DatagramPacketKind.RendezvousIntroduce, msgToReq[0..len1], reqReg.PublicEndPoint.Serialize());
       send2 = BuildControlPacket(DatagramPacketKind.RendezvousIntroduce, msgToTgt[0..len2], tgtReg.PublicEndPoint.Serialize());
       return true;
+   }
+
+   private bool EvictOldestRegistration()
+   {
+      string? oldestKey = null;
+      PeerRegistration? oldestReg = null;
+      var oldestTimestamp = long.MaxValue;
+
+      foreach (var kvp in _registrations)
+      {
+         if (kvp.Value.LastSeenTimestamp < oldestTimestamp)
+         {
+            oldestTimestamp = kvp.Value.LastSeenTimestamp;
+            oldestKey = kvp.Key;
+            oldestReg = kvp.Value;
+         }
+      }
+
+      return oldestKey is not null
+         && oldestReg is not null
+         && _registrations.TryRemove(KeyValuePair.Create(oldestKey, oldestReg));
+   }
+
+   private long GetRegistrationTtlTicks()
+   {
+      var ttl = _registrationTtl;
+      return Math.Max(1, ttl.Ticks * _timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond);
    }
 
    private OutgoingPacket BuildControlPacket(

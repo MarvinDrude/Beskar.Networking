@@ -18,6 +18,16 @@ public struct DatagramEvent : IDisposable
    public DatagramDeliveryMode DeliveryMode { get; init; }
    public DatagramDisconnectReason DisconnectReason { get; init; }
 
+   /// <summary>
+   /// Caller-supplied delivery token associated with a <see cref="DatagramEventType.DeliveryNotification"/> event.
+   /// </summary>
+   public ulong DeliveryToken { get; init; }
+
+   /// <summary>
+   /// Delivery outcome associated with a <see cref="DatagramEventType.DeliveryNotification"/> event.
+   /// </summary>
+   public DatagramDeliveryStatus DeliveryStatus { get; init; }
+
    public IPEndPoint? PreviousEndPoint { get; init; }
    public IPEndPoint? NewEndPoint { get; init; }
 
@@ -68,6 +78,23 @@ public struct DatagramEvent : IDisposable
       Peer = peer,
       PreviousEndPoint = previousEndPoint,
       NewEndPoint = newEndPoint,
+
+      _payload = DatagramPayloadLease.Empty
+   };
+
+   internal static DatagramEvent DeliveryNotification(
+      DatagramPeer peer,
+      byte channelId,
+      DatagramDeliveryMode mode,
+      ulong deliveryToken,
+      DatagramDeliveryStatus status) => new()
+   {
+      Type = DatagramEventType.DeliveryNotification,
+      Peer = peer,
+      ChannelId = channelId,
+      DeliveryMode = mode,
+      DeliveryToken = deliveryToken,
+      DeliveryStatus = status,
 
       _payload = DatagramPayloadLease.Empty
    };

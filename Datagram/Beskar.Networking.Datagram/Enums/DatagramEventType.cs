@@ -23,5 +23,11 @@ public enum DatagramEventType : byte
    /// <summary>
    /// An authenticated peer seamlessly migrated to a new remote IP/port (e.g., NAT rebind).
    /// </summary>
-   PeerMigrated = 4
+   PeerMigrated = 4,
+
+   /// <summary>
+   /// Delivery status update (<see cref="DatagramDeliveryStatus.Acknowledged"/> or <see cref="DatagramDeliveryStatus.Lost"/>)
+   /// for an outbound message sent with a caller-supplied delivery token.
+   /// </summary>
+   DeliveryNotification = 5
 }

@@ -65,7 +65,7 @@ public class HardeningAndEdgeCaseTests
       var rtt = new RttEstimator(50, 2000, TimeSpan.FromMilliseconds(10), time, time.GetTimestamp());
       var ledger = new SentPacketLedger();
 
-      ledger.BeginRecord(uint.MaxValue, time.GetTimestamp(), out var msgs);
+      ledger.BeginRecord(uint.MaxValue, time.GetTimestamp(), out var msgs, out _);
       msgs.Add(new SentMessageRef(0, 1));
 
       var acked = 0;

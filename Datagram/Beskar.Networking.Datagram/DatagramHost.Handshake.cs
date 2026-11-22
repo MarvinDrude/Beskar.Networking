@@ -682,6 +682,7 @@ public sealed partial class DatagramHost
             _priorityChannels,
             crypto,
             _timeProvider,
+            EmitEvent,
             initialTag);
 
          cryptoTransferred = true;
@@ -861,7 +862,8 @@ public sealed partial class DatagramHost
          _channelTable,
          _priorityChannels,
          crypto,
-         _timeProvider);
+         _timeProvider,
+         EmitEvent);
 
       peer.InitializeHandshakeSeqs(lastRemotePacketSeq: header.PacketSeq, nextLocalPacketSeq: 2);
 

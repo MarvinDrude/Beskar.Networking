@@ -26,6 +26,9 @@ internal sealed class ChannelSendState : IDisposable
       public long NextRetransmitTimestamp;
       public int RetryCount;
       public bool NeedsFastRetransmit;
+      public bool HasDeliveryToken;
+      public ulong DeliveryToken;
+      public DeliveryFragmentTracker? DeliveryTracker;
    }
 
    private readonly DatagramChannelConfig _config;
@@ -117,7 +120,13 @@ internal sealed class ChannelSendState : IDisposable
       }
    }
 
-   public DatagramSendResult Enqueue(ReadOnlySpan<byte> payload, long nowTimestamp, int maxBodySize)
+   public DatagramSendResult Enqueue(
+      ReadOnlySpan<byte> payload,
+      long nowTimestamp,
+      int maxBodySize,
+      bool hasDeliveryToken = false,
+      ulong deliveryToken = 0,
+      Action<byte, ulong, DatagramDeliveryStatus>? onDeliveryUpdated = null)
    {
       var singleOverhead = DatagramMessageCodec.GetEncodedSize(_config.DeliveryMode, isFragment: false, payload.Length) - payload.Length;
       var maxSinglePayload = maxBodySize - singleOverhead;
@@ -126,7 +135,7 @@ internal sealed class ChannelSendState : IDisposable
       {
          if (_config.DeliveryMode == DatagramDeliveryMode.ReliableSequenced)
          {
-            SupersedeExisting();
+            SupersedeExisting(onDeliveryUpdated);
          }
          else if (_pendingQueue.Count + _inFlightCount >= _config.MaxSendQueueDepth)
          {
@@ -146,7 +155,9 @@ internal sealed class ChannelSendState : IDisposable
             Length = payload.Length,
             ChannelSeq = seq,
             IsFragment = false,
-            EnqueuedTimestamp = nowTimestamp
+            EnqueuedTimestamp = nowTimestamp,
+            HasDeliveryToken = hasDeliveryToken,
+            DeliveryToken = deliveryToken
          });
 
          return DatagramSendResult.Queued;
@@ -170,7 +181,7 @@ internal sealed class ChannelSendState : IDisposable
             return DatagramSendResult.PayloadTooLarge;
          }
 
-         SupersedeExisting();
+         SupersedeExisting(onDeliveryUpdated);
       }
       else if (_pendingQueue.Count + _inFlightCount + fragCount > _config.MaxSendQueueDepth)
       {
@@ -178,6 +189,7 @@ internal sealed class ChannelSendState : IDisposable
       }
 
       var groupId = _nextFragGroupId++;
+      var tracker = hasDeliveryToken ? new DeliveryFragmentTracker(fragCount) : null;
       var offset = 0;
 
       for (var i = 0; i < fragCount; i++)
@@ -198,7 +210,10 @@ internal sealed class ChannelSendState : IDisposable
             FragGroupId = groupId,
             FragIndex = (ushort)i,
             FragCount = (ushort)fragCount,
-            EnqueuedTimestamp = nowTimestamp
+            EnqueuedTimestamp = nowTimestamp,
+            HasDeliveryToken = hasDeliveryToken,
+            DeliveryToken = deliveryToken,
+            DeliveryTracker = tracker
          });
       }
 
@@ -216,6 +231,7 @@ internal sealed class ChannelSendState : IDisposable
       TimeProvider timeProvider,
       RttEstimator rtt,
       List<SentMessageRef> ledgerMessages,
+      List<SentUnreliableDeliveryRef> ledgerUnreliableDeliveries,
       ref bool rtoLossRecordedForDatagram,
       out bool maxRetriesExceeded)
    {
@@ -314,12 +330,19 @@ internal sealed class ChannelSendState : IDisposable
          }
          else
          {
+            if (next.HasDeliveryToken)
+            {
+               ledgerUnreliableDeliveries.Add(new SentUnreliableDeliveryRef(
+                  _config.ChannelId,
+                  next.DeliveryToken,
+                  next.DeliveryTracker));
+            }
             ReturnEntryBuffer(next);
          }
       }
    }
 
-   public void MarkAcked(ushort channelSeq)
+   public void MarkAcked(ushort channelSeq, Action<byte, ulong, DatagramDeliveryStatus>? onDeliveryUpdated = null)
    {
       if (!_isReliable)
       {
@@ -341,6 +364,14 @@ internal sealed class ChannelSendState : IDisposable
       {
          _sendBase++;
       }
+
+      if (entry.HasDeliveryToken && onDeliveryUpdated is not null)
+      {
+         if (entry.DeliveryTracker is null || entry.DeliveryTracker.TryMarkFragmentAcked())
+         {
+            onDeliveryUpdated(_config.ChannelId, entry.DeliveryToken, DatagramDeliveryStatus.Acknowledged);
+         }
+      }
    }
 
    public void RequestFastRetransmit(ushort channelSeq)
@@ -357,11 +388,14 @@ internal sealed class ChannelSendState : IDisposable
       }
    }
 
-   private void SupersedeExisting()
+   private void SupersedeExisting(Action<byte, ulong, DatagramDeliveryStatus>? onDeliveryUpdated)
    {
       while (_pendingQueue.Count > 0)
       {
-         ReturnEntryBuffer(_pendingQueue.Dequeue());
+         var dropped = _pendingQueue.Dequeue();
+
+         ReturnEntryBuffer(dropped);
+         NotifySupersededIfTracked(dropped, onDeliveryUpdated);
       }
 
       for (var i = 0; i < _inFlightOrder.Count; i++)
@@ -373,6 +407,7 @@ internal sealed class ChannelSendState : IDisposable
          {
             ReturnEntryBuffer(entry);
             _inFlightSlots[slotIdx] = null;
+            NotifySupersededIfTracked(entry, onDeliveryUpdated);
          }
       }
 
@@ -380,6 +415,19 @@ internal sealed class ChannelSendState : IDisposable
       _inFlightCount = 0;
       _sendBase = _nextChannelSeq;
       _nextToFlySeq = _nextChannelSeq;
+   }
+
+   private void NotifySupersededIfTracked(
+      OutgoingEntry entry,
+      Action<byte, ulong, DatagramDeliveryStatus>? onDeliveryUpdated)
+   {
+      if (entry.HasDeliveryToken && onDeliveryUpdated is not null)
+      {
+         if (entry.DeliveryTracker is null || entry.DeliveryTracker.TryMarkLost())
+         {
+            onDeliveryUpdated(_config.ChannelId, entry.DeliveryToken, DatagramDeliveryStatus.Lost);
+         }
+      }
    }
 
    private void WriteEntry(Span<byte> dest, OutgoingEntry entry)

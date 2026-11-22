@@ -35,6 +35,11 @@ public sealed class DatagramHostEvents
    public Func<DatagramPeer, System.Net.IPEndPoint, System.Net.IPEndPoint, CancellationToken, ValueTask>? PeerMigrated { get; set; }
 
    /// <summary>
+   /// Invoked when an outbound message sent with a caller-supplied delivery token is acknowledged or detected as lost.
+   /// </summary>
+   public Func<DatagramPeer, byte, ulong, DatagramDeliveryStatus, CancellationToken, ValueTask>? MessageDeliveryUpdated { get; set; }
+
+   /// <summary>
    /// Invoked when a rendezvous server introduces two peers for NAT hole punching.
    /// </summary>
    public Func<Nat.DatagramPunchIntroduction, CancellationToken, ValueTask>? PunchIntroduced { get; set; }

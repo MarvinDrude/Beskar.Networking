@@ -563,7 +563,8 @@ public sealed partial class DatagramHost : IAsyncDisposable
       var hasCallbacks = Events.PeerConnected is not null
          || Events.PeerDisconnected is not null
          || Events.MessageReceived is not null
-         || Events.PeerMigrated is not null;
+         || Events.PeerMigrated is not null
+         || Events.MessageDeliveryUpdated is not null;
 
       if (!hasCallbacks)
       {
@@ -590,6 +591,9 @@ public sealed partial class DatagramHost : IAsyncDisposable
                      break;
                   case DatagramEventType.PeerMigrated when Events.PeerMigrated is not null:
                      await Events.PeerMigrated(evt.Peer, evt.PreviousEndPoint!, evt.NewEndPoint!, ct);
+                     break;
+                  case DatagramEventType.DeliveryNotification when Events.MessageDeliveryUpdated is not null:
+                     await Events.MessageDeliveryUpdated(evt.Peer, evt.ChannelId, evt.DeliveryToken, evt.DeliveryStatus, ct);
                      break;
                }
             }

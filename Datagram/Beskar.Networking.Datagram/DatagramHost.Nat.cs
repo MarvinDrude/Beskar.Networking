@@ -14,7 +14,16 @@ public sealed partial class DatagramHost
    private sealed class PendingDiscovery
    {
       public required byte[] NodeId { get; init; }
+
+      public required SocketAddress RendezvousAddress { get; init; }
+      public IPEndPoint? LanHint { get; init; }
+
+      public required long RetryIntervalTicks { get; init; }
+      public long NextRetryTimestamp { get; set; }
+      public required long DeadlineTimestamp { get; init; }
+
       public required TaskCompletionSource<IPEndPoint?> CompletionSource { get; init; }
+      public int Completed;
    }
 
    private sealed class ActivePunchSession
@@ -63,28 +72,52 @@ public sealed partial class DatagramHost
       rendezvousServer = NormalizeTargetEndPoint(rendezvousServer);
 
       var key = Convert.ToHexString(nodeId.Span);
+      var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(2);
+      var effectiveLanHint = lanHint ?? LocalEndPoint;
+      var rendezvousAddress = rendezvousServer.Serialize();
+      var now = _timeProvider.GetTimestamp();
+      var retryIntervalTicks = Math.Max(1, _options.HandshakeRetryInterval.Ticks * _timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond);
+      var timeoutTicks = Math.Max(1, effectiveTimeout.Ticks * _timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond);
+
       var pending = new PendingDiscovery
       {
          NodeId = nodeId.ToArray(),
+         RendezvousAddress = rendezvousAddress,
+         LanHint = effectiveLanHint,
+         RetryIntervalTicks = retryIntervalTicks,
+         NextRetryTimestamp = now + retryIntervalTicks,
+         DeadlineTimestamp = now + timeoutTicks,
          CompletionSource = new TaskCompletionSource<IPEndPoint?>(TaskCreationOptions.RunContinuationsAsynchronously)
       };
 
       _pendingDiscoveries[key] = pending;
 
       using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-      timeoutCts.CancelAfter(timeout ?? TimeSpan.FromSeconds(2));
+      if (ReferenceEquals(_timeProvider, TimeProvider.System))
+      {
+         timeoutCts.CancelAfter(effectiveTimeout);
+      }
+
       await using var reg = timeoutCts.Token.Register(() =>
       {
-         if (_pendingDiscoveries.TryRemove(key, out var p))
+         if (_pendingDiscoveries.TryRemove(KeyValuePair.Create(key, pending))
+             && Interlocked.Exchange(ref pending.Completed, 1) == 0)
          {
-            p.CompletionSource.TrySetResult(null);
+            if (ct.IsCancellationRequested)
+            {
+               pending.CompletionSource.TrySetCanceled(ct);
+            }
+            else
+            {
+               pending.CompletionSource.TrySetResult(null);
+            }
          }
       });
 
       Span<byte> body = stackalloc byte[128];
-      var bodyLen = DatagramRendezvousCodec.WriteRegister(body, nodeId.Span, lanHint ?? LocalEndPoint);
+      var bodyLen = DatagramRendezvousCodec.WriteRegister(body, nodeId.Span, effectiveLanHint);
       var (pkt, len) = BuildUnencryptedControlPacket(DatagramPacketKind.RendezvousRegister, body[0..bodyLen]);
-      DispatchSendAndReturnBuffer(pkt, len, rendezvousServer.Serialize());
+      DispatchSendAndReturnBuffer(pkt, len, rendezvousAddress);
 
       return await pending.CompletionSource.Task;
    }
@@ -272,7 +305,8 @@ public sealed partial class DatagramHost
          if (DatagramRendezvousCodec.TryReadMapped(body, out var nodeId, out var publicEp))
          {
             var key = Convert.ToHexString(nodeId);
-            if (_pendingDiscoveries.TryRemove(key, out var pending))
+            if (_pendingDiscoveries.TryRemove(key, out var pending)
+                && Interlocked.Exchange(ref pending.Completed, 1) == 0)
             {
                pending.CompletionSource.TrySetResult(publicEp);
             }
@@ -310,6 +344,36 @@ public sealed partial class DatagramHost
 
    private void TickActivePunchSessions(long nowTimestamp, List<(byte[] Buffer, int Length, SocketAddress Address)> outgoingBatch)
    {
+      if (!_pendingDiscoveries.IsEmpty)
+      {
+         Span<byte> regBody = stackalloc byte[128];
+         foreach (var (key, discovery) in _pendingDiscoveries)
+         {
+            if (Volatile.Read(ref discovery.Completed) != 0)
+            {
+               continue;
+            }
+
+            if (nowTimestamp >= discovery.DeadlineTimestamp)
+            {
+               if (_pendingDiscoveries.TryRemove(KeyValuePair.Create(key, discovery))
+                   && Interlocked.Exchange(ref discovery.Completed, 1) == 0)
+               {
+                  discovery.CompletionSource.TrySetResult(null);
+               }
+               continue;
+            }
+
+            if (nowTimestamp >= discovery.NextRetryTimestamp)
+            {
+               discovery.NextRetryTimestamp = nowTimestamp + discovery.RetryIntervalTicks;
+               var bodyLen = DatagramRendezvousCodec.WriteRegister(regBody, discovery.NodeId, discovery.LanHint);
+               var (pkt, len) = BuildUnencryptedControlPacket(DatagramPacketKind.RendezvousRegister, regBody[0..bodyLen]);
+               outgoingBatch.Add((pkt, len, discovery.RendezvousAddress));
+            }
+         }
+      }
+
       foreach (var kvp in _recentPunchTokens)
       {
          if (nowTimestamp >= kvp.Value)
@@ -380,7 +444,8 @@ public sealed partial class DatagramHost
    {
       foreach (var kvp in _pendingDiscoveries)
       {
-         if (_pendingDiscoveries.TryRemove(kvp.Key, out var d))
+         if (_pendingDiscoveries.TryRemove(kvp.Key, out var d)
+             && Interlocked.Exchange(ref d.Completed, 1) == 0)
          {
             d.CompletionSource.TrySetCanceled();
          }

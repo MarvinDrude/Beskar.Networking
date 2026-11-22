@@ -55,3 +55,20 @@ public enum DatagramDisconnectReason : byte
    MaxRetriesExceeded = 4,
    HostStopped = 5
 }
+
+/// <summary>
+/// Delivery outcome reported via <see cref="DatagramEventType.DeliveryNotification"/> for an outbound message
+/// sent with a caller-supplied delivery token.
+/// </summary>
+public enum DatagramDeliveryStatus : byte
+{
+   /// <summary>
+   /// The remote peer acknowledged receipt of all physical datagrams carrying this message.
+   /// </summary>
+   Acknowledged = 1,
+
+   /// <summary>
+   /// The message was detected as lost (unreliable drop, timeout, ring eviction, or superseded on ReliableSequenced).
+   /// </summary>
+   Lost = 2
+}

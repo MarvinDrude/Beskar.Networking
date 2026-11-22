@@ -26,6 +26,15 @@ public sealed class DatagramPeer : IDisposable
    private readonly AckTracker _ackTracker = new();
    private readonly SentPacketLedger _ledger = new();
    private readonly List<SentMessageRef> _scratchLedgerMessages = new(32);
+
+   private readonly List<SentUnreliableDeliveryRef> _scratchUnreliableDeliveries = new(8);
+   private readonly Action<DatagramEvent> _emitEvent;
+   private readonly Action<byte, ushort> _onChannelMessageAcked;
+   private readonly Action<byte, ushort> _onMessageFastRetransmit;
+   private readonly Action<byte, ulong, DatagramDeliveryStatus> _onDeliveryUpdated;
+   private readonly Action<SentUnreliableDeliveryRef> _onUnreliableAcked;
+   private readonly Action<SentUnreliableDeliveryRef> _onUnreliableLost;
+
    private readonly RttEstimator _rtt;
    private readonly TokenBucketPacer _pacer;
    private readonly Lock _lock = new();
@@ -78,6 +87,7 @@ public sealed class DatagramPeer : IDisposable
       DatagramChannelConfig[] priorityChannels,
       DatagramCryptoSession? crypto,
       TimeProvider timeProvider,
+      Action<DatagramEvent> emitEvent,
       object? initialTag = null)
    {
       PeerId = peerId;
@@ -91,7 +101,14 @@ public sealed class DatagramPeer : IDisposable
       _priorityChannels = priorityChannels;
       _crypto = crypto;
       _timeProvider = timeProvider;
+      _emitEvent = emitEvent;
       Tag = initialTag;
+
+      _onChannelMessageAcked = OnChannelMessageAcked;
+      _onMessageFastRetransmit = OnMessageFastRetransmit;
+      _onDeliveryUpdated = EmitDeliveryNotification;
+      _onUnreliableAcked = OnUnreliableDeliveryAcked;
+      _onUnreliableLost = OnUnreliableDeliveryLost;
 
       _trailerSize = options.Security.Mode switch
       {
@@ -169,7 +186,23 @@ public sealed class DatagramPeer : IDisposable
    /// <summary>
    /// Synchronously enqueues a message onto <paramref name="channelId"/> with zero Task allocation.
    /// </summary>
-   public DatagramSendResult TrySend(byte channelId, ReadOnlySpan<byte> payload)
+   public DatagramSendResult TrySend(byte channelId, ReadOnlySpan<byte> payload) =>
+      TrySendInternal(channelId, payload, hasDeliveryToken: false, deliveryToken: 0);
+
+   /// <summary>
+   /// Synchronously enqueues a message onto <paramref name="channelId"/> with delivery notification tracking.
+   /// When the physical datagram(s) carrying this message are acknowledged or detected as lost,
+   /// a <see cref="DatagramEventType.DeliveryNotification"/> event is emitted with <paramref name="deliveryToken"/>.
+   /// Ideal for unreliable delta-compressed snapshot baseline tracking.
+   /// </summary>
+   public DatagramSendResult TrySend(byte channelId, ReadOnlySpan<byte> payload, ulong deliveryToken) =>
+      TrySendInternal(channelId, payload, hasDeliveryToken: true, deliveryToken);
+
+   private DatagramSendResult TrySendInternal(
+      byte channelId,
+      ReadOnlySpan<byte> payload,
+      bool hasDeliveryToken,
+      ulong deliveryToken)
    {
       if (_state != DatagramPeerState.Connected || Volatile.Read(ref _disposed) == 1)
       {
@@ -194,7 +227,13 @@ public sealed class DatagramPeer : IDisposable
             return DatagramSendResult.InvalidChannel;
          }
 
-         return sendState.Enqueue(payload, _timeProvider.GetTimestamp(), _maxBodySize);
+         return sendState.Enqueue(
+            payload,
+            _timeProvider.GetTimestamp(),
+            _maxBodySize,
+            hasDeliveryToken,
+            deliveryToken,
+            _onDeliveryUpdated);
       }
    }
 
@@ -394,7 +433,8 @@ public sealed class DatagramPeer : IDisposable
             nowTimestamp,
             _timeProvider,
             _rtt,
-            OnChannelMessageAcked);
+            _onChannelMessageAcked,
+            _onUnreliableAcked);
 
          switch (header.Kind)
          {
@@ -519,7 +559,8 @@ public sealed class DatagramPeer : IDisposable
             lossCutoffTicks,
             _timeProvider,
             _rtt,
-            OnMessageFastRetransmit);
+            _onMessageFastRetransmit,
+            _onUnreliableLost);
 
          _rtt.UpdateLossWindow(nowTimestamp, _timeProvider);
 
@@ -530,7 +571,7 @@ public sealed class DatagramPeer : IDisposable
 
          try
          {
-            var maxDatagramsPerTick = 32;
+            var maxDatagramsPerTick = _options.MaxDatagramsPerTick;
 
             for (var d = 0; d < maxDatagramsPerTick; d++)
             {
@@ -545,6 +586,7 @@ public sealed class DatagramPeer : IDisposable
                }
 
                _scratchLedgerMessages.Clear();
+               _scratchUnreliableDeliveries.Clear();
                var bodyOffset = 0;
                var rtoLossRecordedForDatagram = false;
 
@@ -562,6 +604,7 @@ public sealed class DatagramPeer : IDisposable
                      _timeProvider,
                      _rtt,
                      _scratchLedgerMessages,
+                     _scratchUnreliableDeliveries,
                      ref rtoLossRecordedForDatagram,
                      out var maxRetriesExceeded);
 
@@ -579,11 +622,21 @@ public sealed class DatagramPeer : IDisposable
                }
 
                var packetSeq = _nextPacketSeq++;
-               _ledger.BeginRecord(packetSeq, nowTimestamp, out var ledgerMessages);
+               _ledger.BeginRecord(
+                  packetSeq,
+                  nowTimestamp,
+                  out var ledgerMessages,
+                  out var ledgerUnreliableDeliveries,
+                  _onUnreliableLost);
 
                for (var m = 0; m < _scratchLedgerMessages.Count; m++)
                {
                   ledgerMessages.Add(_scratchLedgerMessages[m]);
+               }
+
+               for (var u = 0; u < _scratchUnreliableDeliveries.Count; u++)
+               {
+                  ledgerUnreliableDeliveries.Add(_scratchUnreliableDeliveries[u]);
                }
 
                var pkt = BuildProtectedPacketWithSeqLocked(
@@ -682,12 +735,39 @@ public sealed class DatagramPeer : IDisposable
 
    private void OnChannelMessageAcked(byte channelId, ushort channelSeq)
    {
-      _sendChannels[channelId]?.MarkAcked(channelSeq);
+      _sendChannels[channelId]?.MarkAcked(channelSeq, _onDeliveryUpdated);
    }
 
    private void OnMessageFastRetransmit(byte channelId, ushort channelSeq)
    {
       _sendChannels[channelId]?.RequestFastRetransmit(channelSeq);
+   }
+
+   private void OnUnreliableDeliveryAcked(SentUnreliableDeliveryRef delivery)
+   {
+      if (delivery.Tracker is null || delivery.Tracker.TryMarkFragmentAcked())
+      {
+         EmitDeliveryNotification(delivery.ChannelId, delivery.DeliveryToken, DatagramDeliveryStatus.Acknowledged);
+      }
+   }
+
+   private void OnUnreliableDeliveryLost(SentUnreliableDeliveryRef delivery)
+   {
+      if (delivery.Tracker is null || delivery.Tracker.TryMarkLost())
+      {
+         EmitDeliveryNotification(delivery.ChannelId, delivery.DeliveryToken, DatagramDeliveryStatus.Lost);
+      }
+   }
+
+   private void EmitDeliveryNotification(byte channelId, ulong deliveryToken, DatagramDeliveryStatus status)
+   {
+      var config = _channelTable[channelId];
+      if (config is null)
+      {
+         return;
+      }
+
+      _emitEvent(DatagramEvent.DeliveryNotification(this, channelId, config.DeliveryMode, deliveryToken, status));
    }
 
    private byte[] BuildProtectedPacketLocked(DatagramPacketKind kind, ReadOnlySpan<byte> body, long nowTimestamp, out int totalLength)

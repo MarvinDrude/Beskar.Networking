@@ -162,6 +162,23 @@ Configure packet protection via `DatagramOptions.Security`:
   - `host.SendTo(peerIdsSpan, channelId, payload)` sends to a specific squad/room subset.
   - `peer.Tag` and `peer.SetProperty<T>` / `TryGetProperty<T>` store per-peer application state.
   - `peer.Disconnect("reason"u8)` transmits redundant graceful disconnect notices before releasing peer state.
+  - `options.MaxDatagramsPerTick` (default `32`) controls the maximum number of physical UDP data datagrams flushed per peer on each tick.
+- **Unreliable & Reliable Delivery Notifications (Delta-Snapshot Baseline Tracking):**
+  - Call `peer.TrySend(channelId, payload, deliveryToken: serverTick)` with any caller-chosen `ulong` token to receive a zero-allocation `DatagramEventType.DeliveryNotification` (`DatagramDeliveryStatus.Acknowledged` or `DatagramDeliveryStatus.Lost`) in `PollEvents` / `ReadEventsAsync` or via `Events.MessageDeliveryUpdated`.
+  - Ideal for AAA delta-compressed world snapshots sent on `UnreliableSequenced`: advance each peer's confirmed delta baseline on `Acknowledged` without paying reliable retransmission latency!
+
+```csharp
+// Send unreliable world snapshot tagged with serverTick:
+peer.TrySend(chSnapshots, deltaSnapshotBytes, deliveryToken: currentServerTick);
+
+// In PollEvents(...) or Events.MessageDeliveryUpdated:
+if (evt.Type == DatagramEventType.DeliveryNotification
+    && evt.ChannelId == chSnapshots
+    && evt.DeliveryStatus == DatagramDeliveryStatus.Acknowledged)
+{
+   playerState.LastAckedSnapshotTick = Math.Max(playerState.LastAckedSnapshotTick, evt.DeliveryToken);
+}
+```
 - **Link Stats & Congestion Signaling (`peer.Stats`):**
   - `SmoothedRttMs`, `RttVarianceMs`, `CurrentRtoMs`, `PacketLossRate`, `MessagesRetransmitted`, `UnackedReliableMessages`, `BytesSent`, `BytesReceived`.
   - `CongestionState` (`Healthy`, `Congested`, `Critical`) and `RecommendedSendScale` (`1.0f`, `0.5f`, `0.25f`) let your game loop dynamically scale snapshot/input send rates under packet loss or RTT inflation.
@@ -175,11 +192,15 @@ Configure packet protection via `DatagramOptions.Security`:
 `DatagramHost` can discover its NAT-mapped public endpoint, receive simultaneous introductions from a lightweight `DatagramRendezvousServer`, punch UDP pinholes, and establish an authenticated AEAD session - all on **one bound UDP socket**:
 
 ```csharp
-// 1. Public rendezvous server
-await using var rendezvous = new DatagramRendezvousServer(new IPEndPoint(IPAddress.Any, 9500));
+// 1. Public rendezvous server (with bounded registration memory and TTL expiry)
+await using var rendezvous = new DatagramRendezvousServer(new IPEndPoint(IPAddress.Any, 9500))
+{
+   MaxRegistrations = 16_384,
+   RegistrationTtl = TimeSpan.FromMinutes(2)
+};
 rendezvous.Start();
 
-// 2. Both NAT-ed peers discover their public endpoints
+// 2. Both NAT-ed peers discover their public endpoints (automatically retries on UDP loss)
 var pubA = await hostA.DiscoverPublicEndPointAsync(rendezvousEp, "peer-a"u8.ToArray());
 var pubB = await hostB.DiscoverPublicEndPointAsync(rendezvousEp, "peer-b"u8.ToArray());
 

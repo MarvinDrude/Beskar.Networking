@@ -99,6 +99,12 @@ public sealed class DatagramOptions
    public int PacingBurstBytes { get; set; } = 32 * 1024;
 
    /// <summary>
+   /// Maximum number of physical UDP data datagrams flushed per peer during a single <see cref="DatagramHost.Tick"/>.
+   /// Defaults to <c>32</c>. Increase for high-bandwidth bulk transfers or lower tick frequencies.
+   /// </summary>
+   public int MaxDatagramsPerTick { get; set; } = 32;
+
+   /// <summary>
    /// Maximum pending events queued in poll/async dispatch queues before applying backpressure.
    /// </summary>
    public int MaxQueuedEvents { get; set; } = 8192;
@@ -224,6 +230,11 @@ public sealed class DatagramOptions
       if (PacingBurstBytes < 0)
       {
          throw new ArgumentOutOfRangeException(nameof(PacingBurstBytes), "PacingBurstBytes must be non-negative.");
+      }
+
+      if (MaxDatagramsPerTick < 1)
+      {
+         throw new ArgumentOutOfRangeException(nameof(MaxDatagramsPerTick), "MaxDatagramsPerTick must be at least 1.");
       }
 
       IReadOnlyList<DatagramChannelConfig> configuredChannels = Channels.Count > 0
