@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <OutputType>Exe</OutputType>
+      <IsPackable>false</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <ProjectReference Include="..\..\Datagram\Beskar.Networking.Datagram\Beskar.Networking.Datagram.csproj" />
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Console\Beskar.Utilities.Console.csproj" />
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
+   </ItemGroup>
+
+</Project>

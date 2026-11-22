@@ -8,12 +8,12 @@
 
 `CronSchedule` parses Cron expressions and `@every` intervals using `ReadOnlySpan<char>` slicing and compiles them into a compact `readonly struct` containing six `ulong`/`uint` bitmasks:
 
-* `SecondsMask` (`ulong` — bits `0..59`)
-* `MinutesMask` (`ulong` — bits `0..59`)
-* `HoursMask` (`uint` — bits `0..23`)
-* `DaysOfMonthMask` (`uint` — bits `1..31`)
-* `MonthsMask` (`ushort` — bits `1..12`)
-* `DaysOfWeekMask` (`byte` — bits `0..6`, where `0 = Sunday` and `7` is normalized to `0`)
+* `SecondsMask` (`ulong` - bits `0..59`)
+* `MinutesMask` (`ulong` - bits `0..59`)
+* `HoursMask` (`uint` - bits `0..23`)
+* `DaysOfMonthMask` (`uint` - bits `1..31`)
+* `MonthsMask` (`ushort` - bits `1..12`)
+* `DaysOfWeekMask` (`byte` - bits `0..6`, where `0 = Sunday` and `7` is normalized to `0`)
 
 ### Supported Expression Formats
 

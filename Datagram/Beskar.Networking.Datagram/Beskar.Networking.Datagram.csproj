@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+   <PropertyGroup>
+      <Title>Beskar.Networking.Datagram</Title>
+      <Description>Specialized, low-allocation UDP datagram and multi-channel reliability protocol with built-in AEAD security, multi-peer routing, and NAT hole punching.</Description>
+      <PackageTags>$(PackageTags) UDP Datagram ReliableUDP Gaming Multiplayer NAT AEAD</PackageTags>
+      <GenerateDocumentationFile>true</GenerateDocumentationFile>
+      <NoWarn>$(NoWarn);1591</NoWarn>
+      <IsPackable>true</IsPackable>
+   </PropertyGroup>
+
+   <ItemGroup>
+      <PackageReference Include="Beskar.Memory" />
+      <ProjectReference Include="..\..\Utilities\Beskar.Utilities.Tracing\Beskar.Utilities.Tracing.csproj" />
+   </ItemGroup>
+
+   <ItemGroup>
+      <InternalsVisibleTo Include="Beskar.Networking.Datagram.Tests" />
+   </ItemGroup>
+
+</Project>

@@ -84,3 +84,23 @@ Meter Name: `Beskar.Jobs` (Version `1.0.0`)
 | `beskar.jobs.execution.duration` | `Histogram<double>` | `ms` | Duration of job execution on workers in milliseconds (tagged by `job.type` and `status`). |
 | `beskar.jobs.queue.lag` | `Histogram<double>` | `ms` | Queue waiting lag from scheduled due time to worker dispatch in milliseconds (tagged by `queue` and `job.type`). |
 
+---
+
+# Datagram
+
+Meter Name: `Beskar.Networking.Datagram` (Version `1.0.0`)
+
+| Instrument Name | Type | Unit | Description |
+| :--- | :--- | :--- | :--- |
+| `beskar.datagram.peers.active` | `UpDownCounter<long>` | `{peer}` | Current number of active connected peers. |
+| `beskar.datagram.peers.connected` | `Counter<long>` | `{peer}` | Total peers connected. |
+| `beskar.datagram.peers.disconnected` | `Counter<long>` | `{peer}` | Total peers disconnected. |
+| `beskar.datagram.packets.sent` | `Counter<long>` | `{packet}` | Total physical UDP datagrams sent. |
+| `beskar.datagram.packets.received` | `Counter<long>` | `{packet}` | Total valid UDP datagrams received. |
+| `beskar.datagram.messages.retransmitted` | `Counter<long>` | `{message}` | Total reliable channel messages/fragments retransmitted. |
+| `beskar.datagram.security.rejected` | `Counter<long>` | `{packet}` | Total packets rejected due to CRC, AEAD auth, replay, or invalid cookie failures. |
+| `beskar.datagram.bytes.sent` | `Counter<long>` | `By` | Total UDP datagram bytes sent. |
+| `beskar.datagram.bytes.received` | `Counter<long>` | `By` | Total UDP datagram bytes received. |
+| `beskar.datagram.rtt` | `Histogram<double>` | `ms` | Measured round-trip time in milliseconds. |
+
+
